@@ -18,6 +18,9 @@ frontend/.vite/
 scripts/.browser-verify.json
 .api-smoke.log
 
+# 文档生成流水线的中间产物（HTML / 探针 / 状态文件），成品在 docs/ 下
+output/
+
 # ── 编辑器 / 系统 ─────────────────────
 .idea/
 .vscode/

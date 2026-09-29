@@ -158,10 +158,10 @@ nova-admin/
 │       ├── utils/                      # auth / request / download / format / theme
 │       └── views/                      # 页面
 ├── scripts/
-│   ├── api-smoke.mjs                   # 零依赖接口冒烟脚本（81 项）
+│   ├── api-smoke.mjs                   # 零依赖接口冒烟脚本（90 项）
 │   ├── browser-verify.mjs              # 零依赖浏览器运行时验证（48 项，含双主题）
 │   └── fixtures/                       # 测试样例文件（含生成脚本）
-├── docs/                               # API.md / DATABASE.md
+├── docs/                               # GUIDE.md / API.md / DATABASE.md
 └── AGENTS.md                           # ★ AI 开发约定（改代码前先读）
 ```
 
@@ -174,7 +174,7 @@ nova-admin/
 ```bash
 cd backend
 go vet ./...
-go test ./test/... -count=1        # 23 个测试、65 个子用例
+go test ./test/... -count=1        # 33 个测试、65 个子用例
 ```
 
 测试使用独立库 `nova_admin_test`，通过 `httptest` 在进程内跑完整路由，不依赖外部服务。
@@ -192,7 +192,7 @@ node scripts/api-smoke.mjs                      # 默认 http://127.0.0.1:8080
 node scripts/api-smoke.mjs http://host:port     # 指定实例
 ```
 
-共 81 项断言，覆盖登录/令牌刷新/CRUD/权限隔离/参数校验/日志/导入导出。
+共 90 项断言，覆盖登录/令牌刷新/CRUD/权限隔离/参数校验/日志/导入导出/数据范围/令牌吊销。
 
 ### 前端：类型检查与构建
 
@@ -228,6 +228,8 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs    # 验证生产�
 
 ## 四、下一步去哪看
 
+- **新接手？先读 [`docs/GUIDE.md`](docs/GUIDE.md)** —— 项目说明、使用步骤、新增业务全流程
+  （同内容的 Word 分发版：[`docs/Nova-Admin-项目说明与开发指南.docx`](docs/Nova-Admin-项目说明与开发指南.docx)）
 - 接口清单与响应约定 → [`docs/API.md`](docs/API.md)
 - 数据表结构与索引设计 → [`docs/DATABASE.md`](docs/DATABASE.md)
 - 新增模块 / 新增页面的标准做法、踩坑记录 → [`AGENTS.md`](AGENTS.md)
