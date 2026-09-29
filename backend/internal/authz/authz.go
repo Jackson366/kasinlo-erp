@@ -20,15 +20,17 @@ const SessionTTL = 30 * time.Second
 
 // Identity 是一次请求的身份上下文。
 type Identity struct {
-	UserID      int64               `json:"userId"`
-	Username    string              `json:"username"`
-	Nickname    string              `json:"nickname"`
-	Avatar      string              `json:"avatar"`
-	DeptID      *int64              `json:"deptId"`
-	RoleIDs     []int64             `json:"roleIds"`
-	RoleCodes   []string            `json:"roleCodes"`
-	DataScope   int16               `json:"dataScope"`
-	IsSuper     bool                `json:"isSuper"`
+	UserID    int64    `json:"userId"`
+	Username  string   `json:"username"`
+	Nickname  string   `json:"nickname"`
+	Avatar    string   `json:"avatar"`
+	DeptID    *int64   `json:"deptId"`
+	RoleIDs   []int64  `json:"roleIds"`
+	RoleCodes []string `json:"roleCodes"`
+	DataScope int16    `json:"dataScope"`
+	IsSuper   bool     `json:"isSuper"`
+	// TokenEpoch 是签发令牌时要写进 Claims 的版本号，不对外输出。
+	TokenEpoch  int64               `json:"-"`
 	Permissions map[string]struct{} `json:"-"`
 }
 
@@ -144,6 +146,7 @@ func build(userID int64) (*Identity, error) {
 		Nickname:    user.Nickname,
 		Avatar:      user.Avatar,
 		DeptID:      user.DeptID,
+		TokenEpoch:  user.TokenEpoch,
 		Permissions: map[string]struct{}{},
 		DataScope:   model.DataScopeSelf,
 	}

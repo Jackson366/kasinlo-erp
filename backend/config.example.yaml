@@ -53,3 +53,9 @@ security:
   max_login_fail: 5
   # 锁定时间（秒）
   login_lock_seconds: 300
+  # 可信反向代理的 IP / 网段。
+  # 留空 = 不信任任何代理，ClientIP 只取 TCP 对端地址，这是安全默认值。
+  # 只有部署在 Nginx 等代理之后才填写，例如 ["127.0.0.1", "10.0.0.0/8"]。
+  # 一旦把不受控的地址填进来，客户端就能用 X-Forwarded-For 伪造审计日志的来源 IP。
+  # 也可用环境变量覆盖：NOVA_SECURITY_TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8
+  trusted_proxies: []

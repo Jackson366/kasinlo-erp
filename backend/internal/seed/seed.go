@@ -221,7 +221,56 @@ func seedRoles(db *gorm.DB) error {
 	}
 	// 无论内置角色是新建还是早已存在，都要补齐缺失的菜单授权：
 	// 新增权限点后，已初始化过的数据库同样需要补上授权关系。
-	return syncBuiltinRoleMenus(db)
+	if err := syncBuiltinRoleMenus(db); err != nil {
+		return err
+	}
+	// 同理，历史库里错误的角色数据范围也要在启动时自动纠正，
+	// 否则已上线的库必须手工执行 SQL 才能升级。
+	return syncBuiltinRoleDataScope(db)
+}
+
+// historicalRoleDataFixes 记录内置角色历史上曾是「错误值」的数据范围。
+//
+// 只在当前值恰好等于 from 时才纠正为 to：
+//   - 幂等：重复启动不会产生额外写入；
+//   - 不越权：管理员若已把这个角色显式改成别的范围（例如「本部门」），
+//     说明是有意为之，不会被启动逻辑覆盖回去。
+//
+// 为什么需要它：早期版本把「只读访客」写成「仅本人」(4)。当时 data_scope
+// 只被计算、入库、展示，从未参与任何查询，这个自相矛盾的值因此一直没暴露；
+// 数据范围真正生效后，「只读访客」会连用户列表都只剩自己一行，
+// 与它「只读浏览各列表」的用途完全相悖。
+var historicalRoleDataFixes = []struct {
+	code   string
+	from   int16
+	to     int16
+	reason string
+}{
+	{
+		code: "viewer", from: model.DataScopeSelf, to: model.DataScopeAll,
+		reason: "只读访客的用途是浏览各列表，将其数据范围纠正为「全部」",
+	},
+}
+
+// syncBuiltinRoleDataScope 纠正历史库中内置角色的错误数据范围（幂等）。
+func syncBuiltinRoleDataScope(db *gorm.DB) error {
+	for _, fix := range historicalRoleDataFixes {
+		res := db.Model(&model.Role{}).
+			Where("code = ? AND data_scope = ?", fix.code, fix.from).
+			Update("data_scope", fix.to)
+		if res.Error != nil {
+			return fmt.Errorf("纠正角色 %s 的数据范围失败: %w", fix.code, res.Error)
+		}
+		if res.RowsAffected > 0 {
+			logger.Warn("已纠正内置角色的历史数据范围",
+				zap.String("role", fix.code),
+				zap.Int16("from", fix.from),
+				zap.Int16("to", fix.to),
+				zap.String("reason", fix.reason),
+			)
+		}
+	}
+	return nil
 }
 
 func createBuiltinRoles(db *gorm.DB) error {
@@ -237,9 +286,12 @@ func createBuiltinRoles(db *gorm.DB) error {
 			Remark: "可维护用户、角色、菜单、部门，不具备删除权限",
 		},
 		{
+			// 数据范围必须是「全部」。这个角色的用途是只读地浏览各个列表，
+			// 若配成「仅本人」，它会连用户列表都只剩自己一行 —— 与 Remark 自相矛盾。
+			// 数据范围此前从未参与任何查询，这个矛盾因此一直没暴露；现在它真正生效了。
 			BaseModel: model.BaseModel{ID: 3}, Name: "只读访客", Code: "viewer",
-			Sort: 3, Status: model.StatusEnabled, DataScope: model.DataScopeSelf,
-			Remark: "仅可查看列表与仪表盘",
+			Sort: 3, Status: model.StatusEnabled, DataScope: model.DataScopeAll,
+			Remark: "仅可查看列表与仪表盘，不可导出",
 		},
 	}
 	if err := db.Create(&roles).Error; err != nil {

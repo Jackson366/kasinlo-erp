@@ -336,6 +336,74 @@ async function main() {
   ok('参数校验失败返回 40000', badParam.json?.code === 40000, JSON.stringify(badParam.json))
   ok('错误提示为中文', /不能为空|长度/.test(badParam.json?.message || ''), badParam.json?.message)
 
+  section('数据范围（本轮加固）')
+  // 数据范围此前只入库、只在表单里可配，却没有任何一条查询用它。
+  // 这里把内置「只读访客」临时切成「仅本人」，验证它真的参与查询。
+  const scopePayload = { name: '只读访客', sort: 3, remark: '仅可查看列表与仪表盘，不可导出' }
+  const scopeOff = await request('PUT', '/system/roles/3', { token, body: { ...scopePayload, dataScope: 4 } })
+  const scopedList = await request('GET', '/system/users?page=1&pageSize=20', { token: demoToken })
+  ok(
+    '数据范围「仅本人」时列表只剩自己',
+    scopedList.json?.data?.total === 1,
+    `total=${scopedList.json?.data?.total}`,
+  )
+  const scopedDetail = await request('GET', '/system/users/1', { token: demoToken })
+  ok(
+    '越界查看用户详情按「不存在」处理(404)',
+    scopedDetail.status === 404 && scopedDetail.json?.code === 40400,
+    `status=${scopedDetail.status} code=${scopedDetail.json?.code}`,
+  )
+  const scopeOn = await request('PUT', '/system/roles/3', { token, body: { ...scopePayload, dataScope: 1 } })
+  ok('数据范围可还原为「全部」', scopeOff.json?.code === 0 && scopeOn.json?.code === 0, JSON.stringify(scopeOn.json))
+
+  section('令牌吊销（本轮加固）')
+  // 无状态 JWT 靠 token_epoch 实现吊销：改密码后旧令牌（含刷新令牌）必须立即失效
+  const revUser = await request('POST', '/system/users', {
+    token,
+    body: { username: 'smoke_revoke', password: 'probe123456', nickname: '吊销自测', deptId: 2 },
+  })
+  const revId = revUser.json?.data?.id
+  const revLogin = await request('POST', '/auth/login', {
+    body: { username: 'smoke_revoke', password: 'probe123456' },
+  })
+  const revAccess = revLogin.json?.data?.accessToken
+  const revRefresh = revLogin.json?.data?.refreshToken
+  ok('改密前新账号令牌可用', (await request('GET', '/profile', { token: revAccess })).json?.code === 0)
+  await request('PUT', `/system/users/${revId}/password`, { token, body: { password: 'probe654321' } })
+  const revAfter = await request('GET', '/profile', { token: revAccess })
+  ok(
+    '重置密码后旧访问令牌立即失效(40105)',
+    revAfter.status === 401 && revAfter.json?.code === 40105,
+    `status=${revAfter.status} code=${revAfter.json?.code}`,
+  )
+  const revRefreshRes = await request('POST', '/auth/refresh', { body: { refreshToken: revRefresh } })
+  ok('重置密码后旧刷新令牌立即失效(40105)', revRefreshRes.json?.code === 40105, JSON.stringify(revRefreshRes.json))
+  const cleanRev = await request('DELETE', `/system/users/${revId}`, { token })
+  ok('清理令牌吊销自测用户', cleanRev.json?.code === 0, JSON.stringify(cleanRev.json))
+
+  section('审计来源可信（本轮加固）')
+  // gin 默认信任所有代理，会用客户端自报的 X-Forwarded-For 当来源 IP。
+  // 未配置 trusted_proxies 时必须记录 TCP 对端地址，客户端无法伪造。
+  const spoofUser = 'smoke_ip_probe'
+  const spoofRes = await fetch(`${API}/auth/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Forwarded-For': '203.0.113.77',
+      'User-Agent': 'NovaSmoke/1.0',
+    },
+    body: JSON.stringify({ username: spoofUser, password: 'whatever123' }),
+  })
+  await spoofRes.text()
+  const probeLogs = await request('GET', `/system/logs/logins?username=${spoofUser}&pageSize=1`, { token })
+  const probeRows = probeLogs.json?.data?.list || []
+  ok('失败登录留下了审计记录', probeRows.length > 0, JSON.stringify(probeLogs.json?.data))
+  ok(
+    '审计 IP 不被 X-Forwarded-For 伪造',
+    probeRows[0]?.ip && probeRows[0].ip !== '203.0.113.77',
+    `记录到的 ip=${probeRows[0]?.ip}`,
+  )
+
   section('令牌刷新与登出')
   const refreshed = await request('POST', '/auth/refresh', { body: { refreshToken } })
   ok('刷新令牌', refreshed.json?.code === 0 && !!refreshed.json?.data?.accessToken, JSON.stringify(refreshed.json))

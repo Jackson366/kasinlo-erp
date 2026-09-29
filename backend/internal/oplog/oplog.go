@@ -5,7 +5,6 @@ package oplog
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 
 	"nova-admin/internal/logger"
 	"nova-admin/internal/model"
+	"nova-admin/internal/pkg/textutil"
 )
 
 // Entry 是一条待写入的操作日志。
@@ -129,17 +129,17 @@ func consume() {
 		for _, e := range buf {
 			rows = append(rows, model.OperationLog{
 				UserID:    e.UserID,
-				Username:  fit(e.Username, colUsername),
-				Module:    fit(e.Module, colModule),
-				Action:    fit(e.Action, colAction),
-				Method:    fit(e.Method, colMethod),
-				Path:      fit(e.Path, colPath),
-				IP:        fit(e.IP, colIP),
-				UserAgent: fit(e.UserAgent, colUserAgent),
-				Request:   fit(e.Request, maxRequestBody),
+				Username:  textutil.Fit(e.Username, colUsername),
+				Module:    textutil.Fit(e.Module, colModule),
+				Action:    textutil.Fit(e.Action, colAction),
+				Method:    textutil.Fit(e.Method, colMethod),
+				Path:      textutil.Fit(e.Path, colPath),
+				IP:        textutil.Fit(e.IP, colIP),
+				UserAgent: textutil.Fit(e.UserAgent, colUserAgent),
+				Request:   textutil.Fit(e.Request, maxRequestBody),
 				Status:    e.Status,
 				Latency:   e.LatencyMS,
-				ErrorMsg:  fit(e.ErrorMsg, colErrorMsg),
+				ErrorMsg:  textutil.Fit(e.ErrorMsg, colErrorMsg),
 				CreatedAt: e.CreatedAt,
 			})
 		}
@@ -202,6 +202,8 @@ func recordDrop() {
 //  1. 超长会被 PostgreSQL 以 22001（value too long for type character varying(n)）拒绝。
 //     曾经 Path 完全没有截断，一个超长 URL 就足以让这条日志写不进去。
 //  2. 非法 UTF-8 会被以 22021 拒绝。上传接口的 multipart 请求体就是这样中招的。
+//
+// 收敛逻辑统一走 textutil.Fit（按字符截断 + ToValidUTF8），不要在这里另写一份。
 const (
 	colUsername  = 64
 	colModule    = 64
@@ -212,20 +214,3 @@ const (
 	colUserAgent = 512
 	colErrorMsg  = 512
 )
-
-// fit 把字符串收敛到 limit 个「字符」以内，并保证结果是合法 UTF-8。
-//
-// 两件事缺一不可：PostgreSQL 的 varchar(n) 按字符计数，所以这里也必须按字符截断；
-// 而按字节截断会把多字节字符切成两半，造出非法 UTF-8，同样会被数据库拒绝。
-// 任意一处失守的代价都是整条日志丢失，而不是内容被裁剪。
-func fit(s string, limit int) string {
-	s = strings.ToValidUTF8(s, "")
-	if limit <= 0 {
-		return s
-	}
-	runes := []rune(s)
-	if len(runes) <= limit {
-		return s
-	}
-	return string(runes[:limit])
-}

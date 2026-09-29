@@ -44,6 +44,19 @@ func Auth() gin.HandlerFunc {
 			return
 		}
 
+		// 令牌版本号必须与用户当前版本一致。
+		// 修改密码 / 重置密码 / 禁用账号都会把 sys_users.token_epoch 加一，
+		// 于是此前签发的所有令牌（含刷新令牌）在这里被立即挡下 ——
+		// 否则「改了密码，旧会话还能用」会一直持续到令牌自然过期。
+		if claims.Epoch != identity.TokenEpoch {
+			logger.Warn("令牌版本已失效",
+				zapStr("username", identity.Username),
+				zapStr("path", c.Request.URL.Path),
+			)
+			response.FailWith(c, errcode.ErrTokenInvalid, "")
+			return
+		}
+
 		c.Set(CtxUserID, identity.UserID)
 		c.Set(CtxUsername, identity.Username)
 		c.Set(CtxIdentity, identity)

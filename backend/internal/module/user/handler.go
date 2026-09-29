@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"nova-admin/internal/authz"
 	"nova-admin/internal/middleware"
 	"nova-admin/internal/pkg/bind"
 	"nova-admin/internal/pkg/errcode"
@@ -35,7 +36,7 @@ func (h *Handler) List(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	items, total, err := h.svc.List(q, f)
+	items, total, err := h.svc.List(q, f, actor(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -48,7 +49,7 @@ func (h *Handler) List(c *gin.Context) {
 // @Tags    用户管理
 // @Router  /system/users/options [get]
 func (h *Handler) Options(c *gin.Context) {
-	items, err := h.svc.Options(c.Query("keyword"))
+	items, err := h.svc.Options(c.Query("keyword"), actor(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -66,7 +67,7 @@ func (h *Handler) Detail(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	vo, err := h.svc.Get(id)
+	vo, err := h.svc.Get(id, actor(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -85,7 +86,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "新增用户")
-	id, err := h.svc.Create(req)
+	id, err := h.svc.Create(req, actor(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -109,7 +110,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "修改用户")
-	if err := h.svc.Update(id, req); err != nil {
+	if err := h.svc.Update(id, req, actor(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -127,7 +128,7 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "删除用户")
-	if err := h.svc.Delete(id, middleware.CurrentUserID(c)); err != nil {
+	if err := h.svc.Delete(id, middleware.CurrentUserID(c), actor(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -150,7 +151,7 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "修改用户状态")
-	if err := h.svc.UpdateStatus(id, req.Status, middleware.CurrentUserID(c)); err != nil {
+	if err := h.svc.UpdateStatus(id, req.Status, middleware.CurrentUserID(c), actor(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -173,7 +174,7 @@ func (h *Handler) ResetPassword(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "重置用户密码")
-	if err := h.svc.ResetPassword(id, req.Password); err != nil {
+	if err := h.svc.ResetPassword(id, req.Password, actor(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -187,6 +188,11 @@ func pathID(c *gin.Context) (int64, error) {
 	}
 	return id, nil
 }
+
+// actor 返回当前请求的身份，供数据范围过滤使用。
+// 本模块的路由都挂在 Auth 之后，这里拿不到身份只可能是配置错误；
+// 服务层的 scopeQuery 对 nil 会退化成「不受限」，因此不需要在调用点判空。
+func actor(c *gin.Context) *authz.Identity { return middleware.CurrentIdentity(c) }
 
 // ---------------- Excel 导入导出 ----------------
 
@@ -206,7 +212,7 @@ func (h *Handler) Export(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	items, err := h.svc.Export(q.Keyword, f)
+	items, err := h.svc.Export(q.Keyword, f, actor(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -292,7 +298,7 @@ func (h *Handler) Import(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.Import(data, dryRun)
+	result, err := h.svc.Import(data, dryRun, actor(c))
 	if err != nil {
 		response.Fail(c, err)
 		return

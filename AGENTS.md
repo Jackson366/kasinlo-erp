@@ -664,13 +664,128 @@ if strings.TrimSpace(f.IDs) != "" {
 
 ---
 
+### 5.22 按字节截断的字符串会让数据库**整行**拒收
+
+**症状**：登录失败锁定完全失效 —— 攻击者可无限次试密码，且每次尝试都不留任何日志。
+
+**成因链**（三环缺一不可，所以只看单点代码很难发现）：
+
+1. `writeLoginLog` 用 `ua = ua[:512]` 截断 User-Agent。User-Agent 完全由客户端控制，
+   构造 `511 个 ASCII + 一个汉字`（514 字节）时，按**字节**切到 512 会把汉字切成两半。
+2. 截断结果是非法 UTF-8，PostgreSQL 以 `22021` 拒绝**整行** INSERT。
+3. 错误被 `_ = s.db.Create(...).Error` 吞掉，日志里连一行告警都没有。
+4. `isLocked` 正是按这张表统计失败次数 —— 写不进去就永远累计不到阈值。
+
+**正确做法**：所有写库前的文本都过一次 `pkg/textutil.Fit`（`ToValidUTF8` + **按字符**截断），
+并且**日志写入失败必须留告警**。收敛点只保留一处，不要在各模块各写一份：
+
+```go
+// internal/pkg/textutil
+func Fit(s string, limit int) string {
+    s = strings.ToValidUTF8(s, "")
+    runes := []rune(s)          // ← 按字符，不是 s[:limit]
+    if len(runes) <= limit { return s }
+    return string(runes[:limit])
+}
+```
+
+**自查方法**：搜 `[:` 后面跟着数字或常量名的字符串切片，凡是落在「要写进 varchar 列」的路径上，
+就要改用 `textutil.Fit`。PostgreSQL 的 `varchar(n)` 按字符计数，Go 的切片按字节 —— 这两个单位不一致。
+
+回归测试：`TestLoginLogSurvivesLongMultibyteUserAgent`。
+
+---
+
+### 5.23 数据范围必须**同时**约束读和写
+
+**症状**：角色上能配「本部门 / 仅本人」，导出文件里也印着数据范围，但没有任何一条查询用它 ——
+配了「仅本人」的角色照样列出并导出全表。属于「看起来有、实际不起作用」的安全控件。
+
+**正确做法**：把范围做成一个 `scopeQuery(actor, tx)` 助手，读路径（列表 / 详情 / 下拉 / 导出）
+与写路径（改 / 删 / 改状态 / 重置密码 / 导入）**共用同一份判定**。
+
+- 只收窄列表会留下「看不到但能改」的洞：受限管理员虽列不出别的部门的人，
+  却仍能拿已知 ID 重置对方密码。写操作必须走 `ensureInScope`。
+- 越界一律按 **404 不存在** 处理，不要返回 403 —— 否则可以用返回信息探测别人有哪些用户。
+- 新增 / 导入时还要校验**目标部门**是否在范围内（`checkDeptInScope`），
+  否则可以用一份 Excel 把用户批量建到范围之外。
+- 新增 `data_scope` 相关查询时注意：`authz` 对身份有 30 秒缓存，
+  测试里**直接改库不会失效缓存**，必须走接口修改或显式调用 `authz.InvalidateAll()`。
+
+回归测试：`TestDataScopeIsEnforced`、`TestDataScopeGatesWrites`。
+
+---
+
+### 5.24 无状态 JWT 的吊销：靠 `token_epoch` 而不是「等它过期」
+
+**症状**：管理员重置了某个用户的密码，该用户**此前泄露的令牌仍然有效**，
+最长 2 小时（访问令牌）甚至 7 天（刷新令牌）。改密码这个动作给人「已经安全了」的错觉。
+
+**正确做法**：`sys_users.token_epoch` 作为令牌版本号，签发时写进 Claims（`epo`），
+`Auth` 中间件比对不一致即 401。修改密码 / 重置密码 / 禁用账号时 `token_epoch + 1`。
+
+**两个容易漏掉的点**：
+
+1. `Refresh` 也必须校验版本号。只挡访问令牌的话，攻击者手里的旧**刷新令牌**
+   还能换出一对全新的有效令牌，吊销等于没做。
+2. 加 `NOT NULL` 列时别忘了 `default:0`，否则给已有数据的表迁移会直接失败
+   （`SQLSTATE 23502: column contains null values`）。这里给默认值是安全的 ——
+   令牌版本号的零值与默认值都是 0，与 §5.15 里 `status` 的情况不同。
+
+回归测试：`TestPasswordChangeRevokesTokens`。
+
+---
+
+### 5.25 gin 默认信任所有代理 -> 审计日志里的 IP 可以随便写
+
+**症状**：操作日志与登录日志记录的是客户端自报的 `X-Forwarded-For`，
+用 `curl -H "X-Forwarded-For: 203.0.113.77"` 就能让审计记录显示任意来源 IP。
+
+**正确做法**：`engine.SetTrustedProxies(cfg.Security.TrustedProxies)`，
+配置项默认**留空**（不信任任何代理，`ClientIP` 取 TCP 对端地址）。
+只有真正部署在 Nginx 等代理后面时才填写代理网段，并在 `config.validate()` 里校验格式。
+
+**同类项**：CORS 配了 `*` 时不要再声明 `Access-Control-Allow-Credentials: true`。
+把任意来源反射回去 + 允许携带凭证，等于允许任何站点发起「带身份」的跨站请求。
+
+回归测试：`TestAuditIPIgnoresForwardedFor`。
+
+---
+
+### 5.26 老库升级：给已有数据的表加 `NOT NULL` 列必须带默认值
+
+**症状**：给 model 加一个 `gorm:"not null"` 字段后，**新库一切正常，老库直接起不来** ——
+`AutoMigrate` 生成的 `ALTER TABLE` 被 PostgreSQL 拒绝：
+
+```
+column "token_epoch" of relation "sys_users" contains null values (SQLSTATE 23502)
+```
+
+**原因**：加列时既有行会被填成 NULL，而列声明是 `NOT NULL`，
+若没有 `DEFAULT`，数据库只能拒绝整条 DDL。
+
+**正确做法**：`gorm:"not null;default:0"`。这**不违反**本项目「不用数据库默认值兜业务字段」
+的约定（§7 / `model.User.Status`）—— 那条约定针对的是「零值本身是合法业务值」的字段。
+判断标准是**零值语义是否与默认值一致**：`token_epoch = 0` 就是「从未改过密码」，
+一致，安全；而 `status = 0` 是「禁用」、默认值 1 是「启用」，相反，有害，所以不加默认值。
+
+**同类风险**：种子/初始化逻辑里的**数据修正**同样只在老库上触发 ——
+新库的角色是按最新种子值建的，永远走不到纠正分支。
+因此「新库能跑」证明不了「老库能升上来」，这两条路径都要有测试。
+数据修正放在 `seed.Run()` 里（本项目没有独立 migration 目录），
+且必须满足「只认历史错误值、不覆盖管理员显式配置、幂等」三条（§7.7）。
+
+回归测试：`backend/test/upgrade_test.go` 四个用例。
+
+---
+
 ## 6. 验证流程（改完必跑）
 
 ```bash
 # ── 后端 ──────────────────────────────
 cd backend
 gofmt -l . && go vet ./... && go build ./...
-go test ./test/... -count=1          # 23 个测试 / 65 子用例
+go test ./test/... -count=1          # 33 个测试 / 65 子用例
 
 # ── 前端 ──────────────────────────────
 cd ../frontend
@@ -678,7 +793,7 @@ npm run typecheck                    # vue-tsc --noEmit
 npm run build                        # 类型检查 + 构建
 
 # ── 端到端（服务已在跑时）──────────────
-node ../scripts/api-smoke.mjs        # 81 项接口断言
+node ../scripts/api-smoke.mjs        # 90 项接口断言
 ```
 
 **改了前端路由 / 守卫 / 状态管理 / 样式主题，必须做一次浏览器验证**，不能只看编译通过：
@@ -789,6 +904,31 @@ sheet.Download(c, "用户列表_20260929_205419.xlsx", data)
 - 权限码独立：`system:user:export`、`system:user:import`、`system:role:export`、`system:log:export`
 - **只读角色不授予任何导出/导入权限点**，即使它已有 `system:user:list`
 
+### 7.7 角色有**两套**互不替代的权限
+
+| 机制 | 字段 | 回答的问题 | 落地位置 |
+| --- | --- | --- | --- |
+| 功能权限 | `sys_role_menus` -> `sys_menus.permission` | 「能不能用这个功能」 | `RequirePerm` 中间件 + 前端 `v-perm` |
+| 数据范围 | `sys_roles.data_scope` | 「能看到/改到谁的数据」 | 服务层 `scopeQuery` / `ensureInScope` |
+
+新增会**按条件返回一批业务数据**的接口时，除了挂权限码，还要想清楚数据范围要不要生效。
+范围取值：`1` 全部 / `2` 本部门 / `3` 本部门及以下 / `4` 仅本人，多角色取最宽松者。
+
+修改内置角色数据范围的**升级提醒**：`viewer`（只读访客）的种子值已从「仅本人」改为「全部」，
+否则它连用户列表都只剩自己一行。老库**无需手工处理** ——
+`seed.syncBuiltinRoleDataScope` 会在每次启动时把仍停留在历史错误值上的角色纠正过来。
+
+这条纠正逻辑的设计约束（新增类似逻辑时必须遵守）：
+
+- **只在值等于历史错误值时纠正**。若管理员已显式改成别的范围（如「本部门」），
+  说明是有意为之，启动逻辑不得覆盖 —— 否则每次重启都会悄悄回退管理员的配置。
+- **幂等**。匹配不到就不写，重复启动不产生额外 UPDATE。
+- **走启动路径而不是迁移脚本**。本项目没有独立的 migration 目录，表结构靠
+  `AutoMigrate` 增量同步，数据修正就放在 `seed.Run()` 里，与 `syncBuiltinRoleMenus` 一致，
+  好处是运维没有「忘记执行 SQL」这一步。
+
+对应 `historicalRoleDataFixes` 表，新增一行即可扩展。回归测试见 `backend/test/upgrade_test.go`。
+
 ---
 
 ## 8. 安全红线
@@ -798,3 +938,8 @@ sheet.Download(c, "用户列表_20260929_205419.xlsx", data)
 - 前端隐藏按钮 ≠ 鉴权，新增写接口必须挂 `RequirePerm`
 - `admin`（ID=1）与内置角色受保护，不可禁用/删除
 - 生产环境必须替换 `NOVA_JWT_SECRET` 与默认口令
+- **写库前的文本一律过 `pkg/textutil.Fit`**，不要用 `s[:n]`（§5.22）
+- **日志写入失败不能 `_ =` 吞掉**，至少要留一条 WARN —— 静默失败会让风控与审计一起失效
+- **数据范围要同时覆盖读与写**，越界按 404 处理（§5.23）
+- **改密码 / 重置密码 / 禁用后旧令牌必须立即失效**，`token_epoch + 1`（§5.24）
+- **`trusted_proxies` 默认为空**，不要为了「拿到真实 IP」就填 `0.0.0.0/0`（§5.25）

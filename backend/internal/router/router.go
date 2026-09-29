@@ -4,9 +4,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"nova-admin/internal/config"
 	"nova-admin/internal/database"
+	"nova-admin/internal/logger"
 	"nova-admin/internal/middleware"
 	"nova-admin/internal/module/auth"
 	"nova-admin/internal/module/dashboard"
@@ -22,18 +24,33 @@ import (
 //
 // 中间件顺序说明：
 //
-//	TraceID -> Logger -> Recovery -> CORS -> [业务组] OperationLog -> Auth -> RequirePerm -> Handler
+//	TraceID -> Logger -> OperationLog -> Recovery -> CORS -> Auth -> RequirePerm -> Handler
 //
-// 操作日志中间件放在业务组最外层，确保能读到 Auth 写入的用户身份。
+// 两处顺序是有意为之，改动前请先看完理由：
+//
+//  1. OperationLog 必须在 Recovery **外面**。它靠 c.Next() 返回之后读状态码来落库，
+//     而 panic 会让内层中间件的「后置代码」整段跳过。若把它放在 Recovery 里层，
+//     服务端 500 的那次请求在审计表里就查不到 —— 丢掉的恰好是最该留痕的记录。
+//  2. 操作日志放在引擎级而不是业务组上，是为了连未匹配到路由的请求也一并记录。
 func New(cfg *config.Config) *gin.Engine {
 	if !cfg.App.IsDebug() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	engine := gin.New()
+
+	// 只信任显式配置的代理。gin 的默认值是信任所有代理，于是 X-Forwarded-For
+	// （完全由客户端控制）会直接变成审计日志里的来源 IP。配置已在 config.validate 校验过。
+	if err := engine.SetTrustedProxies(cfg.Security.TrustedProxies); err != nil {
+		// 走到这里说明校验与解析行为不一致，按「不信任任何代理」保守处理并留痕
+		logger.Error("可信代理配置解析失败，已按不信任任何代理启动", zap.Error(err))
+		_ = engine.SetTrustedProxies(nil)
+	}
+
 	engine.Use(
 		middleware.TraceIDMiddleware(),
 		middleware.Logger(),
+		middleware.OperationLog(),
 		middleware.Recovery(),
 		middleware.CORS(cfg.CORS.AllowOrigins),
 	)
@@ -55,7 +72,7 @@ func New(cfg *config.Config) *gin.Engine {
 	})
 
 	// 业务路由统一前缀，例如 /api/v1
-	base := engine.Group(cfg.App.BasePath(), middleware.OperationLog())
+	base := engine.Group(cfg.App.BasePath())
 
 	// 公开接口（登录、刷新令牌）
 	auth.Register(base, cfg.Security)

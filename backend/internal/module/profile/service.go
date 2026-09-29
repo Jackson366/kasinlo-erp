@@ -87,9 +87,14 @@ func (s *Service) ChangePassword(userID int64, oldPwd, newPwd string) error {
 		return errcode.Wrap(errcode.ErrInternal, err)
 	}
 	if err := s.db.Model(&model.User{}).Where("id = ?", userID).
-		Update("password", hashed).Error; err != nil {
+		Updates(map[string]any{
+			"password":    hashed,
+			"token_epoch": gorm.Expr("token_epoch + 1"),
+		}).Error; err != nil {
 		return errcode.Wrap(errcode.ErrDatabase, err)
 	}
+	// 版本号已变，本人当前令牌立即失效，需要重新登录
+	authz.Invalidate(userID)
 	return nil
 }
 

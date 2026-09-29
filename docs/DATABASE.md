@@ -49,6 +49,7 @@
 | `avatar` | varchar(255) | | 头像地址 |
 | `dept_id` | bigint | index | 所属部门 |
 | `status` | smallint | not null | 1 启用 / 0 禁用，**不使用数据库默认值** |
+| `token_epoch` | bigint | not null, default 0 | 令牌版本号，改密码/重置密码/禁用时 +1，旧令牌立即失效 |
 | `remark` | varchar(255) | | |
 | `last_login_at` | timestamptz | | 最近登录时间 |
 | `last_login_ip` | varchar(64) | | 最近登录 IP |
@@ -61,7 +62,7 @@
 | `code` | varchar(64) | not null | 角色标识，如 `super_admin` |
 | `sort` | int | default 0 | 排序 |
 | `status` | smallint | not null | 状态，**不使用数据库默认值** |
-| `data_scope` | smallint | default 1 | 1 全部 / 2 本部门 / 3 本部门及以下 / 4 仅本人 |
+| `data_scope` | smallint | default 1 | 1 全部 / 2 本部门 / 3 本部门及以下 / 4 仅本人；多角色取最宽松者，由服务层 `scopeQuery` 落地 |
 | `is_builtin` | boolean | default false | 内置角色不可删除 |
 | `remark` | varchar(255) | | |
 
@@ -166,11 +167,16 @@ GORM 对「字段带 `default` 标签、且当前取值等于 Go 零值」的字
 因此约定：**`status` 由应用层显式写入，数据库不提供默认值**，
 让「忘记设置状态」变成一眼可见的问题，而不是被默认值悄悄兜住。
 
-> 仍然保留 `default` 标签的字段（`sort` / `parent_id` / `data_scope` / 布尔位）是安全的：
+> 仍然保留 `default` 标签的字段（`sort` / `parent_id` / `data_scope` / `token_epoch` / 布尔位）是安全的：
 > 它们的零值语义与默认值一致（`sort = 0` 就是排最前、`parent_id = 0` 就是根节点、
-> `data_scope = 0` 本身不是合法取值，落到默认值 1 反而是期望行为）。
+> `data_scope = 0` 本身不是合法取值，落到默认值 1 反而是期望行为、
+> `token_epoch = 0` 就是「从未改过密码」）。
 >
 > 新增「零值是合法业务值」的字段时，参考 `model.User.Status` 的写法。
+>
+> `token_epoch` 上的 `default:0` 还有第二个必要理由：给**已有数据**的表新增
+> `NOT NULL` 列时，如果没有默认值，PostgreSQL 会因为存量行取到 NULL 而直接拒绝迁移
+> （`SQLSTATE 23502: column contains null values`）。
 
 回归测试见 `backend/test/status_test.go`（用户 / 部门 / 角色 / 菜单四条创建路径 + 导入路径）。
 

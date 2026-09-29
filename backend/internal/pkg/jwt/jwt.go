@@ -23,6 +23,10 @@ type Claims struct {
 	UserID   int64     `json:"uid"`
 	Username string    `json:"uname"`
 	Type     TokenType `json:"typ"`
+	// Epoch 是签发时用户的令牌版本号，对应 sys_users.token_epoch。
+	// 修改密码 / 重置密码 / 禁用账号时会把它 +1，于是所有旧令牌都因版本号
+	// 不匹配而立即失效 —— 这是无状态 JWT 唯一低成本的吊销手段。
+	Epoch int64 `json:"epo"`
 	jwt.RegisteredClaims
 }
 
@@ -68,13 +72,13 @@ func M() *Manager {
 	return manager
 }
 
-// Generate 为用户签发令牌对。
-func (m *Manager) Generate(userID int64, username string) (*Pair, error) {
-	access, err := m.sign(userID, username, AccessToken, m.accessExpire)
+// Generate 为用户签发令牌对。epoch 为该用户当前的令牌版本号。
+func (m *Manager) Generate(userID int64, username string, epoch int64) (*Pair, error) {
+	access, err := m.sign(userID, username, epoch, AccessToken, m.accessExpire)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrInternal, err)
 	}
-	refresh, err := m.sign(userID, username, RefreshToken, m.refreshExpire)
+	refresh, err := m.sign(userID, username, epoch, RefreshToken, m.refreshExpire)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrInternal, err)
 	}
@@ -86,12 +90,13 @@ func (m *Manager) Generate(userID int64, username string) (*Pair, error) {
 	}, nil
 }
 
-func (m *Manager) sign(userID int64, username string, typ TokenType, ttl time.Duration) (string, error) {
+func (m *Manager) sign(userID int64, username string, epoch int64, typ TokenType, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		UserID:   userID,
 		Username: username,
 		Type:     typ,
+		Epoch:    epoch,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    m.issuer,
 			Subject:   username,

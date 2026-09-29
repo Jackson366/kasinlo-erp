@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -95,6 +96,13 @@ type CORSConfig struct {
 type SecurityConfig struct {
 	MaxLoginFail     int `yaml:"max_login_fail"`
 	LoginLockSeconds int `yaml:"login_lock_seconds"`
+	// TrustedProxies 列出可信反向代理的 IP 或网段。
+	//
+	// 为空表示**不信任任何代理**，此时 ClientIP 只取 TCP 对端地址。
+	// 这一点很重要：gin 默认信任所有代理，会直接采用 X-Forwarded-For 的值，
+	// 而该头完全由客户端控制 —— 于是任何人都能把审计日志里的来源 IP 写成任意值。
+	// 部署在 Nginx 等反向代理后面时，才把代理的地址填进来。
+	TrustedProxies []string `yaml:"trusted_proxies"`
 }
 
 var (
@@ -133,6 +141,22 @@ func (c *Config) validate() error {
 	}
 	if c.JWT.Secret == "" {
 		return fmt.Errorf("jwt.secret 不能为空")
+	}
+	// 代理地址写错会让 ClientIP 取不到真实来源，宁可启动时就报错
+	for _, p := range c.Security.TrustedProxies {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if strings.Contains(p, "/") {
+			if _, _, err := net.ParseCIDR(p); err != nil {
+				return fmt.Errorf("security.trusted_proxies 中的 %q 不是合法网段: %w", p, err)
+			}
+			continue
+		}
+		if net.ParseIP(p) == nil {
+			return fmt.Errorf("security.trusted_proxies 中的 %q 既不是 IP 也不是网段", p)
+		}
 	}
 	return nil
 }
@@ -227,4 +251,14 @@ func applyEnvOverrides(c *Config) {
 
 	num("NOVA_SECURITY_MAX_LOGIN_FAIL", &c.Security.MaxLoginFail)
 	num("NOVA_SECURITY_LOGIN_LOCK_SECONDS", &c.Security.LoginLockSeconds)
+	// 逗号分隔，例如 NOVA_SECURITY_TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8
+	if v := os.Getenv("NOVA_SECURITY_TRUSTED_PROXIES"); v != "" {
+		out := make([]string, 0, 2)
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, p)
+			}
+		}
+		c.Security.TrustedProxies = out
+	}
 }

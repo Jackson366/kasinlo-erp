@@ -16,8 +16,22 @@ export class ApiError extends Error {
   }
 }
 
-/** 未登录 / 令牌失效的业务码 */
-const AUTH_ERROR_CODES = [40100, 40104, 40105]
+/**
+ * 「会话已失效」类业务码：未登录、令牌过期/无效，以及**账号被禁用**。
+ *
+ * 40102 必须在内。管理员禁用某个账号后，该账号已经打开的页面会持续收到 40102，
+ * 若不当成会话失效处理，用户只会不断看到报错弹窗，却始终回不到登录页。
+ */
+const AUTH_ERROR_CODES = [40100, 40102, 40104, 40105]
+
+/** 登录 / 刷新接口自身的失败就是「没登进去」，不该再走一遍会话失效流程 */
+const AUTH_ENDPOINTS = ['/auth/login', '/auth/refresh']
+
+/** 判断请求是否发往认证接口本身 */
+function isAuthEndpoint(url?: string): boolean {
+  if (!url) return false
+  return AUTH_ENDPOINTS.some((endpoint) => url.includes(endpoint))
+}
 
 const instance: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
@@ -108,7 +122,7 @@ instance.interceptors.response.use(
     const traceId = body?.traceId
 
     // 令牌失效：尝试静默刷新并重放请求
-    if (AUTH_ERROR_CODES.includes(code)) {
+    if (AUTH_ERROR_CODES.includes(code) && !isAuthEndpoint(error.config?.url)) {
       const original = error.config as AxiosRequestConfig & { _retry?: boolean }
       if (!original._retry && getRefreshToken()) {
         original._retry = true

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
+	"nova-admin/internal/authz"
 	"nova-admin/internal/model"
 	"nova-admin/internal/pkg/errcode"
 	"nova-admin/internal/pkg/hash"
@@ -46,8 +47,11 @@ var (
 // ---------------- 导出 ----------------
 
 // Export 查询待导出的用户。指定了 ids 时按选中项导出，否则按筛选条件导出。
-func (s *Service) Export(keyword string, f ExportQuery) ([]VO, error) {
-	tx := s.db.Model(&model.User{}).Preload("Dept").Preload("Roles")
+//
+// 数据范围与列表共用同一套 where 构造：导出的行集必须与页面看到的一致，
+// 否则会出现「页面只有 10 条、导出是全表」这种数据外带级别的缺陷。
+func (s *Service) Export(keyword string, f ExportQuery, actor *authz.Identity) ([]VO, error) {
+	tx := s.scopeQuery(actor, s.db.Model(&model.User{})).Preload("Dept").Preload("Roles")
 
 	// 「未提供 ids」与「提供了 ids 但一个都解析不出来」必须区别对待：
 	// 前者是按筛选导出，后者是参数有问题。若把后者也当成前者，
@@ -147,7 +151,7 @@ func buildImportTemplate() ([]byte, error) {
 }
 
 // Import 解析并导入用户。dryRun 为 true 时只校验不写库。
-func (s *Service) Import(data []byte, dryRun bool) (*ImportResult, error) {
+func (s *Service) Import(data []byte, dryRun bool, actor *authz.Identity) (*ImportResult, error) {
 	rows, err := sheet.Parse(data)
 	if err != nil {
 		return nil, err
@@ -184,6 +188,9 @@ func (s *Service) Import(data []byte, dryRun bool) (*ImportResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 导入同样受数据范围约束：否则「本部门」管理员可以用一份 Excel
+	// 把用户批量建到别的部门去，绕过单条新增上的校验。nil 表示不受限。
+	allowedDepts := s.scopeDeptIDs(actor)
 
 	result := &ImportResult{Total: len(lines), Rows: make([]ImportRow, 0, len(lines))}
 	candidates := make([]importCandidate, 0, len(lines))
@@ -196,7 +203,7 @@ func (s *Service) Import(data []byte, dryRun bool) (*ImportResult, error) {
 			Nickname: sheet.Cell(ln.cells, colNickname),
 			Errors:   make([]string, 0, 2),
 		}
-		cand, errs := s.validateImportLine(ln.cells, ref, seen)
+		cand, errs := s.validateImportLine(ln.cells, ref, seen, allowedDepts)
 		detail.Errors = append(detail.Errors, errs...)
 
 		if len(detail.Errors) > 0 {
@@ -227,7 +234,8 @@ type importCandidate struct {
 }
 
 // validateImportLine 校验单行，返回可直接入库的候选数据。
-func (s *Service) validateImportLine(cells []string, ref *importRefs, seen map[string]bool) (importCandidate, []string) {
+// allowedDepts 为 nil 表示不受数据范围限制，否则只有集合内的部门可被使用。
+func (s *Service) validateImportLine(cells []string, ref *importRefs, seen map[string]bool, allowedDepts map[int64]bool) (importCandidate, []string) {
 	errs := make([]string, 0, 2)
 
 	username := sheet.Cell(cells, colUsername)
@@ -301,6 +309,13 @@ func (s *Service) validateImportLine(cells []string, ref *importRefs, seen map[s
 			deptID = &id
 		} else {
 			errs = append(errs, "部门「"+deptName+"」不存在")
+		}
+	}
+	if allowedDepts != nil {
+		if deptID == nil {
+			errs = append(errs, "请填写你数据范围内的部门")
+		} else if !allowedDepts[*deptID] {
+			errs = append(errs, "部门「"+deptName+"」超出你的数据范围")
 		}
 	}
 

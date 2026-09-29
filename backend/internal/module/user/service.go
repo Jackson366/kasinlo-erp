@@ -31,10 +31,11 @@ var userOrderWhitelist = map[string]string{
 	"lastLoginAt": "last_login_at",
 }
 
-// List 分页查询用户。
-func (s *Service) List(q page.Query, f ListQuery) ([]VO, int64, error) {
-	// 过滤条件集中在一处，保证 count 与 find 使用完全一致的 where 子句
-	filter := s.buildFilter(q.Keyword, f)
+// List 分页查询用户。actor 的数据范围会叠加在筛选条件之上。
+func (s *Service) List(q page.Query, f ListQuery, actor *authz.Identity) ([]VO, int64, error) {
+	// 过滤条件集中在一处，保证 count 与 find 使用完全一致的 where 子句；
+	// 数据范围也放进同一个闭包，否则统计数与列表可能落在不同范围上
+	filter := s.scopedFilter(actor, s.buildFilter(q.Keyword, f))
 
 	var total int64
 	if err := filter(s.db.Model(&model.User{})).Count(&total).Error; err != nil {
@@ -82,8 +83,8 @@ func (s *Service) buildFilter(keyword string, f ListQuery) func(*gorm.DB) *gorm.
 }
 
 // Options 返回精简用户列表，用于下拉选择。
-func (s *Service) Options(keyword string) ([]Option, error) {
-	tx := s.db.Model(&model.User{}).Where("status = ?", model.StatusEnabled)
+func (s *Service) Options(keyword string, actor *authz.Identity) ([]Option, error) {
+	tx := s.scopeQuery(actor, s.db.Model(&model.User{})).Where("status = ?", model.StatusEnabled)
 	if keyword != "" {
 		kw := "%" + keyword + "%"
 		tx = tx.Where("username ILIKE ? OR nickname ILIKE ?", kw, kw)
@@ -96,10 +97,89 @@ func (s *Service) Options(keyword string) ([]Option, error) {
 	return out, nil
 }
 
-// Get 查询用户详情。
-func (s *Service) Get(id int64) (*VO, error) {
+// ---------------- 数据范围（数据权限） ----------------
+//
+// 数据范围来自角色上的 data_scope，多个角色取最宽松者（见 authz.build）：
+//
+//	1 全部         不加限制
+//	2 本部门       仅本部门
+//	3 本部门及以下 本部门及其所有子部门
+//	4 仅本人       只有自己
+//
+// 读与写必须一起收窄。只收窄列表会留下「看不到但能改」的洞：
+// 「本部门」管理员虽然列不出别的部门的人，却仍能拿已知 ID 重置对方密码。
+func (s *Service) scopeQuery(actor *authz.Identity, tx *gorm.DB) *gorm.DB {
+	if actor == nil || actor.IsSuper || actor.DataScope == model.DataScopeAll {
+		return tx
+	}
+	if actor.DataScope == model.DataScopeSelf || actor.DeptID == nil {
+		// 没有部门的人谈不上「本部门」，退化成只能看自己
+		return tx.Where("id = ?", actor.UserID)
+	}
+	if actor.DataScope == model.DataScopeDept {
+		return tx.Where("dept_id = ?", *actor.DeptID)
+	}
+	return tx.Where("dept_id IN ?", s.deptTreeIDs(*actor.DeptID))
+}
+
+// scopedFilter 把数据范围叠在既有的 where 构造之上。
+func (s *Service) scopedFilter(actor *authz.Identity, base func(*gorm.DB) *gorm.DB) func(*gorm.DB) *gorm.DB {
+	return func(tx *gorm.DB) *gorm.DB { return s.scopeQuery(actor, base(tx)) }
+}
+
+// scopeDeptIDs 返回允许的部门 ID 集合；返回 nil 表示不受限制。
+func (s *Service) scopeDeptIDs(actor *authz.Identity) map[int64]bool {
+	if actor == nil || actor.IsSuper || actor.DataScope == model.DataScopeAll {
+		return nil
+	}
+	if actor.DataScope == model.DataScopeSelf || actor.DeptID == nil {
+		return map[int64]bool{}
+	}
+	ids := []int64{*actor.DeptID}
+	if actor.DataScope == model.DataScopeDeptAndSub {
+		ids = s.deptTreeIDs(*actor.DeptID)
+	}
+	out := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
+}
+
+// ensureInScope 校验目标用户是否落在数据范围内。
+// 越界一律按「不存在」处理，避免用返回信息探测其他部门有哪些用户。
+func (s *Service) ensureInScope(actor *authz.Identity, targetID int64) error {
+	var cnt int64
+	if err := s.scopeQuery(actor, s.db.Model(&model.User{})).
+		Where("id = ?", targetID).Count(&cnt).Error; err != nil {
+		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if cnt == 0 {
+		return errcode.New(errcode.ErrNotFound, "用户不存在")
+	}
+	return nil
+}
+
+// checkDeptInScope 校验所属部门是否在数据范围内（新增用户 / 调整部门时使用）。
+func (s *Service) checkDeptInScope(actor *authz.Identity, deptID *int64) error {
+	allowed := s.scopeDeptIDs(actor)
+	if allowed == nil {
+		return nil
+	}
+	if deptID == nil {
+		return errcode.New(errcode.ErrBadRequest, "请选择你数据范围内的部门")
+	}
+	if !allowed[*deptID] {
+		return errcode.New(errcode.ErrForbidden, "目标部门超出你的数据范围")
+	}
+	return nil
+}
+
+// Get 查询用户详情。超出数据范围时按「不存在」返回。
+func (s *Service) Get(id int64, actor *authz.Identity) (*VO, error) {
 	var u model.User
-	if err := s.db.Preload("Dept").Preload("Roles").First(&u, id).Error; err != nil {
+	tx := s.scopeQuery(actor, s.db.Model(&model.User{})).Preload("Dept").Preload("Roles")
+	if err := tx.First(&u, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errcode.New(errcode.ErrNotFound, "用户不存在")
 		}
@@ -110,7 +190,10 @@ func (s *Service) Get(id int64) (*VO, error) {
 }
 
 // Create 新增用户。
-func (s *Service) Create(req CreateReq) (int64, error) {
+func (s *Service) Create(req CreateReq, actor *authz.Identity) (int64, error) {
+	if err := s.checkDeptInScope(actor, req.DeptID); err != nil {
+		return 0, err
+	}
 	if err := s.ensureUsernameFree(req.Username, 0); err != nil {
 		return 0, err
 	}
@@ -146,7 +229,14 @@ func (s *Service) Create(req CreateReq) (int64, error) {
 }
 
 // Update 修改用户。
-func (s *Service) Update(id int64, req UpdateReq) error {
+func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
+	if err := s.ensureInScope(actor, id); err != nil {
+		return err
+	}
+	// 把用户挪到自己管不到的部门同样是越界
+	if err := s.checkDeptInScope(actor, req.DeptID); err != nil {
+		return err
+	}
 	var u model.User
 	if err := s.db.First(&u, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -167,6 +257,10 @@ func (s *Service) Update(id int64, req UpdateReq) error {
 			return errcode.New(errcode.ErrBadRequest, "内置管理员不允许禁用")
 		}
 		updates["status"] = *req.Status
+		if *req.Status != model.StatusEnabled {
+			// 禁用时同时作废已签发令牌，见 UpdateStatus 的说明
+			updates["token_epoch"] = gorm.Expr("token_epoch + 1")
+		}
 	}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -187,7 +281,10 @@ func (s *Service) Update(id int64, req UpdateReq) error {
 }
 
 // Delete 删除用户（软删除）。
-func (s *Service) Delete(id int64, operatorID int64) error {
+func (s *Service) Delete(id int64, operatorID int64, actor *authz.Identity) error {
+	if err := s.ensureInScope(actor, id); err != nil {
+		return err
+	}
 	if id == AdminUserID {
 		return errcode.New(errcode.ErrBadRequest, "内置管理员不允许删除")
 	}
@@ -215,14 +312,23 @@ func (s *Service) Delete(id int64, operatorID int64) error {
 }
 
 // UpdateStatus 启用/禁用用户。
-func (s *Service) UpdateStatus(id int64, status int16, operatorID int64) error {
+func (s *Service) UpdateStatus(id int64, status int16, operatorID int64, actor *authz.Identity) error {
+	if err := s.ensureInScope(actor, id); err != nil {
+		return err
+	}
 	if id == AdminUserID && status != model.StatusEnabled {
 		return errcode.New(errcode.ErrBadRequest, "内置管理员不允许禁用")
 	}
 	if id == operatorID && status != model.StatusEnabled {
 		return errcode.New(errcode.ErrBadRequest, "不能禁用当前登录用户")
 	}
-	res := s.db.Model(&model.User{}).Where("id = ?", id).Update("status", status)
+	updates := map[string]any{"status": status}
+	if status != model.StatusEnabled {
+		// 禁用时把令牌版本号 +1：既让禁用立即生效（authz 缓存不必等 30 秒），
+		// 也避免「禁用期间签发的旧令牌」在重新启用后复活。
+		updates["token_epoch"] = gorm.Expr("token_epoch + 1")
+	}
+	res := s.db.Model(&model.User{}).Where("id = ?", id).Updates(updates)
 	if res.Error != nil {
 		return errcode.Wrap(errcode.ErrDatabase, res.Error)
 	}
@@ -234,7 +340,10 @@ func (s *Service) UpdateStatus(id int64, status int16, operatorID int64) error {
 }
 
 // ResetPassword 管理员重置指定用户密码。
-func (s *Service) ResetPassword(id int64, plain string) error {
+func (s *Service) ResetPassword(id int64, plain string, actor *authz.Identity) error {
+	if err := s.ensureInScope(actor, id); err != nil {
+		return err
+	}
 	if len(plain) < 6 {
 		return errcode.New(errcode.ErrBadRequest, "密码长度不能少于 6 位")
 	}
@@ -242,7 +351,10 @@ func (s *Service) ResetPassword(id int64, plain string) error {
 	if err != nil {
 		return errcode.Wrap(errcode.ErrInternal, err)
 	}
-	res := s.db.Model(&model.User{}).Where("id = ?", id).Update("password", hashed)
+	res := s.db.Model(&model.User{}).Where("id = ?", id).Updates(map[string]any{
+		"password":    hashed,
+		"token_epoch": gorm.Expr("token_epoch + 1"),
+	})
 	if res.Error != nil {
 		return errcode.Wrap(errcode.ErrDatabase, res.Error)
 	}

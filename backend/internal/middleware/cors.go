@@ -22,12 +22,17 @@ func CORS(allowOrigins []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
 		if origin != "" {
-			if allowAll {
+			switch {
+			case allowAll:
+				// 配置了 * 时把来源原样反射回去，但**不能**同时声明允许携带凭证：
+				// 那等于告诉浏览器「任何站点都可以发起带身份的跨站请求」。
+				// 本项目用 Authorization 头而非 Cookie 承载身份，去掉这个头不影响功能。
 				c.Header("Access-Control-Allow-Origin", origin)
-				c.Header("Access-Control-Allow-Credentials", "true")
-			} else if _, ok := allowed[origin]; ok {
-				c.Header("Access-Control-Allow-Origin", origin)
-				c.Header("Access-Control-Allow-Credentials", "true")
+			default:
+				if _, ok := allowed[origin]; ok {
+					c.Header("Access-Control-Allow-Origin", origin)
+					c.Header("Access-Control-Allow-Credentials", "true")
+				}
 			}
 			c.Header("Vary", "Origin")
 		}
