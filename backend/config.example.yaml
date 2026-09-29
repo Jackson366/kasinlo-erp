@@ -1,0 +1,55 @@
+# Nova Admin 服务端配置模板
+#
+# 用法：复制本文件为同目录的 config.yaml，按实际情况填写后再启动服务。
+#     cp config.example.yaml config.yaml
+#
+# 为什么 config.yaml 不进版本库：
+#   它包含数据库口令。真实口令一旦提交就会永久留在 git 历史里，
+#   即使后续改回来也能从历史中读到。
+#
+# 所有配置项均可用环境变量覆盖，规则：NOVA_<SECTION>_<KEY>，例如 NOVA_DATABASE_PASSWORD。
+# 因此 CI / 容器里可以完全不落盘口令，直接靠环境变量注入。
+app:
+  name: nova-admin        # 应用名
+  mode: debug             # debug | release
+  host: 0.0.0.0
+  port: 8080
+  prefix: /api            # 路由统一前缀
+  version: v1             # API 版本段，最终前缀为 /api/v1
+
+database:
+  host: 127.0.0.1
+  port: 5432
+  user: postgres
+  password: CHANGE_ME     # ← 改成你本机 PostgreSQL 的口令
+  dbname: nova_admin      # 库不存在时会自动创建
+  sslmode: disable
+  timezone: Asia/Shanghai
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: 3600   # 秒
+  log_level: warn           # silent | error | warn | info
+
+jwt:
+  # ← 上线前务必换成随机长字符串，否则任何人都能用这个公开值伪造令牌
+  secret: CHANGE_ME_USE_A_RANDOM_LONG_STRING
+  issuer: nova-admin
+  access_expire: 7200       # 访问令牌有效期（秒），默认 2 小时
+  refresh_expire: 604800    # 刷新令牌有效期（秒），默认 7 天
+
+log:
+  level: info               # debug | info | warn | error
+  format: console           # console | json
+  dir: ./logs
+  file: app.log
+
+cors:
+  # 生产环境请改成具体域名，`*` 仅适合本地开发
+  allow_origins:
+    - "*"
+
+security:
+  # 登录失败连续锁定阈值
+  max_login_fail: 5
+  # 锁定时间（秒）
+  login_lock_seconds: 300

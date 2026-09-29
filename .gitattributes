@@ -1,0 +1,15 @@
+# 行尾策略：仓库内统一存 LF，检出时由各平台自行决定
+# Windows 用户的 core.autocrlf=true 仍会检出 CRLF，本地观感不变。
+# 显式声明的作用是避免「同一文件在不同平台的编辑器保存后，整篇都算改动」的噪音 diff。
+* text=auto
+
+# 二进制文件明确标记，禁止行尾转换与文本合并
+*.xlsx binary
+*.xls  binary
+*.png  binary
+*.ico  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.woff binary
+*.woff2 binary

@@ -1,0 +1,63 @@
+import { http } from '@/utils/request'
+import { downloadFile, uploadFile } from '@/utils/download'
+import type {
+  ImportResult,
+  PageResult,
+  Status,
+  UserExportQuery,
+  UserItem,
+  UserPayload,
+  UserQuery,
+} from '@/types/api'
+
+/** 用户管理接口 */
+export const userApi = {
+  /** 分页查询用户 */
+  list(params: UserQuery) {
+    return http.get<PageResult<UserItem>>('/v1/system/users', params as Record<string, unknown>)
+  },
+  /** 用户下拉选项 */
+  options(keyword?: string) {
+    return http.get<{ id: number; username: string; nickname: string }[]>('/v1/system/users/options', {
+      keyword,
+    })
+  },
+  /** 用户详情 */
+  detail(id: number) {
+    return http.get<UserItem>(`/v1/system/users/${id}`)
+  },
+  /** 新增用户 */
+  create(data: UserPayload) {
+    return http.post<{ id: number }>('/v1/system/users', data)
+  },
+  /** 修改用户 */
+  update(id: number, data: UserPayload) {
+    return http.put<string>(`/v1/system/users/${id}`, data)
+  },
+  /** 删除用户 */
+  remove(id: number) {
+    return http.delete<string>(`/v1/system/users/${id}`)
+  },
+  /** 启用/禁用 */
+  updateStatus(id: number, status: Status) {
+    return http.put<string>(`/v1/system/users/${id}/status`, { status })
+  },
+  /** 重置密码 */
+  resetPassword(id: number, password: string) {
+    return http.put<string>(`/v1/system/users/${id}/password`, { password })
+  },
+  /** 导出用户（params.ids 非空时导出选中项，否则按筛选条件导出全部） */
+  export(params: UserExportQuery, fallbackName: string) {
+    return downloadFile('/v1/system/users/export', params as Record<string, unknown>, fallbackName)
+  },
+  /** 下载导入模板 */
+  downloadTemplate() {
+    return downloadFile('/v1/system/users/import-template', undefined, '用户导入模板.xlsx')
+  },
+  /** 导入用户；dryRun 为 true 时仅校验不写库 */
+  import(file: File, dryRun = false) {
+    return uploadFile<ImportResult>('/v1/system/users/import', file, {
+      params: dryRun ? { dryRun: 1 } : undefined,
+    })
+  },
+}

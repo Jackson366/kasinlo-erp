@@ -1,0 +1,46 @@
+# 端到端测试专用配置模板（独立数据库，不影响开发库）
+#
+# 用法：复制本文件为同目录的 config.yaml 后再跑测试。
+#     cp test/testdata/config.example.yaml test/testdata/config.yaml
+#
+# 测试库（默认 nova_admin_test）会被自动创建，不需要预先建库。
+# 之所以也走模板：它和开发配置一样含数据库口令，不应进版本库。
+app:
+  name: nova-admin-test
+  mode: release
+  host: 127.0.0.1
+  port: 18080
+  prefix: /api
+  version: v1
+
+database:
+  host: 127.0.0.1
+  port: 5432
+  user: postgres
+  password: CHANGE_ME     # ← 改成你本机 PostgreSQL 的口令
+  dbname: nova_admin_test
+  sslmode: disable
+  timezone: Asia/Shanghai
+  max_idle_conns: 2
+  max_open_conns: 10
+  log_level: silent
+
+jwt:
+  secret: nova-admin-test-secret
+  issuer: nova-admin-test
+  access_expire: 600
+  refresh_expire: 3600
+
+log:
+  level: error
+  format: console
+  dir: ""
+  file: ""
+
+cors:
+  allow_origins:
+    - "*"
+
+security:
+  max_login_fail: 5
+  login_lock_seconds: 300

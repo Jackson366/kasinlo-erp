@@ -1,0 +1,258 @@
+// ============================================================
+// Element Plus 主题变量覆写
+// 通过覆盖官方 CSS 变量实现统一主题，无需重新编译其 SCSS。
+//
+// 暗色主题复用 Element Plus 官方 `dark/css-vars.css`（MIT），
+// 由 <html class="dark"> 激活；但官方取色是纯灰阶，与本项目的蓝灰调不一致，
+// 因此下面用 `html.dark` 再覆盖一层，把它对齐到我们的 --app-* 调色板。
+//
+// 注意：官方暗色变量声明在 `html.dark`（特异度 0,1,1），
+// 所以本文件的覆盖也必须带上 `html.dark`，否则会被官方值压掉。
+// 本文件在 main.ts 中晚于官方 CSS 引入，同特异度时以本文件为准。
+// ============================================================
+
+// 两套主题都要生效的覆写（取值引用 --app-*，因此天然跟随主题）
+:root,
+html.dark {
+  --el-color-primary: var(--brand-primary);
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+
+  --el-font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+
+  // 输入类控件的底色单独一个令牌：暗色下要比卡片略亮才看得出边界
+  --el-fill-color-blank: var(--app-input-bg);
+
+  // 语义色对齐我们的调色板（亮/暗取值不同，见 variables.scss）
+  --el-color-success: var(--app-success);
+  --el-color-warning: var(--app-warning);
+  --el-color-danger: var(--app-danger);
+  --el-color-error: var(--app-danger);
+  --el-color-info: var(--app-info);
+
+  --el-text-color-primary: var(--app-text);
+  --el-text-color-regular: var(--app-text-secondary);
+  --el-text-color-secondary: var(--app-text-secondary);
+  --el-text-color-placeholder: var(--app-text-muted);
+  --el-border-color: var(--app-border);
+  --el-border-color-light: var(--app-border-light);
+  --el-border-color-lighter: var(--app-border-light);
+  --el-box-shadow-light: var(--shadow-card);
+
+  // 语义色的浅色派生（el-tag / el-button plain / el-message 会用）。
+  // 用 color-mix 与 --app-surface 混色：亮色下等价于与白混（与官方公式一致），
+  // 暗色下自动变成深色底，一份声明同时满足两套主题。
+  --el-color-success-light-3: color-mix(in srgb, var(--app-success) 70%, var(--app-surface));
+  --el-color-success-light-5: color-mix(in srgb, var(--app-success) 50%, var(--app-surface));
+  --el-color-success-light-7: color-mix(in srgb, var(--app-success) 30%, var(--app-surface));
+  --el-color-success-light-8: color-mix(in srgb, var(--app-success) 20%, var(--app-surface));
+  --el-color-success-light-9: color-mix(in srgb, var(--app-success) 10%, var(--app-surface));
+
+  --el-color-warning-light-3: color-mix(in srgb, var(--app-warning) 70%, var(--app-surface));
+  --el-color-warning-light-5: color-mix(in srgb, var(--app-warning) 50%, var(--app-surface));
+  --el-color-warning-light-7: color-mix(in srgb, var(--app-warning) 30%, var(--app-surface));
+  --el-color-warning-light-8: color-mix(in srgb, var(--app-warning) 20%, var(--app-surface));
+  --el-color-warning-light-9: color-mix(in srgb, var(--app-warning) 10%, var(--app-surface));
+
+  --el-color-danger-light-3: color-mix(in srgb, var(--app-danger) 70%, var(--app-surface));
+  --el-color-danger-light-5: color-mix(in srgb, var(--app-danger) 50%, var(--app-surface));
+  --el-color-danger-light-7: color-mix(in srgb, var(--app-danger) 30%, var(--app-surface));
+  --el-color-danger-light-8: color-mix(in srgb, var(--app-danger) 20%, var(--app-surface));
+  --el-color-danger-light-9: color-mix(in srgb, var(--app-danger) 10%, var(--app-surface));
+
+  --el-color-error-light-3: color-mix(in srgb, var(--app-danger) 70%, var(--app-surface));
+  --el-color-error-light-5: color-mix(in srgb, var(--app-danger) 50%, var(--app-surface));
+  --el-color-error-light-7: color-mix(in srgb, var(--app-danger) 30%, var(--app-surface));
+  --el-color-error-light-8: color-mix(in srgb, var(--app-danger) 20%, var(--app-surface));
+  --el-color-error-light-9: color-mix(in srgb, var(--app-danger) 10%, var(--app-surface));
+
+  --el-color-info-light-3: color-mix(in srgb, var(--app-info) 70%, var(--app-surface));
+  --el-color-info-light-5: color-mix(in srgb, var(--app-info) 50%, var(--app-surface));
+  --el-color-info-light-7: color-mix(in srgb, var(--app-info) 30%, var(--app-surface));
+  --el-color-info-light-8: color-mix(in srgb, var(--app-info) 20%, var(--app-surface));
+  --el-color-info-light-9: color-mix(in srgb, var(--app-info) 10%, var(--app-surface));
+}
+
+// 激活态派生色：亮色与黑混、暗色与白混，方向相反，故分别声明
+:root {
+  --el-color-success-dark-2: color-mix(in srgb, var(--app-success) 80%, #000000);
+  --el-color-warning-dark-2: color-mix(in srgb, var(--app-warning) 80%, #000000);
+  --el-color-danger-dark-2: color-mix(in srgb, var(--app-danger) 80%, #000000);
+  --el-color-error-dark-2: color-mix(in srgb, var(--app-danger) 80%, #000000);
+  --el-color-info-dark-2: color-mix(in srgb, var(--app-info) 80%, #000000);
+}
+
+html.dark {
+  --el-color-success-dark-2: color-mix(in srgb, var(--app-success) 80%, #ffffff);
+  --el-color-warning-dark-2: color-mix(in srgb, var(--app-warning) 80%, #ffffff);
+  --el-color-danger-dark-2: color-mix(in srgb, var(--app-danger) 80%, #ffffff);
+  --el-color-error-dark-2: color-mix(in srgb, var(--app-danger) 80%, #ffffff);
+  --el-color-info-dark-2: color-mix(in srgb, var(--app-info) 80%, #ffffff);
+}
+
+// 主色派生色：亮/暗下的取值方向相反（暗色下 light-3 要更深），故分别声明
+:root {
+  --el-color-primary-light-3: #6692f1;
+  --el-color-primary-light-5: #92b1f5;
+  --el-color-primary-light-7: #bed0f9;
+  --el-color-primary-light-8: #d3e0fb;
+  --el-color-primary-light-9: #e9effd;
+  --el-color-primary-dark-2: #1e4fbc;
+}
+
+html.dark {
+  // 与官方同一套混色比例，但基准色换成我们的深色表面，避免色调割裂
+  --el-color-primary-light-3: #3063b8;
+  --el-color-primary-light-5: #294f8e;
+  --el-color-primary-light-7: #213a64;
+  --el-color-primary-light-8: #1d3050;
+  --el-color-primary-light-9: #1a253b;
+  --el-color-primary-dark-2: #629bf8;
+
+  --el-bg-color-page: var(--app-bg);
+  --el-bg-color: var(--app-surface);
+  --el-bg-color-overlay: var(--app-surface-overlay);
+
+  --el-fill-color: var(--app-fill);
+  --el-fill-color-light: var(--app-fill);
+  --el-fill-color-lighter: var(--app-surface-subtle);
+  --el-fill-color-extra-light: var(--app-surface);
+  --el-fill-color-dark: var(--app-fill-hover);
+  --el-fill-color-darker: var(--app-fill-hover);
+
+  --el-text-color-disabled: var(--app-text-muted);
+  --el-border-color-dark: var(--app-border);
+  --el-border-color-darker: var(--app-border);
+  --el-border-color-extra-light: var(--app-border-light);
+
+  --el-mask-color: rgba(15, 20, 32, 0.72);
+  --el-mask-color-extra-light: rgba(15, 20, 32, 0.32);
+  --el-box-shadow: var(--shadow-popup);
+}
+
+// ---------- 按钮 ----------
+// 注意：Element Plus 的 `el-button--default` 是**尺寸类**（size 的默认值），
+// 不是「无 type」的意思 —— `type="primary"` 的按钮类名是
+// `el-button el-button--primary el-button--default`。
+// 所以千万不要用 `.el-button--default` 去覆盖默认按钮样式，会把主按钮一起改掉。
+// 默认按钮的配色已经通过 --el-fill-color-blank / --el-border-color 跟随主题，无需额外处理。
+.el-button {
+  font-weight: 500;
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--brand-primary);
+  --el-button-border-color: var(--brand-primary);
+  --el-button-hover-bg-color: var(--brand-primary-hover);
+  --el-button-hover-border-color: var(--brand-primary-hover);
+  --el-button-active-bg-color: var(--brand-primary-active);
+  --el-button-active-border-color: var(--brand-primary-active);
+}
+
+// ---------- 卡片、弹窗 ----------
+.el-card {
+  --el-card-border-radius: var(--radius-md);
+  --el-card-padding: 20px;
+  --el-card-bg-color: var(--app-surface);
+  border-color: var(--app-border-light);
+  box-shadow: var(--shadow-card);
+}
+
+.el-dialog {
+  --el-dialog-border-radius: var(--radius-lg);
+  --el-dialog-bg-color: var(--app-surface);
+  overflow: hidden;
+
+  .el-dialog__header {
+    margin-right: 0;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--app-border-light);
+
+    .el-dialog__title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--app-text);
+    }
+  }
+
+  .el-dialog__body {
+    padding: 22px;
+  }
+
+  .el-dialog__footer {
+    padding: 14px 22px;
+    border-top: 1px solid var(--app-border-light);
+    background: var(--app-surface-subtle);
+  }
+}
+
+.el-drawer__header {
+  margin-bottom: 0;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--app-border-light);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+// 下拉、气泡等浮层的描边：暗色下 --el-border-color-light 与浮层底色过近，
+// 浮层会「糊」在页面里，所以统一提到 --app-border 一档
+.el-popper.is-light,
+.el-dropdown__popper,
+.el-select__popper {
+  border-color: var(--app-border) !important;
+}
+
+// ---------- 表格：轻量化、去掉重边框 ----------
+.el-table {
+  --el-table-border-color: var(--app-border-light);
+  --el-table-bg-color: var(--app-surface);
+  --el-table-tr-bg-color: var(--app-surface);
+  --el-table-expanded-cell-bg-color: var(--app-surface-subtle);
+  --el-table-header-bg-color: var(--app-surface-subtle);
+  --el-table-header-text-color: var(--app-text-secondary);
+  --el-table-text-color: var(--app-text);
+  --el-table-row-hover-bg-color: var(--app-fill);
+  --el-fill-color-lighter: var(--app-surface-subtle);
+
+  th.el-table__cell {
+    font-weight: 600;
+  }
+
+  .el-table__cell {
+    padding: 10px 0;
+  }
+}
+
+.el-table::before,
+.el-table__inner-wrapper::before {
+  display: none;
+}
+
+.el-table__empty-text {
+  color: var(--app-text-muted);
+}
+
+// ---------- 分页 ----------
+.el-pagination {
+  justify-content: flex-end;
+  margin-top: 16px;
+
+  --el-pagination-bg-color: transparent;
+}
+
+// ---------- 表单 ----------
+.el-form-item__label {
+  color: var(--app-text-secondary);
+}
+
+// ---------- 标签页 ----------
+.el-tabs__item {
+  font-weight: 500;
+}
+
+// ---------- 空状态 / 加载 ----------
+.el-empty__description p {
+  color: var(--app-text-muted);
+}

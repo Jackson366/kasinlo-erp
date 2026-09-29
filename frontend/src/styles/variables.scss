@@ -1,0 +1,175 @@
+// ============================================================
+// 设计令牌（Design Tokens）
+// 品牌色、圆角、阴影、间距统一在这里维护，组件内通过 CSS 变量引用，
+// 不要在业务组件里写死颜色值。
+//
+// 主题机制
+// --------
+// <html> 上是否带 `dark` 类决定当前主题（与 Element Plus 官方约定一致）。
+// 所有语义令牌在亮/暗两套里**同名不同值**，组件只写一次 var(--app-xxx)，
+// 切换主题时自动生效，不需要任何 JS 参与样式计算。
+//
+// 新增颜色时请**同时补亮色与暗色两组值**，否则暗色下会出现白底/浅底残留。
+// ============================================================
+
+// 布局尺寸（与主题无关，只定义一次）
+$sidebar-width: 232px;
+$sidebar-width-collapsed: 64px;
+$navbar-height: 56px;
+$tags-height: 38px;
+
+// 圆角（与主题无关）
+$radius-sm: 6px;
+$radius-md: 10px;
+$radius-lg: 14px;
+
+/// 输出一套完整的主题令牌。两个分支的变量名必须完全一致。
+/// @param {string} $mode - light 或 dark
+@mixin theme-tokens($mode) {
+  @if $mode == light {
+    color-scheme: light;
+
+    // ---- 品牌色 ----
+    --brand-primary: #2563eb;
+    --brand-primary-hover: #1d4ed8;
+    --brand-primary-active: #1e40af;
+    --brand-gradient: linear-gradient(135deg, #3b82f6, #2563eb);
+
+    // ---- 表面与背景 ----
+    --app-bg: #f5f7fb;
+    --app-surface: #ffffff;
+    --app-surface-subtle: #fafbfd;
+    --app-surface-overlay: #ffffff;
+    --app-input-bg: #ffffff;
+    --app-fill: #f5f7fb;
+    --app-fill-hover: #eef4ff;
+    --app-primary-soft: #eaf1fe;
+    --app-primary-soft-border: #c7dbfd;
+    --app-gradient-hello: linear-gradient(120deg, #ffffff 0%, #f2f7ff 100%);
+    --app-gradient-text: linear-gradient(135deg, #2563eb, #93c5fd);
+
+    // ---- 描边 ----
+    --app-border: #e5e7eb;
+    --app-border-light: #eef1f6;
+
+    // ---- 文字 ----
+    --app-text: #1f2937;
+    --app-text-secondary: #6b7280;
+    --app-text-muted: #9ca3af;
+
+    // ---- 滚动条 ----
+    --app-scrollbar: #d5dae3;
+    --app-scrollbar-hover: #bcc4d1;
+
+    // ---- 语义色（Element Plus 的成功/警告/危险/信息色） ----
+    --app-success: #16a34a;
+    --app-warning: #d97706;
+    --app-danger: #dc2626;
+    --app-info: #6b7280;
+
+    // ---- 语义色调（标签、图标底、状态文本统一走这套） ----
+    --tone-blue: #1d4ed8;
+    --tone-blue-soft: #eff4ff;
+    --tone-green: #15803d;
+    --tone-green-soft: #eafaf0;
+    --tone-violet: #7c3aed;
+    --tone-violet-soft: #f1ecfe;
+    --tone-amber: #b45309;
+    --tone-amber-soft: #fef6e7;
+    --tone-red: #b91c1c;
+    --tone-red-soft: #fdeeee;
+    --tone-slate: #475569;
+    --tone-slate-soft: #f1f5f9;
+
+    // ---- 阴影 ----
+    --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+    --shadow-popup: 0 12px 32px rgba(16, 24, 40, 0.12);
+    --shadow-hover: 0 8px 20px rgba(16, 24, 40, 0.08);
+
+    // ---- 图表（ECharts 无法解析 var()，由 utils/theme.ts 读出后注入） ----
+    --app-chart-area-from: rgba(37, 99, 235, 0.22);
+    --app-chart-area-to: rgba(37, 99, 235, 0.01);
+    --app-chart-bar-from: #93b4f8;
+    --app-chart-mask: rgba(255, 255, 255, 0.65);
+  } @else {
+    color-scheme: dark;
+
+    // 暗色下主色提亮一档，保证在深底上的可读性与对比度
+    --brand-primary: #3b82f6;
+    --brand-primary-hover: #60a5fa;
+    --brand-primary-active: #2563eb;
+    --brand-gradient: linear-gradient(135deg, #3b82f6, #1d4ed8);
+
+    --app-bg: #0f1420;
+    --app-surface: #161b26;
+    --app-surface-subtle: #1b212e;
+    --app-surface-overlay: #1b2230;
+    --app-input-bg: #1b212e;
+    --app-fill: #1d2432;
+    --app-fill-hover: #232c3d;
+    --app-primary-soft: #1a253b;
+    --app-primary-soft-border: #2b4776;
+    --app-gradient-hello: linear-gradient(120deg, #161b26 0%, #17223a 100%);
+    --app-gradient-text: linear-gradient(135deg, #60a5fa, #bfdbfe);
+
+    --app-border: #2a3243;
+    --app-border-light: #212836;
+
+    --app-text: #e6eaf2;
+    --app-text-secondary: #98a2b6;
+    --app-text-muted: #6c7789;
+
+    --app-scrollbar: #303a4c;
+    --app-scrollbar-hover: #3d4a61;
+
+    // 暗色下语义色整体提亮，保证在深底上的可辨识度
+    --app-success: #4ade80;
+    --app-warning: #fbbf24;
+    --app-danger: #f87171;
+    --app-info: #909399;
+
+    // 暗色下的色调底改为半透明主色，避免出现刺眼的浅色块
+    --tone-blue: #7aa9fa;
+    --tone-blue-soft: rgba(96, 165, 250, 0.16);
+    --tone-green: #5ed08a;
+    --tone-green-soft: rgba(74, 222, 128, 0.14);
+    --tone-violet: #b095fb;
+    --tone-violet-soft: rgba(167, 139, 250, 0.16);
+    --tone-amber: #f0b354;
+    --tone-amber-soft: rgba(251, 191, 36, 0.14);
+    --tone-red: #f08a8a;
+    --tone-red-soft: rgba(248, 113, 113, 0.14);
+    --tone-slate: #a9b4c7;
+    --tone-slate-soft: rgba(148, 163, 184, 0.14);
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-popup: 0 12px 32px rgba(0, 0, 0, 0.5);
+    --shadow-hover: 0 8px 20px rgba(0, 0, 0, 0.45);
+
+    --app-chart-area-from: rgba(59, 130, 246, 0.3);
+    --app-chart-area-to: rgba(59, 130, 246, 0.02);
+    --app-chart-bar-from: #2f5fcc;
+    --app-chart-mask: rgba(22, 27, 38, 0.65);
+  }
+}
+
+// 亮色为默认值；暗色由 <html class="dark"> 接管
+:root {
+  @include theme-tokens(light);
+
+  // ---- 布局尺寸 ----
+  --layout-sidebar-width: #{$sidebar-width};
+  --layout-sidebar-collapsed: #{$sidebar-width-collapsed};
+  --layout-navbar-height: #{$navbar-height};
+  --layout-tags-height: #{$tags-height};
+
+  // ---- 圆角与动效 ----
+  --radius-sm: #{$radius-sm};
+  --radius-md: #{$radius-md};
+  --radius-lg: #{$radius-lg};
+  --transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html.dark {
+  @include theme-tokens(dark);
+}

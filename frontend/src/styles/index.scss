@@ -1,0 +1,151 @@
+@use './variables.scss';
+@use './element.scss';
+@use './transition.scss';
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--el-font-family);
+  font-size: 14px;
+  color: var(--app-text);
+  background-color: var(--app-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  // 切换主题时底色平滑过渡；不给 * 加过渡，避免大面积重绘与动画串扰
+  transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+a {
+  color: var(--brand-primary);
+  text-decoration: none;
+}
+
+// 滚动条：细、低调
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar);
+  border-radius: 4px;
+
+  &:hover {
+    background: var(--app-scrollbar-hover);
+  }
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+// ---------- 通用布局工具类 ----------
+.flex {
+  display: flex;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-secondary {
+  color: var(--app-text-secondary);
+}
+
+.text-muted {
+  color: var(--app-text-muted);
+}
+
+.mt-8 {
+  margin-top: 8px;
+}
+
+.mt-16 {
+  margin-top: 16px;
+}
+
+.mb-16 {
+  margin-bottom: 16px;
+}
+
+// ---------- 页面卡片 ----------
+.page-card {
+  padding: 20px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+// 搜索区与表格区之间留白
+.search-bar {
+  margin-bottom: 16px;
+}
+
+// ---------- 首屏骨架 ----------
+.app-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 14px;
+}
+
+.app-loading__logo {
+  width: 44px;
+  height: 44px;
+  border: 3px solid var(--app-border);
+  border-top-color: var(--brand-primary);
+  border-radius: 50%;
+  animation: app-spin 0.8s linear infinite;
+}
+
+.app-loading__text {
+  font-size: 13px;
+  color: var(--app-text-muted);
+}
+
+@keyframes app-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// ---------- NProgress 主题 ----------
+#nprogress .bar {
+  background: var(--brand-primary) !important;
+  height: 2px;
+}
+
+#nprogress .peg {
+  box-shadow: 0 0 10px var(--brand-primary), 0 0 5px var(--brand-primary);
+}
