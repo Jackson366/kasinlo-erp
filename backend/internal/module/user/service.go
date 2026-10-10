@@ -62,6 +62,12 @@ func (s *Service) List(q page.Query, f ListQuery, actor *authz.Identity) ([]VO, 
 // buildFilter 构造列表查询的 where 子句。
 // List 与 Excel 导出共用，保证「导出的数据」与「页面看到的数据」范围完全一致。
 func (s *Service) buildFilter(keyword string, f ListQuery) func(*gorm.DB) *gorm.DB {
+	// deptTreeIDs 要全表扫一次 sys_depts，必须在闭包外算。
+	// 闭包在 List 里会被执行两次（Count 与 Find），写在里面就是两次全表扫。
+	var deptIDs []int64
+	if f.DeptID != nil {
+		deptIDs = s.deptTreeIDs(*f.DeptID)
+	}
 	return func(tx *gorm.DB) *gorm.DB {
 		if keyword != "" {
 			kw := "%" + keyword + "%"
@@ -72,7 +78,7 @@ func (s *Service) buildFilter(keyword string, f ListQuery) func(*gorm.DB) *gorm.
 		}
 		if f.DeptID != nil {
 			// 含子部门
-			tx = tx.Where("dept_id IN (?)", s.deptTreeIDs(*f.DeptID))
+			tx = tx.Where("dept_id IN (?)", deptIDs)
 		}
 		if f.RoleID != nil {
 			tx = tx.Where("id IN (?)", s.db.Model(&model.UserRole{}).
@@ -220,10 +226,10 @@ func (s *Service) Create(req CreateReq, actor *authz.Identity) (int64, error) {
 		if err := tx.Create(&u).Error; err != nil {
 			return err
 		}
-		return replaceRoles(tx, u.ID, req.RoleIDs)
+		return replaceRoles(tx, u.ID, req.RoleIDs, actor)
 	})
 	if err != nil {
-		return 0, errcode.Wrap(errcode.ErrDatabase, err)
+		return 0, saveErr(err)
 	}
 	return u.ID, nil
 }
@@ -269,20 +275,39 @@ func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 		}
 		// roleIds 为 nil 表示不调整角色
 		if req.RoleIDs != nil {
-			return replaceRoles(tx, id, req.RoleIDs)
+			// 目标持有超管角色时，非超管不得改动（含摘掉其超管角色）
+			if err := s.ensureTargetNotSuper(tx, actor, id); err != nil {
+				return err
+			}
+			return replaceRoles(tx, id, req.RoleIDs, actor)
 		}
 		return nil
 	})
 	if err != nil {
-		return errcode.Wrap(errcode.ErrDatabase, err)
+		return saveErr(err)
 	}
 	authz.Invalidate(id)
 	return nil
 }
 
+// saveErr 保留事务里抛出的业务错误码（如 403 无权授予角色），其余归一到数据库错误。
+//
+// 不能无脑 Wrap(ErrDatabase)：那会把「无权授予超管角色」这类明确的业务错误
+// 冲成 50100「数据库操作失败」，前端只能看到一句误导性的提示。
+func saveErr(err error) error {
+	var be *errcode.Error
+	if errors.As(err, &be) {
+		return be
+	}
+	return errcode.Wrap(errcode.ErrDatabase, err)
+}
+
 // Delete 删除用户（软删除）。
 func (s *Service) Delete(id int64, operatorID int64, actor *authz.Identity) error {
 	if err := s.ensureInScope(actor, id); err != nil {
+		return err
+	}
+	if err := s.ensureTargetNotSuper(s.db, actor, id); err != nil {
 		return err
 	}
 	if id == AdminUserID {
@@ -316,6 +341,9 @@ func (s *Service) UpdateStatus(id int64, status int16, operatorID int64, actor *
 	if err := s.ensureInScope(actor, id); err != nil {
 		return err
 	}
+	if err := s.ensureTargetNotSuper(s.db, actor, id); err != nil {
+		return err
+	}
 	if id == AdminUserID && status != model.StatusEnabled {
 		return errcode.New(errcode.ErrBadRequest, "内置管理员不允许禁用")
 	}
@@ -342,6 +370,9 @@ func (s *Service) UpdateStatus(id int64, status int16, operatorID int64, actor *
 // ResetPassword 管理员重置指定用户密码。
 func (s *Service) ResetPassword(id int64, plain string, actor *authz.Identity) error {
 	if err := s.ensureInScope(actor, id); err != nil {
+		return err
+	}
+	if err := s.ensureTargetNotSuper(s.db, actor, id); err != nil {
 		return err
 	}
 	if len(plain) < 6 {
@@ -403,26 +434,58 @@ func (s *Service) deptTreeIDs(rootID int64) []int64 {
 	return result
 }
 
-func replaceRoles(tx *gorm.DB, userID int64, roleIDs []int64) error {
+// replaceRoles 覆盖式设置用户的角色，并校验调用者有权授予这些角色。
+//
+// 授予校验（authz.EnsureGrantable）是必须的：本函数此前只过滤「不存在的角色」，
+// 不校验范围，于是拥有 system:user:create 的系统管理员可以带 roleIds:[1]（超管）
+// 直接造出一个超管账号，或把自己/下属改成超管 —— 一次请求即可提权。
+func replaceRoles(tx *gorm.DB, userID int64, roleIDs []int64, actor *authz.Identity) error {
 	if err := tx.Where("user_id = ?", userID).Delete(&model.UserRole{}).Error; err != nil {
 		return err
 	}
 	if len(roleIDs) == 0 {
 		return nil
 	}
-	// 过滤不存在的角色，避免脏数据
-	var valid []int64
-	if err := tx.Model(&model.Role{}).Where("id IN ?", roleIDs).Pluck("id", &valid).Error; err != nil {
+	// 只保留库中真实存在的角色，避免脏数据
+	var roles []model.Role
+	if err := tx.Model(&model.Role{}).
+		Select("id", "name", "code").
+		Where("id IN ?", roleIDs).Find(&roles).Error; err != nil {
 		return err
 	}
-	rows := make([]model.UserRole, 0, len(valid))
-	for _, rid := range valid {
-		rows = append(rows, model.UserRole{UserID: userID, RoleID: rid})
+	if err := authz.EnsureGrantable(actor, roles); err != nil {
+		return err
+	}
+	rows := make([]model.UserRole, 0, len(roles))
+	for _, r := range roles {
+		rows = append(rows, model.UserRole{UserID: userID, RoleID: r.ID})
 	}
 	if len(rows) == 0 {
 		return nil
 	}
 	return tx.Create(&rows).Error
+}
+
+// ensureTargetNotSuper 阻止非超管操作「持有超管角色的用户」。
+//
+// 数据范围只回答「这个人归不归我管」，不回答「我能不能动一个超管」。
+// 若只靠 ensureInScope，一个恰好管着超管所在部门的系统管理员，
+// 就能把这个超管禁用、删号、重置密码，或者摘掉他的超管角色。
+func (s *Service) ensureTargetNotSuper(tx *gorm.DB, actor *authz.Identity, userID int64) error {
+	if actor == nil || actor.IsSuper {
+		return nil
+	}
+	var cnt int64
+	if err := tx.Model(&model.Role{}).
+		Joins("JOIN sys_user_roles ur ON ur.role_id = sys_roles.id").
+		Where("ur.user_id = ? AND sys_roles.code = ?", userID, authz.SuperRoleCode).
+		Count(&cnt).Error; err != nil {
+		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if cnt > 0 {
+		return errcode.New(errcode.ErrForbidden, "无权操作持有「超级管理员」角色的用户")
+	}
+	return nil
 }
 
 func toVO(u *model.User) VO {

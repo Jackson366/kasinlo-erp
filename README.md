@@ -29,7 +29,7 @@
 ### 2. 初始化数据库
 
 只需保证 PostgreSQL 正常运行、`postgres` 账号可用。
-**数据库 `nova_admin` 与全部数据表会由程序自动创建**，无需手工执行 DDL。
+**数据库 `nova_admin_v5` 与全部数据表会由程序自动创建**，无需手工执行 DDL。
 
 连接信息写在 `backend/config.yaml`。**该文件不进版本库**（含数据库口令），
 先从模板复制一份再改：
@@ -45,7 +45,7 @@ database:
   port: 5432
   user: postgres
   password: CHANGE_ME      # ← 改成你本机的口令
-  dbname: nova_admin
+  dbname: nova_admin_v5
 ```
 
 任意配置项都可用环境变量覆盖，规则为 `NOVA_<SECTION>_<KEY>`（全大写），例如：
@@ -78,7 +78,8 @@ npm install
 npm run dev            # http://localhost:5173
 ```
 
-Vite 已把 `/api` 代理到 `http://127.0.0.1:8080`，无需处理跨域。
+Vite 已把 `/api` 与 `/swagger` 代理到 `http://127.0.0.1:8080`，无需处理跨域；
+在线接口文档在开发时可直接访问 `http://localhost:5173/swagger/index.html`。
 
 ### 5. 切换主题
 
@@ -160,6 +161,7 @@ nova-admin/
 ├── scripts/
 │   ├── api-smoke.mjs                   # 零依赖接口冒烟脚本（90 项）
 │   ├── browser-verify.mjs              # 零依赖浏览器运行时验证（48 项，含双主题）
+│   ├── gen-swagger.sh                  # swag init 封装：重新生成 OpenAPI 文档
 │   └── fixtures/                       # 测试样例文件（含生成脚本）
 ├── docs/                               # GUIDE.md / API.md / DATABASE.md
 └── AGENTS.md                           # ★ AI 开发约定（改代码前先读）
@@ -174,10 +176,10 @@ nova-admin/
 ```bash
 cd backend
 go vet ./...
-go test ./test/... -count=1        # 33 个测试、65 个子用例
+go test ./test/... -count=1        # 37 个测试、65 个子用例
 ```
 
-测试使用独立库 `nova_admin_test`，通过 `httptest` 在进程内跑完整路由，不依赖外部服务。
+测试使用独立库 `nova_admin_v5_test`，通过 `httptest` 在进程内跑完整路由，不依赖外部服务。
 测试配置同样不进版本库，首次跑测试前复制一份：
 
 ```bash
@@ -231,6 +233,7 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs    # 验证生产�
 - **新接手？先读 [`docs/GUIDE.md`](docs/GUIDE.md)** —— 项目说明、使用步骤、新增业务全流程
   （同内容的 Word 分发版：[`docs/Nova-Admin-项目说明与开发指南.docx`](docs/Nova-Admin-项目说明与开发指南.docx)）
 - 接口清单与响应约定 → [`docs/API.md`](docs/API.md)
+  （在线版：后端开启 `app.swagger` 后访问 `/swagger/index.html`，由 swag 注解自动生成）
 - 数据表结构与索引设计 → [`docs/DATABASE.md`](docs/DATABASE.md)
 - 新增模块 / 新增页面的标准做法、踩坑记录 → [`AGENTS.md`](AGENTS.md)
 

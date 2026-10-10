@@ -2,6 +2,7 @@
 package bind
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -99,8 +100,14 @@ func ruleMessage(fe validator.FieldError) string {
 	}
 }
 
+// asValidationErrors 用 errors.As 判定校验错误。
+//
+// 不能写成 `err.(validator.ValidationErrors)` 的类型断言：gin 在部分版本里会把
+// 校验错误包一层再往上抛，直接断言会失败，于是所有中文友好提示全部退化成
+// 「请求参数格式错误: Key: 'LoginReq.username' Error:..." 这种英文原文。
 func asValidationErrors(err error, target *validator.ValidationErrors) bool {
-	if ve, ok := err.(validator.ValidationErrors); ok {
+	var ve validator.ValidationErrors
+	if errors.As(err, &ve) {
 		*target = ve
 		return true
 	}

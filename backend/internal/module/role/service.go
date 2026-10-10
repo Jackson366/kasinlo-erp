@@ -43,19 +43,34 @@ func (s *Service) List(q page.Query) ([]VO, int64, error) {
 		return nil, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 
-	items := make([]VO, 0, len(roles))
-	for i := range roles {
-		items = append(items, s.toVO(&roles[i]))
-	}
+	items := s.toVOs(roles)
 	return items, total, nil
 }
 
 // Options 返回全部启用角色。
-func (s *Service) Options() ([]Option, error) {
+//
+// 会过滤掉调用者「无权授予」的角色（超管角色，以及权限集合超出调用者自身的角色），
+// 与 user 模块的授予校验同源 —— 否则下拉里会出现一个「选了必然 403」的选项。
+func (s *Service) Options(actor *authz.Identity) ([]Option, error) {
+	tx := s.db.Model(&model.Role{}).Where("status = ?", model.StatusEnabled)
+
+	allowed, unrestricted, err := authz.GrantableRoleIDs(actor)
+	if err != nil {
+		return nil, err
+	}
+	if !unrestricted {
+		if len(allowed) == 0 {
+			return []Option{}, nil
+		}
+		ids := make([]int64, 0, len(allowed))
+		for id := range allowed {
+			ids = append(ids, id)
+		}
+		tx = tx.Where("id IN ?", ids)
+	}
+
 	var out []Option
-	if err := s.db.Model(&model.Role{}).
-		Where("status = ?", model.StatusEnabled).
-		Order("sort ASC, id ASC").
+	if err := tx.Order("sort ASC, id ASC").
 		Select("id", "name", "code").Scan(&out).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
@@ -225,12 +240,61 @@ func (s *Service) ensureCodeFree(code string, excludeID int64) error {
 	return nil
 }
 
+// toVO 构造单个角色的视图对象（用于详情）。
 func (s *Service) toVO(r *model.Role) VO {
 	var menuIDs []int64
 	_ = s.db.Model(&model.RoleMenu{}).Where("role_id = ?", r.ID).Pluck("menu_id", &menuIDs)
 	var userCount int64
 	_ = s.db.Model(&model.UserRole{}).Where("role_id = ?", r.ID).Count(&userCount).Error
+	return buildRoleVO(r, menuIDs, userCount)
+}
 
+// toVOs 批量构造角色视图对象。
+//
+// 旧实现逐个角色各查一次「菜单 ID」和「用户数」，分页 20 条就是 40 次查询（N+1）。
+// 这里改成两条聚合查询，查询次数与分页大小无关。
+func (s *Service) toVOs(roles []model.Role) []VO {
+	items := make([]VO, 0, len(roles))
+	if len(roles) == 0 {
+		return items
+	}
+	ids := make([]int64, 0, len(roles))
+	for i := range roles {
+		ids = append(ids, roles[i].ID)
+	}
+
+	type menuRow struct {
+		RoleID int64
+		MenuID int64
+	}
+	var menuRows []menuRow
+	_ = s.db.Model(&model.RoleMenu{}).
+		Select("role_id, menu_id").Where("role_id IN ?", ids).Scan(&menuRows).Error
+	menuByRole := make(map[int64][]int64, len(roles))
+	for _, r := range menuRows {
+		menuByRole[r.RoleID] = append(menuByRole[r.RoleID], r.MenuID)
+	}
+
+	type countRow struct {
+		RoleID int64
+		Total  int64
+	}
+	var countRows []countRow
+	_ = s.db.Model(&model.UserRole{}).
+		Select("role_id, COUNT(*) AS total").Where("role_id IN ?", ids).
+		Group("role_id").Scan(&countRows).Error
+	countByRole := make(map[int64]int64, len(roles))
+	for _, r := range countRows {
+		countByRole[r.RoleID] = r.Total
+	}
+
+	for i := range roles {
+		items = append(items, buildRoleVO(&roles[i], menuByRole[roles[i].ID], countByRole[roles[i].ID]))
+	}
+	return items
+}
+
+func buildRoleVO(r *model.Role, menuIDs []int64, userCount int64) VO {
 	return VO{
 		ID:        r.ID,
 		Name:      r.Name,

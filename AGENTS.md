@@ -120,6 +120,17 @@ g.GET("/:id", middleware.RequirePerm("article:list"), h.Detail)       // 后注�
 
 ```go
 // Create 新增文章
+//
+//	@Summary      新增文章
+//	@Description  创建一篇文章，返回新记录 ID
+//	@Tags         文章
+//	@Accept       json
+//	@Produce      json
+//	@Security     BearerAuth
+//	@Param        body body CreateReq true "文章内容"
+//	@Success      200 {object} response.Body{data=response.IDData}
+//	@Failure      400 {object} response.Body
+//	@Router       /articles [post]
 func (h *Handler) Create(c *gin.Context) {
 	var req CreateReq
 	if err := bind.JSON(c, &req); err != nil {
@@ -132,9 +143,13 @@ func (h *Handler) Create(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": id})
+	response.OK(c, response.IDData{ID: id})
 }
 ```
+
+**每个 handler 必须带 Swagger 注解**（§9），否则 `swag init` 生成的文档会缺这个接口。
+注解里的出参类型必须**具体**——`gin.H` 是 map，swag 推不出字段，
+所以「只返回 id / deleted 数」也要用 `response.IDData` / `response.DeletedData`，不要写 `gin.H`。
 
 出参只用这几个函数：
 
@@ -182,7 +197,7 @@ db.Offset(q.Offset()).Limit(q.Limit()).Order(order)
 ### Step 8 — 写测试
 
 在 `test/api_test.go` 追加一个 `TestArticleCRUD`，用现成的 `call(t, method, path, token, body)` 基建。
-测试库与开发库隔离（`test/testdata/config.yaml` → `nova_admin_test`）。
+测试库与开发库隔离（`test/testdata/config.yaml` → `nova_admin_v5_test`）。
 
 ### Step 9 — 前端接上（可选）
 
@@ -777,6 +792,58 @@ column "token_epoch" of relation "sys_users" contains null values (SQLSTATE 2350
 
 回归测试：`backend/test/upgrade_test.go` 四个用例。
 
+### 5.27 角色授予必须校验「可授予范围」，否则存在垂直越权
+
+**症状**：普通管理员调 `PUT /users/:id/roles` 传 `roleIds: [1]`（super_admin）就能把自己或别人提成超级管理员——
+`RequirePerm` 只校验「有没有分配角色的权限」，不校验「能把哪些角色分给别人」。
+
+**正确做法**：分配/替换角色前调 `authz.EnsureGrantable`，规则是：
+
+- `super_admin` 只有超管本人能授予；
+- 目标角色包含的**任何**权限点，操作者自己必须也有——否则等于变相提权（把「用户管理」权限的角色分给自己，就拿到了没被授予的权限）；
+- `authz.GrantableRoleIDs` 同时用于角色下拉 `Options`，前端根本看不到授不了的角色。
+
+**对称约束**：非超管不能对持有 super_admin 角色的用户执行删除/禁用/改密/编辑
+（`ensureTargetNotSuper`），否则可以「先禁用超管，再找超管重置密码」绕一圈拿到超管身份。
+注意用 `saveErr` 保留 `*errcode.Error`（403），不要 `errcode.Wrap` 成 500。
+
+回归测试：`backend/test/hardening_test.go` 的 `TestRoleGrantCannotEscalate`。
+
+### 5.28 登录锁定按「账号+IP」计数，且成功登录必须重置窗口
+
+**症状**：锁定判定只按 username 数失败次数，任何人对着 `admin` 乱打密码就能把管理员锁在门外（锁定 DoS）；
+反过来，若按 IP 全局计数，办公网 NAT 后所有同事共用一个出口 IP 会互相连坐。
+
+**正确做法**：`isLocked(username, ip)` 复合计数；窗口起点取「最近一次同账号同 IP 成功登录」，
+成功登录天然重置计数器，不用删审计行（审计行要留档）。此外 IP 维度还有一道独立的
+`FailLimiter`（内存滑动窗口，`security.ip_max_login_fail`，0 关闭），先把纯爆破流量挡在查库之前。
+
+**不要**为了「重置计数」去删 `login_logs` 的行——那是审计数据。
+
+回归测试：`TestLoginLockoutIsScopedToAccountAndIP`、`internal/pkg/limiter` 单测。
+
+### 5.29 客户端可控的标识符必须校验字符集
+
+**症状**：`X-Trace-Id` 直接透传进响应头和日志。值为 `abc\r\nX-Foo: bar` 时发生响应头注入；
+含 ANSI 转义序列时污染终端日志。**报文格式类注入的入口永远是「字符串进结构化字段之前」。**
+
+**正确做法**：白名单正则 `^[A-Za-z0-9_-]{1,64}$`，不匹配就生成新的，而不是报错——
+trace id 本来就是可丢弃的调试信息，拒绝服务没有必要。同样的思路适用于所有
+「客户端传入、会被写进日志或响应头」的字段。
+
+回归测试：`TestTraceIDRejectsInjectedHeader`、`TestTraceIDSanitized`。
+
+### 5.30 批量导入的「已见过」状态只能记到整行校验通过之后
+
+**症状**：导入校验里 `seen[username] = true` 在**用户名格式校验一通过**就写，
+后面行号校验失败时用户名已经占了坑——同一用户名第二次出现被误报「表内重复」，
+错误行号指向的却是一条本该合法的数据，用户对着模板对半天找不出问题。
+
+**正确做法**：`seen` 的写入必须收敛到「该行全部校验通过」之后（`len(errs) == 0`）。
+凡是「跨行状态」都要问一句：这个状态是在哪个校验阶段成立的？
+
+回归测试：`backend/internal/module/user/excel_validate_test.go`。
+
 ---
 
 ## 6. 验证流程（改完必跑）
@@ -785,7 +852,8 @@ column "token_epoch" of relation "sys_users" contains null values (SQLSTATE 2350
 # ── 后端 ──────────────────────────────
 cd backend
 gofmt -l . && go vet ./... && go build ./...
-go test ./test/... -count=1          # 33 个测试 / 65 子用例
+go test ./test/... -count=1          # 37 个测试 / 65 子用例
+bash scripts/gen-swagger.sh          # 接口有变动时重新生成 api/docs/（一并提交）
 
 # ── 前端 ──────────────────────────────
 cd ../frontend
@@ -933,6 +1001,8 @@ sheet.Download(c, "用户列表_20260929_205419.xlsx", data)
 
 ## 8. 安全红线
 
+（原有条目之外，本轮审计新增以下四条）
+
 - 密码只存 bcrypt 哈希，任何接口都不得返回 `password` 字段
 - 操作日志的敏感字段（`password` / `oldPassword` / `refreshToken`）必须脱敏后才落库
 - 前端隐藏按钮 ≠ 鉴权，新增写接口必须挂 `RequirePerm`
@@ -943,3 +1013,43 @@ sheet.Download(c, "用户列表_20260929_205419.xlsx", data)
 - **数据范围要同时覆盖读与写**，越界按 404 处理（§5.23）
 - **改密码 / 重置密码 / 禁用后旧令牌必须立即失效**，`token_epoch + 1`（§5.24）
 - **`trusted_proxies` 默认为空**，不要为了「拿到真实 IP」就填 `0.0.0.0/0`（§5.25）
+- **角色授予必须过 `authz.EnsureGrantable`**，可授予范围 = 目标角色的每个权限点自己都有（§5.27）
+- **非超管不得对超管执行删除/禁用/改密/编辑**，也不得给非超管授 `super_admin`（§5.27）
+- **登录锁定按「账号+IP」复合计数**，成功登录重置窗口；IP 维度独立限流（§5.28）
+- **客户端可控的标识符（如 `X-Trace-Id`）先过字符集白名单再使用**（§5.29）
+- **批量导入的跨行状态（`seen`）只能记到整行校验通过之后**（§5.30）
+
+---
+
+## 9. 接口文档（swaggo / OpenAPI）
+
+接口文档由 **swag 注解**生成，单一事实来源是 handler 与 `cmd/server/main.go` 上的注释，**不要手改** `backend/api/docs/` 下的三个生成文件。
+
+### 9.1 生成与访问
+
+```bash
+cd backend
+bash scripts/gen-swagger.sh   # 即 swag init -g cmd/server/main.go -o api/docs --parseInternal -ot go,json,yaml
+```
+
+- 生成物 `api/docs/{docs.go,swagger.json,swagger.yaml}` **必须一并提交**，线上构建不装 swag CLI
+- 访问 `GET /swagger/index.html`（Swagger UI），由 `router.go` 装配、`app.swagger` 配置门控（缺省=调试模式开启）
+- `main.go` 启动时把 `docs.SwaggerInfo.BasePath` 同步为运行时配置的 `server.api_prefix`，避免改了前缀文档还指着旧路径
+- 新增配置项：`app.swagger`（env `NOVA_APP_SWAGGER`）
+
+### 9.2 注解约定
+
+- **每个 handler 一段注解**：`@Summary/@Tags/@Accept/@Produce/@Param/@Success/@Failure/@Security BearerAuth/@Router`，缺一段文档就缺一块
+- `@BasePath /api/v1` 写在 `main.go` 的包级注解上，handler 的 `@Router` 只写 `/users/{id}` 这种**不含前缀**的路径
+- 出参类型必须具体：统一响应体写作 `response.Body{data=response.XxxVO}`，swag 靠泛型实例化展开 `data` 字段
+- **`gin.H` 不许出现在 `@Success` 里**——map 推不出字段。只返回 id 用 `response.IDData`，只返回删除数用 `response.DeletedData`（`internal/pkg/response` 里已定义，缺新形态就在那里加具体 struct）
+- `@Security BearerAuth` 对应 `main.go` 里的 `@securityDefinitions.apikey BearerAuth In:header Name:Authorization`；导出等二进制接口标 `@Produce application/octet-stream`
+- 鉴权失败的公共形态不必逐个展开：文档顶部已注明统一响应体 `{code, message, data}` 与 401/403 语义
+
+### 9.3 相关防护（文档里能看到的行为）
+
+- 登录/刷新接口在配置的阈值内多次失败会返回 **429**（`security.ip_max_login_fail` / `security.refresh_rate_limit`，0 关闭）
+- 越权授予角色返回 **403**，错误信息说明缺哪个权限（§5.27）
+- `X-Trace-Id` 非法字符会被静默替换为新 trace id，响应头永远回合法值（§5.29）
+
+回归测试：`backend/test/swagger_test.go`（文档可访问、basePath 与配置一致、未开启时不暴露）。

@@ -5,15 +5,15 @@ import type { LoginParams, LoginResult, ProfileInfo, RouteRecord } from '@/types
 export const authApi = {
   /** 登录 */
   login(data: LoginParams) {
-    return http.post<LoginResult>('/v1/auth/login', data)
+    return http.post<LoginResult>('/auth/login', data)
   },
   /** 退出登录 */
   logout() {
-    return http.post<string>('/v1/auth/logout')
+    return http.post<string>('/auth/logout')
   },
   /** 刷新令牌 */
   refresh(refreshToken: string) {
-    return http.post<LoginResult>('/v1/auth/refresh', { refreshToken })
+    return http.post<LoginResult>('/auth/refresh', { refreshToken })
   },
 }
 
@@ -21,18 +21,18 @@ export const authApi = {
 export const profileApi = {
   /** 当前用户信息（含角色与权限） */
   info() {
-    return http.get<ProfileInfo>('/v1/profile')
+    return http.get<ProfileInfo>('/profile')
   },
   /** 当前用户可访问的动态路由树 */
   routes() {
-    return http.get<RouteRecord[]>('/v1/profile/routes')
+    return http.get<RouteRecord[]>('/profile/routes')
   },
   /** 修改个人资料 */
   update(data: { nickname: string; email?: string; phone?: string; avatar?: string }) {
-    return http.put<string>('/v1/profile', data)
+    return http.put<string>('/profile', data)
   },
   /** 修改密码 */
   changePassword(data: { oldPassword: string; newPassword: string }) {
-    return http.put<string>('/v1/profile/password', data)
+    return http.put<string>('/profile/password', data)
   },
 }

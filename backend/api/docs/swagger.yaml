@@ -1,0 +1,2435 @@
+basePath: /api/v1
+definitions:
+  auth.LoginReq:
+    properties:
+      password:
+        maxLength: 64
+        minLength: 6
+        type: string
+      username:
+        maxLength: 64
+        minLength: 3
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  auth.LoginResp:
+    properties:
+      accessToken:
+        type: string
+      expiresIn:
+        type: integer
+      refreshToken:
+        type: string
+      tokenType:
+        type: string
+      user: {}
+    type: object
+  auth.RefreshReq:
+    properties:
+      refreshToken:
+        type: string
+    required:
+    - refreshToken
+    type: object
+  dashboard.ModuleStat:
+    properties:
+      module:
+        type: string
+      total:
+        type: integer
+    type: object
+  dashboard.Overview:
+    properties:
+      activeUserWeek:
+        type: integer
+      deptCount:
+        type: integer
+      menuCount:
+        type: integer
+      roleCount:
+        type: integer
+      todayFailures:
+        type: integer
+      todayLogins:
+        type: integer
+      todayOps:
+        type: integer
+      userCount:
+        type: integer
+    type: object
+  dashboard.TrendPoint:
+    properties:
+      date:
+        type: string
+      failCount:
+        type: integer
+      logins:
+        type: integer
+      opers:
+        type: integer
+    type: object
+  dept.CreateReq:
+    properties:
+      email:
+        maxLength: 128
+        type: string
+      leader:
+        maxLength: 64
+        type: string
+      name:
+        maxLength: 64
+        type: string
+      parentId:
+        type: integer
+      phone:
+        maxLength: 32
+        type: string
+      sort:
+        type: integer
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+    required:
+    - name
+    type: object
+  dept.Node:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/dept.Node'
+        type: array
+      createdAt:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      leader:
+        type: string
+      name:
+        type: string
+      parentId:
+        type: integer
+      phone:
+        type: string
+      sort:
+        type: integer
+      status:
+        type: integer
+      userCount:
+        type: integer
+    type: object
+  dept.UpdateReq:
+    properties:
+      email:
+        maxLength: 128
+        type: string
+      leader:
+        maxLength: 64
+        type: string
+      name:
+        maxLength: 64
+        type: string
+      parentId:
+        type: integer
+      phone:
+        maxLength: 32
+        type: string
+      sort:
+        type: integer
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+    required:
+    - name
+    type: object
+  log.ClearReq:
+    properties:
+      before:
+        type: string
+    type: object
+  menu.CreateReq:
+    properties:
+      component:
+        maxLength: 255
+        type: string
+      hidden:
+        type: boolean
+      icon:
+        maxLength: 64
+        type: string
+      isExternal:
+        type: boolean
+      keepAlive:
+        type: boolean
+      name:
+        maxLength: 64
+        type: string
+      parentId:
+        type: integer
+      path:
+        maxLength: 255
+        type: string
+      permission:
+        maxLength: 128
+        type: string
+      redirect:
+        maxLength: 255
+        type: string
+      sort:
+        type: integer
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+      title:
+        maxLength: 64
+        type: string
+      type:
+        enum:
+        - dir
+        - menu
+        - button
+        type: string
+    required:
+    - name
+    - title
+    - type
+    type: object
+  menu.Node:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/menu.Node'
+        type: array
+      component:
+        type: string
+      hidden:
+        type: boolean
+      icon:
+        type: string
+      id:
+        type: integer
+      isExternal:
+        type: boolean
+      keepAlive:
+        type: boolean
+      name:
+        type: string
+      parentId:
+        type: integer
+      path:
+        type: string
+      permission:
+        type: string
+      redirect:
+        type: string
+      sort:
+        type: integer
+      status:
+        type: integer
+      title:
+        type: string
+      type:
+        type: string
+    type: object
+  menu.Route:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/menu.Route'
+        type: array
+      component:
+        type: string
+      id:
+        type: integer
+      meta:
+        $ref: '#/definitions/menu.RouteMeta'
+      name:
+        type: string
+      path:
+        type: string
+      redirect:
+        type: string
+    type: object
+  menu.RouteMeta:
+    properties:
+      hidden:
+        type: boolean
+      icon:
+        type: string
+      isExternal:
+        type: boolean
+      keepAlive:
+        type: boolean
+      permission:
+        type: string
+      title:
+        type: string
+    type: object
+  menu.UpdateReq:
+    properties:
+      component:
+        maxLength: 255
+        type: string
+      hidden:
+        type: boolean
+      icon:
+        maxLength: 64
+        type: string
+      isExternal:
+        type: boolean
+      keepAlive:
+        type: boolean
+      name:
+        maxLength: 64
+        type: string
+      parentId:
+        type: integer
+      path:
+        maxLength: 255
+        type: string
+      permission:
+        maxLength: 128
+        type: string
+      redirect:
+        maxLength: 255
+        type: string
+      sort:
+        type: integer
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+      title:
+        maxLength: 64
+        type: string
+      type:
+        enum:
+        - dir
+        - menu
+        - button
+        type: string
+    required:
+    - name
+    - title
+    - type
+    type: object
+  model.LoginLog:
+    properties:
+      createdAt:
+        type: string
+      id:
+        type: integer
+      ip:
+        type: string
+      message:
+        type: string
+      success:
+        type: boolean
+      userAgent:
+        type: string
+      userId:
+        type: integer
+      username:
+        type: string
+    type: object
+  model.OperationLog:
+    properties:
+      action:
+        description: 操作描述
+        type: string
+      createdAt:
+        type: string
+      errorMsg:
+        type: string
+      id:
+        type: integer
+      ip:
+        type: string
+      latencyMs:
+        type: integer
+      method:
+        description: HTTP 方法
+        type: string
+      module:
+        description: 业务模块
+        type: string
+      path:
+        description: 请求路径
+        type: string
+      request:
+        description: 脱敏后的请求体
+        type: string
+      status:
+        description: HTTP 状态码
+        type: integer
+      userAgent:
+        type: string
+      userId:
+        type: integer
+      username:
+        type: string
+    type: object
+  profile.ChangePasswordReq:
+    properties:
+      newPassword:
+        maxLength: 64
+        minLength: 6
+        type: string
+      oldPassword:
+        maxLength: 64
+        minLength: 6
+        type: string
+    required:
+    - newPassword
+    - oldPassword
+    type: object
+  profile.Info:
+    properties:
+      avatar:
+        type: string
+      deptId:
+        type: integer
+      deptName:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      isSuper:
+        type: boolean
+      nickname:
+        type: string
+      permissions:
+        items:
+          type: string
+        type: array
+      phone:
+        type: string
+      roleCodes:
+        items:
+          type: string
+        type: array
+      roles:
+        items:
+          type: string
+        type: array
+      status:
+        type: integer
+      username:
+        type: string
+    type: object
+  profile.UpdateReq:
+    properties:
+      avatar:
+        maxLength: 255
+        type: string
+      email:
+        maxLength: 128
+        type: string
+      nickname:
+        maxLength: 64
+        type: string
+      phone:
+        maxLength: 32
+        type: string
+    required:
+    - nickname
+    type: object
+  response.Body:
+    properties:
+      code:
+        description: 业务码，0 表示成功
+        type: integer
+      data:
+        description: 业务数据
+      message:
+        description: 提示信息
+        type: string
+      traceId:
+        description: 链路追踪 ID
+        type: string
+    type: object
+  response.DeletedData:
+    properties:
+      deleted:
+        type: integer
+    type: object
+  response.IDData:
+    properties:
+      id:
+        type: integer
+    type: object
+  response.PageData:
+    properties:
+      list:
+        description: 当前页数据
+      page:
+        description: 当前页码
+        type: integer
+      pageSize:
+        description: 每页条数
+        type: integer
+      total:
+        description: 总条数
+        type: integer
+    type: object
+  role.AssignMenusReq:
+    properties:
+      menuIds:
+        items:
+          type: integer
+        type: array
+    type: object
+  role.CreateReq:
+    properties:
+      code:
+        maxLength: 64
+        minLength: 2
+        type: string
+      dataScope:
+        enum:
+        - 1
+        - 2
+        - 3
+        - 4
+        type: integer
+      menuIds:
+        items:
+          type: integer
+        type: array
+      name:
+        maxLength: 64
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+      sort:
+        type: integer
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+    required:
+    - code
+    - name
+    type: object
+  role.Option:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  role.UpdateReq:
+    properties:
+      dataScope:
+        enum:
+        - 1
+        - 2
+        - 3
+        - 4
+        type: integer
+      menuIds:
+        items:
+          type: integer
+        type: array
+      name:
+        maxLength: 64
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+      sort:
+        type: integer
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+    required:
+    - name
+    type: object
+  role.VO:
+    properties:
+      code:
+        type: string
+      createdAt:
+        type: string
+      dataScope:
+        type: integer
+      id:
+        type: integer
+      isBuiltin:
+        type: boolean
+      menuIds:
+        items:
+          type: integer
+        type: array
+      name:
+        type: string
+      remark:
+        type: string
+      sort:
+        type: integer
+      status:
+        type: integer
+      userCount:
+        type: integer
+    type: object
+  user.CreateReq:
+    properties:
+      deptId:
+        type: integer
+      email:
+        maxLength: 128
+        type: string
+      nickname:
+        maxLength: 64
+        type: string
+      password:
+        maxLength: 64
+        minLength: 6
+        type: string
+      phone:
+        maxLength: 32
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+      roleIds:
+        items:
+          type: integer
+        type: array
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+      username:
+        maxLength: 64
+        minLength: 3
+        type: string
+    required:
+    - nickname
+    - password
+    - username
+    type: object
+  user.ImportResult:
+    properties:
+      created:
+        description: 实际写入的行数，预览阶段恒为 0
+        type: integer
+      invalid:
+        description: 校验失败的行数
+        type: integer
+      rows:
+        description: 逐行明细
+        items:
+          $ref: '#/definitions/user.ImportRow'
+        type: array
+      total:
+        description: 数据行总数（不含表头）
+        type: integer
+      valid:
+        description: 校验通过的行数
+        type: integer
+    type: object
+  user.ImportRow:
+    properties:
+      errors:
+        items:
+          type: string
+        type: array
+      nickname:
+        type: string
+      row:
+        description: Row 是 Excel 中的实际行号（含表头，从 1 开始），便于用户直接定位
+        type: integer
+      username:
+        type: string
+    type: object
+  user.Option:
+    properties:
+      id:
+        type: integer
+      nickname:
+        type: string
+      username:
+        type: string
+    type: object
+  user.ResetPasswordReq:
+    properties:
+      password:
+        maxLength: 64
+        minLength: 6
+        type: string
+    required:
+    - password
+    type: object
+  user.StatusReq:
+    properties:
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+    type: object
+  user.UpdateReq:
+    properties:
+      deptId:
+        type: integer
+      email:
+        maxLength: 128
+        type: string
+      nickname:
+        maxLength: 64
+        type: string
+      phone:
+        maxLength: 32
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+      roleIds:
+        items:
+          type: integer
+        type: array
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+    type: object
+  user.VO:
+    properties:
+      avatar:
+        type: string
+      createdAt:
+        type: string
+      deptId:
+        type: integer
+      deptName:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      lastLoginAt:
+        type: string
+      lastLoginIp:
+        type: string
+      nickname:
+        type: string
+      phone:
+        type: string
+      remark:
+        type: string
+      roleIds:
+        items:
+          type: integer
+        type: array
+      roleNames:
+        items:
+          type: string
+        type: array
+      status:
+        type: integer
+      username:
+        type: string
+    type: object
+info:
+  contact:
+    name: Nova Admin 开发组
+  description: |-
+    基于 Gin + GORM + PostgreSQL 的权限管理后台后端。
+    所有接口统一返回 {code, message, data, traceId}，业务码 0 表示成功。
+    业务码前三位即 HTTP 状态码：40000→400、40100~40106→401、40300→403、40400→404、40900→409、42900→429、50000/50100→500。
+    除「登录」「刷新令牌」外，所有接口都需要请求头 `Authorization: Bearer <accessToken>`。
+    接口前缀由 config.yaml 的 app.prefix + app.version 决定，服务启动时会同步到本文档。
+  license:
+    name: MIT
+  termsOfService: https://example.com/terms/
+  title: Nova Admin API
+  version: "1.0"
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        校验用户名与密码，成功后返回访问令牌与刷新令牌。
+        连续失败会触发「账号 + 来源 IP」锁定（40103）；同一来源 IP 失败过多会返回 429。
+      parameters:
+      - description: 登录参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/auth.LoginReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/auth.LoginResp'
+              type: object
+        "400":
+          description: 参数校验失败
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: 用户名或密码错误 / 账号被禁用 / 账号被锁定
+          schema:
+            $ref: '#/definitions/response.Body'
+        "429":
+          description: 来源 IP 请求过于频繁
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: 服务端错误
+          schema:
+            $ref: '#/definitions/response.Body'
+      summary: 用户登录
+      tags:
+      - 认证
+  /auth/logout:
+    post:
+      description: JWT 无状态，服务端仅清理身份缓存并记录审计日志；客户端应同时丢弃本地令牌。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已退出登录
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: 未登录或令牌失效
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 退出登录
+      tags:
+      - 认证
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        用刷新令牌换取新的令牌对。改密码 / 重置密码 / 禁用账号后，旧刷新令牌会立即失效。
+        该接口按 IP 做请求频率限制，超出返回 429。
+      parameters:
+      - description: 刷新令牌
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/auth.RefreshReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/auth.LoginResp'
+              type: object
+        "400":
+          description: 参数校验失败
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: 刷新令牌无效或已过期
+          schema:
+            $ref: '#/definitions/response.Body'
+        "429":
+          description: 请求过于频繁
+          schema:
+            $ref: '#/definitions/response.Body'
+      summary: 刷新访问令牌
+      tags:
+      - 认证
+  /dashboard/modules:
+    get:
+      parameters:
+      - default: 7
+        description: 统计天数
+        in: query
+        name: days
+        type: integer
+      - default: 8
+        description: 返回条数
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/dashboard.ModuleStat'
+                  type: array
+              type: object
+        "401":
+          description: 未登录或令牌失效
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 模块操作量排行
+      tags:
+      - 仪表盘
+  /dashboard/overview:
+    get:
+      description: 返回用户、角色、部门、菜单总数以及今日登录/操作/失败次数、近一周活跃用户数。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/dashboard.Overview'
+              type: object
+        "401":
+          description: 未登录或令牌失效
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 仪表盘概览统计
+      tags:
+      - 仪表盘
+  /dashboard/recent-logins:
+    get:
+      parameters:
+      - default: 8
+        description: 返回条数
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.LoginLog'
+                  type: array
+              type: object
+        "401":
+          description: 未登录或令牌失效
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 最近登录记录
+      tags:
+      - 仪表盘
+  /dashboard/trend:
+    get:
+      parameters:
+      - default: 7
+        description: 统计天数
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/dashboard.TrendPoint'
+                  type: array
+              type: object
+        "401":
+          description: 未登录或令牌失效
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 登录与操作趋势
+      tags:
+      - 仪表盘
+  /profile:
+    get:
+      description: 返回个人资料、角色与权限码集合（超管不返回权限码，前端以其 isSuper 判定放行）。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/profile.Info'
+              type: object
+        "401":
+          description: 未登录或令牌失效
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 获取当前登录用户信息
+      tags:
+      - 个人中心
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 个人资料
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/profile.UpdateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 资料已更新
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: 参数校验失败
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改个人资料
+      tags:
+      - 个人中心
+  /profile/password:
+    put:
+      consumes:
+      - application/json
+      description: 修改成功后该用户所有已签发令牌立即失效，需重新登录。
+      parameters:
+      - description: 原密码与新密码
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/profile.ChangePasswordReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 密码修改成功，请重新登录
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: 新密码不能与原密码相同
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: 原密码错误
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改当前用户密码
+      tags:
+      - 个人中心
+  /profile/routes:
+    get:
+      description: 返回前端动态路由树（dir / menu 两类，已补齐父级目录）；超管返回全部。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/menu.Route'
+                  type: array
+              type: object
+        "401":
+          description: 未登录或令牌失效
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 获取当前用户可访问的菜单路由
+      tags:
+      - 个人中心
+  /system/depts:
+    get:
+      description: userCount 为该部门「含所有子部门」的用户数。
+      parameters:
+      - description: 按部门名称 / 负责人模糊搜索
+        in: query
+        name: keyword
+        type: string
+      - description: 状态：1 启用，0 禁用
+        enum:
+        - 0
+        - 1
+        in: query
+        name: status
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/dept.Node'
+                  type: array
+              type: object
+        "403":
+          description: 缺少 system:dept:list / system:user:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询部门树
+      tags:
+      - 部门管理
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 新增部门参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dept.CreateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+        "400":
+          description: 参数校验失败 / 上级部门不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+        "409":
+          description: 同级下已存在同名部门
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 新增部门
+      tags:
+      - 部门管理
+  /system/depts/{id}:
+    delete:
+      description: 存在子部门或仍有用户时禁止删除。
+      parameters:
+      - description: 部门 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功
+          schema:
+            $ref: '#/definitions/response.Body'
+        "409":
+          description: 存在子部门 / 该部门下还有用户
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除部门
+      tags:
+      - 部门管理
+    get:
+      parameters:
+      - description: 部门 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/dept.Node'
+              type: object
+        "404":
+          description: 部门不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询部门详情
+      tags:
+      - 部门管理
+    put:
+      consumes:
+      - application/json
+      description: 不能把自己或自己的子孙部门设为上级部门。
+      parameters:
+      - description: 部门 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修改参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dept.UpdateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 修改成功
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: 上级部门不能是自己 / 不能选择自己的子部门
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: 部门不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改部门
+      tags:
+      - 部门管理
+  /system/logs/logins:
+    delete:
+      consumes:
+      - application/json
+      description: 请求体可省略。before 为空表示清空全部，否则只删除该时间之前的记录。
+      parameters:
+      - description: 清空条件
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/log.ClearReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.DeletedData'
+              type: object
+        "403":
+          description: 缺少 system:log:delete 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 清空登录日志
+      tags:
+      - 日志管理
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      - description: 用户名
+        in: query
+        name: username
+        type: string
+      - description: 是否登录成功
+        in: query
+        name: success
+        type: boolean
+      - description: 开始时间
+        in: query
+        name: startAt
+        type: string
+      - description: 结束时间
+        in: query
+        name: endAt
+        type: string
+      - description: 排序方向：asc / desc
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/model.LoginLog'
+                        type: array
+                    type: object
+              type: object
+        "403":
+          description: 缺少 system:log:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 分页查询登录日志
+      tags:
+      - 日志管理
+  /system/logs/logins/export:
+    get:
+      description: 返回 xlsx 二进制流，筛选参数同列表接口。
+      parameters:
+      - description: 用户名
+        in: query
+        name: username
+        type: string
+      - description: 是否登录成功
+        in: query
+        name: success
+        type: boolean
+      - description: 开始时间
+        in: query
+        name: startAt
+        type: string
+      - description: 结束时间
+        in: query
+        name: endAt
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: xlsx 文件流
+          schema:
+            type: file
+        "400":
+          description: 无可导出数据
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 按筛选条件导出登录日志
+      tags:
+      - 日志管理
+  /system/logs/modules:
+    get:
+      description: 返回操作日志中出现过的业务模块名，用于筛选下拉。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    type: string
+                  type: array
+              type: object
+        "403":
+          description: 缺少 system:log:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 操作日志模块列表
+      tags:
+      - 日志管理
+  /system/logs/operations:
+    delete:
+      consumes:
+      - application/json
+      description: 请求体可省略。before 为空表示清空全部，否则只删除该时间之前的记录。
+      parameters:
+      - description: 清空条件
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/log.ClearReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.DeletedData'
+              type: object
+        "403":
+          description: 缺少 system:log:delete 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 清空操作日志
+      tags:
+      - 日志管理
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      - description: 操作人用户名
+        in: query
+        name: username
+        type: string
+      - description: 业务模块
+        in: query
+        name: module
+        type: string
+      - description: HTTP 方法
+        in: query
+        name: method
+        type: string
+      - description: HTTP 状态码
+        in: query
+        name: status
+        type: integer
+      - description: 开始时间，支持 RFC3339 或 2006-01-02 15:04:05
+        in: query
+        name: startAt
+        type: string
+      - description: 结束时间，支持 RFC3339 或 2006-01-02 15:04:05
+        in: query
+        name: endAt
+        type: string
+      - description: 排序字段：createdAt / latencyMs / status
+        in: query
+        name: orderBy
+        type: string
+      - description: 排序方向：asc / desc
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/model.OperationLog'
+                        type: array
+                    type: object
+              type: object
+        "403":
+          description: 缺少 system:log:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 分页查询操作日志
+      tags:
+      - 日志管理
+  /system/logs/operations/export:
+    get:
+      description: 返回 xlsx 二进制流，筛选参数同列表接口。
+      parameters:
+      - description: 操作人用户名
+        in: query
+        name: username
+        type: string
+      - description: 业务模块
+        in: query
+        name: module
+        type: string
+      - description: HTTP 方法
+        in: query
+        name: method
+        type: string
+      - description: HTTP 状态码
+        in: query
+        name: status
+        type: integer
+      - description: 开始时间
+        in: query
+        name: startAt
+        type: string
+      - description: 结束时间
+        in: query
+        name: endAt
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: xlsx 文件流
+          schema:
+            type: file
+        "400":
+          description: 无可导出数据
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 按筛选条件导出操作日志
+      tags:
+      - 日志管理
+  /system/menus:
+    get:
+      parameters:
+      - description: 按标题 / 路由名 / 权限标识模糊搜索
+        in: query
+        name: keyword
+        type: string
+      - description: 状态：1 启用，0 禁用
+        enum:
+        - 0
+        - 1
+        in: query
+        name: status
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/menu.Node'
+                  type: array
+              type: object
+        "403":
+          description: 缺少 system:menu:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询菜单树
+      tags:
+      - 菜单管理
+    post:
+      consumes:
+      - application/json
+      description: 类型必须为 dir / menu / button 之一。新增后会同步授权给超管角色，保证立即可见。
+      parameters:
+      - description: 新增菜单参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/menu.CreateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+        "400":
+          description: 参数校验失败 / 上级菜单不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+        "409":
+          description: 路由名称已存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 新增菜单
+      tags:
+      - 菜单管理
+  /system/menus/{id}:
+    delete:
+      description: 存在子菜单时禁止删除。
+      parameters:
+      - description: 菜单 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功
+          schema:
+            $ref: '#/definitions/response.Body'
+        "409":
+          description: 存在子菜单
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除菜单
+      tags:
+      - 菜单管理
+    get:
+      parameters:
+      - description: 菜单 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/menu.Node'
+              type: object
+        "404":
+          description: 菜单不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询菜单详情
+      tags:
+      - 菜单管理
+    put:
+      consumes:
+      - application/json
+      description: 不能把自己或自己的子孙节点设为上级菜单。
+      parameters:
+      - description: 菜单 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修改参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/menu.UpdateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 修改成功
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: 上级菜单不能是自己 / 不能选择自己的子菜单
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: 菜单不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改菜单
+      tags:
+      - 菜单管理
+  /system/roles:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      - description: 按角色名称 / 标识模糊搜索
+        in: query
+        name: keyword
+        type: string
+      - description: 排序字段：sort / createdAt / name
+        in: query
+        name: orderBy
+        type: string
+      - description: 排序方向：asc / desc
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/role.VO'
+                        type: array
+                    type: object
+              type: object
+        "403":
+          description: 缺少 system:role:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 分页查询角色
+      tags:
+      - 角色管理
+    post:
+      consumes:
+      - application/json
+      description: 角色标识 super_admin 已被内置超管占用，不可使用。
+      parameters:
+      - description: 新增角色参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/role.CreateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+        "400":
+          description: 参数校验失败
+          schema:
+            $ref: '#/definitions/response.Body'
+        "409":
+          description: 角色标识已存在 / 超管标识被占用
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 新增角色
+      tags:
+      - 角色管理
+  /system/roles/{id}:
+    delete:
+      description: 内置角色不允许删除；角色下仍有用户时返回 409。
+      parameters:
+      - description: 角色 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: 内置角色不允许删除
+          schema:
+            $ref: '#/definitions/response.Body'
+        "409":
+          description: 该角色下还有用户
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除角色
+      tags:
+      - 角色管理
+    get:
+      parameters:
+      - description: 角色 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/role.VO'
+              type: object
+        "404":
+          description: 角色不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询角色详情
+      tags:
+      - 角色管理
+    put:
+      consumes:
+      - application/json
+      description: 内置角色不允许禁用；超管角色的权限不可裁剪。
+      parameters:
+      - description: 角色 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修改参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/role.UpdateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 修改成功
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: 内置角色不允许禁用
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: 角色不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改角色
+      tags:
+      - 角色管理
+  /system/roles/{id}/menus:
+    put:
+      consumes:
+      - application/json
+      description: 覆盖式设置。超管角色默认拥有全部权限，不需要也不允许在此分配。
+      parameters:
+      - description: 角色 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 菜单 ID 列表
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/role.AssignMenusReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 权限已保存
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: 超管角色无需分配
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: 角色不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 为角色分配菜单权限
+      tags:
+      - 角色管理
+  /system/roles/export:
+    get:
+      description: 返回 xlsx 二进制流。
+      parameters:
+      - description: 按角色名称 / 标识模糊搜索
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: xlsx 文件流
+          schema:
+            type: file
+        "400":
+          description: 无可导出数据
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 按筛选条件导出角色
+      tags:
+      - 角色管理
+  /system/roles/options:
+    get:
+      description: 只返回调用者有权授予的角色：不含超管角色，也不含权限集合超出调用者自身的角色。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/role.Option'
+                  type: array
+              type: object
+        "403":
+          description: 缺少 system:role:list / system:user:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 角色下拉选项
+      tags:
+      - 角色管理
+  /system/users:
+    get:
+      description: 结果会叠加当前登录用户的数据范围（全部 / 本部门 / 本部门及以下 / 仅本人）。
+      parameters:
+      - default: 1
+        description: 页码，从 1 开始
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页条数，上限 200
+        in: query
+        name: pageSize
+        type: integer
+      - description: 按用户名 / 昵称 / 手机号模糊搜索
+        in: query
+        name: keyword
+        type: string
+      - description: 部门 ID（含子部门）
+        in: query
+        name: deptId
+        type: integer
+      - description: 状态：1 启用，0 禁用
+        enum:
+        - 0
+        - 1
+        in: query
+        name: status
+        type: integer
+      - description: 角色 ID
+        in: query
+        name: roleId
+        type: integer
+      - description: 排序字段：createdAt / updatedAt / username / lastLoginAt
+        in: query
+        name: orderBy
+        type: string
+      - description: 排序方向：asc / desc
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/user.VO'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: 未登录或令牌失效
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: 缺少 system:user:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 分页查询用户
+      tags:
+      - 用户管理
+    post:
+      consumes:
+      - application/json
+      description: 只能把用户建在自己数据范围内的部门。roleIds 会被校验：不允许授予超出调用者自身权限的角色（如超管）。
+      parameters:
+      - description: 新增用户参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/user.CreateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+        "400":
+          description: 参数校验失败 / 部门超出数据范围
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: 无权授予所选角色
+          schema:
+            $ref: '#/definitions/response.Body'
+        "409":
+          description: 用户名已存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 新增用户
+      tags:
+      - 用户管理
+  /system/users/{id}:
+    delete:
+      description: 软删除。内置管理员、当前登录用户、持有超管角色的用户不可删除。
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: 内置管理员或当前登录用户不允许删除
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: 用户不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除用户
+      tags:
+      - 用户管理
+    get:
+      description: 超出调用者数据范围时按「不存在」返回 404，不泄露该用户是否存在。
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/user.VO'
+              type: object
+        "404":
+          description: 用户不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询用户详情
+      tags:
+      - 用户管理
+    put:
+      consumes:
+      - application/json
+      description: roleIds 传 null 表示不调整角色；传数组则为覆盖式设置，并校验调用者有权授予这些角色。
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修改参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/user.UpdateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 修改成功
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: 参数校验失败
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: 无权授予所选角色 / 无权操作超管账号
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: 用户不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改用户
+      tags:
+      - 用户管理
+  /system/users/{id}/password:
+    put:
+      consumes:
+      - application/json
+      description: 重置后该用户所有已签发令牌立即失效，需重新登录。
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 新密码
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/user.ResetPasswordReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 密码已重置
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: 密码长度不能少于 6 位
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: 用户不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 重置用户密码
+      tags:
+      - 用户管理
+  /system/users/{id}/status:
+    put:
+      consumes:
+      - application/json
+      description: 禁用会把 token_epoch 加一，使该用户已签发的令牌立即失效。
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 目标状态
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/user.StatusReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 状态已更新
+          schema:
+            $ref: '#/definitions/response.Body'
+        "400":
+          description: 内置管理员或当前登录用户不允许禁用
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: 用户不存在
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 启用或禁用用户
+      tags:
+      - 用户管理
+  /system/users/export:
+    get:
+      description: 返回 xlsx 二进制流。导出的行集与列表完全一致（含数据范围约束）；单次上限见 MaxExportRows。
+      parameters:
+      - description: 选中导出的用户 ID，逗号分隔；提供时忽略其他筛选条件
+        in: query
+        name: ids
+        type: string
+      - description: 按用户名 / 昵称 / 手机号模糊搜索
+        in: query
+        name: keyword
+        type: string
+      - description: 部门 ID（含子部门）
+        in: query
+        name: deptId
+        type: integer
+      - description: 状态：1 启用，0 禁用
+        in: query
+        name: status
+        type: integer
+      - description: 角色 ID
+        in: query
+        name: roleId
+        type: integer
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: xlsx 文件流
+          schema:
+            type: file
+        "400":
+          description: 无可导出数据 / 超出单次导出上限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 按筛选条件导出用户
+      tags:
+      - 用户管理
+  /system/users/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: |-
+        上传 xlsx（仅支持 .xlsx，≤5MB，≤1000 行）。dryRun=1 时只校验并逐行返回结果，不写库。
+        导入同样受数据范围约束，且角色授予会被校验。
+      parameters:
+      - description: 为 1/true 时只校验不写库
+        enum:
+        - "1"
+        - "true"
+        in: query
+        name: dryRun
+        type: string
+      - description: 导入文件（.xlsx）
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/user.ImportResult'
+              type: object
+        "400":
+          description: 文件为空 / 格式不支持 / 表头不匹配 / 超出行数上限
+          schema:
+            $ref: '#/definitions/response.Body'
+        "409":
+          description: 导入时出现唯一性冲突
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 批量导入用户
+      tags:
+      - 用户管理
+  /system/users/import-template:
+    get:
+      description: 返回 xlsx 二进制流。模板数据区为空，填写说明在第二个工作表中。
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: xlsx 文件流
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: 下载用户导入模板
+      tags:
+      - 用户管理
+  /system/users/options:
+    get:
+      description: 仅返回启用状态、且在调用者数据范围内的用户，最多 100 条。
+      parameters:
+      - description: 按用户名 / 昵称模糊搜索
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/user.Option'
+                  type: array
+              type: object
+        "403":
+          description: 缺少 system:user:list / system:role:list / system:dept:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 用户下拉选项
+      tags:
+      - 用户管理
+schemes:
+- http
+- https
+securityDefinitions:
+  BearerAuth:
+    description: 填写 "Bearer <accessToken>"，注意 Bearer 与令牌之间有一个空格
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

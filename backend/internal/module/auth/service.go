@@ -14,6 +14,7 @@ import (
 	"nova-admin/internal/pkg/errcode"
 	"nova-admin/internal/pkg/hash"
 	"nova-admin/internal/pkg/jwt"
+	"nova-admin/internal/pkg/limiter"
 	"nova-admin/internal/pkg/textutil"
 )
 
@@ -21,19 +22,34 @@ import (
 type Service struct {
 	db  *gorm.DB
 	sec config.SecurityConfig
+	// ipFails 按 IP 统计登录失败次数，拦截「同一来源撞库大量账号」。
+	// 只统计失败，成功即清零，因此不会牵连 NAT 后的正常用户。
+	ipFails *limiter.FailLimiter
 }
 
 // NewService 创建认证服务。
 func NewService(sec config.SecurityConfig) *Service {
-	return &Service{db: database.DB(), sec: sec}
+	return &Service{
+		db:      database.DB(),
+		sec:     sec,
+		ipFails: limiter.New(sec.IPFailLimit(), time.Duration(sec.LoginLockSeconds)*time.Second),
+	}
 }
 
 // Login 校验凭据并签发令牌。
 func (s *Service) Login(req LoginReq, ip, ua string) (*LoginResp, error) {
+	// 单来源失败限流放在最前面，连「账号不存在」的探测也一并计入 ——
+	// 否则撞库者可以用一个不存在的用户名无限试探而不触发任何限制。
+	if !s.ipFails.Allow(ip) {
+		logger.Warn("登录请求被来源限流", zap.String("ip", ip))
+		return nil, errcode.New(errcode.ErrTooManyReq, "")
+	}
+
 	var user model.User
 	err := s.db.Where("username = ?", req.Username).First(&user).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
+			s.ipFails.Fail(ip)
 			s.writeLoginLog(0, req.Username, ip, ua, false, "用户不存在")
 			return nil, errcode.New(errcode.ErrInvalidCredential, "")
 		}
@@ -47,15 +63,19 @@ func (s *Service) Login(req LoginReq, ip, ua string) (*LoginResp, error) {
 	}
 
 	// 连续失败锁定校验
-	if s.isLocked(user.Username) {
+	if s.isLocked(user.Username, ip) {
 		s.writeLoginLog(user.ID, user.Username, ip, ua, false, "账号锁定中")
 		return nil, errcode.New(errcode.ErrAccountLocked, "")
 	}
 
 	if !hash.Verify(user.Password, req.Password) {
+		s.ipFails.Fail(ip)
 		s.writeLoginLog(user.ID, user.Username, ip, ua, false, "密码错误")
 		return nil, errcode.New(errcode.ErrInvalidCredential, "")
 	}
+
+	// 登录成功即清空该来源的失败计数
+	s.ipFails.Reset(ip)
 
 	now := time.Now()
 	s.db.Model(&user).Updates(map[string]any{
@@ -128,13 +148,39 @@ func (s *Service) Logout(userID int64) error {
 	return nil
 }
 
-// isLocked 判断账号是否处于锁定期：统计锁定时间窗内的失败次数。
-func (s *Service) isLocked(username string) bool {
+// isLocked 判断账号是否处于锁定期。
+//
+// 这里有两个关键设计，都是修复实际缺陷的：
+//
+//  1. 计数维度是「用户名 + IP」。旧实现只按用户名统计，于是任何人拿 5 次错密码
+//     就能把 admin 锁整整 5 分钟 —— 锁号型 DoS 的成本低到可以忽略。按 IP 分组后，
+//     攻击者最多只能锁住「自己这个 IP 对某个账号」的尝试，波及不到其他来源。
+//  2. 以「该 用户名+IP 最近一次成功登录」为计数起点。旧实现只看时间窗内的失败次数、
+//     登录成功并不清零，于是「失败 4 次 -> 成功 -> 失败 1 次」也会被莫名锁定。
+//     这里刻意**不删除**失败日志（它们是审计证据），而是用时间起点把计数归零。
+//
+// 代价是：分布式（多 IP）撞库不再受此单机锁定约束，需要由网关/WAF 层的全局限流兜底。
+func (s *Service) isLocked(username, ip string) bool {
 	windowStart := time.Now().Add(-time.Duration(s.sec.LoginLockSeconds) * time.Second)
+	start := windowStart
+
+	var last model.LoginLog
+	if err := s.db.Select("id", "created_at").
+		Where("username = ? AND ip = ? AND success = ?", username, ip, true).
+		Order("id DESC").Limit(1).Find(&last).Error; err == nil && !last.CreatedAt.IsZero() {
+		if last.CreatedAt.After(start) {
+			start = last.CreatedAt
+		}
+	}
+
 	var fails int64
-	s.db.Model(&model.LoginLog{}).
-		Where("username = ? AND success = ? AND created_at >= ?", username, false, windowStart).
-		Count(&fails)
+	if err := s.db.Model(&model.LoginLog{}).
+		Where("username = ? AND ip = ? AND success = ? AND created_at >= ?", username, ip, false, start).
+		Count(&fails).Error; err != nil {
+		// 查询本身失败时按「未锁定」放行：后续密码校验与日志写入同样会失败，
+		// 在这里返回 true 只会掩盖真正的数据库故障。
+		return false
+	}
 	return fails >= int64(s.sec.MaxLoginFail)
 }
 

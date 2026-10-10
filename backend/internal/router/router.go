@@ -4,10 +4,12 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
 
+	"nova-admin/api/docs"
 	"nova-admin/internal/config"
-	"nova-admin/internal/database"
 	"nova-admin/internal/logger"
 	"nova-admin/internal/middleware"
 	"nova-admin/internal/module/auth"
@@ -56,11 +58,19 @@ func New(cfg *config.Config) *gin.Engine {
 	)
 	engine.NoRoute(middleware.NoRoute())
 
-	// 健康检查（不鉴权、不记日志）
+	// 在线接口文档。默认跟随运行模式：debug 打开、release 关闭（可用 app.swagger 覆盖）。
+	// BasePath 在启动时同步为真实的 api 前缀 —— 否则改了 app.version 之后，
+	// 文档里的路径全是旧的，照着文档调接口只会 404。
+	if cfg.App.SwaggerEnabled() {
+		docs.SwaggerInfo.BasePath = cfg.App.BasePath()
+		engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	}
+
+	// 健康检查（不鉴权、不记日志）。DB 状态做 1 秒记忆，避免被刷成打库通道。
 	engine.GET("/health", func(c *gin.Context) {
 		status := "ok"
 		code := http.StatusOK
-		if err := database.Health(); err != nil {
+		if err := healthError(); err != nil {
 			status = "degraded: " + err.Error()
 			code = http.StatusServiceUnavailable
 		}

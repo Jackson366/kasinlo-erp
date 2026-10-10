@@ -27,10 +27,7 @@ func (s *Service) Export(keyword string) ([]VO, error) {
 			"单次导出上限 %d 条，请缩小筛选范围后重试", sheet.MaxExportRows)
 	}
 
-	items := make([]VO, 0, len(roles))
-	for i := range roles {
-		items = append(items, s.toVO(&roles[i]))
-	}
+	items := s.toVOs(roles)
 	return items, nil
 }
 

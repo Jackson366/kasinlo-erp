@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ApiResult, LoginResult } from '@/types/api'
+import { API_PREFIX } from '@/utils/api'
 import { clearTokens, getAccessToken, getRefreshToken, setTokens } from '@/utils/auth'
 
 /** 业务错误：携带后端返回的业务码与链路 ID */
@@ -34,7 +35,8 @@ function isAuthEndpoint(url?: string): boolean {
 }
 
 const instance: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  // 版本段（/v1）统一在这里注入，各 api 模块只写相对路径
+  baseURL: API_PREFIX,
   timeout: 20000,
   headers: { 'Content-Type': 'application/json' },
 })
@@ -63,7 +65,7 @@ async function refreshAccessToken(): Promise<string> {
   if (!refreshing) {
     refreshing = axios
       .post<ApiResult<LoginResult>>(
-        `${import.meta.env.VITE_API_BASE_URL || '/api'}/v1/auth/refresh`,
+        `${API_PREFIX}/auth/refresh`,
         { refreshToken },
         { timeout: 15000 },
       )

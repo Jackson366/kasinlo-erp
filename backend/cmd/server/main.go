@@ -20,6 +20,24 @@ import (
 	"nova-admin/internal/router"
 )
 
+// Nova Admin 服务端入口。
+//
+// @title                      Nova Admin API
+// @version                    1.0
+// @description                基于 Gin + GORM + PostgreSQL 的权限管理后台后端。
+// @description                所有接口统一返回 {code, message, data, traceId}，业务码 0 表示成功。
+// @description                业务码前三位即 HTTP 状态码：40000→400、40100~40106→401、40300→403、40400→404、40900→409、42900→429、50000/50100→500。
+// @description                除「登录」「刷新令牌」外，所有接口都需要请求头 `Authorization: Bearer <accessToken>`。
+// @description                接口前缀由 config.yaml 的 app.prefix + app.version 决定，服务启动时会同步到本文档。
+// @termsOfService             https://example.com/terms/
+// @contact.name               Nova Admin 开发组
+// @license.name               MIT
+// @BasePath                   /api/v1
+// @schemes                    http https
+// @securityDefinitions.apikey BearerAuth
+// @in                         header
+// @name                       Authorization
+// @description                填写 "Bearer <accessToken>"，注意 Bearer 与令牌之间有一个空格
 func main() {
 	configPath := flag.String("config", "config.yaml", "配置文件路径")
 	seedOnly := flag.Bool("seed", false, "仅执行数据库迁移与种子数据初始化后退出")

@@ -26,9 +26,23 @@ type Handler struct {
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
 // List 用户列表
-// @Summary 分页查询用户
-// @Tags    用户管理
-// @Router  /system/users [get]
+// @Summary      分页查询用户
+// @Description  结果会叠加当前登录用户的数据范围（全部 / 本部门 / 本部门及以下 / 仅本人）。
+// @Tags         用户管理
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page      query     int     false  "页码，从 1 开始"      default(1)
+// @Param        pageSize  query     int     false  "每页条数，上限 200"   default(10)
+// @Param        keyword   query     string  false  "按用户名 / 昵称 / 手机号模糊搜索"
+// @Param        deptId    query     int     false  "部门 ID（含子部门）"
+// @Param        status    query     int     false  "状态：1 启用，0 禁用"  Enums(0, 1)
+// @Param        roleId    query     int     false  "角色 ID"
+// @Param        orderBy   query     string  false  "排序字段：createdAt / updatedAt / username / lastLoginAt"
+// @Param        order     query     string  false  "排序方向：asc / desc"  Enums(asc, desc)
+// @Success      200       {object}  response.Body{data=response.PageData{list=[]user.VO}}
+// @Failure      401       {object}  response.Body  "未登录或令牌失效"
+// @Failure      403       {object}  response.Body  "缺少 system:user:list 权限"
+// @Router       /system/users [get]
 func (h *Handler) List(c *gin.Context) {
 	q := page.FromContext(c)
 	var f ListQuery
@@ -45,9 +59,15 @@ func (h *Handler) List(c *gin.Context) {
 }
 
 // Options 用户下拉选项
-// @Summary 用户下拉选项
-// @Tags    用户管理
-// @Router  /system/users/options [get]
+// @Summary      用户下拉选项
+// @Description  仅返回启用状态、且在调用者数据范围内的用户，最多 100 条。
+// @Tags         用户管理
+// @Produce      json
+// @Security     BearerAuth
+// @Param        keyword  query     string  false  "按用户名 / 昵称模糊搜索"
+// @Success      200      {object}  response.Body{data=[]user.Option}
+// @Failure      403      {object}  response.Body  "缺少 system:user:list / system:role:list / system:dept:list 权限"
+// @Router       /system/users/options [get]
 func (h *Handler) Options(c *gin.Context) {
 	items, err := h.svc.Options(c.Query("keyword"), actor(c))
 	if err != nil {
@@ -58,9 +78,15 @@ func (h *Handler) Options(c *gin.Context) {
 }
 
 // Detail 用户详情
-// @Summary 查询用户详情
-// @Tags    用户管理
-// @Router  /system/users/{id} [get]
+// @Summary      查询用户详情
+// @Description  超出调用者数据范围时按「不存在」返回 404，不泄露该用户是否存在。
+// @Tags         用户管理
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "用户 ID"
+// @Success      200  {object}  response.Body{data=user.VO}
+// @Failure      404  {object}  response.Body  "用户不存在"
+// @Router       /system/users/{id} [get]
 func (h *Handler) Detail(c *gin.Context) {
 	id, err := pathID(c)
 	if err != nil {
@@ -76,9 +102,18 @@ func (h *Handler) Detail(c *gin.Context) {
 }
 
 // Create 新增用户
-// @Summary 新增用户
-// @Tags    用户管理
-// @Router  /system/users [post]
+// @Summary      新增用户
+// @Description  只能把用户建在自己数据范围内的部门。roleIds 会被校验：不允许授予超出调用者自身权限的角色（如超管）。
+// @Tags         用户管理
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      CreateReq  true  "新增用户参数"
+// @Success      200   {object}  response.Body{data=response.IDData}
+// @Failure      400   {object}  response.Body  "参数校验失败 / 部门超出数据范围"
+// @Failure      403   {object}  response.Body  "无权授予所选角色"
+// @Failure      409   {object}  response.Body  "用户名已存在"
+// @Router       /system/users [post]
 func (h *Handler) Create(c *gin.Context) {
 	var req CreateReq
 	if err := bind.JSON(c, &req); err != nil {
@@ -91,13 +126,23 @@ func (h *Handler) Create(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": id})
+	response.OK(c, response.IDData{ID: id})
 }
 
 // Update 修改用户
-// @Summary 修改用户
-// @Tags    用户管理
-// @Router  /system/users/{id} [put]
+// @Summary      修改用户
+// @Description  roleIds 传 null 表示不调整角色；传数组则为覆盖式设置，并校验调用者有权授予这些角色。
+// @Tags         用户管理
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int        true  "用户 ID"
+// @Param        body  body      UpdateReq  true  "修改参数"
+// @Success      200   {object}  response.Body  "修改成功"
+// @Failure      400   {object}  response.Body  "参数校验失败"
+// @Failure      403   {object}  response.Body  "无权授予所选角色 / 无权操作超管账号"
+// @Failure      404   {object}  response.Body  "用户不存在"
+// @Router       /system/users/{id} [put]
 func (h *Handler) Update(c *gin.Context) {
 	id, err := pathID(c)
 	if err != nil {
@@ -118,9 +163,16 @@ func (h *Handler) Update(c *gin.Context) {
 }
 
 // Delete 删除用户
-// @Summary 删除用户
-// @Tags    用户管理
-// @Router  /system/users/{id} [delete]
+// @Summary      删除用户
+// @Description  软删除。内置管理员、当前登录用户、持有超管角色的用户不可删除。
+// @Tags         用户管理
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "用户 ID"
+// @Success      200  {object}  response.Body  "删除成功"
+// @Failure      400  {object}  response.Body  "内置管理员或当前登录用户不允许删除"
+// @Failure      404  {object}  response.Body  "用户不存在"
+// @Router       /system/users/{id} [delete]
 func (h *Handler) Delete(c *gin.Context) {
 	id, err := pathID(c)
 	if err != nil {
@@ -136,9 +188,18 @@ func (h *Handler) Delete(c *gin.Context) {
 }
 
 // UpdateStatus 启用/禁用用户
-// @Summary 启用或禁用用户
-// @Tags    用户管理
-// @Router  /system/users/{id}/status [put]
+// @Summary      启用或禁用用户
+// @Description  禁用会把 token_epoch 加一，使该用户已签发的令牌立即失效。
+// @Tags         用户管理
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int        true  "用户 ID"
+// @Param        body  body      StatusReq  true  "目标状态"
+// @Success      200   {object}  response.Body  "状态已更新"
+// @Failure      400   {object}  response.Body  "内置管理员或当前登录用户不允许禁用"
+// @Failure      404   {object}  response.Body  "用户不存在"
+// @Router       /system/users/{id}/status [put]
 func (h *Handler) UpdateStatus(c *gin.Context) {
 	id, err := pathID(c)
 	if err != nil {
@@ -159,9 +220,18 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 }
 
 // ResetPassword 重置用户密码
-// @Summary 重置用户密码
-// @Tags    用户管理
-// @Router  /system/users/{id}/password [put]
+// @Summary      重置用户密码
+// @Description  重置后该用户所有已签发令牌立即失效，需重新登录。
+// @Tags         用户管理
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int               true  "用户 ID"
+// @Param        body  body      ResetPasswordReq  true  "新密码"
+// @Success      200   {object}  response.Body  "密码已重置"
+// @Failure      400   {object}  response.Body  "密码长度不能少于 6 位"
+// @Failure      404   {object}  response.Body  "用户不存在"
+// @Router       /system/users/{id}/password [put]
 func (h *Handler) ResetPassword(c *gin.Context) {
 	id, err := pathID(c)
 	if err != nil {
@@ -200,9 +270,19 @@ func actor(c *gin.Context) *authz.Identity { return middleware.CurrentIdentity(c
 const maxImportFileSize = 5 << 20
 
 // Export 导出用户 Excel
-// @Summary 按筛选条件导出用户
-// @Tags    用户管理
-// @Router  /system/users/export [get]
+// @Summary      按筛选条件导出用户
+// @Description  返回 xlsx 二进制流。导出的行集与列表完全一致（含数据范围约束）；单次上限见 MaxExportRows。
+// @Tags         用户管理
+// @Produce      application/octet-stream
+// @Security     BearerAuth
+// @Param        ids       query     string  false  "选中导出的用户 ID，逗号分隔；提供时忽略其他筛选条件"
+// @Param        keyword   query     string  false  "按用户名 / 昵称 / 手机号模糊搜索"
+// @Param        deptId    query     int     false  "部门 ID（含子部门）"
+// @Param        status    query     int     false  "状态：1 启用，0 禁用"
+// @Param        roleId    query     int     false  "角色 ID"
+// @Success      200       {file}    binary  "xlsx 文件流"
+// @Failure      400       {object}  response.Body  "无可导出数据 / 超出单次导出上限"
+// @Router       /system/users/export [get]
 func (h *Handler) Export(c *gin.Context) {
 	c.Set("opAction", "导出用户")
 
@@ -230,9 +310,13 @@ func (h *Handler) Export(c *gin.Context) {
 }
 
 // ImportTemplate 下载用户导入模板
-// @Summary 下载用户导入模板
-// @Tags    用户管理
-// @Router  /system/users/import-template [get]
+// @Summary      下载用户导入模板
+// @Description  返回 xlsx 二进制流。模板数据区为空，填写说明在第二个工作表中。
+// @Tags         用户管理
+// @Produce      application/octet-stream
+// @Security     BearerAuth
+// @Success      200  {file}  binary  "xlsx 文件流"
+// @Router       /system/users/import-template [get]
 func (h *Handler) ImportTemplate(c *gin.Context) {
 	c.Set("opAction", "下载用户导入模板")
 
@@ -245,9 +329,19 @@ func (h *Handler) ImportTemplate(c *gin.Context) {
 }
 
 // Import 批量导入用户
-// @Summary 批量导入用户（dryRun=1 时仅校验不写库）
-// @Tags    用户管理
-// @Router  /system/users/import [post]
+// @Summary      批量导入用户
+// @Description  上传 xlsx（仅支持 .xlsx，≤5MB，≤1000 行）。dryRun=1 时只校验并逐行返回结果，不写库。
+// @Description  导入同样受数据范围约束，且角色授予会被校验。
+// @Tags         用户管理
+// @Accept       multipart/form-data
+// @Produce      json
+// @Security     BearerAuth
+// @Param        dryRun  query     string  false  "为 1/true 时只校验不写库"  Enums(1, true)
+// @Param        file    formData  file    true   "导入文件（.xlsx）"
+// @Success      200     {object}  response.Body{data=user.ImportResult}
+// @Failure      400     {object}  response.Body  "文件为空 / 格式不支持 / 表头不匹配 / 超出行数上限"
+// @Failure      409     {object}  response.Body  "导入时出现唯一性冲突"
+// @Router       /system/users/import [post]
 func (h *Handler) Import(c *gin.Context) {
 	dryRun := c.Query("dryRun") == "1" || c.Query("dryRun") == "true"
 	// 预校验与真正入库都显式命名：若只给后者命名，

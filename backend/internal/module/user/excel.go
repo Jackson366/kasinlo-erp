@@ -249,26 +249,19 @@ func (s *Service) validateImportLine(cells []string, ref *importRefs, seen map[s
 	remark := sheet.Cell(cells, colRemark)
 
 	// ---- 用户名 ----
-	usernameOK := true
+	// 这里只判断用户名本身是否可用；是否记入 seen（用于「文件内重复」判定）
+	// 必须等整行校验结束后再决定，理由见文件末尾。
 	switch {
 	case username == "":
 		errs = append(errs, "用户名不能为空")
-		usernameOK = false
 	case len([]rune(username)) < 3 || len([]rune(username)) > 64:
 		errs = append(errs, "用户名长度需为 3-64 个字符")
-		usernameOK = false
 	case !usernameRe.MatchString(username):
 		errs = append(errs, "用户名只能包含字母、数字、下划线、点和横线")
-		usernameOK = false
 	case ref.usernames[username]:
 		errs = append(errs, "用户名已被系统中其他用户使用")
-		usernameOK = false
 	case seen[username]:
 		errs = append(errs, "与文件中的其他行用户名重复")
-		usernameOK = false
-	}
-	if usernameOK {
-		seen[username] = true
 	}
 
 	// ---- 昵称 ----
@@ -342,6 +335,16 @@ func (s *Service) validateImportLine(cells []string, ref *importRefs, seen map[s
 	status, statusOK := parseImportStatus(statusRaw)
 	if !statusOK {
 		errs = append(errs, "状态只能填写「启用」或「禁用」")
+	}
+
+	// 只有整行都通过校验（即真的会入库）时才把用户名记入 seen。
+	//
+	// 旧写法在「用户名本身合法」时就立刻标记，于是出现：
+	// 第 3 行用户名重复但昵称为空（该行被拒绝、不会入库），
+	// 第 7 行同名且完全合法，却被判成「与文件中的其他行用户名重复」而拒绝 ——
+	// 用户看到两条都失败，却只被告知其中一条的真实原因。
+	if len(errs) == 0 {
+		seen[username] = true
 	}
 
 	return importCandidate{

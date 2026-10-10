@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -186,4 +187,106 @@ func build(userID int64) (*Identity, error) {
 		id.Permissions[p] = struct{}{}
 	}
 	return id, nil
+}
+
+// ---------------- 可授予角色（防垂直越权） ----------------
+//
+// 背景：角色的「分配」长期只校验角色是否存在，不校验调用者是否有权授予。
+// 于是只拥有 system:user:create 的系统管理员可以带 roleIds:[1]（超管）建号，
+// 或者把自己改成超管 —— 一次请求即可完成提权。
+//
+// 判定规则（超管不受限）：
+//  1. 超管角色（super_admin）是「绕过全部权限校验」的特权角色，仅超管可授予；
+//  2. 其余角色要求其权限码集合 ⊆ 调用者自身权限集合 —— 即「不能授予自己没有的权限」。
+//
+// 注意这是基于「角色权限」的收敛，并不能防住「先造一个高权限角色、再授予」的路径，
+// 后者需要按菜单维度限制 role:create/assign，属于另一层治理。
+
+// rolePermissions 返回给定角色携带的权限码，按 role_id 分组。
+// 过滤条件必须与 build() 汇总权限时的口径一致（仅启用、未删除、permission 非空），
+// 否则会把「对身份生效的权限」和「用于校验的权限」算成两套。
+func rolePermissions(roleIDs []int64) (map[int64][]string, error) {
+	out := make(map[int64][]string, len(roleIDs))
+	if len(roleIDs) == 0 {
+		return out, nil
+	}
+	type row struct {
+		RoleID     int64
+		Permission string
+	}
+	var rows []row
+	if err := database.DB().Model(&model.Menu{}).
+		Select("rm.role_id AS role_id, sys_menus.permission AS permission").
+		Joins("JOIN sys_role_menus rm ON rm.menu_id = sys_menus.id").
+		Where("rm.role_id IN ?", roleIDs).
+		Where("sys_menus.status = ? AND sys_menus.deleted_at IS NULL AND sys_menus.permission <> ''",
+			model.StatusEnabled).
+		Scan(&rows).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	for _, r := range rows {
+		out[r.RoleID] = append(out[r.RoleID], r.Permission)
+	}
+	return out, nil
+}
+
+// bannedReason 返回「该角色不可授予」的原因；可授予时返回空串。
+func bannedReason(actor *Identity, r model.Role, perms []string) string {
+	if r.Code == SuperRoleCode {
+		return "只有超级管理员可以授予「超级管理员」角色"
+	}
+	for _, p := range perms {
+		if _, ok := actor.Permissions[p]; !ok {
+			return fmt.Sprintf("无权授予角色「%s」：它包含你自身不具备的权限（%s）", r.Name, p)
+		}
+	}
+	return ""
+}
+
+// EnsureGrantable 校验 actor 能否授予这些角色（roles 须为库中真实存在的角色）。
+func EnsureGrantable(actor *Identity, roles []model.Role) error {
+	if actor == nil || actor.IsSuper || len(roles) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(roles))
+	for _, r := range roles {
+		ids = append(ids, r.ID)
+	}
+	permsOf, err := rolePermissions(ids)
+	if err != nil {
+		return err
+	}
+	for _, r := range roles {
+		if reason := bannedReason(actor, r, permsOf[r.ID]); reason != "" {
+			return errcode.New(errcode.ErrForbidden, reason)
+		}
+	}
+	return nil
+}
+
+// GrantableRoleIDs 返回 actor 可授予的角色 ID 集合。
+// unrestricted 为 true 表示不受限（超管或未认证身份），调用方不必再过滤。
+func GrantableRoleIDs(actor *Identity) (map[int64]bool, bool, error) {
+	if actor == nil || actor.IsSuper {
+		return nil, true, nil
+	}
+	var roles []model.Role
+	if err := database.DB().Select("id", "name", "code").Find(&roles).Error; err != nil {
+		return nil, false, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	ids := make([]int64, 0, len(roles))
+	for _, r := range roles {
+		ids = append(ids, r.ID)
+	}
+	permsOf, err := rolePermissions(ids)
+	if err != nil {
+		return nil, false, err
+	}
+	out := make(map[int64]bool, len(roles))
+	for _, r := range roles {
+		if bannedReason(actor, r, permsOf[r.ID]) == "" {
+			out[r.ID] = true
+		}
+	}
+	return out, false, nil
 }

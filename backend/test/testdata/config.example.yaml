@@ -18,7 +18,7 @@ database:
   port: 5432
   user: postgres
   password: CHANGE_ME     # ← 改成你本机 PostgreSQL 的口令
-  dbname: nova_admin_test
+  dbname: nova_admin_v5_test
   sslmode: disable
   timezone: Asia/Shanghai
   max_idle_conns: 2
@@ -44,5 +44,9 @@ cors:
 security:
   max_login_fail: 5
   login_lock_seconds: 300
+  # 用例会集中制造失败登录（账号锁定、UA 截断等回归场景），
+  # 若开启「按 IP 失败限流」会互相干扰，这里显式关闭。
+  ip_max_login_fail: 0
+  refresh_rate_limit: 0
   # 可信反向代理；留空表示不信任任何代理（安全默认值）
   trusted_proxies: []

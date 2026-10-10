@@ -8,8 +8,13 @@ export default defineConfig(({ mode }) => {
   const proxyTarget = env.VITE_PROXY_TARGET || 'http://127.0.0.1:8080'
   // 开发与本地预览（npm run preview）共用同一份代理配置，
   // 方便直接用生产产物做一次端到端冒烟验证。
+  // /swagger 一并转发：Swagger UI 挂在后端端口上，转发后 5173 也能直接打开在线文档。
   const proxy = {
     '/api': {
+      target: proxyTarget,
+      changeOrigin: true,
+    },
+    '/swagger': {
       target: proxyTarget,
       changeOrigin: true,
     },

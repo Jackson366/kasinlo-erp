@@ -523,6 +523,7 @@ app:
   port: 8080
   prefix: /api              # 路由统一前缀
   version: v1               # API 版本段，最终拼接为 /api/v1
+  swagger: true             # 是否挂载 /swagger 在线文档；不写则跟随 mode（debug 开、release 关）
 
 database:
   host: 127.0.0.1
@@ -554,10 +555,18 @@ cors:
     - "*"                   # 生产改成具体域名
 
 security:
-  max_login_fail: 5         # 连续失败锁定阈值
+  max_login_fail: 5         # 「账号 + 来源 IP」连续失败锁定阈值
   login_lock_seconds: 300   # 锁定时长（秒）
+  ip_max_login_fail: 30     # 同一来源 IP 的失败上限（拦「一个 IP 撞库多个账号」）；0 = 关闭
+  refresh_rate_limit: 120   # /auth/refresh 每 IP 每分钟请求上限；0 = 关闭
   trusted_proxies: []       # 空 = 不信任任何代理
 ```
+
+> `ip_max_login_fail` 与 `max_login_fail` 的分工：
+> 前者按 **来源 IP** 计数，拦的是「用同一个出口 IP 试大量不同账号」；
+> 后者按 **账号 + IP** 计数，拦的是「盯着一个账号猜密码」。
+> 两者都**只统计失败**（登录成功即清零），因此不会连累 NAT / 公司网关后的正常用户。
+> 0 表示关闭；不写则用默认值（30 / 120）。
 
 ### 环境变量覆盖
 
@@ -623,7 +632,7 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产
 | 层 | 命令 | 覆盖 | 规模 |
 | --- | --- | --- | --- |
 | 编译期 | `gofmt -l .` / `go vet ./...` / `npm run typecheck` | 语法、类型、常见误用 | — |
-| 进程内 E2E | `go test ./test/... -count=1` | 行为契约（进程内 `httptest` 驱动完整路由） | **33 个测试 / 65 个子用例** |
+| 进程内 E2E | `go test ./test/... -count=1` | 行为契约（进程内 `httptest` 驱动完整路由） | **37 个测试 / 65 个子用例** |
 | 接口冒烟 | `node scripts/api-smoke.mjs` | 协议层（真实 HTTP、二进制响应、文件上传下载） | **90 项断言** |
 | 浏览器运行时 | `node scripts/browser-verify.mjs` | 真实渲染（白屏、主题、控制台报错） | **48 项断言** |
 
@@ -1291,6 +1300,7 @@ node scripts/browser-verify.mjs
 
 文档与验证
 [ ] AGENTS.md 的测试计数已更新
+[ ] 接口有变动：handler 注解已补，并执行 scripts/gen-swagger.sh 重新生成（backend/api/docs/ 一并提交）
 [ ] 接口有变动则同步 docs/API.md
 [ ] 表结构有变动则同步 docs/DATABASE.md
 [ ] 跑了浏览器验证（改了路由/守卫/主题时必跑）
@@ -1298,7 +1308,7 @@ node scripts/browser-verify.mjs
 
 ## 3.8 必读的八个坑
 
-完整 26 条见 [`AGENTS.md` §5](../AGENTS.md)。以下八条是新增业务时**最常撞上**的：
+完整 30 条见 [`AGENTS.md` §5](../AGENTS.md)。以下八条是新增业务时**最常撞上**的：
 
 | # | 坑 | 症状 | 正确做法 |
 | --- | --- | --- | --- |
@@ -1313,11 +1323,75 @@ node scripts/browser-verify.mjs
 
 ---
 
+## 3.9 接口文档（Swagger / OpenAPI）
+
+接口文档由 **handler 上的注解自动生成**，不再靠手工维护（手工版 `docs/API.md` 只保留业务语义与
+边界说明，两者配合阅读）。
+
+### 怎么用
+
+服务启动后访问 `/swagger/index.html`。是否挂载由 `app.swagger` 决定，
+不写则跟随 `mode`（`debug` 打开、`release` 关闭）：
+
+```yaml
+app:
+  mode: release
+  swagger: true    # 生产上确实需要时再显式打开，务必配上网关鉴权
+```
+
+`docs.SwaggerInfo.BasePath` 在启动时会同步成 `app.prefix + app.version`，
+所以改了 `app.version` 之后文档里的路径不会跑偏。
+
+### 新增接口时怎么注解
+
+照抄同一个模块里已有 handler 的写法即可，要素是：
+
+```go
+// List 用户列表
+// @Summary      分页查询用户
+// @Description  结果会叠加当前登录用户的数据范围。
+// @Tags         用户管理
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page      query     int     false  "页码"  default(1)
+// @Param        body      body      CreateReq  true "新增参数"
+// @Success      200       {object}  response.Body{data=response.PageData{list=[]user.VO}}
+// @Failure      403       {object}  response.Body  "缺少权限"
+// @Router       /system/users [get]
+func (h *Handler) List(c *gin.Context) {
+```
+
+四个要点：
+
+1. **统一响应体要包一层**：真实返回是 `{code, message, data, traceId}`，
+   所以 `@Success` 必须写 `response.Body{data=...}`，否则生成的 schema 与真实返回不符。
+   只返回 ID 用 `response.IDData`，清空类用 `response.DeletedData`，分页用
+   `response.PageData{list=[]xxx.VO}`。
+2. **路径不带前缀**：`@Router` 写 `/system/users`，前缀由 `main.go` 的 `@BasePath` 提供。
+3. **需要登录的接口加 `@Security BearerAuth`**，公开接口（登录、刷新）不加。
+4. **不要用 `gin.H` 作为返回**：它是 map，Swagger 无法推导字段，用 `response.IDData` 这类具体类型。
+
+### 重新生成
+
+```bash
+bash scripts/gen-swagger.sh        # 内部就是 swag init --parseInternal
+```
+
+`--parseInternal` 不能省：业务代码都在 `internal/` 下，不加这个参数 swag 会整体跳过，
+生成的文档只剩通用信息、一个接口都没有。
+
+生成物在 `backend/api/docs/`（`docs.go` / `swagger.json` / `swagger.yaml`），**需要一并提交**，
+这样没装 `swag` 的环境也能直接跑起文档。
+
+---
+
 # 附录
 
 ## A. 接口总表（47 个）
 
 前缀 `/api/v1`。「权限」列中 `|` 表示任一命中即可。
+另有 `/health`（健康检查）与 `/swagger/*`（在线文档）不在业务接口之列。
+接口的入参/出参结构以在线文档（`/swagger/index.html`）为准，本表只做导航。
 
 ### 认证与个人中心
 
@@ -1461,12 +1535,16 @@ node scripts/browser-verify.mjs
 | --- | --- | --- |
 | `api_test.go` | 10 个 | 健康检查、认证、个人中心、权限隔离、用户/角色/菜单/部门 CRUD、仪表盘、日志 |
 | `excel_test.go` | 5 个 | 用户导出、导入、拒绝坏文件、导入导出权限隔离、内置权限补齐 |
-| `hardening_test.go` | 6 个 | 超长 UA 登录日志、审计 IP 防伪造、改密吊销令牌、数据范围读写约束、未匹配路由的审计 |
+| `hardening_test.go` | 9 个 | 超长 UA 登录日志、审计 IP 防伪造、改密吊销令牌、数据范围读写约束、未匹配路由的审计、按账号+IP 的登录锁定、角色授予越权、Trace ID 注入 |
 | `regression_test.go` | 6 个 | 大文件导入、角色去重、导出参数校验、导出/导入审计、敌意输入、长字段截断 |
 | `status_test.go` | 2 个 | 「禁用」状态不被默认值吃掉（四条创建路径 + 导入路径） |
+| `swagger_test.go` | 1 个 | 在线接口文档可访问、`basePath` 与配置一致、未开启时不暴露 |
 | `upgrade_test.go` | 4 个 | 老库补列、老库数据修正、不覆盖显式配置、升级后禁用账号仍被拦 |
 
-**合计 33 个测试 / 65 个子用例**，全部可在进程内运行（`httptest`），无需启动服务。
+**合计 37 个测试 / 65 个子用例**，全部可在进程内运行（`httptest`），无需启动服务。
+
+另有不依赖数据库的包级单测：`internal/middleware`（Trace ID 收敛、限流中间件）、
+`internal/pkg/limiter`（失败限流器的阈值/重置/窗口）、`internal/module/user`（导入校验的 seen 语义）。
 
 ## D. 文档索引
 
@@ -1474,7 +1552,7 @@ node scripts/browser-verify.mjs
 | --- | --- |
 | 项目怎么跑起来、有哪些功能 | 本文第一、二部分 |
 | 怎么加一个新模块 | 本文第三部分 |
-| 改代码前必读的约定与 26 个坑 | [`AGENTS.md`](../AGENTS.md) |
-| 每个接口的入参出参与示例 | [`docs/API.md`](API.md) |
+| 改代码前必读的约定与 30 个坑 | [`AGENTS.md`](../AGENTS.md) |
+| 每个接口的入参出参与示例 | 在线文档 `/swagger/index.html`；业务语义见 [`docs/API.md`](API.md) |
 | 表结构、索引设计、字段约定 | [`docs/DATABASE.md`](DATABASE.md) |
 | 快速开始与目录速览 | [`README.md`](../README.md) |

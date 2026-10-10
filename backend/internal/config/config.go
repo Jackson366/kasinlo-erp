@@ -28,6 +28,11 @@ type AppConfig struct {
 	Port    int    `yaml:"port"`
 	Prefix  string `yaml:"prefix"`
 	Version string `yaml:"version"`
+	// Swagger 控制是否挂载 /swagger 在线接口文档。
+	//
+	// 默认跟随 mode：debug 打开，release 关闭 —— 接口文档会把全部路由与参数结构
+	// 暴露给任何能访问服务的人，生产环境不该默认开着。
+	Swagger *bool `yaml:"swagger"`
 }
 
 // Addr 返回监听地址。
@@ -45,6 +50,14 @@ func (a AppConfig) BasePath() string {
 }
 
 func (a AppConfig) IsDebug() bool { return strings.EqualFold(a.Mode, "debug") }
+
+// SwaggerEnabled 返回是否挂载在线接口文档。未显式配置时跟随运行模式。
+func (a AppConfig) SwaggerEnabled() bool {
+	if a.Swagger != nil {
+		return *a.Swagger
+	}
+	return a.IsDebug()
+}
 
 type DatabaseConfig struct {
 	Host            string `yaml:"host"`
@@ -96,6 +109,15 @@ type CORSConfig struct {
 type SecurityConfig struct {
 	MaxLoginFail     int `yaml:"max_login_fail"`
 	LoginLockSeconds int `yaml:"login_lock_seconds"`
+	// IPMaxLoginFail 是「同一个 IP 在一个锁定窗口内的登录失败上限」。
+	//
+	// 按账号锁定拦不住「同一 IP 撞库大量不同账号」，这一项用来补这个缺口。
+	// 用指针是为了区分「没配」（走默认值）与「显式配成 0」（关闭限流）：
+	// 若用普通 int，测试环境把 0 写进配置会被 applyDefaults 又改回默认值。
+	IPMaxLoginFail *int `yaml:"ip_max_login_fail"`
+	// RefreshRateLimit 是 /auth/refresh 每 IP 每分钟的请求上限，0 表示关闭。
+	// 刷新接口没有凭据猜测面（要验签名的 JWT），这里只做防刷，阈值可以放宽。
+	RefreshRateLimit *int `yaml:"refresh_rate_limit"`
 	// TrustedProxies 列出可信反向代理的 IP 或网段。
 	//
 	// 为空表示**不信任任何代理**，此时 ClientIP 只取 TCP 对端地址。
@@ -103,6 +125,22 @@ type SecurityConfig struct {
 	// 而该头完全由客户端控制 —— 于是任何人都能把审计日志里的来源 IP 写成任意值。
 	// 部署在 Nginx 等反向代理后面时，才把代理的地址填进来。
 	TrustedProxies []string `yaml:"trusted_proxies"`
+}
+
+// IPFailLimit 返回单 IP 登录失败上限，<=0 表示关闭该限制。
+func (s SecurityConfig) IPFailLimit() int {
+	if s.IPMaxLoginFail == nil {
+		return 0
+	}
+	return *s.IPMaxLoginFail
+}
+
+// RefreshRateLimitPerMin 返回 /auth/refresh 每 IP 每分钟的请求上限，<=0 表示关闭。
+func (s SecurityConfig) RefreshRateLimitPerMin() int {
+	if s.RefreshRateLimit == nil {
+		return 0
+	}
+	return *s.RefreshRateLimit
 }
 
 var (
@@ -204,6 +242,15 @@ func applyDefaults(c *Config) {
 	if c.Security.LoginLockSeconds <= 0 {
 		c.Security.LoginLockSeconds = 300
 	}
+	if c.Security.IPMaxLoginFail == nil {
+		// 默认开启：30 次失败 / 窗口。只统计失败，NAT 后的正常用户不会受影响。
+		def := 30
+		c.Security.IPMaxLoginFail = &def
+	}
+	if c.Security.RefreshRateLimit == nil {
+		def := 120
+		c.Security.RefreshRateLimit = &def
+	}
 }
 
 // applyEnvOverrides 用环境变量覆盖配置，规则 NOVA_<SECTION>_<KEY>。
@@ -227,6 +274,11 @@ func applyEnvOverrides(c *Config) {
 	num("NOVA_APP_PORT", &c.App.Port)
 	str("NOVA_APP_PREFIX", &c.App.Prefix)
 	str("NOVA_APP_VERSION", &c.App.Version)
+	if v := os.Getenv("NOVA_APP_SWAGGER"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			c.App.Swagger = &b
+		}
+	}
 
 	str("NOVA_DATABASE_HOST", &c.Database.Host)
 	num("NOVA_DATABASE_PORT", &c.Database.Port)
@@ -251,6 +303,16 @@ func applyEnvOverrides(c *Config) {
 
 	num("NOVA_SECURITY_MAX_LOGIN_FAIL", &c.Security.MaxLoginFail)
 	num("NOVA_SECURITY_LOGIN_LOCK_SECONDS", &c.Security.LoginLockSeconds)
+	if v := os.Getenv("NOVA_SECURITY_IP_MAX_LOGIN_FAIL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.Security.IPMaxLoginFail = &n
+		}
+	}
+	if v := os.Getenv("NOVA_SECURITY_REFRESH_RATE_LIMIT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.Security.RefreshRateLimit = &n
+		}
+	}
 	// 逗号分隔，例如 NOVA_SECURITY_TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8
 	if v := os.Getenv("NOVA_SECURITY_TRUSTED_PROXIES"); v != "" {
 		out := make([]string, 0, 2)

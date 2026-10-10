@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"nova-admin/internal/database"
 	"nova-admin/internal/model"
@@ -352,5 +353,196 @@ func TestOperationLogCoversUnmatchedRoute(t *testing.T) {
 	}
 	if cnt == 0 {
 		t.Fatal("未匹配到路由的写请求没有留下操作日志：审计中间件可能被放到了 Recovery 里层")
+	}
+}
+
+// loginFromIP 从指定来源 IP 发起一次登录。
+//
+// httptest 默认的 RemoteAddr 固定为 192.0.2.1，要验证「按 账号+IP 分组」的锁定
+// 就必须显式改写它。可信代理未配置时 ClientIP 取 TCP 对端地址，因此这里写入的 IP
+// 就是服务端看到的来源 IP。
+func loginFromIP(eng *gin.Engine, account, secret, ip string) *response {
+	body, _ := json.Marshal(map[string]any{"username": account, "password": secret})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "NovaHardeningTest/ip-probe")
+	req.RemoteAddr = ip + ":54321"
+	rec := serve(eng, req)
+
+	res := &response{status: rec.Code}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		return res
+	}
+	res.Raw = payload
+	if v, ok := payload["code"].(float64); ok {
+		res.Code = int(v)
+	}
+	if v, ok := payload["message"].(string); ok {
+		res.Msg = v
+	}
+	if d, ok := payload["data"].(map[string]any); ok {
+		res.Data = d
+	}
+	return res
+}
+
+// clearLoginsForIP 清理指定账号+IP 的登录日志。
+func clearLoginsForIP(db *gorm.DB, username, ip string) {
+	db.Where("username = ? AND ip = ?", username, ip).Delete(&model.LoginLog{})
+}
+
+// TestLoginLockoutIsScopedToAccountAndIP 连续失败锁定必须按「账号 + 来源 IP」计数。
+//
+// 旧实现只按 username 统计失败次数：
+//
+//  1. 任何人拿 5 次错密码就能把 admin 锁定 5 分钟 —— 锁号型 DoS 的成本几乎为零；
+//  2. 登录成功并不清零，于是「失败 4 次 -> 成功 -> 失败 1 次」也会被莫名锁定。
+func TestLoginLockoutIsScopedToAccountAndIP(t *testing.T) {
+	eng := setup(t)
+	db := database.DB()
+
+	const attackerIP = "203.0.113.9" // 攻击者
+	const victimIP = "198.51.100.5"  // 受害者的正常来源
+
+	clearLoginsForIP(db, demoAccount, attackerIP)
+	clearLoginsForIP(db, demoAccount, victimIP)
+	defer func() {
+		clearLoginsForIP(db, demoAccount, attackerIP)
+		clearLoginsForIP(db, demoAccount, victimIP)
+	}()
+
+	// 攻击者用自己的 IP 连续失败（阈值 5，这里打 6 次）
+	for i := 0; i < 6; i++ {
+		loginFromIP(eng, demoAccount, "definitely-wrong-password", attackerIP)
+	}
+	// 攻击者自己被锁，符合预期
+	if res := loginFromIP(eng, demoAccount, "definitely-wrong-password", attackerIP); res.Code != 40103 {
+		t.Fatalf("攻击者 IP 应被锁定（40103），实际 %d", res.Code)
+	}
+
+	// 关键断言：受害者从自己的 IP 登录**不受影响**
+	res := loginFromIP(eng, demoAccount, demoSecret, victimIP)
+	if res.Code != 0 {
+		t.Fatalf("他人失败不应锁死该账号：受害者登录期望成功，实际 code=%d msg=%s", res.Code, res.Msg)
+	}
+
+	// 成功登录必须清零失败计数：
+	// 4 次失败 -> 成功 -> 再失败 1 次，不应被判为「连续失败达阈值」
+	clearLoginsForIP(db, demoAccount, attackerIP)
+	for i := 0; i < 4; i++ {
+		loginFromIP(eng, demoAccount, "definitely-wrong-password", attackerIP)
+	}
+	if res := loginFromIP(eng, demoAccount, demoSecret, attackerIP); res.Code != 0 {
+		t.Fatalf("第 4 次失败后成功登录应可用，实际 code=%d", res.Code)
+	}
+	res = loginFromIP(eng, demoAccount, "definitely-wrong-password", attackerIP)
+	if res.Code != 40101 {
+		t.Fatalf("成功登录后失败计数应重置：期望 40101（密码错误），实际 %d（%s）", res.Code, res.Msg)
+	}
+}
+
+// TestRoleGrantCannotEscalate 角色分配必须做「可授予范围」校验，防止垂直越权。
+//
+// 旧实现里 replaceRoles 只过滤「不存在的角色」，于是拥有 system:user:create 的
+// 系统管理员可以带 roleIds:[1]（超管）建号，或把自己/下属改成超管 —— 一次请求提权。
+func TestRoleGrantCannotEscalate(t *testing.T) {
+	setup(t)
+	adminToken := loginAs(t, adminAccount, adminSecret)
+
+	// 造一个「技术部 + 系统管理员(role 2, 数据范围=本部门及以下)」的受限管理员
+	create := call(t, http.MethodPost, "/api/v1/system/users", adminToken, map[string]any{
+		"username": "esc_probe_admin", "password": "probe123456",
+		"nickname": "越权探针管理员", "deptId": 2, "roleIds": []int64{2},
+	})
+	assertCode(t, create, 0, "创建受限管理员")
+	scopedID := num(create.obj(t), "id")
+
+	// 由它创建一个普通用户，用于最后验证「合法授予仍可正常工作」
+	okUser := call(t, http.MethodPost, "/api/v1/system/users", adminToken, map[string]any{
+		"username": "esc_probe_user", "password": "probe123456",
+		"nickname": "越权探针用户", "deptId": 2,
+	})
+	assertCode(t, okUser, 0, "创建探针用户")
+	okUserID := num(okUser.obj(t), "id")
+
+	defer func() {
+		call(t, http.MethodDelete, "/api/v1/system/users/"+itoa(scopedID), adminToken, nil)
+		call(t, http.MethodDelete, "/api/v1/system/users/"+itoa(okUserID), adminToken, nil)
+	}()
+
+	scopedToken := loginAs(t, "esc_probe_admin", "probe123456")
+
+	// 1) 不能新建一个超管账号
+	escalate := call(t, http.MethodPost, "/api/v1/system/users", scopedToken, map[string]any{
+		"username": "esc_probe_super", "password": "probe123456",
+		"nickname": "提权尝试", "deptId": 2, "roleIds": []int64{1},
+	})
+	assertStatus(t, escalate, http.StatusForbidden, "授予超管角色")
+	assertCode(t, escalate, 40300, "授予超管角色")
+
+	// 2) 也不能把自己改成超管
+	selfEscalate := call(t, http.MethodPut, "/api/v1/system/users/"+itoa(scopedID), scopedToken,
+		map[string]any{"nickname": "越权探针管理员", "deptId": 2, "roleIds": []int64{1, 2}})
+	assertStatus(t, selfEscalate, http.StatusForbidden, "自我提权")
+	assertCode(t, selfEscalate, 40300, "自我提权")
+
+	// 3) 角色下拉不应出现超管角色（否则是一个「选了必然 403」的选项）
+	options := call(t, http.MethodGet, "/api/v1/system/roles/options", scopedToken, nil)
+	assertCode(t, options, 0, "受限管理员拉取角色下拉")
+	for _, item := range options.List {
+		row := item.(map[string]any)
+		if row["id"].(float64) == 1 {
+			t.Fatal("角色下拉不应包含无权重授予的超级管理员角色")
+		}
+	}
+
+	// 4) 反向确认：权限未超出的角色仍可正常授予
+	grant := call(t, http.MethodPut, "/api/v1/system/users/"+itoa(okUserID), scopedToken,
+		map[string]any{"nickname": "越权探针用户", "deptId": 2, "roleIds": []int64{3}})
+	assertCode(t, grant, 0, "授予范围内角色")
+
+	// 5) 提权尝试全部失败后，超管账号不应真的被造出来
+	var cnt int64
+	if err := database.DB().Model(&model.User{}).
+		Where("username = ?", "esc_probe_super").Count(&cnt).Error; err != nil {
+		t.Fatalf("统计失败: %v", err)
+	}
+	if cnt != 0 {
+		t.Fatal("被拒绝的提权请求仍然写入了用户记录")
+	}
+}
+
+// TestTraceIDRejectsInjectedHeader 客户端传入的 X-Trace-Id 必须做字符集收敛。
+//
+// 只限长度是不够的：该值会被原样写进响应头与日志，含 CRLF 或控制字符时
+// 可用于响应头拆分、日志注入。
+func TestTraceIDRejectsInjectedHeader(t *testing.T) {
+	eng := setup(t)
+
+	cases := []struct {
+		name string
+		in   string
+		keep bool
+	}{
+		{"合法字符原样透传", "abc-123_XYZ", true},
+		{"含 CRLF 应重新生成", "abc\r\nX-Evil: 1", false},
+		{"含空格应重新生成", "abc def", false},
+		{"超长应重新生成", strings.Repeat("a", 65), false},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		req.Header.Set("X-Trace-Id", tc.in)
+		rec := serve(eng, req)
+		got := rec.Header().Get("X-Trace-Id")
+		if got == "" {
+			t.Fatalf("%s: 响应应始终带 X-Trace-Id", tc.name)
+		}
+		if tc.keep && got != tc.in {
+			t.Fatalf("%s: 期望原样透传 %q，实际 %q", tc.name, tc.in, got)
+		}
+		if !tc.keep && got == tc.in {
+			t.Fatalf("%s: 非法值不应被原样透传", tc.name)
+		}
 	}
 }

@@ -5,22 +5,22 @@ import type { DeptNode, DeptPayload } from '@/types/api'
 export const deptApi = {
   /** 部门树 */
   list(params?: { keyword?: string; status?: number }) {
-    return http.get<DeptNode[]>('/v1/system/depts', params as Record<string, unknown>)
+    return http.get<DeptNode[]>('/system/depts', params as Record<string, unknown>)
   },
   /** 部门详情 */
   detail(id: number) {
-    return http.get<DeptNode>(`/v1/system/depts/${id}`)
+    return http.get<DeptNode>(`/system/depts/${id}`)
   },
   /** 新增部门 */
   create(data: DeptPayload) {
-    return http.post<{ id: number }>('/v1/system/depts', data)
+    return http.post<{ id: number }>('/system/depts', data)
   },
   /** 修改部门 */
   update(id: number, data: DeptPayload) {
-    return http.put<string>(`/v1/system/depts/${id}`, data)
+    return http.put<string>(`/system/depts/${id}`, data)
   },
   /** 删除部门 */
   remove(id: number) {
-    return http.delete<string>(`/v1/system/depts/${id}`)
+    return http.delete<string>(`/system/depts/${id}`)
   },
 }

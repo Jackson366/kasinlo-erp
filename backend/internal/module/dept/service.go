@@ -143,6 +143,10 @@ func (s *Service) Delete(id int64) error {
 	return nil
 }
 
+// userCounts 返回每个部门「含所有子部门」的用户数。
+//
+// 旧实现只按 dept_id 分组，统计的是直属成员：于是「总公司」这种只做汇总的
+// 顶层部门会显示 0 人，页面看起来像数据没加载出来。这里把子部门的人数向上累加。
 func (s *Service) userCounts() (map[int64]int64, error) {
 	type row struct {
 		DeptID int64
@@ -155,9 +159,36 @@ func (s *Service) userCounts() (map[int64]int64, error) {
 		Group("dept_id").Scan(&rows).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
-	out := make(map[int64]int64, len(rows))
+	direct := make(map[int64]int64, len(rows))
 	for _, r := range rows {
-		out[r.DeptID] = r.Total
+		direct[r.DeptID] = r.Total
+	}
+
+	var all []model.Dept
+	if err := s.db.Select("id", "parent_id").Find(&all).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	children := make(map[int64][]int64, len(all))
+	for _, d := range all {
+		children[d.ParentID] = append(children[d.ParentID], d.ID)
+	}
+
+	// out 同时充当结果缓存与「已计算」标记，避免重复递归
+	out := make(map[int64]int64, len(all))
+	var sum func(id int64) int64
+	sum = func(id int64) int64 {
+		if v, ok := out[id]; ok {
+			return v
+		}
+		total := direct[id]
+		for _, c := range children[id] {
+			total += sum(c)
+		}
+		out[id] = total
+		return total
+	}
+	for _, d := range all {
+		sum(d.ID)
 	}
 	return out, nil
 }

@@ -27,6 +27,18 @@ type PageData struct {
 	PageSize int   `json:"pageSize"` // 每页条数
 }
 
+// IDData 是「只返回资源 ID」的统一结构（新增接口使用）。
+// 用具体类型而不是 gin.H：gin.H 是 map，Swagger 无法据此推导出字段，
+// 生成的文档里 data 会是一片空白。
+type IDData struct {
+	ID int64 `json:"id"`
+}
+
+// DeletedData 是「返回被清理条数」的统一结构（清空类接口使用）。
+type DeletedData struct {
+	Deleted int64 `json:"deleted"`
+}
+
 // OK 返回成功响应。
 func OK(c *gin.Context, data any) {
 	c.JSON(http.StatusOK, Body{Code: 0, Message: "success", Data: data, TraceID: traceOf(c)})

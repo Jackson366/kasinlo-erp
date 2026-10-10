@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -13,11 +14,18 @@ import (
 
 const traceHeader = "X-Trace-Id"
 
+// traceIDRe 限定链路 ID 的可用字符。
+//
+// 只限长度是不够的：这个值会被原样写进响应头和日志。
+// 客户端可以塞入 CR/LF 制造响应头拆分，或塞入控制字符污染日志行；
+// 长度受控的前提下，字符集也必须一并收窄 —— 不在集合内的一律重新生成。
+var traceIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
 // TraceID 为每个请求生成/透传链路 ID。
 func TraceIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.GetHeader(traceHeader)
-		if id == "" || len(id) > 64 {
+		if !traceIDRe.MatchString(id) {
 			id = newTraceID()
 		}
 		setTraceID(c, id)
