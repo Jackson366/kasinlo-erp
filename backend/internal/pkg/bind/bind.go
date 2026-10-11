@@ -29,14 +29,6 @@ func Query(c *gin.Context, obj any) error {
 	return nil
 }
 
-// URI 绑定路径参数并校验。
-func URI(c *gin.Context, obj any) error {
-	if err := c.ShouldBindUri(obj); err != nil {
-		return translate(obj, err)
-	}
-	return nil
-}
-
 func translate(obj any, err error) error {
 	var ve validator.ValidationErrors
 	if !asValidationErrors(err, &ve) {

@@ -16,16 +16,6 @@ export const userApi = {
   list(params: UserQuery) {
     return http.get<PageResult<UserItem>>('/system/users', params as Record<string, unknown>)
   },
-  /** 用户下拉选项 */
-  options(keyword?: string) {
-    return http.get<{ id: number; username: string; nickname: string }[]>('/system/users/options', {
-      keyword,
-    })
-  },
-  /** 用户详情 */
-  detail(id: number) {
-    return http.get<UserItem>(`/system/users/${id}`)
-  },
   /** 新增用户 */
   create(data: UserPayload) {
     return http.post<{ id: number }>('/system/users', data)

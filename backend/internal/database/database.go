@@ -19,11 +19,32 @@ import (
 
 var db *gorm.DB
 
+// loc 是数据库会话时区（配置 database.timezone，默认 Asia/Shanghai）。
+// DSN 里的 TimeZone 决定了 SQL 侧 DATE(created_at) 等按哪个时区分桶，
+// Go 侧拼日期键必须用同一时区，否则主机时区与数据库配置不一致时
+// 趋势图等按天聚合的结果会整日错位。
+var loc *time.Location
+
+// Location 返回数据库会话时区；Init 未调用时回退本地时区。
+func Location() *time.Location {
+	if loc == nil {
+		return time.Local
+	}
+	return loc
+}
+
 // DB 返回全局数据库句柄。
 func DB() *gorm.DB { return db }
 
 // Init 建立数据库连接：自动建库（如不存在）-> 连接 -> 连接池调优。
 func Init(cfg config.DatabaseConfig) (*gorm.DB, error) {
+	if l, err := time.LoadLocation(cfg.TimeZone); err == nil {
+		loc = l
+	} else {
+		loc = time.Local
+		logger.Warn("时区配置无效，回退使用服务器本地时区",
+			zap.String("timezone", cfg.TimeZone), zap.Error(err))
+	}
 	if err := ensureDatabase(cfg); err != nil {
 		return nil, err
 	}

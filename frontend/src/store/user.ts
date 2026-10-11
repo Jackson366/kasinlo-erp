@@ -28,13 +28,6 @@ export const useUserStore = defineStore('user', () => {
   /** 头像地址 */
   const avatar = computed(() => profile.value?.avatar || '')
 
-  /** 是否拥有指定权限 */
-  function hasPerm(code?: string): boolean {
-    if (!code) return true
-    if (isSuper.value) return true
-    return permissions.value.includes(code)
-  }
-
   /** 是否拥有任一权限 */
   function hasAnyPerm(codes: string[]): boolean {
     if (!codes.length) return true
@@ -88,7 +81,6 @@ export const useUserStore = defineStore('user', () => {
     roles,
     displayName,
     avatar,
-    hasPerm,
     hasAnyPerm,
     login,
     fetchProfile,

@@ -1,8 +1,8 @@
 package log
 
 import (
+	"nova-admin/internal/pkg/textutil"
 	"strconv"
-	"time"
 
 	"nova-admin/internal/model"
 	"nova-admin/internal/pkg/errcode"
@@ -63,7 +63,7 @@ func (s *Service) BuildOperationsFile(items []model.OperationLog) ([]byte, error
 		Col("耗时(ms)", 10, func(v model.OperationLog) string { return strconv.FormatInt(v.Latency, 10) }).
 		Col("错误信息", 30, func(v model.OperationLog) string { return truncate(v.ErrorMsg, maxExportErrorMsg) }).
 		Col("用户代理", 30, func(v model.OperationLog) string { return truncate(v.UserAgent, maxExportUserAgent) }).
-		Col("操作时间", 20, func(v model.OperationLog) string { return formatLogTime(v.CreatedAt) }).
+		Col("操作时间", 20, func(v model.OperationLog) string { return textutil.FormatTime(v.CreatedAt) }).
 		Rows(items)
 	return tbl.Build()
 }
@@ -82,7 +82,7 @@ func (s *Service) BuildLoginsFile(items []model.LoginLog) ([]byte, error) {
 		}).
 		Col("说明", 24, func(v model.LoginLog) string { return v.Message }).
 		Col("用户代理", 30, func(v model.LoginLog) string { return truncate(v.UserAgent, maxExportUserAgent) }).
-		Col("登录时间", 20, func(v model.LoginLog) string { return formatLogTime(v.CreatedAt) }).
+		Col("登录时间", 20, func(v model.LoginLog) string { return textutil.FormatTime(v.CreatedAt) }).
 		Rows(items)
 	return tbl.Build()
 }
@@ -97,11 +97,4 @@ func truncate(s string, limit int) string {
 		return s
 	}
 	return string(runes[:limit]) + "…"
-}
-
-func formatLogTime(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.Format("2006-01-02 15:04:05")
 }

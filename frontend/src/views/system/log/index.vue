@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useLatestGuard } from '@/composables/useLatestGuard'
 import { logApi, type LoginLogQuery, type OperationLogQuery } from '@/api/log'
 import type { LoginLogItem, OperationLogItem } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
@@ -20,14 +21,18 @@ const opQuery = reactive<OperationLogQuery>({ page: 1, pageSize: 10, keyword: ''
 
 const methodOptions = ['POST', 'PUT', 'DELETE', 'PATCH']
 
+const opGuard = useLatestGuard()
+
 async function loadOperations(): Promise<void> {
+  const ticket = opGuard.start()
   opLoading.value = true
   try {
     const data = await logApi.operations({ ...opQuery, keyword: opQuery.keyword || undefined })
+    if (!opGuard.isCurrent(ticket)) return // 快速切换查询时丢弃过期响应
     opRows.value = data.list
     opTotal.value = data.total
   } finally {
-    opLoading.value = false
+    if (opGuard.isCurrent(ticket)) opLoading.value = false
   }
 }
 
@@ -50,14 +55,18 @@ const loginRows = ref<LoginLogItem[]>([])
 const loginTotal = ref(0)
 const loginQuery = reactive<LoginLogQuery>({ page: 1, pageSize: 10, keyword: '' })
 
+const loginGuard = useLatestGuard()
+
 async function loadLogins(): Promise<void> {
+  const ticket = loginGuard.start()
   loginLoading.value = true
   try {
     const data = await logApi.logins({ ...loginQuery, keyword: loginQuery.keyword || undefined })
+    if (!loginGuard.isCurrent(ticket)) return // 快速切换查询时丢弃过期响应
     loginRows.value = data.list
     loginTotal.value = data.total
   } finally {
-    loginLoading.value = false
+    if (loginGuard.isCurrent(ticket)) loginLoading.value = false
   }
 }
 
@@ -154,14 +163,22 @@ const loginLoaded = ref(false)
 
 async function ensureOperations(): Promise<void> {
   if (operationLoaded.value) return
-  operationLoaded.value = true
-  await loadOperations()
+  try {
+    await loadOperations()
+    operationLoaded.value = true // 只有成功才标记：失败后切 tab 还能重试
+  } catch {
+    // 失败提示由响应拦截器统一处理；不标记，留给下一次进入 tab 重试
+  }
 }
 
 async function ensureLogins(): Promise<void> {
   if (loginLoaded.value) return
-  loginLoaded.value = true
-  await loadLogins()
+  try {
+    await loadLogins()
+    loginLoaded.value = true // 只有成功才标记：失败后切 tab 还能重试
+  } catch {
+    // 失败提示由响应拦截器统一处理；不标记，留给下一次进入 tab 重试
+  }
 }
 
 /**

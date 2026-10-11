@@ -1,11 +1,10 @@
 package dashboard
 
 import (
-	"strconv"
-
 	"github.com/gin-gonic/gin"
 
 	"nova-admin/internal/middleware"
+	"nova-admin/internal/pkg/page"
 	"nova-admin/internal/pkg/response"
 )
 
@@ -46,7 +45,7 @@ func (h *Handler) Overview(c *gin.Context) {
 // @Failure      401   {object}  response.Body  "未登录或令牌失效"
 // @Router       /dashboard/trend [get]
 func (h *Handler) Trend(c *gin.Context) {
-	days := atoiOr(c.Query("days"), 7)
+	days := page.AtoiOr(c.Query("days"), 7)
 	data, err := h.svc.Trend(days, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
@@ -66,8 +65,8 @@ func (h *Handler) Trend(c *gin.Context) {
 // @Failure      401    {object}  response.Body  "未登录或令牌失效"
 // @Router       /dashboard/modules [get]
 func (h *Handler) Modules(c *gin.Context) {
-	days := atoiOr(c.Query("days"), 7)
-	limit := atoiOr(c.Query("limit"), 8)
+	days := page.AtoiOr(c.Query("days"), 7)
+	limit := page.AtoiOr(c.Query("limit"), 8)
 	data, err := h.svc.ModuleStats(days, limit, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
@@ -86,22 +85,11 @@ func (h *Handler) Modules(c *gin.Context) {
 // @Failure      401    {object}  response.Body  "未登录或令牌失效"
 // @Router       /dashboard/recent-logins [get]
 func (h *Handler) RecentLogins(c *gin.Context) {
-	limit := atoiOr(c.Query("limit"), 8)
+	limit := page.AtoiOr(c.Query("limit"), 8)
 	data, err := h.svc.RecentLogins(limit, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
 	}
 	response.OK(c, data)
-}
-
-func atoiOr(s string, def int) int {
-	if s == "" {
-		return def
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return def
-	}
-	return n
 }

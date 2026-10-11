@@ -12,10 +12,6 @@ export const roleApi = {
   options() {
     return http.get<RoleOption[]>('/system/roles/options')
   },
-  /** 角色详情 */
-  detail(id: number) {
-    return http.get<RoleItem>(`/system/roles/${id}`)
-  },
   /** 新增角色 */
   create(data: RolePayload) {
     return http.post<{ id: number }>('/system/roles', data)

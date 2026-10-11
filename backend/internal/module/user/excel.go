@@ -15,6 +15,7 @@ import (
 	"nova-admin/internal/pkg/errcode"
 	"nova-admin/internal/pkg/hash"
 	"nova-admin/internal/pkg/sheet"
+	"nova-admin/internal/pkg/textutil"
 )
 
 const (
@@ -101,7 +102,7 @@ func (s *Service) BuildExportFile(items []VO) ([]byte, error) {
 		Col("备注", 24, func(v VO) string { return v.Remark }).
 		Col("最后登录时间", 20, func(v VO) string { return formatTimePtr(v.LastLoginAt) }).
 		Col("最后登录IP", 16, func(v VO) string { return v.LastLoginIP }).
-		Col("创建时间", 20, func(v VO) string { return formatTime(v.CreatedAt) }).
+		Col("创建时间", 20, func(v VO) string { return textutil.FormatTime(v.CreatedAt) }).
 		Rows(items)
 	return tbl.Build()
 }
@@ -600,16 +601,9 @@ func StatusText(status int16) string {
 	return "禁用"
 }
 
-func formatTime(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.Format("2006-01-02 15:04:05")
-}
-
 func formatTimePtr(t *time.Time) string {
 	if t == nil {
 		return ""
 	}
-	return formatTime(*t)
+	return textutil.FormatTime(*t)
 }

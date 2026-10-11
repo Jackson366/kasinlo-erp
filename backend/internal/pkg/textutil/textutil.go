@@ -11,7 +11,19 @@
 // 所以所有来自外部的文本都要在写入边界上过一次 Fit。
 package textutil
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
+
+// FormatTime 把时间格式化为导出/展示通用的 "2006-01-02 15:04:05"；
+// 零值返回空串 —— 导出场景里零值时间应显示为空而不是 "0001-01-01 00:00:00"。
+func FormatTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("2006-01-02 15:04:05")
+}
 
 // Fit 把 s 收敛到 limit 个字符以内，并保证结果是合法 UTF-8。
 // limit <= 0 表示不限长度，但仍会剔除非法 UTF-8 字节。

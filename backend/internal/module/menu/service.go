@@ -250,11 +250,17 @@ func (s *Service) descendantIDs(rootID int64) ([]int64, error) {
 		children[m.ParentID] = append(children[m.ParentID], m.ID)
 	}
 	var out []int64
+	visited := map[int64]bool{rootID: true}
 	queue := []int64{rootID}
 	for len(queue) > 0 {
 		cur := queue[0]
 		queue = queue[1:]
 		for _, c := range children[cur] {
+			if visited[c] {
+				// parent_id 数据被手工改成环时防止死循环（dept/authz 同款实现均有 visited）
+				continue
+			}
+			visited[c] = true
 			out = append(out, c)
 			queue = append(queue, c)
 		}

@@ -29,7 +29,7 @@ function triggerDownload(blob: Blob, filename: string): void {
  * 解析 Content-Disposition 中的文件名。
  * 后端同时给出 filename（ASCII 回退名）与 filename*（RFC 5987 UTF-8），优先取后者。
  */
-export function parseFilename(disposition?: string): string | undefined {
+function parseFilename(disposition?: string): string | undefined {
   if (!disposition) return undefined
 
   const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(disposition)

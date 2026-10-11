@@ -71,7 +71,3 @@ export function firstLeafPath(records: RouteRecord[]): string {
   return ''
 }
 
-/** 生成唯一的路由 key，用于 keep-alive */
-export function routeCacheKey(name?: string): string | undefined {
-  return name
-}

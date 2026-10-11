@@ -105,7 +105,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "新增角色")
-	id, err := h.svc.Create(req)
+	id, err := h.svc.Create(req, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return

@@ -5,10 +5,12 @@ import { profileApi } from '@/api'
 import type { ProfileInfo } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import { useUserStore } from '@/store'
+import { useRouter } from 'vue-router'
 
 defineOptions({ name: 'Profile' })
 
 const userStore = useUserStore()
+const router = useRouter()
 
 const loading = ref(true)
 const profile = ref<ProfileInfo | null>(null)
@@ -90,9 +92,13 @@ async function submitPassword(): Promise<void> {
       newPassword: pwdForm.newPassword,
     })
     ElMessage.success('密码修改成功，请重新登录')
-    pwdForm.oldPassword = ''
-    pwdForm.newPassword = ''
-    pwdForm.confirmPassword = ''
+    // 后端已通过 token_epoch 让旧令牌失效，前端必须真的退出并跳登录页，
+    // 否则提示与行为不符：用户停留在页面上，下一个请求就会 401。
+    try {
+      await userStore.logout()
+    } finally {
+      await router.push('/login')
+    }
   } finally {
     pwdSubmitting.value = false
   }

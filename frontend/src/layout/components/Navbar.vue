@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAppStore, usePermissionStore, useUserStore } from '@/store'
@@ -27,9 +27,14 @@ function toggleFullscreen(): void {
   }
 }
 
-document.addEventListener('fullscreenchange', () => {
+// 监听器必须随组件卸载而移除：Navbar 挂在 Layout 上，
+// 「退出登录 -> 再登录」会重新 setup 并再挂一个监听器，
+// 旧的监听器持有已卸载组件的 ref，持续泄漏。
+function onFullscreenChange(): void {
   fullscreen.value = !!document.fullscreenElement
-})
+}
+onMounted(() => document.addEventListener('fullscreenchange', onFullscreenChange))
+onBeforeUnmount(() => document.removeEventListener('fullscreenchange', onFullscreenChange))
 
 async function handleLogout(): Promise<void> {
   try {

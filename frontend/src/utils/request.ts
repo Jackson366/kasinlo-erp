@@ -187,15 +187,9 @@ instance.interceptors.response.use(
       return notifySessionExpired(code, message, traceId)
     }
 
-    // 无权限：只弹一次轻提示，交由调用方决定后续处理。
-    // 这里注释里「不弹窗」的说明与实现矛盾 —— 下面两行就是 ElMessage.error，
-    // 调用方拿到的仍然是 rejected promise。保留弹窗是因为 403 大多来自
-    // 用户刚点的操作，完全静默会让人以为按钮坏了。
-    if (code === 40300) {
-      ElMessage.error(message)
-      return Promise.reject(new ApiError(code, message, traceId))
-    }
-
+    // 40300（无权限）与兜底分支行为一致：弹轻提示 + reject。
+    // 保留弹窗是因为 403 大多来自用户刚点的操作，完全静默会让人以为按钮坏了；
+    // 调用方拿到 rejected promise，自行决定后续处理。
     ElMessage.error(message)
     return Promise.reject(new ApiError(code, message, traceId))
   },

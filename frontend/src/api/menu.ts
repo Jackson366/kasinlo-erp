@@ -7,10 +7,6 @@ export const menuApi = {
   list(params?: { keyword?: string; status?: number }) {
     return http.get<MenuNode[]>('/system/menus', params as Record<string, unknown>)
   },
-  /** 菜单详情 */
-  detail(id: number) {
-    return http.get<MenuNode>(`/system/menus/${id}`)
-  },
   /** 新增菜单 */
   create(data: MenuPayload) {
     return http.post<{ id: number }>('/system/menus', data)

@@ -1,8 +1,8 @@
 package role
 
 import (
+	"nova-admin/internal/pkg/textutil"
 	"strconv"
-	"time"
 
 	"nova-admin/internal/model"
 	"nova-admin/internal/pkg/errcode"
@@ -51,7 +51,7 @@ func (s *Service) BuildExportFile(items []VO) ([]byte, error) {
 		}).
 		Col("用户数", 9, func(v VO) string { return strconv.FormatInt(v.UserCount, 10) }).
 		Col("备注", 30, func(v VO) string { return v.Remark }).
-		Col("创建时间", 20, func(v VO) string { return formatRoleTime(v.CreatedAt) }).
+		Col("创建时间", 20, func(v VO) string { return textutil.FormatTime(v.CreatedAt) }).
 		Rows(items)
 	return tbl.Build()
 }
@@ -77,11 +77,4 @@ func dataScopeText(scope int16) string {
 	default:
 		return "未知"
 	}
-}
-
-func formatRoleTime(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.Format("2006-01-02 15:04:05")
 }

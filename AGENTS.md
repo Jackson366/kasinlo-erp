@@ -1237,6 +1237,107 @@ await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'le
 **教训**：验证脚本报 FAIL 时，先证明「脚本是对的」再改产品代码。
 双向验证（把修复临时退回去，确认用例真的会 FAIL）能省掉大量无效排查。
 
+### 5.49 「改角色」和「建角色」本身也是授权行为
+
+**症状**：`AssignMenus` 挂了 `EnsureRoleMenusGrantable`，但 `Update` 的
+`replaceMenus` 和 `Create` 都没有——持有 `system:role:update` 的非超管可以把一个
+**已挂用户的角色**改成任意菜单组合（比如加上自己都没有的 `system:user:delete`），
+该角色现有持有者在 authz 缓存失效后立刻拿到新权限；`Create` 更是连 actor 都不收，
+非超管可以直接造出 `data_scope=全部数据` 的角色。
+
+**正确做法**：三条路径（授予用户 / 修改角色菜单 / 创建角色）都要过同一道防线：
+
+```go
+// Update：事务前校验（与 AssignMenus 一致）
+if req.MenuIDs != nil && r.Code != authz.SuperRoleCode {
+    if err := authz.EnsureRoleMenusGrantable(actor, req.MenuIDs); err != nil {
+        return err
+    }
+}
+// Create：范围不宽于自身 + 菜单不超出自身权限码
+if actor != nil && !actor.IsSuper && scope < actor.DataScope { ... }
+if err := authz.EnsureRoleMenusGrantable(actor, req.MenuIDs); err != nil { ... }
+```
+
+**判断标准**：凡是「能把权限写进系统持久层」的入口，都是授权行为。
+只堵一条路径的防线等于没堵——审计时要列出同一资源的**全部**写入口。
+
+### 5.50 兜底路由会吃掉冷启动深链，404 页永远不能无条件放行
+
+**症状**：把「404 页免登录」实现成 `if (to.name === 'NotFound') next()` 放在守卫前部。
+冷启动直接访问 `/system/user` 时，动态路由还没注册，这个路径**先命中兜底路由**
+`/:pathMatch(.*)*` → `to.name === 'NotFound'` 成立 → 直接放行显示 404，
+路由注册流程根本走不到——§5.1 修过的深链冷启动被整个打破。
+
+**正确做法**：404 页不进白名单。未登录访问未匹配路径统一回登录页（带 redirect）；
+登录后冷启动深链先走「拉资料 → 注册动态路由 → 重新导航」，注册后仍不匹配
+才会看到真正的 404 页。
+
+```ts
+if (!userStore.isLoggedIn) {
+  next({ path: '/login', query: { redirect: to.fullPath } })
+  return
+}
+// ……之后才是动态路由注册流程
+```
+
+**教训**：`to.name === 'NotFound'` 在「路由注册前」是**无信息**的——
+它不代表「用户敲错了地址」，只代表「路由表还没就绪」。
+给守卫加放行分支前，先问：这个条件在冷启动的第一跳是否也成立？
+
+### 5.51 指令语义改了，验证断言必须跟着改
+
+**症状**：§5.34 把 v-perm 从「摘 DOM」改成「CSS 隐藏」后，
+`browser-verify.mjs` 里「写操作按钮被 v-perm 移除」的断言还在用
+`textContent` 判断——隐藏的按钮 `textContent` 依然存在，断言永远 FAIL，
+但它跟产品是否正确毫无关系（真实状态：`perm-denied` 类已挂、
+`visibility:hidden` 已生效、`body.innerText` 里根本没有这些文字）。
+
+**正确做法**：断言跟着语义走——检查**可见性**（`getComputedStyle().visibility`
++ `getBoundingClientRect().width`），并额外锚定新语义本身
+（被拒按钮应带 `perm-denied` 标记且**仍在 DOM 里**）。
+
+**判断标准**：改任何「实现机制不变、对外行为不变」的内部实现时，
+全局搜一遍验证脚本里引用旧机制字眼的断言。**过期断言比没有断言更糟**——
+它会把「实现正确」误报为「回归」，训练人去忽略验证结果。
+
+### 5.52 按需加载的标志位必须「成功才置位」
+
+**症状**：`ensureXxx()` 里先 `flag = true` 再 `await load()`。
+首次加载一旦失败，标志永久为真，之后所有调用直接 return——
+tab 永远空白且没有任何重试机会。
+
+**正确做法**：
+
+```ts
+async function ensureOperations(): Promise<void> {
+  if (operationLoaded.value) return
+  try {
+    await loadOperations()
+    operationLoaded.value = true // 只有成功才标记：失败后还能重试
+  } catch { /* 提示由拦截器统一处理 */ }
+}
+```
+
+**同源问题——列表加载的响应竞态**：快速连续查询时「先发的慢响应」会覆盖
+「后发的快响应」。加载序列要有序号守卫（见 `src/composables/useLatestGuard.ts`）：
+每次 `start()` 拿票据，响应回来 `isCurrent(ticket)` 为 false 就丢弃；
+`finally` 里也要判，否则过期请求提前返回会把 loading 提前关掉。
+
+### 5.53 setup 顶层的 `document.addEventListener` 不会随组件卸载
+
+**症状**：`Navbar.vue` 的 `fullscreenchange` 监听器写在 `<script setup>` 顶层。
+Layout 挂载 Navbar，每次「退出登录 → 再登录」都重新 setup 并**再挂一个**，
+旧监听器持有已卸载组件的 ref，持续泄漏。
+
+**正确做法**：`onMounted` 注册、`onBeforeUnmount` 移除，且回调用具名函数
+（匿名函数无法 remove）。
+
+**同源问题——`setTimeout` 猜渲染时机**：`setTimeout(60)` 后取树 ref 再
+`setCheckedKeys`，机器慢或树大时 ref 还没挂载，调用静默 no-op，
+表现为「权限勾选回显随机丢失」。改为在 `nextTick` 微任务帧里**轮询 ref**
+（有上限），就绪即执行，超时给出用户可见的提示。
+
 ---
 
 ## 6. 验证流程（改完必跑）
@@ -1265,7 +1366,7 @@ node scripts/browser-verify.mjs
 APP_URL=http://localhost:4173 node scripts/browser-verify.mjs   # 验证生产产物
 ```
 
-脚本零依赖（Node 原生 fetch + WebSocket 驱动系统 Chrome），共 48 项断言，覆盖：
+脚本零依赖（Node 原生 fetch + WebSocket 驱动系统 Chrome），共 49 项断言，覆盖：
 
 1. 冷启动落登录页、表单登录进仪表盘
 2. **F5 深链直接进业务页不应落 404**（§5.1 的回归锚点）
@@ -1456,6 +1557,8 @@ sheet.Download(c, "用户列表_20260929_205419.xlsx", data)
 - **受控组件的取消/失败路径必须显式回写绑定值**，否则 UI「看起来改了、其实没改」（§5.44）
 - **`reserve-selection` 只在数据集合未变时可保留**，改筛选条件必须清选择（§5.45）
 - **`?.` 与 `&&` 都是静默失败通道**，链式调用有环节可能缺席时必须显式处理（§5.47）
+- **「能把权限写进持久层」的入口全是授权行为**，Update/Create 与 Assign 必须过同一道防线（§5.49）
+- **404 页不进白名单**，兜底路由在冷启动会吃掉深链，放行分支必须先过登录判定（§5.50）
 
 ## 8.1 交互正确性红线
 

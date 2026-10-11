@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import * as echarts from 'echarts/core'
-import { BarChart, LineChart, PieChart } from 'echarts/charts'
+import { BarChart, LineChart } from 'echarts/charts'
 import {
   GridComponent,
   LegendComponent,
@@ -15,7 +15,6 @@ import { readToken } from '@/utils/theme'
 echarts.use([
   LineChart,
   BarChart,
-  PieChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,

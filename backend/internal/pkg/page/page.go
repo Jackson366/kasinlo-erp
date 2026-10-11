@@ -33,8 +33,8 @@ type Query struct {
 // FromContext 从请求中解析分页参数并做边界收敛。
 func FromContext(c *gin.Context) Query {
 	q := Query{
-		Page:     atoiOr(c.Query("page"), defaultPage),
-		PageSize: atoiOr(c.Query("pageSize"), defaultPageSize),
+		Page:     AtoiOr(c.Query("page"), defaultPage),
+		PageSize: AtoiOr(c.Query("pageSize"), defaultPageSize),
 		Keyword:  c.Query("keyword"),
 		OrderBy:  c.Query("orderBy"),
 		Order:    c.Query("order"),
@@ -92,7 +92,9 @@ func (q Query) SafeOrderBy(allowed map[string]string, fallback string) string {
 	return fallback
 }
 
-func atoiOr(s string, def int) int {
+// AtoiOr 把字符串安全转为 int，空串或非法值返回 def。
+// 客户端可控的查询参数一律经它兜底，不要直接用 strconv.Atoi。
+func AtoiOr(s string, def int) int {
 	if s == "" {
 		return def
 	}

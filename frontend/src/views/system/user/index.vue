@@ -10,6 +10,7 @@ import {
   type UploadInstance,
 } from 'element-plus'
 import { deptApi, roleApi, userApi } from '@/api'
+import { useLatestGuard } from '@/composables/useLatestGuard'
 import type {
   DeptNode,
   ImportResult,
@@ -42,17 +43,21 @@ const statusOptions = [
   { label: '禁用', value: 0 },
 ]
 
+const loadGuard = useLatestGuard()
+
 async function loadList(): Promise<void> {
+  const ticket = loadGuard.start()
   loading.value = true
   try {
     const data = await userApi.list({
       ...query,
       keyword: query.keyword || undefined,
     })
+    if (!loadGuard.isCurrent(ticket)) return // 快速连续查询时丢弃过期响应
     rows.value = data.list
     total.value = data.total
   } finally {
-    loading.value = false
+    if (loadGuard.isCurrent(ticket)) loading.value = false
   }
 }
 
@@ -109,6 +114,9 @@ const rules: FormRules<UserPayload> = {
     { min: 3, max: 64, message: '用户名长度为 3 ~ 64 个字符', trigger: 'blur' },
   ],
   nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
+  password: [
+    { min: 6, max: 64, message: '密码长度为 6 ~ 64 个字符', trigger: 'blur' },
+  ],
   email: [{ type: 'email', message: '邮箱格式不正确', trigger: 'blur' }],
 }
 
@@ -411,8 +419,8 @@ async function downloadTemplate(): Promise<void> {
 }
 
 onMounted(async () => {
-  await loadOptions()
-  await loadList()
+  // 两个请求互不依赖，串行会白等一个 RTT
+  await Promise.all([loadOptions(), loadList()])
 })
 </script>
 

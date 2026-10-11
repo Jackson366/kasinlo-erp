@@ -35,18 +35,6 @@ type Identity struct {
 	Permissions map[string]struct{} `json:"-"`
 }
 
-// HasPerm 判断是否拥有指定权限。
-func (i *Identity) HasPerm(code string) bool {
-	if i == nil {
-		return false
-	}
-	if i.IsSuper {
-		return true
-	}
-	_, ok := i.Permissions[code]
-	return ok
-}
-
 // HasAnyPerm 判断是否拥有任一权限。
 func (i *Identity) HasAnyPerm(codes ...string) bool {
 	if i == nil {

@@ -668,7 +668,7 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产
 | 编译期 | `gofmt -l .` / `go vet ./...` / `npm run typecheck` | 语法、类型、常见误用 | — |
 | 进程内 E2E | `go test ./test/... -count=1` | 行为契约（进程内 `httptest` 驱动完整路由） | **63 个测试 / 137 个子用例** |
 | 接口冒烟 | `node scripts/api-smoke.mjs` | 协议层（真实 HTTP、二进制响应、文件上传下载） | **90 项断言** |
-| 浏览器运行时 | `node scripts/browser-verify.mjs` | 真实渲染（白屏、主题、控制台报错） | **48 项断言** |
+| 浏览器运行时 | `node scripts/browser-verify.mjs` | 真实渲染（白屏、主题、控制台报错） | **49 项断言** |
 
 ### 为什么必须有浏览器验证
 
@@ -1353,7 +1353,7 @@ node scripts/browser-verify.mjs
 
 ## 3.8 必读的八个坑
 
-完整 48 条见 [`AGENTS.md` §5](../AGENTS.md)。以下八条是新增业务时**最常撞上**的：
+完整 53 条见 [`AGENTS.md` §5](../AGENTS.md)。以下八条是新增业务时**最常撞上**的：
 
 | # | 坑 | 症状 | 正确做法 |
 | --- | --- | --- | --- |
@@ -1369,7 +1369,7 @@ node scripts/browser-verify.mjs
 ## 3.8.1 前端交互必读的五个坑
 
 这五条都是 Element Plus 受控组件带来的，**编译与类型检查都发现不了**，
-只会在用户点下去的那一刻才暴露。对应 `AGENTS.md` §5.44–§5.48。
+只会在用户点下去的那一刻才暴露。对应 `AGENTS.md` §5.44–§5.53。
 
 | # | 坑 | 症状 | 正确做法 |
 | --- | --- | --- | --- |

@@ -53,5 +53,9 @@ export default router
 /** 动态路由统一挂载到 Root 之下 */
 export const ROOT_ROUTE_NAME = 'Root'
 
-/** 无需登录即可访问的路径 */
-export const WHITE_LIST = ['/login', '/404']
+/** 无需登录即可访问的路径。
+ *  注意 404 页不进白名单：/foo、/bar 等任意未匹配路径都命中同一个兜底路由，
+ *  字面量 '/404' 只是其中之一。未登录访问未匹配路径统一回登录页（带 redirect），
+ *  登录后再访问才能真正看到系统的 404 页 —— 深链冷启动依赖同一机制：
+ *  动态路由注册前所有业务路径都「未匹配」，放行它们会永远 404（§5.1）。 */
+export const WHITE_LIST = ['/login']

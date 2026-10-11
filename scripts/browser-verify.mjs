@@ -544,10 +544,31 @@ async function main() {
   const viewerHash = await formLogin(VIEWER.user, VIEWER.secret)
   check('demo 登录成功', viewerHash === '#/dashboard', `hash=${viewerHash}`)
   await coldStart(`${APP}/#/system/user`, 2800)
-  const btns = await evaluate(`Array.from(document.querySelectorAll('.user-page button, .user-page .el-button')).map(e => e.textContent.trim()).filter(Boolean)`)
-  check('写操作按钮被 v-perm 移除', !btns.includes('新增用户') && !btns.some((t) => t.includes('重置密码')), `可见按钮=${JSON.stringify(btns)}`)
+  // §5.34 之后 v-perm 的语义是「CSS 隐藏，绝不摘 DOM」，
+  // 所以这里必须检查**可见性**而不是 textContent —— 隐藏的按钮 textContent 仍在。
+  // 同时锚定 §5.34 本身：被拒按钮应带 perm-denied 标记且留在 DOM 里。
+  const btnState = await evaluate(`(() => {
+    const els = Array.from(document.querySelectorAll('.user-page button, .user-page .el-button'))
+    const vis = []
+    const hiddenDenied = []
+    for (const e of els) {
+      const t = (e.textContent || '').trim()
+      if (!t) continue
+      const cs = getComputedStyle(e)
+      const visible = cs.visibility !== 'hidden' && cs.display !== 'none' && e.getBoundingClientRect().width > 1
+      if (visible) vis.push(t)
+      else if (e.classList.contains('perm-denied')) hiddenDenied.push(t)
+    }
+    return { vis, hiddenDenied }
+  })()`)
+  const btns = btnState.vis
+  check('写操作按钮被 v-perm 隐藏', !btns.includes('新增用户') && !btns.some((t) => t.includes('重置密码')),
+    `可见按钮=${JSON.stringify(btns)} 被隐藏=${JSON.stringify(btnState.hiddenDenied)}`)
   // 批量导出等于一次性取走全量数据，风险等级高于「能看列表」，只读账号不应看到入口
-  check('只读账号看不到导入/导出入口', !btns.includes('导入') && !btns.includes('导出'), `可见按钮=${JSON.stringify(btns)}`)
+  check('只读账号看不到导入/导出入口', !btns.includes('导入') && !btns.includes('导出'),
+    `可见按钮=${JSON.stringify(btns)} 被隐藏=${JSON.stringify(btnState.hiddenDenied)}`)
+  // §5.34 语义锚点：v-perm 拒绝的按钮应仍在 DOM 里（CSS 隐藏 + perm-denied 标记）
+  check('v-perm 隐藏而非摘除 DOM', btnState.hiddenDenied.length >= 4, `隐藏数=${btnState.hiddenDenied.length}`)
   report.phases.viewer = { viewerHash, buttons: btns }
 
   // ── 阶段 6：退出登录 → 换账号 ───────────────────────

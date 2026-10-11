@@ -11,10 +11,6 @@ export const authApi = {
   logout() {
     return http.post<string>('/auth/logout')
   },
-  /** 刷新令牌 */
-  refresh(refreshToken: string) {
-    return http.post<LoginResult>('/auth/refresh', { refreshToken })
-  },
 }
 
 /** 个人中心接口 */

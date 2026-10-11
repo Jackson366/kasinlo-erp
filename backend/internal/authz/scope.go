@@ -1,9 +1,6 @@
 package authz
 
 import (
-	"fmt"
-	"strings"
-
 	"gorm.io/gorm"
 
 	"nova-admin/internal/database"
@@ -186,31 +183,6 @@ func (s *Scope) EnsureUserVisible(userID int64, deptID *int64) error {
 		return nil
 	}
 	return errcode.New(errcode.ErrNotFound, "用户不存在")
-}
-
-// Describe 返回范围的中文描述，用于日志与错误提示。
-func (s *Scope) Describe() string {
-	switch {
-	case s.Unrestricted:
-		return "全部数据"
-	case s.SelfOnly:
-		return "仅本人"
-	default:
-		return fmt.Sprintf("部门 %s", joinIDs(s.DeptIDs))
-	}
-}
-
-// joinIDs 压缩过长的 ID 列表，避免错误提示刷屏。
-func joinIDs(ids []int64) string {
-	const max = 5
-	if len(ids) <= max {
-		parts := make([]string, 0, len(ids))
-		for _, id := range ids {
-			parts = append(parts, fmt.Sprint(id))
-		}
-		return strings.Join(parts, ",")
-	}
-	return fmt.Sprintf("%d 个部门", len(ids))
 }
 
 // DeptTreeIDs 返回部门及其所有子部门 ID（BFS）。

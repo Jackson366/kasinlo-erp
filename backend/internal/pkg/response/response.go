@@ -96,15 +96,6 @@ func FailWith(c *gin.Context, code errcode.Code, msg string) {
 	c.Abort()
 }
 
-// FailBadRequest 参数错误快捷方法。
-func FailBadRequest(c *gin.Context, msg string) { FailWith(c, errcode.ErrBadRequest, msg) }
-
-// FailUnauthorized 未认证快捷方法。
-func FailUnauthorized(c *gin.Context, msg string) { FailWith(c, errcode.ErrUnauthorized, msg) }
-
-// FailForbidden 无权限快捷方法。
-func FailForbidden(c *gin.Context, msg string) { FailWith(c, errcode.ErrForbidden, msg) }
-
 func traceOf(c *gin.Context) string {
 	if v, ok := c.Get("traceId"); ok {
 		if s, ok := v.(string); ok {

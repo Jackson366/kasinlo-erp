@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import type { EChartsCoreOption } from 'echarts/core'
 import { dashboardApi } from '@/api'
 import type { DashboardOverview, LoginLogItem, ModuleStat, TrendPoint } from '@/types/api'
@@ -13,6 +14,7 @@ defineOptions({ name: 'Dashboard' })
 
 const appStore = useAppStore()
 const userStore = useUserStore()
+const router = useRouter()
 
 /**
  * 图表调色板。ECharts 只接受具体色值、不认 CSS 变量，
@@ -65,15 +67,15 @@ const statCards = computed(() => [
   },
 ])
 
-/** 首页问候语 */
-const greeting = computed(() => {
+/** 首页问候语：只在进入页面时算一次（依赖的 new Date() 不是响应式数据，computed 反而误导） */
+function greeting(): string {
   const hour = new Date().getHours()
   if (hour < 6) return '凌晨好'
   if (hour < 12) return '早上好'
   if (hour < 14) return '中午好'
   if (hour < 18) return '下午好'
   return '晚上好'
-})
+}
 
 const trendOption = computed<EChartsCoreOption>(() => {
   const p = palette.value
@@ -216,9 +218,9 @@ async function loadAll(): Promise<void> {
 
 onMounted(loadAll)
 
-/** 跳转到日志页查看全部 */
+/** 跳转到日志页查看全部（走 router，绕过它会让路由守卫与 keep-alive 错过这次导航） */
 function goLogs(): void {
-  window.location.hash = '#/system/log'
+  void router.push('/system/log')
 }
 </script>
 
@@ -227,7 +229,7 @@ function goLogs(): void {
     <!-- 欢迎语 -->
     <div class="dashboard__hello">
       <div>
-        <h2>{{ greeting }}，{{ userStore.displayName }}</h2>
+        <h2>{{ greeting() }}，{{ userStore.displayName }}</h2>
         <p class="text-secondary">
           <template v-if="userStore.roles.length">
             当前角色：{{ userStore.roles.join('、') }}

@@ -18,7 +18,7 @@ export function setupRouterGuard(router: Router): void {
     const userStore = useUserStore()
     const permissionStore = usePermissionStore()
 
-    // 白名单直接放行；已登录用户访问登录页则回到首页
+    // 白名单路径直接放行；已登录用户访问登录页则回到首页
     if (WHITE_LIST.includes(to.path)) {
       if (to.path === '/login' && userStore.isLoggedIn) {
         next({ path: '/', replace: true })

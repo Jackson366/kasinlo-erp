@@ -78,10 +78,15 @@ func (s *Service) Login(req LoginReq, ip, ua string) (*LoginResp, error) {
 	s.ipFails.Reset(ip)
 
 	now := time.Now()
-	s.db.Model(&user).Updates(map[string]any{
+	// 更新失败不阻断登录，但要留痕：静默失败会让 last_login_ip
+	// 这类审计字段长期失真而无人察觉。
+	if err := s.db.Model(&user).Updates(map[string]any{
 		"last_login_at": now,
 		"last_login_ip": ip,
-	})
+	}).Error; err != nil {
+		logger.Warn("更新最后登录信息失败",
+			zap.Error(err), zap.Int64("userID", user.ID))
+	}
 	authz.Invalidate(user.ID)
 	s.writeLoginLog(user.ID, user.Username, ip, ua, true, "登录成功")
 

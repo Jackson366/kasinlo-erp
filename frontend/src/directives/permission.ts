@@ -36,7 +36,12 @@ function normalize(value: unknown): string[] {
 }
 
 /** 每个元素挂一个停止函数，unmounted 时调用，避免 watcher 泄漏 */
-type PermEl = HTMLElement & { __stopPermWatch?: () => void }
+type PermEl = HTMLElement & { __stopPermWatch?: () => void; __lastPermKey?: string }
+
+/** binding.value 的比较键：updated 钩子高频触发，绝大多数时候 value 根本没变 */
+function permValueKey(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value.join('\u0000') : String(value ?? '')
+}
 
 /** 同步单个元素的可见性（打标记 + CSS 隐藏，不动 DOM 结构） */
 function apply(el: HTMLElement, binding: DirectiveBinding<string | string[]>): void {
@@ -71,13 +76,21 @@ function startWatch(el: PermEl, binding: DirectiveBinding<string | string[]>): v
 
 const permission: Directive = {
   mounted(el: HTMLElement, binding: DirectiveBinding<string | string[]>) {
+    const target = el as PermEl
+    target.__lastPermKey = permValueKey(binding.value)
     apply(el, binding)
-    startWatch(el as PermEl, binding)
+    startWatch(target, binding)
   },
   updated(el: HTMLElement, binding: DirectiveBinding<string | string[]>) {
-    // binding.value 可能被改了（比如从固定权限码换成表达式），重新判定并换掉 watcher
-    apply(el, binding)
     const target = el as PermEl
+    const key = permValueKey(binding.value)
+    if (target.__lastPermKey === key) return
+    // binding.value 变了（比如从固定权限码换成表达式），重新判定并换掉 watcher。
+    // value 未变时必须跳过：表格任意状态变化都会触发行内所有 v-perm 走一遍
+    // 销毁+重建 effectScope，批量表格下是可观的重复开销，而权限的运行期变化
+    // 由 startWatch 里的 watch 驱动，与 updated 无关。
+    target.__lastPermKey = key
+    apply(el, binding)
     if (target.__stopPermWatch) {
       target.__stopPermWatch()
       target.__stopPermWatch = undefined

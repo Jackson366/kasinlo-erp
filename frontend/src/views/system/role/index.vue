@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, type Ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import type { ElTree } from 'element-plus'
 import { menuApi, roleApi } from '@/api'
+import { useLatestGuard } from '@/composables/useLatestGuard'
 import type { MenuNode, RoleItem, RolePayload } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
@@ -23,14 +24,18 @@ const dataScopeLabels: Record<number, string> = {
   4: '仅本人',
 }
 
+const loadGuard = useLatestGuard()
+
 async function loadList(): Promise<void> {
+  const ticket = loadGuard.start()
   loading.value = true
   try {
     const data = await roleApi.list({ ...query, keyword: query.keyword || undefined })
+    if (!loadGuard.isCurrent(ticket)) return // 快速连续查询时丢弃过期响应
     rows.value = data.list
     total.value = data.total
   } finally {
-    loading.value = false
+    if (loadGuard.isCurrent(ticket)) loading.value = false
   }
 }
 
@@ -120,7 +125,8 @@ async function openCreate(): Promise<void> {
   editingId.value = null
   Object.assign(form, { name: '', code: '', sort: 0, status: 1, dataScope: 1, remark: '' })
   dialogVisible.value = true
-  await nextTickTree(() => setCheckedMenus([]))
+  if (await whenTreeReady(treeRef)) setCheckedMenus([])
+  else ElMessage.warning('权限树尚未就绪，请重新打开弹窗')
 }
 
 async function openEdit(row: RoleItem): Promise<void> {
@@ -135,17 +141,22 @@ async function openEdit(row: RoleItem): Promise<void> {
     remark: row.remark,
   })
   dialogVisible.value = true
-  await nextTickTree(() => setCheckedMenus(row.menuIds))
+  if (await whenTreeReady(treeRef)) setCheckedMenus(row.menuIds)
+  else ElMessage.warning('权限树尚未就绪，请重新打开弹窗')
 }
 
-/** 等待弹窗内树组件渲染完成后再设置勾选状态 */
-function nextTickTree(callback: () => void): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      callback()
-      resolve()
-    }, 60)
-  })
+/**
+ * 等待弹窗内树组件挂载完成后执行回调。
+ *
+ * 不能用固定 setTimeout 猜渲染时机：机器慢或树大时 60ms 内 ref 还没挂载，
+ * setCheckedKeys 会静默 no-op，表现为「编辑角色时权限勾选回显随机丢失」且无报错。
+ * 改为在微任务帧里轮询 ref（上限 10 帧），ref 就绪即执行。
+ */
+async function whenTreeReady(tree: Ref<InstanceType<typeof ElTree> | undefined>): Promise<boolean> {
+  for (let i = 0; i < 10 && !tree.value; i++) {
+    await nextTick()
+  }
+  return !!tree.value
 }
 
 async function submitForm(): Promise<void> {
@@ -183,7 +194,11 @@ async function openAssign(row: RoleItem): Promise<void> {
   }
   assignTarget.value = row
   assignVisible.value = true
-  await nextTickTree(() => assignTreeRef.value?.setCheckedKeys(row.menuIds.filter((id) => leafIds.value.has(id)), false))
+  if (await whenTreeReady(assignTreeRef)) {
+    assignTreeRef.value?.setCheckedKeys(row.menuIds.filter((id) => leafIds.value.has(id)), false)
+  } else {
+    ElMessage.warning('权限树尚未就绪，请重新打开弹窗')
+  }
 }
 
 async function submitAssign(): Promise<void> {

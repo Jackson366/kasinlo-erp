@@ -288,6 +288,13 @@ func saveErr(err error) error {
 	if errors.As(err, &be) {
 		return be
 	}
+	// 并发撞 username 部分唯一索引（23505）：ensureUsernameFree 的
+	// 「先查后插」存在 TOCTOU 窗口，数据库兜住数据正确性，但错误码
+	// 要归一成 409 冲突而不是 50100 数据库错误（excel.go 的导入路径
+	// 已经用 isDuplicateKey 做了同样的映射）。
+	if isDuplicateKey(err) {
+		return errcode.New(errcode.ErrConflict, "用户名已存在")
+	}
 	return errcode.Wrap(errcode.ErrDatabase, err)
 }
 

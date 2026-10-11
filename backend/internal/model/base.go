@@ -14,9 +14,6 @@ type BaseModel struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
-// SoftDeleteModel 带软删除的基础模型（与 BaseModel 等价，语义化别名）。
-type SoftDeleteModel = BaseModel
-
 // 通用状态值
 const (
 	StatusDisabled int16 = 0 // 禁用

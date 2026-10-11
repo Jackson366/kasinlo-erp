@@ -97,7 +97,12 @@ func (s *Service) Get(id int64) (*VO, error) {
 }
 
 // Create 新增角色。
-func (s *Service) Create(req CreateReq) (int64, error) {
+// Create 新增角色。
+//
+// actor 不可省（理由同 Update）：创建时就能直接指定 data_scope 与菜单组合，
+// 没有「不能比调用者更宽 / 不能挂自己没有的权限码」两道校验，
+// 持有 system:role:create 的非超管就能直接造出一个全库通行证角色。
+func (s *Service) Create(req CreateReq, actor *authz.Identity) (int64, error) {
 	if err := s.ensureCodeFree(req.Code, 0); err != nil {
 		return 0, err
 	}
@@ -111,6 +116,13 @@ func (s *Service) Create(req CreateReq) (int64, error) {
 	scope := req.DataScope
 	if scope == 0 {
 		scope = model.DataScopeAll
+	}
+	if actor != nil && !actor.IsSuper && scope < actor.DataScope {
+		return 0, errcode.Newf(errcode.ErrForbidden,
+			"不能创建数据范围比自身更宽的角色（当前 %s）", scopeName(scope))
+	}
+	if err := authz.EnsureRoleMenusGrantable(actor, req.MenuIDs); err != nil {
+		return 0, err
 	}
 	r := model.Role{
 		Name:      req.Name,
@@ -148,6 +160,14 @@ func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 	}
 	if err := ensureRoleMutable(actor, r); err != nil {
 		return err
+	}
+	// 修改角色的菜单同样是授权行为（见 AssignMenus）：否则任何持有
+	// system:role:update 的非超管都能给一个已挂用户的角色挂上连自己
+	// 都没有的权限码，绕过 EnsureGrantable（它只管授予用户这一步）。
+	if req.MenuIDs != nil && r.Code != authz.SuperRoleCode {
+		if err := authz.EnsureRoleMenusGrantable(actor, req.MenuIDs); err != nil {
+			return err
+		}
 	}
 
 	updates := map[string]any{

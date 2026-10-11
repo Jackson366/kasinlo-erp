@@ -7,10 +7,6 @@ export const deptApi = {
   list(params?: { keyword?: string; status?: number }) {
     return http.get<DeptNode[]>('/system/depts', params as Record<string, unknown>)
   },
-  /** 部门详情 */
-  detail(id: number) {
-    return http.get<DeptNode>(`/system/depts/${id}`)
-  },
   /** 新增部门 */
   create(data: DeptPayload) {
     return http.post<{ id: number }>('/system/depts', data)

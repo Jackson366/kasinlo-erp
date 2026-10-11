@@ -103,8 +103,10 @@ func (s *Service) Trend(days int, actor *authz.Identity) ([]TrendPoint, error) {
 	if days <= 0 || days > 90 {
 		days = 7
 	}
+	// 日期键口径与 SQL 的 DATE(created_at) 一致：都用数据库会话时区。
+	zone := database.Location()
 	now := time.Now()
-	startDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local).AddDate(0, 0, -(days - 1))
+	startDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, zone).AddDate(0, 0, -(days - 1))
 	scope := authz.ResolveScope(actor)
 
 	type dayCount struct {
@@ -199,6 +201,6 @@ func (s *Service) RecentLogins(limit int, actor *authz.Identity) ([]model.LoginL
 
 func todayRange() (time.Time, time.Time) {
 	now := time.Now()
-	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, database.Location())
 	return start, start.AddDate(0, 0, 1)
 }
