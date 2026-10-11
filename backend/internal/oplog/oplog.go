@@ -63,8 +63,14 @@ func Init(db *gorm.DB) {
 }
 
 // Write 非阻塞写入一条日志；缓冲满时丢弃并计数。
+//
+// **不要**在 ch == nil 时静默 return：那意味着 Init 没被调用（main 里忘了调、
+// 某个测试直接构造了 Service），此时**所有**审计日志都在无声消失，
+// 而页面上看不到任何异常 —— 审计链断了却没人知道。
+// 这种情况要明确记一条 ERROR，且只记一次（否则每个请求刷一行日志，反过来把日志淹掉）。
 func Write(e Entry) {
 	if ch == nil {
+		reportUninitialized()
 		return
 	}
 	if e.CreatedAt.IsZero() {
@@ -75,6 +81,19 @@ func Write(e Entry) {
 	default:
 		recordDrop()
 	}
+}
+
+var (
+	initWarnOnce sync.Once
+)
+
+// reportUninitialized 在未初始化时打一条 ERROR（仅一次）。
+func reportUninitialized() {
+	initWarnOnce.Do(func() {
+		logger.Error("操作日志未初始化，审计日志全部丢失",
+			zap.String("原因", "oplog.Init 未被调用"),
+			zap.String("后果", "所有操作审计记录不会落库"))
+	})
 }
 
 // Flush 阻塞直到当前缓冲区中的日志全部落库。

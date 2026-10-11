@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { authApi, profileApi } from '@/api'
 import type { LoginParams, ProfileInfo, UserIdentity } from '@/types/api'
 import { clearTokens, hasAccessToken, setTokens } from '@/utils/auth'
+import { resetSessionExpiredGuard } from '@/utils/request'
 
 /**
  * 当前登录用户的状态：身份、资料、权限集合。
@@ -46,6 +47,8 @@ export const useUserStore = defineStore('user', () => {
     const result = await authApi.login(params)
     setTokens(result.accessToken, result.refreshToken)
     identity.value = result.user
+    // 新会话开始，把「已提示过登录失效」的闸门复位
+    resetSessionExpiredGuard()
     await fetchProfile()
   }
 
@@ -72,6 +75,8 @@ export const useUserStore = defineStore('user', () => {
     profile.value = null
     identity.value = null
     clearTokens()
+    // 主动登出后闸门也要复位，否则重新登录时会残留上一次的「不再提示」状态
+    resetSessionExpiredGuard()
   }
 
   return {

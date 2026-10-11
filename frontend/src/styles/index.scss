@@ -49,6 +49,24 @@ a {
   background: transparent;
 }
 
+// ---------- v-perm 无权限时的隐藏 ----------
+//
+// 刻意不用 `display: none`：被隐藏的元素如果正好是 el-dropdown / el-table 内部的
+// 根节点，display:none 可能影响组件的尺寸测量与浮层定位（ElPopper 依赖初始位置）。
+// visibility + pointer-events 只影响呈现与交互，不参与布局计算，副作用最小。
+//
+// 同时保留零尺寸兜底：visibility:hidden 的元素仍占据布局空间，
+// 在按钮组里会留下一个「空按钮」的间隙。
+.perm-denied {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+
 // ---------- 通用布局工具类 ----------
 .flex {
   display: flex;

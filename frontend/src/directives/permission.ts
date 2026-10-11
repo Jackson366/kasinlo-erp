@@ -1,4 +1,5 @@
 import type { App, Directive, DirectiveBinding } from 'vue'
+import { effectScope, watch } from 'vue'
 import { useUserStore } from '@/store'
 
 /**
@@ -9,51 +10,84 @@ import { useUserStore } from '@/store'
  *
  * 仅用于「显示与否」，真正的安全边界在后端接口权限校验。
  *
- * 实现上刻意把「移除」换成「用注释节点占位」：
- * 直接把元素从 DOM 里摘掉是不可逆的 —— 一旦权限在运行期变成有权限
- * （例如切换账号、管理员改了角色后重新拉取权限），元素已经不在文档里，
- * 任何后续钩子都拿不到它，按钮就再也回不来了。
- * 用注释节点占位后，有权限时把它换回来即可。
+ * 实现方式：**打标记属性 + CSS 隐藏，绝不碰 DOM 结构**。
+ *
+ * 为什么不能把元素从 DOM 里摘掉（无论是直接 remove，还是上一版那种「注释节点占位」）：
+ *
+ *  1. 占位方案要能「换回来」，前提是能感知权限变化。但 Vue 调用指令钩子时
+ *     组件的依赖收集是暂停的（pauseTracking），在钩子里读 Pinia 不会建立依赖，
+ *     于是 `updated` 根本不会被触发——上一版的补救在机制上就是无效的。
+ *  2. 摘除/换回会破坏 Vue 自己的 vnode 锚点。el-table 单元格、el-dropdown
+ *     内部都维护锚点，手动替换子节点会让后续 patch 写进已被丢弃的 vnode，
+ *     表现为「行操作按钮点了没反应」「下拉菜单错位」，且极难复现定位。
+ *  3. `hostRemove` 在 `parentNode === null` 时是 no-op，占位注释会永久泄漏在 DOM 里。
+ *
+ * 正确做法是**在 mounted 里为每个元素建一个 watch**：watch 的回调运行在
+ * 独立的响应式上下文中，依赖收集正常，权限一变就会重新判定。
+ * 这样连组件重渲染都不需要——直接切 class 即可。
  */
 
-type PlaceholderCarrier = HTMLElement & { __permPlaceholder?: Comment }
+const PERM_ATTR = 'data-perm'
+const DENIED_CLASS = 'perm-denied'
 
 function normalize(value: unknown): string[] {
   if (!value) return []
   return Array.isArray(value) ? (value as string[]) : [value as string]
 }
 
-function apply(el: PlaceholderCarrier, binding: DirectiveBinding<string | string[]>): void {
+/** 每个元素挂一个停止函数，unmounted 时调用，避免 watcher 泄漏 */
+type PermEl = HTMLElement & { __stopPermWatch?: () => void }
+
+/** 同步单个元素的可见性（打标记 + CSS 隐藏，不动 DOM 结构） */
+function apply(el: HTMLElement, binding: DirectiveBinding<string | string[]>): void {
   const codes = normalize(binding.value)
   if (codes.length === 0) return
 
   const allowed = useUserStore().hasAnyPerm(codes)
-  const placeholder = el.__permPlaceholder
-
   if (allowed) {
-    // 之前被占位隐藏，现在有权限了 —— 换回来
-    if (placeholder?.parentNode) {
-      placeholder.parentNode.replaceChild(el, placeholder)
-      delete el.__permPlaceholder
-    }
-    return
+    el.removeAttribute(PERM_ATTR)
+    el.classList.remove(DENIED_CLASS)
+  } else {
+    // 用属性记录判定结果，排查「为什么按钮没显示」时可以直接在 DOM 里看
+    el.setAttribute(PERM_ATTR, 'denied')
+    el.classList.add(DENIED_CLASS)
   }
+}
 
-  // 无权限：用注释节点占住位置，保留「换回来」的可能
-  const parent = el.parentNode
-  if (!parent || placeholder) return
-  const comment = document.createComment(' v-perm ')
-  parent.replaceChild(comment, el)
-  el.__permPlaceholder = comment
+function startWatch(el: PermEl, binding: DirectiveBinding<string | string[]>): void {
+  // effectScope 让这个 watcher 随元素一起销毁，不泄漏到组件之外
+  const scope = effectScope()
+  scope.run(() => {
+    // 依赖 store 的权限集合：权限一变就重新判定。
+    // 这条 watch 是权限变化的唯一驱动，不要改成在 updated 钩子里判定——
+    // 钩子里读 store 建立不了依赖，权限变化时根本不会被调用。
+    watch(
+      () => useUserStore().permissions.join(','),
+      () => apply(el, binding),
+    )
+  })
+  el.__stopPermWatch = () => scope.stop()
 }
 
 const permission: Directive = {
   mounted(el: HTMLElement, binding: DirectiveBinding<string | string[]>) {
-    apply(el as PlaceholderCarrier, binding)
+    apply(el, binding)
+    startWatch(el as PermEl, binding)
   },
-  // 组件每次更新都重新判定：权限可能在运行期变化（切换账号 / 重新拉取权限）
   updated(el: HTMLElement, binding: DirectiveBinding<string | string[]>) {
-    apply(el as PlaceholderCarrier, binding)
+    // binding.value 可能被改了（比如从固定权限码换成表达式），重新判定并换掉 watcher
+    apply(el, binding)
+    const target = el as PermEl
+    if (target.__stopPermWatch) {
+      target.__stopPermWatch()
+      target.__stopPermWatch = undefined
+    }
+    startWatch(target, binding)
+  },
+  unmounted(el: HTMLElement) {
+    const target = el as PermEl
+    target.__stopPermWatch?.()
+    target.__stopPermWatch = undefined
   },
 }
 
@@ -61,4 +95,5 @@ export function setupPermissionDirective(app: App): void {
   app.directive('perm', permission)
 }
 
+export { PERM_ATTR, DENIED_CLASS }
 export default permission

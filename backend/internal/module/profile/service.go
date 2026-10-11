@@ -1,6 +1,8 @@
 package profile
 
 import (
+	"regexp"
+
 	"gorm.io/gorm"
 
 	"nova-admin/internal/authz"
@@ -56,19 +58,55 @@ func (s *Service) Info(id *authz.Identity) (*Info, error) {
 }
 
 // Update 修改个人资料。
+//
+// 只写请求里真正带了的字段：见 UpdateReq 的说明，map 形式的 Updates
+// 不会省略零值，把没传的字段一并写进去等于「清空」。
 func (s *Service) Update(userID int64, req UpdateReq) error {
-	err := s.db.Model(&model.User{}).Where("id = ?", userID).Updates(map[string]any{
-		"nickname": req.Nickname,
-		"email":    req.Email,
-		"phone":    req.Phone,
-		"avatar":   req.Avatar,
-	}).Error
-	if err != nil {
+	updates := map[string]any{}
+	if req.Nickname != nil {
+		updates["nickname"] = *req.Nickname
+	}
+	if req.Email != nil {
+		if err := validateEmail(*req.Email); err != nil {
+			return err
+		}
+		updates["email"] = *req.Email
+	}
+	if req.Phone != nil {
+		updates["phone"] = *req.Phone
+	}
+	if req.Avatar != nil {
+		updates["avatar"] = *req.Avatar
+	}
+	if len(updates) == 0 {
+		// 一个字段都没带还发一次请求，多半是前端表单绑定出了问题；
+		// 直接当成功返回会掩盖问题，这里明确拒绝。
+		return errcode.New(errcode.ErrBadRequest, "没有需要更新的字段")
+	}
+	if err := s.db.Model(&model.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
 		return errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	authz.Invalidate(userID)
 	return nil
 }
+
+// validateEmail 校验邮箱格式，空串视为「清空」直接放行。
+//
+// 格式校验不能留在 binding 标签里：Email 是 *string，validator 的 omitempty
+// 判断的是指针是否为 nil，显式传 "" 清空时指针非 nil，email 规则会照常生效并报错。
+func validateEmail(v string) error {
+	if v == "" {
+		return nil
+	}
+	if !emailRe.MatchString(v) || len(v) > 128 {
+		return errcode.New(errcode.ErrBadRequest, "邮箱格式不正确")
+	}
+	return nil
+}
+
+// emailRe 与 go-playground/validator 的 email 规则等价的宽松版本：
+// 只要求有唯一的 @、@ 前非空、@ 后是点分隔的域名。
+var emailRe = regexp.MustCompile(`^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$`)
 
 // ChangePassword 修改本人密码。
 func (s *Service) ChangePassword(userID int64, oldPwd, newPwd string) error {

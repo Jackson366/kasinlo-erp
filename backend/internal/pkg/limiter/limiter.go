@@ -14,28 +14,50 @@ import (
 // 永远不会因为并发量大被误伤；只有真的在连续失败（撞库、爆破）的来源才会被限流。
 // 这正好补上「按账号锁定」拦不住的场景 —— 用同一个 IP 去试大量不同账号。
 //
-// 限制：状态在进程内存里，多实例部署时各自计数；GC 依赖窗口期，
-// 恶意使用海量不同 key 时内存增长上界 ≈ 攻击速率 × 窗口时长。
+// 限制：状态在进程内存里，多实例部署时各自计数。
+//
+// 内存上界由 maxKeys 控制：恶意使用海量不同 key 时，map 的规模不会超过
+// maxKeys（超过后新 key 不再记录，视为「未失败」直接放行），而不是
+// 「攻击速率 × 窗口时长」那样无界增长。超出上界的失败会被计入 Evicted，
+// 可通过监控观察是否有人在校准防护阈值。
 type FailLimiter struct {
-	mu     sync.Mutex
-	max    int
-	window time.Duration
-	now    func() time.Time
-	items  map[string]*entry
-	lastGC time.Time
+	mu      sync.Mutex
+	max     int
+	window  time.Duration
+	maxKeys int
+	now     func() time.Time
+	items   map[string]*entry
+	evicted int64
+	lastGC  time.Time
 }
 
 type entry struct {
 	fails []time.Time
 }
 
+// defaultMaxKeys 是 key 数量的默认上界。
+//
+// 1 万条 × (key 字符串 + 若干 time.Time) 约几 MB 量级，对一个后台服务足够宽裕，
+// 同时保证攻击者用随机源 IP 刷不出 OOM。map 的分配失败（OOM）是不可 recover 的。
+const defaultMaxKeys = 10000
+
 // New 创建限流器。max <= 0 或 window <= 0 表示关闭，此时所有方法都是空操作。
+// maxKeys <= 0 时使用 defaultMaxKeys。
 func New(max int, window time.Duration) *FailLimiter {
+	return NewWithCap(max, window, defaultMaxKeys)
+}
+
+// NewWithCap 与 New 相同，但显式指定 key 数量上界。
+func NewWithCap(max int, window time.Duration, maxKeys int) *FailLimiter {
+	if maxKeys <= 0 {
+		maxKeys = defaultMaxKeys
+	}
 	return &FailLimiter{
-		max:    max,
-		window: window,
-		now:    time.Now,
-		items:  make(map[string]*entry),
+		max:     max,
+		window:  window,
+		maxKeys: maxKeys,
+		now:     time.Now,
+		items:   make(map[string]*entry),
 	}
 }
 
@@ -56,6 +78,41 @@ func (l *FailLimiter) Allow(key string) bool {
 	return len(e.fails) < l.max
 }
 
+// AllowAndConsume 原子地完成「检查额度 + 占用一格」。
+//
+// **为什么必须有这个方法**：Allow 与 Fail 各自加锁，单独调用之间存在窗口。
+// 并发 N 个请求可以全部通过 Allow（都读到还剩 1 格），然后全部执行 Fail，
+// 于是阈值被突破 N 倍 —— 限流器在最需要它的场景（爆破）下正好失效。
+// 调用方若只是想「每请求占一格」，必须用本方法而不是 Allow + Fail 两步。
+//
+// 返回 true 表示本次请求已占用额度、应当放行。
+func (l *FailLimiter) AllowAndConsume(key string) bool {
+	if l == nil || l.max <= 0 || l.window <= 0 {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	l.gcLocked(now)
+
+	e, ok := l.items[key]
+	if !ok {
+		// 新 key：先看有没有空位，有则建立条目
+		if len(l.items) >= l.maxKeys {
+			l.evicted++
+			return true // 上界已满，本次不记录、也不拦截
+		}
+		e = &entry{}
+		l.items[key] = e
+	}
+	e.fails = prune(e.fails, now, l.window)
+	if len(e.fails) >= l.max {
+		return false
+	}
+	e.fails = append(e.fails, now)
+	return true
+}
+
 // Fail 记录一次失败。
 func (l *FailLimiter) Fail(key string) {
 	if l == nil || l.max <= 0 || l.window <= 0 {
@@ -67,6 +124,10 @@ func (l *FailLimiter) Fail(key string) {
 	l.gcLocked(now)
 	e, ok := l.items[key]
 	if !ok {
+		if len(l.items) >= l.maxKeys {
+			l.evicted++
+			return // 达到 key 上界，不再为新 key 建条目
+		}
 		e = &entry{}
 		l.items[key] = e
 	}
@@ -81,6 +142,16 @@ func (l *FailLimiter) Reset(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.items, key)
+}
+
+// Stats 返回当前 key 数与被上界挡掉的失败次数，用于监控。
+func (l *FailLimiter) Stats() (keys int, evicted int64) {
+	if l == nil {
+		return 0, 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.items), l.evicted
 }
 
 // gcLocked 清理已过期条目。调用方必须已持有锁。

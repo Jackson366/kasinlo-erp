@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, provide, ref } from 'vue'
+import { computed, nextTick, provide, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore, usePermissionStore } from '@/store'
 import Sidebar from './components/Sidebar.vue'
@@ -10,10 +10,17 @@ const route = useRoute()
 const appStore = useAppStore()
 const permissionStore = usePermissionStore()
 
-// 页面刷新：改变 key 强制重建当前组件
-const refreshKey = ref(0)
+// 页面刷新：把当前页面从 keep-alive 的缓存名单里摘掉一帧，逼它重建。
+//
+// 不要用「把 refreshKey 拼进 :key」的做法：那会让每次刷新都产生一个**新的 key**，
+// 而 keep-alive 是按 key 存缓存的——旧 key 的实例永远留在缓存里，既不会被复用，
+// 也不会被回收，反复刷新页面就会持续泄漏组件实例（连带它们的定时器、监听、DOM 引用）。
+const refreshing = ref(false)
 provide('pageRefresh', () => {
-  refreshKey.value += 1
+  refreshing.value = true
+  nextTick(() => {
+    refreshing.value = false
+  })
 })
 
 /** 需要缓存的页面组件名（与后端菜单 keepAlive 及组件 defineOptions name 对应） */
@@ -23,7 +30,9 @@ const cachedViews = computed(() =>
     .map((item) => item.name as string),
 )
 
-const viewKey = computed(() => `${route.path}#${refreshKey.value}`)
+// key 只用 path：稳定标识，keep-alive 才能正确复用与回收。
+// 刷新靠上面的 refreshing 开关实现，不污染 key。
+const viewKey = computed(() => route.path)
 </script>
 
 <template>
@@ -38,7 +47,7 @@ const viewKey = computed(() => `${route.path}#${refreshKey.value}`)
       <main class="layout__content">
         <router-view v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
-            <keep-alive :include="cachedViews">
+            <keep-alive :include="refreshing ? [] : cachedViews">
               <component :is="Component" :key="viewKey" />
             </keep-alive>
           </transition>

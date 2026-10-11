@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"nova-admin/internal/bootstrap"
 	"nova-admin/internal/model"
@@ -35,6 +36,9 @@ var (
 	setupOnce sync.Once
 	engine    *gin.Engine
 	setupErr  error
+	// testDB 是测试库句柄，供需要直接操作数据库的用例使用
+	// （例如验证聚合查询出错时接口是否会报错）。
+	testDB *gorm.DB
 )
 
 // setup 初始化测试环境：连接测试库 -> 迁移 -> 种子 -> 构建引擎。
@@ -57,6 +61,7 @@ func setup(t *testing.T) *gin.Engine {
 		}
 
 		oplog.Init(res.DB)
+		testDB = res.DB
 		engine = router.New(res.Config)
 	})
 	if setupErr != nil {

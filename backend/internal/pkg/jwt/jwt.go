@@ -56,7 +56,16 @@ type Manager struct {
 
 // Init 初始化全局令牌管理器。
 func Init(cfg config.JWTConfig) {
-	manager = &Manager{
+	manager = New(cfg)
+}
+
+// New 按配置构造一个独立的 Manager，不触碰全局单例。
+//
+// 生产代码一律用 M() 取单例；这个导出构造器是给单元测试用的
+// —— 测试若通过 Init 改全局状态，会污染同进程内的其他用例
+// （令牌密钥、issuer 都会变，而令牌可能被其他测试持有）。
+func New(cfg config.JWTConfig) *Manager {
+	return &Manager{
 		secret:        []byte(cfg.Secret),
 		issuer:        cfg.Issuer,
 		accessExpire:  time.Duration(cfg.AccessExpire) * time.Second,
@@ -109,13 +118,28 @@ func (m *Manager) sign(userID int64, username string, epoch int64, typ TokenType
 }
 
 // Parse 解析并校验令牌。
+//
+// 三道校验，缺一不可：
+//  1. **算法白名单**：只接受 HS256。golang-jwt 的 keyfunc 拿到的是「令牌自称的算法」，
+//     不校验就等于把「用哪个算法验签」的决定权交给签发方。这里显式比对 Alg()，
+//     而不是只断言「是 HMAC 类」—— HS512 同样属于 HMAC，一样不该被接受。
+//  2. **issuer 匹配**：签发时写进 claims，这里必须比对。不校验 issuer 意味着
+//     「同一份密钥签发的其它系统/其它环境的令牌」也能在本服务通过验签
+//     （多环境共用 secret 是很常见的配置）。
+//  3. 有效期、nbf 由 RegisteredClaims 的默认校验负责。
 func (m *Manager) Parse(tokenStr string) (*Claims, error) {
+	opts := []jwt.ParserOption{
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+	}
+	if m.issuer != "" {
+		opts = append(opts, jwt.WithIssuer(m.issuer))
+	}
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+		if t.Method == nil || t.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, ErrTokenInvalid
 		}
 		return m.secret, nil
-	})
+	}, opts...)
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrTokenExpired
@@ -124,6 +148,16 @@ func (m *Manager) Parse(tokenStr string) (*Claims, error) {
 	}
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
+		return nil, ErrTokenInvalid
+	}
+	// claims.Issuer 为空的令牌（老版本签发的）只有在配置了 issuer 时才会被上面拒绝，
+	// 这里再兜一次，保证「issuer 非空却不匹配」不可能通过。
+	if m.issuer != "" && claims.Issuer != m.issuer {
+		return nil, ErrTokenInvalid
+	}
+	// UserID <= 0 说明载荷被截断或伪造，直接判无效 —— 各处都用它做数据范围判定，
+	// 一个 0 值会命中「查不到用户」的分支而不是报错。
+	if claims.UserID <= 0 {
 		return nil, ErrTokenInvalid
 	}
 	return claims, nil

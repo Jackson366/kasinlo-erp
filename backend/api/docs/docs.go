@@ -254,7 +254,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回用户、角色、部门、菜单总数以及今日登录/操作/失败次数、近一周活跃用户数。",
+                "description": "返回用户、角色、部门、菜单总数以及今日登录/操作/失败次数、近一周活跃用户数。\n与「人」有关的统计受调用者的数据范围约束，范围外的用户不计入。",
                 "produces": [
                     "application/json"
                 ],
@@ -587,7 +587,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "userCount 为该部门「含所有子部门」的用户数。",
+                "description": "userCount 为该部门「含所有子部门」的用户数。返回结果受调用者的数据范围约束：\n非超管只能看到本部门（本部门及以下）范围内的部门，范围外的部门按「不存在」处理。",
                 "produces": [
                     "application/json"
                 ],
@@ -695,6 +695,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/response.Body"
                         }
                     },
+                    "403": {
+                        "description": "上级部门超出你的数据范围",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
                     "409": {
                         "description": "同级下已存在同名部门",
                         "schema": {
@@ -747,7 +753,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "部门不存在",
+                        "description": "部门不存在，或超出你的数据范围",
                         "schema": {
                             "$ref": "#/definitions/response.Body"
                         }
@@ -802,6 +808,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/response.Body"
                         }
                     },
+                    "403": {
+                        "description": "目标部门或上级部门超出你的数据范围",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
                     "404": {
                         "description": "部门不存在",
                         "schema": {
@@ -836,6 +848,12 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "删除成功",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "403": {
+                        "description": "目标部门超出你的数据范围",
                         "schema": {
                             "$ref": "#/definitions/response.Body"
                         }
@@ -1969,6 +1987,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/response.Body"
                         }
                     },
+                    "403": {
+                        "description": "无权修改超管角色 / 不能把数据范围调得比自身更宽",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
                     "404": {
                         "description": "角色不存在",
                         "schema": {
@@ -2009,6 +2033,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "内置角色不允许删除",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "403": {
+                        "description": "无权删除超管角色",
                         "schema": {
                             "$ref": "#/definitions/response.Body"
                         }
@@ -2067,6 +2097,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "超管角色无需分配",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "403": {
+                        "description": "无权给该角色授予自己不具备的权限",
                         "schema": {
                             "$ref": "#/definitions/response.Body"
                         }
@@ -2392,6 +2428,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "文件为空 / 格式不支持 / 表头不匹配 / 超出行数上限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "403": {
+                        "description": "文件中的角色超出可授予范围（权限或数据范围）",
                         "schema": {
                             "$ref": "#/definitions/response.Body"
                         }
@@ -3388,9 +3430,6 @@ const docTemplate = `{
         },
         "profile.UpdateReq": {
             "type": "object",
-            "required": [
-                "nickname"
-            ],
             "properties": {
                 "avatar": {
                     "type": "string",

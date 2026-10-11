@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"nova-admin/internal/middleware"
 	"nova-admin/internal/pkg/response"
 )
 
@@ -19,6 +20,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 // Overview 概览统计
 // @Summary      仪表盘概览统计
 // @Description  返回用户、角色、部门、菜单总数以及今日登录/操作/失败次数、近一周活跃用户数。
+// @Description  与「人」有关的统计受调用者的数据范围约束，范围外的用户不计入。
 // @Tags         仪表盘
 // @Produce      json
 // @Security     BearerAuth
@@ -26,7 +28,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 // @Failure      401  {object}  response.Body  "未登录或令牌失效"
 // @Router       /dashboard/overview [get]
 func (h *Handler) Overview(c *gin.Context) {
-	data, err := h.svc.Overview()
+	data, err := h.svc.Overview(middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -45,7 +47,7 @@ func (h *Handler) Overview(c *gin.Context) {
 // @Router       /dashboard/trend [get]
 func (h *Handler) Trend(c *gin.Context) {
 	days := atoiOr(c.Query("days"), 7)
-	data, err := h.svc.Trend(days)
+	data, err := h.svc.Trend(days, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -66,7 +68,7 @@ func (h *Handler) Trend(c *gin.Context) {
 func (h *Handler) Modules(c *gin.Context) {
 	days := atoiOr(c.Query("days"), 7)
 	limit := atoiOr(c.Query("limit"), 8)
-	data, err := h.svc.ModuleStats(days, limit)
+	data, err := h.svc.ModuleStats(days, limit, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -85,7 +87,7 @@ func (h *Handler) Modules(c *gin.Context) {
 // @Router       /dashboard/recent-logins [get]
 func (h *Handler) RecentLogins(c *gin.Context) {
 	limit := atoiOr(c.Query("limit"), 8)
-	data, err := h.svc.RecentLogins(limit)
+	data, err := h.svc.RecentLogins(limit, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return

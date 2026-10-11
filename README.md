@@ -5,8 +5,9 @@
 - 后端：Gin + GORM + PostgreSQL，分层清晰（`config / logger / database / authz / middleware / model / module / seed`）
 - 前端：Vue 3 + Vite + TypeScript + Element Plus，菜单驱动动态路由
 - 主题：内置**亮色 / 暗色**双主题，跟随系统偏好 + 手动切换 + 本地记忆，首屏无闪烁
-- 权限：JWT 双令牌 + RBAC（用户-角色-菜单）+ 按钮级权限指令 + **数据范围**（全部 / 本部门 / 本部门及以下 / 仅本人，读写同时生效）
-- 账号安全：连续失败锁定、改密码即吊销旧令牌（`token_epoch`）、审计 IP 不可被 `X-Forwarded-For` 伪造
+- 权限：JWT 双令牌 + RBAC（用户-角色-菜单）+ 按钮级权限指令（不摘 DOM、运行期权限变化可重新判定）+ **数据范围**（全部 / 本部门 / 本部门及以下 / 仅本人，读写同时生效，用户 / 部门 / 仪表盘统一收口）
+- 账号安全：连续失败锁定、JWT 锁死 HS256 且校验 issuer、限流记账原子且 key 数有硬上界、改密码即吊销旧令牌（`token_epoch`）、审计 IP 不可被 `X-Forwarded-For` 伪造、清空登录日志不解除账号锁定
+- 健壮性：客户端可控整数（页码）统一收敛、聚合查询错误一律上报而非静默返回空、审计日志组件未初始化会显式报错
 - 导入导出：用户 / 角色 / 操作日志 / 登录日志四类 Excel 导出，用户**两阶段批量导入**（先校验预览、再确认写库）
 - 依赖全部为 MIT / Apache-2.0 / BSD-3-Clause 等宽松许可，无 GPL 传染风险
 - 本项目自身以 [MIT 许可](LICENSE) 发布
@@ -176,7 +177,7 @@ nova-admin/
 ```bash
 cd backend
 go vet ./...
-go test ./test/... -count=1        # 37 个测试、65 个子用例
+go test ./test/... -count=1        # 63 个测试、137 个子用例
 ```
 
 测试使用独立库 `nova_admin_v5_test`，通过 `httptest` 在进程内跑完整路由，不依赖外部服务。

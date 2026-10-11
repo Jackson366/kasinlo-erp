@@ -230,10 +230,39 @@ func rolePermissions(roleIDs []int64) (map[int64][]string, error) {
 	return out, nil
 }
 
+// scopeText 返回数据范围的中文描述，用于拒绝原因。
+func scopeText(scope int16) string {
+	switch scope {
+	case 1:
+		return "全部数据"
+	case 2:
+		return "本部门"
+	case 3:
+		return "本部门及以下"
+	case 4:
+		return "仅本人"
+	default:
+		return "未知"
+	}
+}
+
 // bannedReason 返回「该角色不可授予」的原因；可授予时返回空串。
+//
+// 判定有两条独立的轴，缺一条就会留下提权通道：
+//  1. 权限码：目标角色携带的每个权限码，调用者都必须自己拥有；
+//  2. 数据范围：目标角色的范围不得比调用者更宽。
+//
+// 只判权限码是不够的：一个「不挂任何菜单 + dataScope=1」的角色，
+// 权限码集合为空 → 第一条轴全部通过，于是任何部门管理员都能把它授出去，
+// 受赠者直接获得全库数据可见性（1 全部 2 本部门 3 本部门及以下 4 仅本人，数值越小越宽）。
 func bannedReason(actor *Identity, r model.Role, perms []string) string {
 	if r.Code == SuperRoleCode {
 		return "只有超级管理员可以授予「超级管理员」角色"
+	}
+	// 数值越小范围越宽，因此「比调用者更宽」等价于「小于调用者」
+	if actor.DataScope > 0 && r.DataScope > 0 && r.DataScope < actor.DataScope {
+		return fmt.Sprintf("无权授予角色「%s」：它的数据范围（%s）比你的（%s）更宽",
+			r.Name, scopeText(r.DataScope), scopeText(actor.DataScope))
 	}
 	for _, p := range perms {
 		if _, ok := actor.Permissions[p]; !ok {
@@ -243,7 +272,27 @@ func bannedReason(actor *Identity, r model.Role, perms []string) string {
 	return ""
 }
 
-// EnsureGrantable 校验 actor 能否授予这些角色（roles 须为库中真实存在的角色）。
+// loadRolesForGrant 按 ID 读取授予判定所需的字段。
+//
+// 为什么不直接用调用方传进来的角色对象：判定依赖 code 与 data_scope，
+// 而调用方常常只 Select("id","name","code")——GORM 不会把未选中的列填成「真值」，
+// data_scope 会是零值，于是「数据范围不得更宽」这条判定会被静默跳过。
+// 授���判定的字段必须由本包自己从库里取，不能指望调用方选全。
+func loadRolesForGrant(ids []int64) ([]model.Role, error) {
+	roles := make([]model.Role, 0, len(ids))
+	if len(ids) == 0 {
+		return roles, nil
+	}
+	if err := database.DB().Select("id", "name", "code", "data_scope").
+		Where("id IN ?", ids).Find(&roles).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	return roles, nil
+}
+
+// EnsureGrantable 校验 actor 能否授予这些角色（roles 至少要带 ID）。
+//
+// 传入的角色对象只用于取 ID，实际判定一律以库中数据为准，理由见 loadRolesForGrant。
 func EnsureGrantable(actor *Identity, roles []model.Role) error {
 	if actor == nil || actor.IsSuper || len(roles) == 0 {
 		return nil
@@ -252,13 +301,40 @@ func EnsureGrantable(actor *Identity, roles []model.Role) error {
 	for _, r := range roles {
 		ids = append(ids, r.ID)
 	}
+	full, err := loadRolesForGrant(ids)
+	if err != nil {
+		return err
+	}
 	permsOf, err := rolePermissions(ids)
 	if err != nil {
 		return err
 	}
-	for _, r := range roles {
+	for _, r := range full {
 		if reason := bannedReason(actor, r, permsOf[r.ID]); reason != "" {
 			return errcode.New(errcode.ErrForbidden, reason)
+		}
+	}
+	return nil
+}
+
+// EnsureRoleMenusGrantable 校验 actor 是否有权把这些菜单的权限授予一个角色。
+//
+// 为什么与 EnsureGrantable 并列存在：EnsureGrantable 管的是「把角色给人」，
+// 而修改角色的菜单相当于「先改角色、再批量授予」，是绕过前者的另一条路。
+// 两处判定口径必须一致：都只认「启用、未删除、permission 非空」的菜单。
+func EnsureRoleMenusGrantable(actor *Identity, menuIDs []int64) error {
+	if actor == nil || actor.IsSuper || len(menuIDs) == 0 {
+		return nil
+	}
+	var perms []string
+	if err := database.DB().Model(&model.Menu{}).
+		Where("id IN ? AND status = ? AND deleted_at IS NULL AND permission <> ''", menuIDs, model.StatusEnabled).
+		Pluck("permission", &perms).Error; err != nil {
+		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	for _, p := range perms {
+		if _, ok := actor.Permissions[p]; !ok {
+			return errcode.Newf(errcode.ErrForbidden, "无权把权限「%s」授予角色", p)
 		}
 	}
 	return nil
@@ -271,7 +347,9 @@ func GrantableRoleIDs(actor *Identity) (map[int64]bool, bool, error) {
 		return nil, true, nil
 	}
 	var roles []model.Role
-	if err := database.DB().Select("id", "name", "code").Find(&roles).Error; err != nil {
+	// data_scope 必须一起取出来：bannedReason 的第二条轴要比较它，
+	// 只 Select(id,name,code) 会让所有角色的范围都取到零值，判定形同虚设。
+	if err := database.DB().Select("id", "name", "code", "data_scope").Find(&roles).Error; err != nil {
 		return nil, false, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	ids := make([]int64, 0, len(roles))

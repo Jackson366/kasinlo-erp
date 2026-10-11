@@ -26,11 +26,12 @@ func RateLimit(max int, window time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 客户端 IP 由 gin 依据可信代理配置解析，未配置代理时即 TCP 对端地址
 		key := c.ClientIP()
-		if !l.Allow(key) {
+		// 用原子方法而不是 Allow + Fail 两步：后者在并发下会被同时通过的
+		// N 个请求一起突破阈值，限流器恰好在爆破场景下失效。
+		if !l.AllowAndConsume(key) {
 			response.FailWith(c, errcode.ErrTooManyReq, "")
 			return
 		}
-		l.Fail(key) // 每一次请求都占一格额度
 		c.Next()
 	}
 }

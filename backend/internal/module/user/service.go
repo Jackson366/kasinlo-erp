@@ -105,48 +105,29 @@ func (s *Service) Options(keyword string, actor *authz.Identity) ([]Option, erro
 
 // ---------------- 数据范围（数据权限） ----------------
 //
-// 数据范围来自角色上的 data_scope，多个角色取最宽松者（见 authz.build）：
-//
-//	1 全部         不加限制
-//	2 本部门       仅本部门
-//	3 本部门及以下 本部门及其所有子部门
-//	4 仅本人       只有自己
-//
-// 读与写必须一起收窄。只收窄列表会留下「看不到但能改」的洞：
-// 「本部门」管理员虽然列不出别的部门的人，却仍能拿已知 ID 重置对方密码。
+// 口径的唯一实现在 authz.Scope，这里只做薄封装。
+// 早期 dept / dashboard 模块各自零散实现或干脆不实现，导致「读漏了」型越权，
+// 现在三个模块共用同一套解析结果与判定函数。
+
+// scopeQuery 把数据范围叠在 sys_users 查询上。
 func (s *Service) scopeQuery(actor *authz.Identity, tx *gorm.DB) *gorm.DB {
-	if actor == nil || actor.IsSuper || actor.DataScope == model.DataScopeAll {
-		return tx
-	}
-	if actor.DataScope == model.DataScopeSelf || actor.DeptID == nil {
-		// 没有部门的人谈不上「本部门」，退化成只能看自己
-		return tx.Where("id = ?", actor.UserID)
-	}
-	if actor.DataScope == model.DataScopeDept {
-		return tx.Where("dept_id = ?", *actor.DeptID)
-	}
-	return tx.Where("dept_id IN ?", s.deptTreeIDs(*actor.DeptID))
+	return authz.ResolveScope(actor).ApplyUser(tx)
 }
 
 // scopedFilter 把数据范围叠在既有的 where 构造之上。
 func (s *Service) scopedFilter(actor *authz.Identity, base func(*gorm.DB) *gorm.DB) func(*gorm.DB) *gorm.DB {
-	return func(tx *gorm.DB) *gorm.DB { return s.scopeQuery(actor, base(tx)) }
+	scope := authz.ResolveScope(actor)
+	return func(tx *gorm.DB) *gorm.DB { return scope.ApplyUser(base(tx)) }
 }
 
 // scopeDeptIDs 返回允许的部门 ID 集合；返回 nil 表示不受限制。
 func (s *Service) scopeDeptIDs(actor *authz.Identity) map[int64]bool {
-	if actor == nil || actor.IsSuper || actor.DataScope == model.DataScopeAll {
+	scope := authz.ResolveScope(actor)
+	if scope.Unrestricted {
 		return nil
 	}
-	if actor.DataScope == model.DataScopeSelf || actor.DeptID == nil {
-		return map[int64]bool{}
-	}
-	ids := []int64{*actor.DeptID}
-	if actor.DataScope == model.DataScopeDeptAndSub {
-		ids = s.deptTreeIDs(*actor.DeptID)
-	}
-	out := make(map[int64]bool, len(ids))
-	for _, id := range ids {
+	out := make(map[int64]bool, len(scope.DeptIDs))
+	for _, id := range scope.DeptIDs {
 		out[id] = true
 	}
 	return out
@@ -168,17 +149,16 @@ func (s *Service) ensureInScope(actor *authz.Identity, targetID int64) error {
 
 // checkDeptInScope 校验所属部门是否在数据范围内（新增用户 / 调整部门时使用）。
 func (s *Service) checkDeptInScope(actor *authz.Identity, deptID *int64) error {
-	allowed := s.scopeDeptIDs(actor)
-	if allowed == nil {
+	scope := authz.ResolveScope(actor)
+	if scope.Unrestricted {
 		return nil
 	}
 	if deptID == nil {
+		// 「仅本人」没有可写部门；但如果是「本部门」而请求没带部门，
+		// 说明调用方漏传了，不能默默放行成「不属于任何部门」。
 		return errcode.New(errcode.ErrBadRequest, "请选择你数据范围内的部门")
 	}
-	if !allowed[*deptID] {
-		return errcode.New(errcode.ErrForbidden, "目标部门超出你的数据范围")
-	}
-	return nil
+	return scope.EnsureDeptWritable(*deptID)
 }
 
 // Get 查询用户详情。超出数据范围时按「不存在」返回。
@@ -251,12 +231,25 @@ func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 		return errcode.Wrap(errcode.ErrDatabase, err)
 	}
 
+	// 超管保护必须放在 status 分支之前：
+	// 禁用一个超管账号与其被摘掉超管角色同级，都是「让某个超管失去控制权」，
+	// 只在 roleIds != nil 时校验的话，不传 roleIds 就能绕过。
+	if err := s.ensureTargetNotSuper(s.db, actor, id); err != nil {
+		return err
+	}
+
+	// PUT 是全量更新：标量字段按请求值覆写；
+	// 但 dept_id 是指针，nil 表示「请求里没带这个字段」，此时绝不能写进 map ——
+	// GORM 对 map 形式的 Updates 不做零值省略，会生成 SET dept_id = NULL，
+	// 于是「只改昵称」的请求会把用户悄悄踢出部门，数据范围随之退化成仅本人。
 	updates := map[string]any{
 		"nickname": req.Nickname,
 		"email":    req.Email,
 		"phone":    req.Phone,
-		"dept_id":  req.DeptID,
 		"remark":   req.Remark,
+	}
+	if req.DeptID != nil {
+		updates["dept_id"] = *req.DeptID
 	}
 	if req.Status != nil {
 		if id == AdminUserID && *req.Status != model.StatusEnabled {
@@ -275,10 +268,6 @@ func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 		}
 		// roleIds 为 nil 表示不调整角色
 		if req.RoleIDs != nil {
-			// 目标持有超管角色时，非超管不得改动（含摘掉其超管角色）
-			if err := s.ensureTargetNotSuper(tx, actor, id); err != nil {
-				return err
-			}
 			return replaceRoles(tx, id, req.RoleIDs, actor)
 		}
 		return nil
@@ -412,26 +401,14 @@ func (s *Service) ensureUsernameFree(username string, excludeID int64) error {
 }
 
 // deptTreeIDs 返回部门及其所有子部门 ID。
+// 实现已收敛到 authz.DeptTreeIDs（含环保护），这里只保留调用点。
 func (s *Service) deptTreeIDs(rootID int64) []int64 {
-	var all []model.Dept
-	if err := s.db.Select("id", "parent_id").Find(&all).Error; err != nil {
+	ids, err := authz.DeptTreeIDs(rootID)
+	if err != nil {
+		// 查询失败时退回「仅本部门」：比返回全量安全，代价只是子部门暂时看不到
 		return []int64{rootID}
 	}
-	children := map[int64][]int64{}
-	for _, d := range all {
-		children[d.ParentID] = append(children[d.ParentID], d.ID)
-	}
-	result := []int64{rootID}
-	queue := []int64{rootID}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		for _, cid := range children[cur] {
-			result = append(result, cid)
-			queue = append(queue, cid)
-		}
-	}
-	return result
+	return ids
 }
 
 // replaceRoles 覆盖式设置用户的角色，并校验调用者有权授予这些角色。
@@ -446,10 +423,12 @@ func replaceRoles(tx *gorm.DB, userID int64, roleIDs []int64, actor *authz.Ident
 	if len(roleIDs) == 0 {
 		return nil
 	}
-	// 只保留库中真实存在的角色，避免脏数据
+	// 只保留库中真实存在的角色，避免脏数据。
+	// 这里只需要 ID：授予判定所需的 code / data_scope 由 authz 自己去库里取，
+	// 避免「本函数少选一列 → 判定维度缺失」这种极隐蔽的漏洞。
 	var roles []model.Role
 	if err := tx.Model(&model.Role{}).
-		Select("id", "name", "code").
+		Select("id").
 		Where("id IN ?", roleIDs).Find(&roles).Error; err != nil {
 		return err
 	}

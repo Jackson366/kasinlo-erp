@@ -340,6 +340,7 @@ func (h *Handler) ImportTemplate(c *gin.Context) {
 // @Param        file    formData  file    true   "导入文件（.xlsx）"
 // @Success      200     {object}  response.Body{data=user.ImportResult}
 // @Failure      400     {object}  response.Body  "文件为空 / 格式不支持 / 表头不匹配 / 超出行数上限"
+// @Failure      403     {object}  response.Body  "文件中的角色超出可授予范围（权限或数据范围）"
 // @Failure      409     {object}  response.Body  "导入时出现唯一性冲突"
 // @Router       /system/users/import [post]
 func (h *Handler) Import(c *gin.Context) {

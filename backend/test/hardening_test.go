@@ -8,6 +8,7 @@ package test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -466,9 +467,15 @@ func TestRoleGrantCannotEscalate(t *testing.T) {
 	assertCode(t, okUser, 0, "创建探针用户")
 	okUserID := num(okUser.obj(t), "id")
 
+	var narrowID int64
 	defer func() {
+		// 清理顺序有依赖：角色下还挂着用户时删角色会返回 409，残留数据会让下次运行
+		//撞上「角色标识已存在」。defer 是 LIFO，所以只能写在一个闭包里顺序执行。
 		call(t, http.MethodDelete, "/api/v1/system/users/"+itoa(scopedID), adminToken, nil)
 		call(t, http.MethodDelete, "/api/v1/system/users/"+itoa(okUserID), adminToken, nil)
+		if narrowID > 0 {
+			call(t, http.MethodDelete, "/api/v1/system/roles/"+itoa(narrowID), adminToken, nil)
+		}
 	}()
 
 	scopedToken := loginAs(t, "esc_probe_admin", "probe123456")
@@ -497,10 +504,25 @@ func TestRoleGrantCannotEscalate(t *testing.T) {
 		}
 	}
 
-	// 4) 反向确认：权限未超出的角色仍可正常授予
+	// 4) 反向确认：范围未超出（权限是自身的子集、数据范围不比自身宽）的角色仍可正常授予。
+	//    注意不能再用内置的「只读访客」（role 3）：它的数据范围是「全部」，
+	//    比本部门及以下的管理员更宽，按 §5.27 的第二条轴应当被拒 —— 这正是要防的提权。
+	narrow := call(t, http.MethodPost, "/api/v1/system/roles", adminToken, map[string]any{
+		"name": "探针用窄范围角色", "code": fmt.Sprintf("esc_probe_narrow_%d", time.Now().UnixNano()),
+		"sort": 98, "dataScope": 4,
+	})
+	assertCode(t, narrow, 0, "创建窄范围角色")
+	narrowID = num(narrow.obj(t), "id")
+
 	grant := call(t, http.MethodPut, "/api/v1/system/users/"+itoa(okUserID), scopedToken,
-		map[string]any{"nickname": "越权探针用户", "deptId": 2, "roleIds": []int64{3}})
+		map[string]any{"nickname": "越权探针用户", "deptId": 2, "roleIds": []int64{narrowID}})
 	assertCode(t, grant, 0, "授予范围内角色")
+
+	// 4.1 数据范围比自己宽的角色（内置「只读访客」= 全部）必须被拒
+	wider := call(t, http.MethodPut, "/api/v1/system/users/"+itoa(okUserID), scopedToken,
+		map[string]any{"nickname": "越权探针用户", "deptId": 2, "roleIds": []int64{narrowID, 3}})
+	assertStatus(t, wider, http.StatusForbidden, "授予数据范围更宽的角色")
+	assertCode(t, wider, 40300, "授予数据范围更宽的角色")
 
 	// 5) 提权尝试全部失败后，超管账号不应真的被造出来
 	var cnt int64

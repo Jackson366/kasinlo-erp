@@ -43,7 +43,10 @@ func (s *Service) List(q page.Query) ([]VO, int64, error) {
 		return nil, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 
-	items := s.toVOs(roles)
+	items, err := s.toVOs(roles)
+	if err != nil {
+		return nil, 0, err
+	}
 	return items, total, nil
 }
 
@@ -86,7 +89,10 @@ func (s *Service) Get(id int64) (*VO, error) {
 		}
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
-	vo := s.toVO(&r)
+	vo, err := s.toVO(&r)
+	if err != nil {
+		return nil, err
+	}
 	return &vo, nil
 }
 
@@ -128,13 +134,20 @@ func (s *Service) Create(req CreateReq) (int64, error) {
 }
 
 // Update 修改角色。
-func (s *Service) Update(id int64, req UpdateReq) error {
+//
+// actor 不可省：角色上的 data_scope 与菜单权限都是「授权能力的来源」，
+// 没有调用者身份就等于任何持有 system:role:update 的人都能把任意角色
+// 调成「全部数据」，等于给自己或同伙发了一张全库通行证。
+func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 	var r model.Role
 	if err := s.db.First(&r, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errcode.New(errcode.ErrNotFound, "角色不存在")
 		}
 		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if err := ensureRoleMutable(actor, r); err != nil {
+		return err
 	}
 
 	updates := map[string]any{
@@ -149,6 +162,11 @@ func (s *Service) Update(id int64, req UpdateReq) error {
 		updates["status"] = *req.Status
 	}
 	if req.DataScope != 0 {
+		// 不允许把角色调到比调用者更宽的数据范围（1 最小 = 最宽）
+		if actor != nil && !actor.IsSuper && req.DataScope < actor.DataScope {
+			return errcode.Newf(errcode.ErrForbidden,
+				"不能把角色的数据范围调得比自身更宽（当前 %s）", scopeName(req.DataScope))
+		}
 		updates["data_scope"] = req.DataScope
 	}
 
@@ -172,8 +190,35 @@ func (s *Service) Update(id int64, req UpdateReq) error {
 	return nil
 }
 
+// ensureRoleMutable 挡住「非超管改超管角色」与「非超管把角色调得比自己权限更大」。
+func ensureRoleMutable(actor *authz.Identity, r model.Role) error {
+	if actor == nil || actor.IsSuper {
+		return nil
+	}
+	if r.Code == authz.SuperRoleCode {
+		return errcode.New(errcode.ErrForbidden, "无权修改「超级管理员」角色")
+	}
+	return nil
+}
+
+// scopeName 返回数据范围的中文名，仅用于错误提示。
+func scopeName(scope int16) string {
+	switch scope {
+	case model.DataScopeAll:
+		return "全部数据"
+	case model.DataScopeDept:
+		return "本部门"
+	case model.DataScopeDeptAndSub:
+		return "本部门及以下"
+	case model.DataScopeSelf:
+		return "仅本人"
+	default:
+		return "未知"
+	}
+}
+
 // Delete 删除角色。
-func (s *Service) Delete(id int64) error {
+func (s *Service) Delete(id int64, actor *authz.Identity) error {
 	var r model.Role
 	if err := s.db.First(&r, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -183,6 +228,9 @@ func (s *Service) Delete(id int64) error {
 	}
 	if r.IsBuiltin {
 		return errcode.New(errcode.ErrBadRequest, "内置角色不允许删除")
+	}
+	if err := ensureRoleMutable(actor, r); err != nil {
+		return err
 	}
 
 	var userCount int64
@@ -207,7 +255,7 @@ func (s *Service) Delete(id int64) error {
 }
 
 // AssignMenus 为角色分配菜单权限。
-func (s *Service) AssignMenus(id int64, menuIDs []int64) error {
+func (s *Service) AssignMenus(id int64, menuIDs []int64, actor *authz.Identity) error {
 	var r model.Role
 	if err := s.db.First(&r, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -217,6 +265,14 @@ func (s *Service) AssignMenus(id int64, menuIDs []int64) error {
 	}
 	if r.Code == authz.SuperRoleCode {
 		return errcode.New(errcode.ErrBadRequest, "超管角色默认拥有全部权限，无需分配")
+	}
+	// 改权限菜单同样是授权行为：非超管不能给一个角色挂上连自己都没有的权限码，
+	// 否则「造角色 + 授权」两步就能绕过 EnsureGrantable（它只管授予用户，不管改角色）。
+	if err := ensureRoleMutable(actor, r); err != nil {
+		return err
+	}
+	if err := authz.EnsureRoleMenusGrantable(actor, menuIDs); err != nil {
+		return err
 	}
 	if err := replaceMenus(s.db, id, menuIDs); err != nil {
 		return errcode.Wrap(errcode.ErrDatabase, err)
@@ -241,22 +297,29 @@ func (s *Service) ensureCodeFree(code string, excludeID int64) error {
 }
 
 // toVO 构造单个角色的视图对象（用于详情）。
-func (s *Service) toVO(r *model.Role) VO {
+//
+// 两个聚合查询的 error **不吞**：DB 出错时返回空值等于把「查不到」当成
+// 「没有菜单 / 没有用户」展示给用户，是把故障伪装成业务结论。
+func (s *Service) toVO(r *model.Role) (VO, error) {
 	var menuIDs []int64
-	_ = s.db.Model(&model.RoleMenu{}).Where("role_id = ?", r.ID).Pluck("menu_id", &menuIDs)
+	if err := s.db.Model(&model.RoleMenu{}).Where("role_id = ?", r.ID).Pluck("menu_id", &menuIDs).Error; err != nil {
+		return VO{}, errcode.Wrap(errcode.ErrDatabase, err)
+	}
 	var userCount int64
-	_ = s.db.Model(&model.UserRole{}).Where("role_id = ?", r.ID).Count(&userCount).Error
-	return buildRoleVO(r, menuIDs, userCount)
+	if err := s.db.Model(&model.UserRole{}).Where("role_id = ?", r.ID).Count(&userCount).Error; err != nil {
+		return VO{}, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	return buildRoleVO(r, menuIDs, userCount), nil
 }
 
 // toVOs 批量构造角色视图对象。
 //
 // 旧实现逐个角色各查一次「菜单 ID」和「用户数」，分页 20 条就是 40 次查询（N+1）。
 // 这里改成两条聚合查询，查询次数与分页大小无关。
-func (s *Service) toVOs(roles []model.Role) []VO {
+func (s *Service) toVOs(roles []model.Role) ([]VO, error) {
 	items := make([]VO, 0, len(roles))
 	if len(roles) == 0 {
-		return items
+		return items, nil
 	}
 	ids := make([]int64, 0, len(roles))
 	for i := range roles {
@@ -268,8 +331,10 @@ func (s *Service) toVOs(roles []model.Role) []VO {
 		MenuID int64
 	}
 	var menuRows []menuRow
-	_ = s.db.Model(&model.RoleMenu{}).
-		Select("role_id, menu_id").Where("role_id IN ?", ids).Scan(&menuRows).Error
+	if err := s.db.Model(&model.RoleMenu{}).
+		Select("role_id, menu_id").Where("role_id IN ?", ids).Scan(&menuRows).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
 	menuByRole := make(map[int64][]int64, len(roles))
 	for _, r := range menuRows {
 		menuByRole[r.RoleID] = append(menuByRole[r.RoleID], r.MenuID)
@@ -280,9 +345,11 @@ func (s *Service) toVOs(roles []model.Role) []VO {
 		Total  int64
 	}
 	var countRows []countRow
-	_ = s.db.Model(&model.UserRole{}).
+	if err := s.db.Model(&model.UserRole{}).
 		Select("role_id, COUNT(*) AS total").Where("role_id IN ?", ids).
-		Group("role_id").Scan(&countRows).Error
+		Group("role_id").Scan(&countRows).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
 	countByRole := make(map[int64]int64, len(roles))
 	for _, r := range countRows {
 		countByRole[r.RoleID] = r.Total
@@ -291,7 +358,7 @@ func (s *Service) toVOs(roles []model.Role) []VO {
 	for i := range roles {
 		items = append(items, buildRoleVO(&roles[i], menuByRole[roles[i].ID], countByRole[roles[i].ID]))
 	}
-	return items
+	return items, nil
 }
 
 func buildRoleVO(r *model.Role, menuIDs []int64, userCount int64) VO {

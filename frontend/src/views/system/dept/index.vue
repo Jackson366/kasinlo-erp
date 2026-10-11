@@ -49,16 +49,17 @@ const parentOptions = computed(() => {
   const excluded = new Set<number>()
   if (!editingId.value) return tree.value
 
-  const walk = (nodes: DeptNode[], hit: boolean): boolean => {
-    let found = hit
+  // inSubtree 表示「已经进入被编辑节点的子树」。
+  // 它必须逐节点重算，不能把 found 作为循环累加器往下带：
+  // 一旦命中，后续所有兄弟节点都会被误判成子孙而被排除
+  //（部门树通常按 sort 排序，于是表现为「编辑某节点时，它后面的兄弟部门在下拉里消失了」）。
+  const walk = (nodes: DeptNode[], inSubtree: boolean): void => {
     for (const node of nodes) {
-      if (node.id === editingId.value || found) {
-        found = true
-        excluded.add(node.id)
-      }
-      if (node.children?.length) walk(node.children, found)
+      const isSelf = node.id === editingId.value
+      const inside = inSubtree || isSelf
+      if (inside) excluded.add(node.id)
+      if (node.children?.length) walk(node.children, inside)
     }
-    return found
   }
   walk(tree.value, false)
 

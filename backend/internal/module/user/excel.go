@@ -216,6 +216,11 @@ func (s *Service) Import(data []byte, dryRun bool, actor *authz.Identity) (*Impo
 	}
 
 	if !dryRun && len(candidates) > 0 {
+		// 授予校验必须在这一步做：逐行校验阶段只判「角色是否存在」，
+		// 那里无法汇总（同一个越权角色可能出现在任意一行），也没必要为每行都查一遍权限。
+		if err := s.ensureImportGrantable(actor, candidates); err != nil {
+			return nil, err
+		}
 		created, err := s.bulkCreateUsers(candidates)
 		if err != nil {
 			return nil, err
@@ -223,6 +228,42 @@ func (s *Service) Import(data []byte, dryRun bool, actor *authz.Identity) (*Impo
 		result.Created = created
 	}
 	return result, nil
+}
+
+// ensureImportGrantable 校验本次导入涉及的角色是否都在调用者的可授予范围内。
+//
+// 为什么必须有这一步：导入的写库路径（bulkCreateUsers）直接往 sys_user_roles 插关联行，
+// 完全绕过 replaceRoles 里的 authz.EnsureGrantable。若不在此处补校验，
+// 任何持有 system:user:import 的非超管都能在 Excel 的「角色」列填上「超级管理员」，
+// 批量造出超管账号 —— 相当于给提权开了一条与单条新增并行的旁路。
+func (s *Service) ensureImportGrantable(actor *authz.Identity, cands []importCandidate) error {
+	if actor == nil || actor.IsSuper || len(cands) == 0 {
+		return nil
+	}
+	// 先把候选行里用到的角色 ID 去重，避免同一个角色被反复查询
+	used := make(map[int64]bool, 4)
+	ids := make([]int64, 0, 4)
+	for _, c := range cands {
+		for _, id := range c.roles {
+			if !used[id] {
+				used[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	roles := make([]model.Role, 0, len(ids))
+	// 不按 status 过滤：禁用角色同样要参与判定，否则「传一个禁用的高权限角色」
+	// 会因为查不出来而被当成没传，等于留了一条绕过通道。
+	if err := s.db.Select("id", "name", "code", "data_scope").
+		Where("id IN ?", ids).
+		Find(&roles).Error; err != nil {
+		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	// 与单条新增走同一套判定，避免两条路径的规则漂移
+	return authz.EnsureGrantable(actor, roles)
 }
 
 // importCandidate 是一行「校验通过、待写入」的数据。
@@ -447,7 +488,10 @@ func (s *Service) loadImportRefs() (*importRefs, error) {
 	}
 
 	var roles []model.Role
-	if err := s.db.Select("id", "name").Find(&roles).Error; err != nil {
+	// 与 role.Options 保持同一口径：禁用角色不参与导入。
+	// 否则会出现「页面上根本选不到这个角色，但 Excel 里填名字就能授出去」的旁路，
+	// 而且授完也不生效（authz.build 只加载启用角色），用户还以为是 bug。
+	if err := s.db.Select("id", "name").Where("status = ?", model.StatusEnabled).Find(&roles).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	for _, r := range roles {

@@ -124,6 +124,7 @@ func (h *Handler) Create(c *gin.Context) {
 // @Param        body  body      UpdateReq  true  "修改参数"
 // @Success      200   {object}  response.Body  "修改成功"
 // @Failure      400   {object}  response.Body  "内置角色不允许禁用"
+// @Failure      403   {object}  response.Body  "无权修改超管角色 / 不能把数据范围调得比自身更宽"
 // @Failure      404   {object}  response.Body  "角色不存在"
 // @Router       /system/roles/{id} [put]
 func (h *Handler) Update(c *gin.Context) {
@@ -138,7 +139,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "修改角色")
-	if err := h.svc.Update(id, req); err != nil {
+	if err := h.svc.Update(id, req, middleware.CurrentIdentity(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -154,6 +155,7 @@ func (h *Handler) Update(c *gin.Context) {
 // @Param        id   path      int  true  "角色 ID"
 // @Success      200  {object}  response.Body  "删除成功"
 // @Failure      400  {object}  response.Body  "内置角色不允许删除"
+// @Failure      403  {object}  response.Body  "无权删除超管角色"
 // @Failure      409  {object}  response.Body  "该角色下还有用户"
 // @Router       /system/roles/{id} [delete]
 func (h *Handler) Delete(c *gin.Context) {
@@ -163,7 +165,7 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "删除角色")
-	if err := h.svc.Delete(id); err != nil {
+	if err := h.svc.Delete(id, middleware.CurrentIdentity(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -181,6 +183,7 @@ func (h *Handler) Delete(c *gin.Context) {
 // @Param        body  body      AssignMenusReq  true  "菜单 ID 列表"
 // @Success      200   {object}  response.Body  "权限已保存"
 // @Failure      400   {object}  response.Body  "超管角色无需分配"
+// @Failure      403   {object}  response.Body  "无权给该角色授予自己不具备的权限"
 // @Failure      404   {object}  response.Body  "角色不存在"
 // @Router       /system/roles/{id}/menus [put]
 func (h *Handler) AssignMenus(c *gin.Context) {
@@ -195,7 +198,7 @@ func (h *Handler) AssignMenus(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "分配角色权限")
-	if err := h.svc.AssignMenus(id, req.MenuIDs); err != nil {
+	if err := h.svc.AssignMenus(id, req.MenuIDs, middleware.CurrentIdentity(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}

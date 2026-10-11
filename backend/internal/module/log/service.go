@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"nova-admin/internal/config"
 	"nova-admin/internal/database"
 	"nova-admin/internal/model"
 	"nova-admin/internal/pkg/errcode"
@@ -13,11 +14,14 @@ import (
 
 // Service 日志服务。
 type Service struct {
-	db *gorm.DB
+	db  *gorm.DB
+	sec config.SecurityConfig
 }
 
 // NewService 创建日志服务。
-func NewService() *Service { return &Service{db: database.DB()} }
+func NewService(sec config.SecurityConfig) *Service {
+	return &Service{db: database.DB(), sec: sec}
+}
 
 var (
 	opOrderWhitelist = map[string]string{
@@ -178,10 +182,21 @@ func (s *Service) ClearOperations(before *time.Time) (int64, error) {
 }
 
 // ClearLogins 清空指定时间之前的登录日志；before 为 nil 时全部清空。
+//
+// 保护窗口：登录失败日志不只是审计证据，还是 auth.isLocked 判定账号锁定的计数来源。
+// 若允许把这段时间的记录一并删掉，「清空登录日志」就等于「解除所有账号的锁定」——
+// 攻击者只要能触发锁定，就能靠这个接口（或有权限的管理员误点一次）立刻恢复无限次尝试。
+// 因此 earliest 是硬下界：无论 before 传什么，都不会删掉仍在锁定期内的记录。
 func (s *Service) ClearLogins(before *time.Time) (int64, error) {
-	tx := s.db.Where("1 = 1")
-	if before != nil {
-		tx = tx.Where("created_at < ?", *before)
+	lockSeconds := s.sec.LoginLockSeconds
+	if lockSeconds <= 0 {
+		lockSeconds = 300
+	}
+	// 锁定期内的日志一律保留
+	earliest := time.Now().Add(-time.Duration(lockSeconds) * time.Second)
+	tx := s.db.Where("created_at < ?", earliest)
+	if before != nil && before.Before(earliest) {
+		tx = s.db.Where("created_at < ?", *before)
 	}
 	res := tx.Delete(&model.LoginLog{})
 	if res.Error != nil {

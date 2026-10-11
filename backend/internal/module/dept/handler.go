@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"nova-admin/internal/middleware"
 	"nova-admin/internal/pkg/bind"
 	"nova-admin/internal/pkg/errcode"
 	"nova-admin/internal/pkg/response"
@@ -20,7 +21,8 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
 // List 部门树
 // @Summary      查询部门树
-// @Description  userCount 为该部门「含所有子部门」的用户数。
+// @Description  userCount 为该部门「含所有子部门」的用户数。返回结果受调用者的数据范围约束：
+// @Description  非超管只能看到本部门（本部门及以下）范围内的部门，范围外的部门按「不存在」处理。
 // @Tags         部门管理
 // @Produce      json
 // @Security     BearerAuth
@@ -37,7 +39,7 @@ func (h *Handler) List(c *gin.Context) {
 			status = &s
 		}
 	}
-	tree, err := h.svc.List(c.Query("keyword"), status)
+	tree, err := h.svc.List(c.Query("keyword"), status, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -52,7 +54,7 @@ func (h *Handler) List(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        id   path      int  true  "部门 ID"
 // @Success      200  {object}  response.Body{data=dept.Node}
-// @Failure      404  {object}  response.Body  "部门不存在"
+// @Failure      404  {object}  response.Body  "部门不存在，或超出你的数据范围"
 // @Router       /system/depts/{id} [get]
 func (h *Handler) Detail(c *gin.Context) {
 	id, err := pathID(c)
@@ -60,7 +62,7 @@ func (h *Handler) Detail(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	node, err := h.svc.Get(id)
+	node, err := h.svc.Get(id, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -77,6 +79,7 @@ func (h *Handler) Detail(c *gin.Context) {
 // @Param        body  body      CreateReq  true  "新增部门参数"
 // @Success      200   {object}  response.Body{data=response.IDData}
 // @Failure      400   {object}  response.Body  "参数校验失败 / 上级部门不存在"
+// @Failure      403   {object}  response.Body  "上级部门超出你的数据范围"
 // @Failure      409   {object}  response.Body  "同级下已存在同名部门"
 // @Router       /system/depts [post]
 func (h *Handler) Create(c *gin.Context) {
@@ -86,7 +89,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "新增部门")
-	id, err := h.svc.Create(req)
+	id, err := h.svc.Create(req, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -105,6 +108,7 @@ func (h *Handler) Create(c *gin.Context) {
 // @Param        body  body      UpdateReq  true  "修改参数"
 // @Success      200   {object}  response.Body  "修改成功"
 // @Failure      400   {object}  response.Body  "上级部门不能是自己 / 不能选择自己的子部门"
+// @Failure      403   {object}  response.Body  "目标部门或上级部门超出你的数据范围"
 // @Failure      404   {object}  response.Body  "部门不存在"
 // @Router       /system/depts/{id} [put]
 func (h *Handler) Update(c *gin.Context) {
@@ -119,7 +123,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "修改部门")
-	if err := h.svc.Update(id, req); err != nil {
+	if err := h.svc.Update(id, req, middleware.CurrentIdentity(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -134,6 +138,7 @@ func (h *Handler) Update(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        id   path      int  true  "部门 ID"
 // @Success      200  {object}  response.Body  "删除成功"
+// @Failure      403  {object}  response.Body  "目标部门超出你的数据范围"
 // @Failure      409  {object}  response.Body  "存在子部门 / 该部门下还有用户"
 // @Router       /system/depts/{id} [delete]
 func (h *Handler) Delete(c *gin.Context) {
@@ -143,7 +148,7 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "删除部门")
-	if err := h.svc.Delete(id); err != nil {
+	if err := h.svc.Delete(id, middleware.CurrentIdentity(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}

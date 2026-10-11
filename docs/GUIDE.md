@@ -91,7 +91,7 @@ Nova Admin 是一套**简洁够用的后台管理系统骨架**：Go + Vue 3 + P
 │  7. RequirePerm      校验权限码 HasAnyPerm                  │
 │  8. Handler          bind 入参 → 调 service → response 出参 │
 │                                                          │
-│  service 层：业务逻辑 + 数据范围（scopeQuery / ensureInScope）│
+│  service 层：业务逻辑 + 数据范围（authz.ResolveScope，见 §1.4）│
 │  model 层：GORM，AutoMigrate 建表                          │
 └──────────────────────────────────────────────────────────┘
   │
@@ -112,7 +112,7 @@ Nova Admin 是一套**简洁够用的后台管理系统骨架**：Go + Vue 3 + P
 | 机制 | 存在哪 | 回答的问题 | 谁负责拦截 |
 | --- | --- | --- | --- |
 | **功能权限** | `sys_menus.permission` + `sys_role_menus` | 「能不能用这个功能」 | 后端 `RequirePerm` + 前端 `v-perm` |
-| **数据范围** | `sys_roles.data_scope` | 「能看到 / 改到**谁**的数据」 | 后端服务层 `scopeQuery` / `ensureInScope` |
+| **数据范围** | `sys_roles.data_scope` | 「能看到 / 改到**谁**的数据」 | 后端 `authz.ResolveScope`（唯一实现，见 §1.4）|
 | **令牌有效性** | `sys_users.token_epoch` | 「这个令牌还算数吗」 | 后端 `Auth` 中间件 |
 
 ### 功能权限
@@ -138,7 +138,32 @@ Nova Admin 是一套**简洁够用的后台管理系统骨架**：Go + Vue 3 + P
 1. **读写都要收窄。** 列表、详情、下拉、导出、以及**增删改**都必须过范围检查。
    只挡读不挡写，等于给了越权改数据的口子。
 2. **越界按 404 处理，不要返回 403。** 403 等于告诉对方「这条记录存在，只是你没权限」，
-   会泄露数据存在性。
+   会泄露数据存在性。（写操作例外：改 / 删超出范围的部门返回 403，因为那里 403 才是准确的语义——
+   部门树已经按范围裁剪过了，调用方本来就知道自己有哪些部门。）
+
+**范围判定的唯一实现在 `backend/internal/authz/scope.go`**，不要在模块里另写一份：
+
+```go
+scope := authz.ResolveScope(actor)
+
+scope.ApplyUser(tx)          // 叠在 sys_users 查询上：WHERE dept_id IN (...)
+scope.ApplyLog(tx)           // 叠在带 user_id 的日志表上
+scope.AllowsDept(deptID)     // 纯判定
+scope.EnsureDeptWritable(id) // 写操作前的闸门
+```
+
+`user` / `dept` / `dashboard` 三个模块共用它。新增涉及「人」的读接口时，
+**唯一需要做的就是拿到 `middleware.CurrentIdentity(c)` 并调 `ApplyUser` / `ApplyLog`**——
+历史上 dept 与 dashboard 完全漏掉了这件事，于是部门管理员能在首页读到全库人数。
+
+三个容易漏的细节：
+
+- **日志表不能用 `ApplyUser`**。`login_logs.user_id` 可能为 0（未识别出账号的失败登录），
+  这类记录不属于任何人的范围，非超管一律看不到——否则等于把匿名爆破的来源 IP 全部公开。
+  所以另有一个 `ApplyLog`。
+- **聚合字段也要收窄**。部门树裁剪了但 `userCount` 还是全库的，等于换个字段继续泄露。
+- **改挂上级也要判**。只判「目标部门在不在范围内」会留下「把本部门挂到范围外的父部门下」这条路，
+  挂上去之后该部门的实际管辖范围已经变了。
 
 ### 内置角色对照
 
@@ -175,7 +200,7 @@ backend/
 │   ├── pkg/                        无业务依赖的通用工具
 │   ├── router/router.go            路由总装配
 │   └── seed/seed.go                幂等种子数据 + 老库数据修正
-└── test/                           进程内 E2E 测试（独立测试库 nova_admin_test）
+└── test/                           进程内 E2E 测试（独立测试库 nova_admin_v5_test）
 ```
 
 **依赖方向**：`module → pkg / model / authz`，`pkg → 标准库与第三方`。
@@ -260,14 +285,23 @@ src/
 ### 功能要点
 
 - **认证**：JWT 双令牌（访问 2 小时 / 刷新 7 天），访问令牌自动静默续期；
+  验签锁死 `HS256` 并校验 `issuer` 与 `uid > 0`；
   连续登录失败 5 次锁定 300 秒；改密码 / 重置密码 / 禁用账号即刻吊销旧令牌。
+- **限流**：登录失败按「用户名 + IP」复合锁定，另有独立的来源 IP 失败限流；
+  两者记账均为**单次加锁内完成**（否则并发下阈值被成倍突破），
+  且内存 key 数量有 1 万硬上界——超界 fail-open，宁漏限也不 OOM。
 - **动态路由**：登录后按当前用户的菜单权限生成路由与侧边栏，切换账号自动卸载重建。
-- **按钮级权限**：`v-perm="'system:user:create'"`，无权限时节点直接从 DOM 移除。
-- **数据范围**：四种范围，读写同时生效，越界按 404 处理。
+- **按钮级权限**：`v-perm="'system:user:create'"`，无权限时打 `data-perm="denied"` 标记并用 CSS 隐藏
+  （**不摘 DOM**——摘掉会破坏 `el-table` / `el-dropdown` 的 vnode 锚点，且指令钩子里读 Pinia
+  不会建立响应式依赖，权限在运行期变化时无法重新判定）。详见 `AGENTS.md` §5.34。
+- **数据范围**：四种范围，读写同时生效（用户 / 部门 / 仪表盘三个模块统一走 `authz.ResolveScope`），
+  越界读按 404 处理、越界写按 403 处理。
 - **导入导出**：用户 / 角色 / 操作日志 / 登录日志四类 Excel 导出；
   用户支持**两阶段导入**（先校验预览并给出逐行原因，确认后才写库）。
 - **审计**：操作日志（含请求体，敏感字段递归脱敏）+ 登录日志；
   请求体超过限制或为二进制时不记录，避免被客户端内容搞挂。
+  登录日志同时是账号锁定的计数来源，因此**清空登录日志时会保留锁定期内的记录**——
+  删掉等于给攻击者一个免费的解锁接口。
 - **主题**：亮色 / 暗色双主题，跟随系统偏好 + 手动切换 + 本地记忆，首屏无白闪。
 
 ## 1.7 数据表
@@ -341,7 +375,7 @@ src/
 | PostgreSQL | 13+ | `psql --version` |
 
 PostgreSQL 只需**正常运行且 `postgres` 账号可连**。
-**数据库 `nova_admin` 与全部数据表都会由程序自动创建**，不需要手工执行任何 DDL。
+**数据库 `nova_admin_v5` 与全部数据表都会由程序自动创建**，不需要手工执行任何 DDL。
 
 ## 2.2 首次启动
 
@@ -363,7 +397,7 @@ database:
   port: 5432
   user: postgres
   password: CHANGE_ME      # ← 改成你本机的口令
-  dbname: nova_admin
+  dbname: nova_admin_v5
 app:
   port: 8080
 ```
@@ -384,7 +418,7 @@ go run ./cmd/server -config config.yaml
 看到下面这两行就说明成功了：
 
 ```
-数据库连接成功    {"database": "nova_admin"}
+数据库连接成功    {"database": "nova_admin_v5"}
 HTTP 服务已启动   {"addr": "0.0.0.0:8080", "basePath": "/api/v1"}
 ```
 
@@ -407,7 +441,7 @@ npm run dev
 
 ### 第 4 步：准备测试配置（跑测试前必做）
 
-测试使用**独立数据库** `nova_admin_test`，配置同样不进版本库：
+测试使用**独立数据库** `nova_admin_v5_test`，配置同样不进版本库：
 
 ```bash
 cd backend
@@ -530,7 +564,7 @@ database:
   port: 5432
   user: postgres
   password: CHANGE_ME       # 改成本机口令
-  dbname: nova_admin        # 不存在会自动创建
+  dbname: nova_admin_v5       # 不存在会自动创建
   sslmode: disable
   timezone: Asia/Shanghai
   max_idle_conns: 10
@@ -632,7 +666,7 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产
 | 层 | 命令 | 覆盖 | 规模 |
 | --- | --- | --- | --- |
 | 编译期 | `gofmt -l .` / `go vet ./...` / `npm run typecheck` | 语法、类型、常见误用 | — |
-| 进程内 E2E | `go test ./test/... -count=1` | 行为契约（进程内 `httptest` 驱动完整路由） | **37 个测试 / 65 个子用例** |
+| 进程内 E2E | `go test ./test/... -count=1` | 行为契约（进程内 `httptest` 驱动完整路由） | **63 个测试 / 137 个子用例** |
 | 接口冒烟 | `node scripts/api-smoke.mjs` | 协议层（真实 HTTP、二进制响应、文件上传下载） | **90 项断言** |
 | 浏览器运行时 | `node scripts/browser-verify.mjs` | 真实渲染（白屏、主题、控制台报错） | **48 项断言** |
 
@@ -892,7 +926,7 @@ article.Register(base)   // ← 加这一行
 
 ```go
 q := page.FromContext(c)
-q.Normalize()   // 补齐默认值，pageSize 封顶 200
+q.Normalize()   // 补齐默认值：pageSize 封顶 200，page 按 OFFSET 上界（100 万）反推封顶
 
 // 白名单：裸列名 → 排序表达式，杜绝 SQL 注入
 var articleOrderWhitelist = map[string]string{
@@ -908,6 +942,11 @@ s.db.Offset(q.Offset()).Limit(q.Limit()).Order(order)
 > **列表查询不要写 `LEFT JOIN` + `Select("主表.*")`。**
 > 它会与 `Preload` 生成的派生表别名冲突，导致 500。
 > 需要按关联表过滤时，用 `Where("dept_id IN (?)", subQuery)` 子查询代替。
+>
+> **`Normalize` 里一定要同时夹住 `page`**：只封 `pageSize` 的话，
+> `?page=99999999` 会算出约 2×10⁹ 的 OFFSET，数据库要先扫描丢弃 2 亿行才能返回结果，
+> 单请求即可占满连接池；更大的值还会让 `(Page-1)*PageSize` 整型溢出成负数。
+> 见 `AGENTS.md` §5.41。
 
 ### Step 9 — 写测试
 
@@ -932,7 +971,7 @@ func TestArticleCRUD(t *testing.T) {
 }
 ```
 
-> 测试库与开发库隔离（`nova_admin_test`），可以放心造数据。
+> 测试库与开发库隔离（`nova_admin_v5_test`），可以放心造数据。
 > 但**测试里造的数据要清理干净**，否则重复运行会撞唯一约束。
 
 ## 3.3 数据库变更
@@ -1535,13 +1574,20 @@ bash scripts/gen-swagger.sh        # 内部就是 swag init --parseInternal
 | --- | --- | --- |
 | `api_test.go` | 10 个 | 健康检查、认证、个人中心、权限隔离、用户/角色/菜单/部门 CRUD、仪表盘、日志 |
 | `excel_test.go` | 5 个 | 用户导出、导入、拒绝坏文件、导入导出权限隔离、内置权限补齐 |
-| `hardening_test.go` | 9 个 | 超长 UA 登录日志、审计 IP 防伪造、改密吊销令牌、数据范围读写约束、未匹配路由的审计、按账号+IP 的登录锁定、角色授予越权、Trace ID 注入 |
+| `hardening_test.go` | 9 个 | 超长 UA 登录日志、审计 IP 防伪造、改密吊销令牌、数据范围读写约束、未匹配路由的审计、按账号+IP 的登录锁定、角色授予越权（含数据范围轴）、Trace ID 注入 |
+| `authz_scope_test.go` | 4 个 | 导入不得绕过授予校验、宽数据范围角色不可授予/不可改宽、不传 roleIds 也不能禁用超管、半更新不清空部门 |
+| `data_scope_test.go` | 6 个 | 部门树/详情/增改删受数据范围约束（含「挂到范围外父部门下」）、仪表盘概览与最近登录按范围收窄、个人资料半更新不清空字段、清空登录日志不得解除账号锁定 |
 | `regression_test.go` | 6 个 | 大文件导入、角色去重、导出参数校验、导出/导入审计、敌意输入、长字段截断 |
+| `robustness_test.go` | 16 个 | 限流器并发原子性（100 并发只放行阈值数）、key 数量硬上界、JWT 拒绝 HS384/HS512/alg=none/错误 issuer/uid≤0、分页 OFFSET 上界与整型溢出、角色聚合查询错误必须上报而非静默返回空 |
 | `status_test.go` | 2 个 | 「禁用」状态不被默认值吃掉（四条创建路径 + 导入路径） |
 | `swagger_test.go` | 1 个 | 在线接口文档可访问、`basePath` 与配置一致、未开启时不暴露 |
 | `upgrade_test.go` | 4 个 | 老库补列、老库数据修正、不覆盖显式配置、升级后禁用账号仍被拦 |
 
-**合计 37 个测试 / 65 个子用例**，全部可在进程内运行（`httptest`），无需启动服务。
+**合计 63 个测试 / 137 个子用例**，全部可在进程内运行（`httptest`），无需启动服务。
+
+> 后端测试覆盖不到的三类缺陷，需要浏览器验证（零依赖 CDP 脚本，见 `scripts/browser-verify.mjs`）：
+> 权限指令是否真的隐藏（而非摘除）节点、上级部门下拉是否误排除兄弟节点、
+> 并发 401 是否只弹一次提示、连续刷新是否泄漏 keep-alive 实例。
 
 另有不依赖数据库的包级单测：`internal/middleware`（Trace ID 收敛、限流中间件）、
 `internal/pkg/limiter`（失败限流器的阈值/重置/窗口）、`internal/module/user`（导入校验的 seen 语义）。
@@ -1552,7 +1598,7 @@ bash scripts/gen-swagger.sh        # 内部就是 swag init --parseInternal
 | --- | --- |
 | 项目怎么跑起来、有哪些功能 | 本文第一、二部分 |
 | 怎么加一个新模块 | 本文第三部分 |
-| 改代码前必读的约定与 30 个坑 | [`AGENTS.md`](../AGENTS.md) |
+| 改代码前必读的约定与 33 个坑 | [`AGENTS.md`](../AGENTS.md) |
 | 每个接口的入参出参与示例 | 在线文档 `/swagger/index.html`；业务语义见 [`docs/API.md`](API.md) |
 | 表结构、索引设计、字段约定 | [`docs/DATABASE.md`](DATABASE.md) |
 | 快速开始与目录速览 | [`README.md`](../README.md) |

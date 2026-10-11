@@ -94,7 +94,7 @@ func New(cfg *config.Config) *gin.Engine {
 	role.Register(base)
 	menu.Register(base)
 	dept.Register(base)
-	log.Register(base)
+	log.Register(base, cfg.Security)
 
 	return engine
 }

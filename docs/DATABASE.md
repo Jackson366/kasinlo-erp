@@ -1,7 +1,7 @@
 # 数据库说明
 
 - 数据库：PostgreSQL（实测 17.6）
-- 库名：`nova_admin`（测试库 `nova_admin_test`）
+- 库名：`nova_admin_v5`（测试库 `nova_admin_v5_test`）
 - ORM：GORM，`AutoMigrate` 在启动时自动建表
 - 建库：若目标库不存在，程序会自动创建（见 `internal/database/database.go`）
 
@@ -230,7 +230,7 @@ go run ./cmd/server -config config.yaml -seed
 彻底重来：
 
 ```sql
-DROP DATABASE nova_admin;
+DROP DATABASE nova_admin_v5;
 ```
 
 再启动服务即可自动重建。

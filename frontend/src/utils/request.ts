@@ -18,15 +18,24 @@ export class ApiError extends Error {
 }
 
 /**
- * 「会话已失效」类业务码：未登录、令牌过期/无效，以及**账号被禁用**。
+ * 「会话已失效」类业务码：未登录、令牌过期/无效、账号被禁用、账号被锁定。
  *
  * 40102 必须在内。管理员禁用某个账号后，该账号已经打开的页面会持续收到 40102，
  * 若不当成会话失效处理，用户只会不断看到报错弹窗，却始终回不到登录页。
+ *
+ * 40103（账号锁定）同理：账号被锁定后，任何业务请求都会被 authz 拦下，
+ * 不处理的话页面会一直「报错但不跳转」，用户完全不知道发生了什么。
  */
-const AUTH_ERROR_CODES = [40100, 40102, 40104, 40105]
+const AUTH_ERROR_CODES = [40100, 40102, 40103, 40104, 40105]
 
-/** 登录 / 刷新接口自身的失败就是「没登进去」，不该再走一遍会话失效流程 */
-const AUTH_ENDPOINTS = ['/auth/login', '/auth/refresh']
+/**
+ * 登录 / 刷新接口自身的失败就是「没登进去」，不该再走一遍会话失效流程。
+ *
+ * `/auth/logout` 必须在里面：登出时令牌可能已经过期，此时接口会返回 401，
+ * 而「登出」本来就是用户主动要离开——再弹一个「登录状态已失效，请重新登录」
+ * 是纯粹的噪音，且会让登出后残留一个模态框盖在登录页上。
+ */
+const AUTH_ENDPOINTS = ['/auth/login', '/auth/refresh', '/auth/logout']
 
 /** 判断请求是否发往认证接口本身 */
 function isAuthEndpoint(url?: string): boolean {
@@ -75,6 +84,9 @@ async function refreshAccessToken(): Promise<string> {
           throw new ApiError(body.code, body.message || '刷新登录状态失败')
         }
         setTokens(body.data.accessToken, body.data.refreshToken)
+        // 刷新成功说明会话仍然有效，把「已提示过失效」的闸门复位，
+        // 否则用户下次令牌过期时就看不到提示了
+        resetSessionExpiredGuard()
         return body.data.accessToken
       })
       .finally(() => {
@@ -91,6 +103,42 @@ function redirectToLogin(): void {
   if (current.startsWith('/login')) return
   const redirect = encodeURIComponent(current || '/')
   window.location.href = `${window.location.pathname}#/login?redirect=${redirect}`
+}
+
+/**
+ * 「登录已失效」的提示与跳转，只做一次。
+ *
+ * 为什么必须有这个闸门：令牌过期时页面上的请求往往**同时**在飞（列表、统计、字典…），
+ * 每一个都会走到这段逻辑。若不加锁，N 个并发 401 就会弹 N 个模态框，
+ * 而 `window.location.href` 的跳转还没执行完——用户看到的是屏幕上糊着一堆「登录状态已失效」，
+ * 点哪个都跳过去。这不是美观问题，是让人无法判断当前状态的可用性问题。
+ */
+let sessionExpiredNotified = false
+
+/**
+ * 令牌刷新成功后要复位，否则用户下次过期时不会再看到提示。
+ *
+ * 用函数声明而非 const 箭头函数：refreshAccessToken 定义在它之前，
+ * 箭头函数不存在提升，运行时会在首轮 401 时撞上 TDZ。
+ */
+export function resetSessionExpiredGuard(): void {
+  sessionExpiredNotified = false
+}
+
+function notifySessionExpired(code: number, message: string, traceId?: string): Promise<never> {
+  if (!sessionExpiredNotified) {
+    sessionExpiredNotified = true
+    ElMessageBox.confirm('登录状态已失效，请重新登录', '提示', {
+      confirmButtonText: '重新登录',
+      showCancelButton: false,
+      type: 'warning',
+      // 点遮罩不允许关闭：登录已失效时除了重新登录没有别的出路
+      closeOnClickModal: false,
+    })
+      .then(() => redirectToLogin())
+      .catch(() => redirectToLogin())
+  }
+  return Promise.reject(new ApiError(code, message, traceId))
 }
 
 /** 把二进制错误响应体还原成业务响应体，解析失败时返回 undefined */
@@ -136,17 +184,13 @@ instance.interceptors.response.use(
           // 刷新失败，走下面的统一登出逻辑
         }
       }
-      ElMessageBox.confirm('登录状态已失效，请重新登录', '提示', {
-        confirmButtonText: '重新登录',
-        showCancelButton: false,
-        type: 'warning',
-      })
-        .then(() => redirectToLogin())
-        .catch(() => redirectToLogin())
-      return Promise.reject(new ApiError(code, message, traceId))
+      return notifySessionExpired(code, message, traceId)
     }
 
-    // 无权限：不弹窗打断，交由调用方决定提示方式
+    // 无权限：只弹一次轻提示，交由调用方决定后续处理。
+    // 这里注释里「不弹窗」的说明与实现矛盾 —— 下面两行就是 ElMessage.error，
+    // 调用方拿到的仍然是 rejected promise。保留弹窗是因为 403 大多来自
+    // 用户刚点的操作，完全静默会让人以为按钮坏了。
     if (code === 40300) {
       ElMessage.error(message)
       return Promise.reject(new ApiError(code, message, traceId))

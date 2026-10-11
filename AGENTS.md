@@ -801,13 +801,33 @@ column "token_epoch" of relation "sys_users" contains null values (SQLSTATE 2350
 
 - `super_admin` 只有超管本人能授予；
 - 目标角色包含的**任何**权限点，操作者自己必须也有——否则等于变相提权（把「用户管理」权限的角色分给自己，就拿到了没被授予的权限）；
+- **数据范围不得比操作者更宽**（`1 全部 2 本部门 3 本部门及以下 4 仅本人`，数值越小越宽）。这条最容易漏：一个「不挂任何菜单 + `dataScope=1`」的角色权限码集合为空，只比权限码时会被判为「可授予」，受赠者却拿到了全库可见性；
 - `authz.GrantableRoleIDs` 同时用于角色下拉 `Options`，前端根本看不到授不了的角色。
+
+**判定所需字段必须由 authz 自己从库里取**（`loadRolesForGrant`），不能信调用方传进来的结构体：
+调用方多半只 `Select("id","name","code")`，`data_scope` 会是零值，
+「范围不得更宽」这条判定就会被**静默跳过**——这是一个已经真实发生过的漏洞。
 
 **对称约束**：非超管不能对持有 super_admin 角色的用户执行删除/禁用/改密/编辑
 （`ensureTargetNotSuper`），否则可以「先禁用超管，再找超管重置密码」绕一圈拿到超管身份。
-注意用 `saveErr` 保留 `*errcode.Error`（403），不要 `errcode.Wrap` 成 500。
+注意 `saveErr` 保留 `*errcode.Error`（403），不要 `errcode.Wrap` 成 500。
 
-回归测试：`backend/test/hardening_test.go` 的 `TestRoleGrantCannotEscalate`。
+> **`ensureTargetNotSuper` 要放在 status 分支之前**。只在 `req.RoleIDs != nil` 时调用的话，
+> 「不传 roleIds、只传 status」就能禁用另一个超管账号；系统允许多个账号持有 `super_admin`，
+> 只挡内置 `id=1` 是不够的。
+
+**授予一共有四条入口，都要过同一套判定**（历史上正是漏了后三条才出的漏洞）：
+
+| 入口 | 落点 | 校验 |
+| --- | --- | --- |
+| 新建/修改用户的角色 | `user.replaceRoles` | `authz.EnsureGrantable` |
+| Excel 批量导入 | `user.ensureImportGrantable` | 同上（**跨行汇总后判一次**，逐行判既慢又拿不到全局） |
+| 修改角色属性 | `role.Update` | `ensureRoleMutable` + 数据范围闸门 |
+| 给角色分配菜单 | `role.AssignMenus` | `authz.EnsureRoleMenusGrantable`（改角色菜单 = 批量授予） |
+
+回归测试：`backend/test/hardening_test.go` 的 `TestRoleGrantCannotEscalate`、
+`backend/test/authz_scope_test.go` 的 `TestImportCannotEscalate` 与
+`TestRoleScopeAndMenusCannotWiden`。
 
 ### 5.28 登录锁定按「账号+IP」计数，且成功登录必须重置窗口
 
@@ -844,6 +864,247 @@ trace id 本来就是可丢弃的调试信息，拒绝服务没有必要。同�
 
 回归测试：`backend/internal/module/user/excel_validate_test.go`。
 
+### 5.31 数据范围的口径必须只有一份实现，且读与写一起收窄
+
+**症状**：第一轮加固把「数据范围」的判定做进了 `user` 模块，其余模块各写各的或干脆不写，
+于是「本部门及以下」的部门管理员：能列用户列表（收窄了），却能看全公司部门树（dept 模块无 actor）、
+在首页读到全库人数（dashboard 无范围）、看到别人的登录 IP 与 User-Agent（recent-logins 无范围）。
+典型的**「读漏了」型越权**——判定逻辑本身没错，错的是「在哪些地方必须调用它」。
+
+**正确做法**：把范围解析收敛到 `authz.ResolveScope` / `authz.Scope` 唯一实现，
+各模块只做薄封装。要点：
+
+1. **唯一的 Scope 实现**。`Scope` 提供 `ApplyUser`（叠在 `sys_users` 查询上）、
+   `ApplyLog`（叠在带 `user_id` 的日志表上）、`AllowsDept` / `AllowsUser`（纯判定）。
+   三个模块共用，任何一处漏掉都是编译期或一行代码的事，不再靠自觉。
+2. **日志表不能用 `UserCond`**。`login_logs.user_id` 可能为 0（未识别出账号的失败登录），
+   这类记录不属于任何人的范围，非超管一律看不到——所以要单独一个 `LogUserCond`。
+3. **写接口也要调**。「看不到但能改」依然是越权；`dept` 的 Update / Delete / Create
+   都要判目标部门与**父部门**都在范围内。只判目标会留下「把本部门挂到范围外父节点下」这条路。
+4. **聚合字段同样要收窄**。部门树裁剪了但 `userCount` 还是全库的，等于换个字段继续泄露。
+5. **越界按「不存在」返回**（404），不要用 403，否则可以用返回信息探测其他部门有哪些数据。
+
+回归测试：`backend/test/data_scope_test.go`（6 个）。
+
+### 5.32 会参与安全判定的日志，不能被「清空日志」接口删掉
+
+**症状**：`isLocked` 判定账号锁定靠的是「窗口内 `login_logs` 的失败条数」。
+而 `DELETE /system/logs/logins` 可以把全表删光——于是**清空登录日志 = 解除所有账号的锁定**，
+攻击者只要能触发锁定就能立刻恢复无限次尝试；管理员误点一次同样会解锁。
+
+**正确做法**：给删除加**硬下界**——锁定期内的记录一律保留（`log.ClearLogins` 里的 `earliest`）。
+注意这不是「要不要留审计证据」的问题，而是「这份数据是安全判定的输入」，
+删它等于给攻击者一个免费的解锁接口。
+
+同理适用于任何「既是审计数据、又被安全判定引用」的表：要么拆表，要么在删除路径上单独设护栏。
+
+回归测试：`backend/test/data_scope_test.go` 的 `TestClearLoginsKeepsLockWindow`。
+
+### 5.33 半更新接口的可选字段必须是指针，且 PATCH 语义要能显式清空
+
+**症状**：与 5.17 同源。`profile.Update` 把 nickname/email/phone/avatar 四个字段
+全部写进 `Updates` 的 map，只改昵称的请求会把邮箱、手机号、头像一起清空。
+
+**正确做法**：改成 `*string` 三态——`nil` 不写、非 nil 写值、**显式传 `""` 即清空**。
+这里有个连带坑：**指针字段不能用 `binding:"omitempty,email"`**。
+validator 的 `omitempty` 判断的是「指针是否为 nil」，显式传空串清空时指针非 nil，
+`email` 规则照常生效并报「邮箱格式不正确」——清空这条路被堵死。
+解法是格式校验下移到服务层，只在非空时生效。
+
+**不要**用一个 `ClearEmail bool` 之类的显式标志位来代替指针：多一套要维护的状态，
+而且前端「字段值为空」和「字段没传」两种情况本来就只能靠「有没有这个 key」区分。
+
+回归测试：`backend/test/data_scope_test.go` 的 `TestProfilePartialUpdateKeepsFields`。
+
+### 5.34 权限指令不能「摘 DOM」，只能打标记 + CSS 隐藏
+
+**症状**：旧的 `v-perm` 在无权限时用 `replaceChild` 把元素换成注释节点占位。
+表面上功能正常，实际有三个结构性问题：
+
+1. **`updated` 钩子永远不触发**。指令钩子里调 `useUserStore()` 会因为
+   `pauseTracking` 的关系**不建立响应式依赖**，权限在运行期变化时元素不会重新判定。
+2. **破坏 Vue 的 vnode 锚点**。`el-table` 的单元格、`el-dropdown` 的触发器都靠 DOM
+   位置维持内部状态，手动摘掉元素后，后续 patch 会把内容写进已被丢弃的 vnode。
+3. **注释节点会泄漏**。`hostRemove` 在 `parentNode === null` 时是 no-op，
+   异常路径下占位注释留在 DOM 里，`querySelectorAll` 之外的手段能直接看到它们。
+
+**正确做法**：只打属性、不动结构。
+
+```ts
+el.setAttribute('data-perm', allowed ? 'granted' : 'denied')
+el.classList.toggle('perm-denied', !allowed)
+```
+
+样式用 `visibility: hidden` + `pointer-events: none` + `width: 0` + `overflow: hidden`，
+**不用 `display: none`**——后者会影响 `el-dropdown` / `el-table` 的尺寸测量与浮层定位。
+
+运行期权限变化靠**独立的 `effectScope` + `watch`**（在 `mounted` 里创建，
+运行在正常响应式上下文中）解决，不要试图在 `updated` 里补救。
+
+### 5.35 「排除子树」不能用循环累加器，要逐节点重算
+
+**症状**：部门编辑弹窗的上级下拉里，**兄弟节点消失**。编辑「技术部」时看不到「运营部」。
+
+**原因**：排除集合用的是一个「命中即置位、且置位后不再清除」的累加器。
+一旦在某个兄弟节点上命中「自己」，`inside` 就会沿着递归传染给它的**所有后代**，
+等于把整棵同级子树都排除了。累加器只能表达「或」，表达不了「以自己为根的子树」。
+
+**正确做法**：把「是否在自己子树内」作为递归的**参数**逐节点重算，而不是靠外部状态累积。
+
+```ts
+const walk = (nodes: DeptNode[], inSubtree: boolean): void => {
+  for (const node of nodes) {
+    const inside = inSubtree || node.id === editingId.value
+    if (inside) excluded.add(node.id)
+    if (node.children?.length) walk(node.children, inside)   // 把结论传下去
+  }
+}
+```
+
+凡是「收集需要排除的节点」这类逻辑，都检查一遍是不是用了不可逆的累加器。
+
+### 5.36 并发 401 会弹 N 个模态框，必须有去重闸门
+
+**症状**：页面首屏并发 6 个请求，令牌恰好失效时弹出 6 个「登录已过期」对话框。
+
+**原因**：每个响应拦截器各自独立地判断「要不要提示」，彼此之间没有任何共享状态。
+刷新令牌又是并发的，多个请求会同时拿着同一个 refresh token 去换新令牌。
+
+**正确做法**：模块级闸门 + 显式重置函数。
+
+```ts
+let sessionExpiredNotified = false
+export function resetSessionExpiredGuard(): void { sessionExpiredNotified = false }
+```
+
+闸门在**刷新成功后**、以及 `store.user.login` / `store.user.reset` 时都要重置，
+否则用户重新登录后仍会被旧闸门吞掉提示。
+
+`resetSessionExpiredGuard` **必须用函数声明**（有提升），不能用 `const` 箭头函数：
+它在 `refreshAccessToken` 之后才被调用，箭头函数无提升，首轮 401 会撞 TDZ。
+
+顺带两个同源的口径要对齐：
+
+- `AUTH_ERROR_CODES` 必须**包含全部**认证类错误码（含 `40103` 账号锁定），漏一个就绕过闸门
+- `AUTH_ENDPOINTS` 必须**豁免 `/auth/logout`**，否则退出登录时拿 401 又弹一次「已过期」
+
+### 5.37 keep-alive 的 `:key` 里绝不能拼「刷新计数」
+
+**症状**：每点一次刷新按钮，内存里的组件实例就多一份，且永不回收。
+
+**原因**：`keep-alive` 按 `key` 缓存 vnode。`:key="route.path + '-' + refreshKey"`
+每次刷新都产生一个**新 key**，旧 key 的缓存条目不会被清除——连带定时器、监听器、
+DOM 引用一起泄漏，点几十次就能看到内存明显上涨。
+
+**正确做法**：`key` 只用 `route.path`，刷新靠**把当前页面从 `include` 名单里摘掉一帧**。
+
+```ts
+const refreshing = ref(false)
+provide('pageRefresh', () => {
+  refreshing.value = true
+  nextTick(() => { refreshing.value = false })
+})
+```
+
+模板：`<keep-alive :include="refreshing ? [] : cachedViews">`。
+
+### 5.38 限流器的「检查」与「记账」必须在同一次加锁里完成
+
+**症状**：`RateLimit` 中间件用 `Allow(key)` 判断、`Fail(key)` 记账，两步各自加锁。
+100 个并发请求可以**全部**通过 `Allow`（都读到「还剩 1 格」），然后全部 `Fail`，
+阈值被突破 20 倍。限流器恰好在它最需要生效的场景（爆破）下失效。
+
+**正确做法**：提供原子方法 `AllowAndConsume`，一次持锁完成检查 + 占额度。
+
+```go
+func (l *FailLimiter) AllowAndConsume(key string) bool {
+    // 一次加锁：读窗口内计数 → 判断 → 追加时间戳
+}
+```
+
+`Allow` / `Fail` 仍然保留，但**只用于「只在失败时记账」的场景**
+（登录的 `ipFails`：Allow 通过不代表要记账，只有密码错/用户不存在才 Fail）。
+凡是「每请求占一格」的地方，一律用 `AllowAndConsume`。
+
+### 5.39 内存里的 map 必须有硬上界
+
+**症状**：限流器的 `items` map 靠 GC 周期清理，文档里写着「上界 ≈ 攻击速率 × 窗口时长」。
+但攻击者用**随机源 IP** 刷时，这个上界是攻击者自己决定的——高速率下无界增长，
+最终 OOM。map 分配失败是不可 recover 的，整个进程直接死。
+
+**正确做法**：加 `maxKeys` 硬上界（默认 1 万），超出后**新 key 不再记录、直接放行**，
+并计入 `evicted` 供监控观察。
+
+这里的取舍要写清楚：**宁可放过攻击，也不能 OOM**——限流器误伤正常用户会导致
+业务不可用，比漏放几个攻击请求更糟。所以超上界时是 fail-open，不是 fail-closed。
+
+### 5.40 JWT 验签必须锁死算法并校验 issuer
+
+**症状一**：keyfunc 里只断言「是 `SigningMethodHMAC` 的子类」。
+`HS384` / `HS512` 同样属于 HMAC，一样能通过——等于把「用哪个算法验签」
+的决定权交给了签发方。
+
+**正确做法**：用 `jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()})`，
+并在 keyfunc 里显式比对 `t.Method.Alg()`。
+
+**症状二**：`RegisteredClaims.Issuer` 签的时候写了，**从来没人比对**。
+多环境共用一份 `jwt.secret` 是很常见的配置，不校验 issuer 时，
+别的系统签发的令牌能直接拿到本服务会话用。
+
+**正确做法**：`jwt.WithIssuer(m.issuer)`，并在解析后再兜一次 `claims.Issuer != m.issuer`。
+两道断言都要有——上游库版本差异会影响 `WithIssuer` 的行为，兜底那行不能省。
+
+顺带一条：**`UserID <= 0` 的令牌直接判无效**。各处都拿它做数据范围判定，
+0 值会落到「查不到用户」的分支而不是明确报错，属于把非法输入变成了静默的错结果。
+
+### 5.41 `pageSize` 封顶了不代表 `page` 也封顶
+
+**症状**：`Offset() = (Page-1) * PageSize`。`PageSize` 收敛到 200 了，
+但 `Page` 来自 `strconv.Atoi(c.Query("page"))`，可以是任意大。
+`?page=99999999` 算出约 **2×10⁹ 的 OFFSET**，PostgreSQL 执行
+`LIMIT 200 OFFSET 2000000000` 必须先扫描并丢弃这 2 亿行——
+单个请求就能占满连接池几分钟，CPU/IO 曲线与真实业务量完全无关。
+更糟的是 `?page=9223372036854775807` 让 `(Page-1)*PageSize` **整型溢出成负数**，
+SQL 里出现负 OFFSET 直接报错。
+
+**正确做法**：`Normalize` 里按 `maxOffset` 反推页码上界并夹住，`Offset()` 再兜一层。
+
+```go
+maxPage := maxOffset/q.PageSize + 1
+if q.Page > maxPage { q.Page = maxPage }
+```
+
+**凡是「客户端可控的整数直接参与算术运算」的地方，都要检查溢出与量级。**
+
+### 5.42 聚合查询不能吞 error
+
+**症状**：`role.toVOs` 里两条聚合查询写着 `_ = s.db...Scan(...)`。
+DB 一抖动，角色列表就显示「所有角色都没有菜单、没有用户」。
+
+**正确做法**：`toVOs` / `toVO` 返回 `error`，把 `ErrDatabase` 往上传。
+
+**判断标准**：吞掉 error 只有一种正当理由——这个值**确实无关紧要**。
+「查不到」和「没配置」是两回事，把前者渲染成后者是把故障伪装成业务结论，
+管理员会据此做出错误判断。`toVOs` 里已经注释写明「查询次数与分页大小无关」，
+那更要报错——性能优化的前提是结果正确。
+
+### 5.43 `ch == nil` 时静默 return 是「审计链断了却没人知道」
+
+**症状**：`oplog.Write` 在 `ch == nil`（`Init` 没被调用）时直接 `return`。
+后果是**所有**审计日志无声消失，页面上看不到任何异常，没有任何日志。
+
+**正确做法**：打一条 `logger.Error`，并且**只打一次**
+（否则每个请求刷一行，反过来把真正的日志淹掉）。
+
+```go
+var initWarnOnce sync.Once
+func reportUninitialized() {
+    initWarnOnce.Do(func() { logger.Error("操作日志未初始化，审计日志全部丢失", ...) })
+}
+```
+
+与 §5.38、§5.42 同源：**失败路径上的静默，比失败本身更危险。**
+
 ---
 
 ## 6. 验证流程（改完必跑）
@@ -852,7 +1113,7 @@ trace id 本来就是可丢弃的调试信息，拒绝服务没有必要。同�
 # ── 后端 ──────────────────────────────
 cd backend
 gofmt -l . && go vet ./... && go build ./...
-go test ./test/... -count=1          # 37 个测试 / 65 子用例
+go test ./test/... -count=1          # 63 个测试 / 137 子用例
 bash scripts/gen-swagger.sh          # 接口有变动时重新生成 api/docs/（一并提交）
 
 # ── 前端 ──────────────────────────────
@@ -1018,6 +1279,20 @@ sheet.Download(c, "用户列表_20260929_205419.xlsx", data)
 - **登录锁定按「账号+IP」复合计数**，成功登录重置窗口；IP 维度独立限流（§5.28）
 - **客户端可控的标识符（如 `X-Trace-Id`）先过字符集白名单再使用**（§5.29）
 - **批量导入的跨行状态（`seen`）只能记到整行校验通过之后**（§5.30）
+- **数据范围只有一个实现 `authz.ResolveScope`**，新增涉及「人」的读接口必须调它（§5.31）
+- **聚合字段（`userCount` 之类）也要跟着收窄**，裁剪了列表却返回全量统计等于换个字段泄露（§5.31）
+- **参与安全判定的日志不允许被清空接口删掉**，删除路径要设硬下界（§5.32）
+- **半更新的可选字段用指针**，且 PATCH 要支持显式传空串清空（§5.33）
+- **权限指令只打标记 + CSS 隐藏，绝不摘 DOM**；运行期权限变化靠独立 `effectScope` + `watch`（§5.34）
+- **「排除子树」逐节点重算，不用不可逆累加器**，否则兄弟节点被误排除（§5.35）
+- **认证失败提示要有去重闸门**，`AUTH_ERROR_CODES` 与 `AUTH_ENDPOINTS` 要覆盖完整（§5.36）
+- **`keep-alive` 的 `:key` 只用 `route.path`**，拼刷新计数会持续泄漏组件实例（§5.37）
+- **限流器的检查与记账必须原子**，「每请求占一格」用 `AllowAndConsume`（§5.38）
+- **内存 map 要有硬上界**，超上界 fail-open（宁漏限不可 OOM），并暴露 `evicted` 指标（§5.39）
+- **JWT 只接受 HS256 且必须校验 issuer**，`UserID <= 0` 直接判无效（§5.40）
+- **`pageSize` 封顶不等于 `page` 封顶**，客户端可控整数参与算术前查溢出与量级（§5.41）
+- **聚合查询不吞 error**，把「查不到」渲染成「没配置」是把故障伪装成业务结论（§5.42）
+- **失败路径不静默**，`ch == nil` 这类要打日志且只打一次（§5.43）
 
 ---
 
