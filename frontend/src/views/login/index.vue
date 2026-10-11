@@ -23,13 +23,32 @@ const rules: FormRules<LoginParams> = {
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, max: 64, message: '密码长度为 6 ~ 64 个字符', trigger: 'blur' },
+    // 触发时机补 change：只挂 blur 的话，用户「输入 → 直接回车」这条最常见的路径
+    // 全程不会失焦，长度不足的错误提示要等到点登录之后的往返才出现。
+    // 用户名同理，回车提交时同样处于未失焦状态。
+    { min: 6, max: 64, message: '密码长度为 6 ~ 64 个字符', trigger: ['blur', 'change'] },
   ],
 }
 
 async function handleLogin(): Promise<void> {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
+  // 前置守卫：validate 是异步的，从点击到 loading 置位之间有一小段空窗，
+  // 连点两下会并发发出两次登录请求（后者还可能把前者的跳转结果覆盖掉）。
+  if (loading.value) return
+
+  // formRef 可能因挂载时序尚未就绪，此时 validate 是 undefined。
+  // 原写法 `if (!valid) return` 会把这个 undefined 当成「校验未通过」静默吞掉——
+  // 首屏点登录按钮毫无反应，也没有任何提示。必须显式兜底。
+  if (!formRef.value) {
+    ElMessage.warning('表单尚未就绪，请稍后重试')
+    return
+  }
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) {
+    // 校验失败时把焦点交给第一个出错的字段，
+    // 否则用户看到红字还要自己找是哪一栏错了。
+    focusFirstInvalidField()
+    return
+  }
 
   loading.value = true
   try {
@@ -50,6 +69,23 @@ async function handleLogin(): Promise<void> {
 function fillDemo(): void {
   form.username = 'demo'
   form.password = 'demo123456'
+  // 填值后清掉已有的校验状态：否则上一轮输错留下的红字会挂在输入框上，
+  // 而框里的内容其实已经换成合法值了。
+  formRef.value?.clearValidate()
+}
+
+/**
+ * 校验失败时把焦点交给第一个出错的字段。
+ *
+ * 不用 `nextTick` 之外的手段：element-plus 在校验失败后同步就把 `is-error` 类打上了，
+ * 这里只需要拿到对应输入框的 DOM 节点。
+ */
+function focusFirstInvalidField(): void {
+  const item = document.querySelector('.login .el-form-item.is-error .el-input__inner')
+  if (item instanceof HTMLInputElement) {
+    item.focus()
+    item.select()
+  }
 }
 </script>
 

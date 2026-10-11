@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import type { TableInstance } from 'element-plus'
 import {
   ElMessage,
   ElMessageBox,
@@ -33,6 +34,8 @@ const loading = ref(false)
 const rows = ref<UserItem[]>([])
 const total = ref(0)
 const query = reactive<UserQuery>({ page: 1, pageSize: 10, keyword: '' })
+/** 表格实例：clearSelection 需要拿到真实组件，单向数据够不着内部选中状态 */
+const tableRef = ref<TableInstance>()
 
 const statusOptions = [
   { label: '启用', value: 1 },
@@ -58,11 +61,16 @@ function resetQuery(): void {
   query.status = undefined
   query.deptId = undefined
   query.page = 1
+  clearSelection()
   loadList()
 }
 
 function search(): void {
   query.page = 1
+  // 改筛选条件时必须清选择：reserve-selection 会按 row-key 保留已选项，
+  // 于是「搜张三时勾了张三 → 改成搜李四」，导出选中项里仍混着张三，
+  // 两个查询条件的数据被拼在一起导出。翻页保留是对的，换条件保留就是脏数据。
+  clearSelection()
   loadList()
 }
 
@@ -162,8 +170,39 @@ async function submitForm(): Promise<void> {
 }
 
 // ---------------- 状态切换 ----------------
+
+/**
+ * 正在提交状态变更的用户 ID。
+ *
+ * 没有它的话，用户在确认框弹出期间再点一次开关，会发出第二个请求；
+ * 两个请求乱序返回时，界面状态取决于响应顺序而非用户意图。
+ */
+const statusSubmitting = ref<Set<number>>(new Set())
+
+function isStatusSubmitting(id: number): boolean {
+  return statusSubmitting.value.has(id)
+}
+
+/**
+ * 切换用户启用状态。
+ *
+ * `@change` 触发时 el-switch 已经把内部值翻过来了，而它是 `:model-value` 单向绑定
+ * —— 绑定值没变，Vue 不会重渲染，开关就停在一个「看起来改了、其实没改」的状态。
+ * 所以取消确认或请求失败时，必须**显式改写绑定值**把视图拉回去：
+ * 用相反的值赋回去，触发响应式更新，视觉即刻回到原状。
+ */
 async function toggleStatus(row: UserItem): Promise<void> {
-  const next: Status = row.status === 1 ? 0 : 1
+  if (isStatusSubmitting(row.id)) return
+
+  const origin = row.status
+  const next: Status = origin === 1 ? 0 : 1
+
+  // 开关被禁用时（内置超管 / 自己）不应走到这里，兜底防止绕过 UI 直接调
+  if (row.id === 1 || row.id === userStore.profile?.id) {
+    row.status = origin
+    return
+  }
+
   try {
     await ElMessageBox.confirm(
       `确定要${next === 1 ? '启用' : '禁用'}用户「${row.username}」吗？`,
@@ -171,11 +210,26 @@ async function toggleStatus(row: UserItem): Promise<void> {
       { type: 'warning' },
     )
   } catch {
+    // 用户取消：把绑定值写回原值，视图随之回滚
+    row.status = origin
     return
   }
-  await userApi.updateStatus(row.id, next)
-  ElMessage.success('状态已更新')
-  loadList()
+
+  statusSubmitting.value = new Set(statusSubmitting.value).add(row.id)
+  try {
+    await userApi.updateStatus(row.id, next)
+    row.status = next
+    ElMessage.success('状态已更新')
+  } catch {
+    // 请求失败（无权限 / 网络错误）：同样回滚，否则界面显示启用、库里还是禁用
+    row.status = origin
+  } finally {
+    const rest = new Set(statusSubmitting.value)
+    rest.delete(row.id)
+    statusSubmitting.value = rest
+    // 无论成败都以服务端为准重新拉一次，避免并发改动下的漂移
+    loadList()
+  }
 }
 
 // ---------------- 重置密码 ----------------
@@ -213,6 +267,9 @@ async function removeUser(row: UserItem): Promise<void> {
   }
   await userApi.remove(row.id)
   ElMessage.success('用户已删除')
+  // 删掉的行若还在勾选集合里，reserve-selection 不会因为「数据里没有它」而自动移除，
+  // 导出选中项就会带出一个已不存在的 ID。
+  clearSelection()
   if (rows.value.length === 1 && query.page && query.page > 1) {
     query.page -= 1
   }
@@ -225,6 +282,18 @@ const exporting = ref(false)
 
 function handleSelectionChange(rows: unknown[]): void {
   selectedRows.value = rows as UserItem[]
+}
+
+/**
+ * 清空勾选。
+ *
+ * `reserve-selection` 让翻页时勾选得以保留（这符合预期），但也意味着
+ * 勾选集合与「当前查询条件」是解耦的。删除行 / 改筛选条件后必须显式清掉，
+ * 否则导出选中项会把已经不在结果集里的行也带上。
+ */
+function clearSelection(): void {
+  tableRef.value?.clearSelection()
+  selectedRows.value = []
 }
 
 /**
@@ -425,6 +494,7 @@ onMounted(async () => {
       </div>
 
       <el-table
+        ref="tableRef"
         v-loading="loading"
         :data="rows"
         stripe
@@ -471,6 +541,7 @@ onMounted(async () => {
           <template #default="{ row }">
             <el-switch
               :model-value="row.status === 1"
+              :loading="isStatusSubmitting(row.id)"
               :disabled="row.id === 1 || row.id === userStore.profile?.id"
               @change="toggleStatus(row as UserItem)"
             />

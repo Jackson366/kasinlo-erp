@@ -1105,6 +1105,138 @@ func reportUninitialized() {
 
 与 §5.38、§5.42 同源：**失败路径上的静默，比失败本身更危险。**
 
+### 5.44 受控组件：取消/失败必须显式改写绑定值
+
+**症状**：`el-switch` 的 `v-model="row.status"`，用户点一下内部状态翻转，
+`@change` 弹出确认框；点「取消」时代码直接 `return`，什么都没做。
+结果：开关看起来已经变了，实际没变——**受控组件的 UI 状态不是自己说了算**。
+
+**正确做法**：取消和请求失败两条路径都要**显式把绑定值写回原值**。
+
+```ts
+const origin = row.status
+try {
+  await ElMessageBox.confirm(/* ... */)
+} catch {
+  row.status = origin   // 取消：显式回滚
+  return
+}
+try {
+  await userApi.updateStatus(row.id, next)
+  row.status = next
+} catch {
+  row.status = origin   // 失败：同样回滚
+} finally {
+  loadList()            // 最终以服务端为准
+}
+```
+
+**为什么必须显式赋值**：`:model-value` 单向绑定下，组件内部值已翻转但绑定值没变，
+Vue 认为无变化 → 不重渲染 → UI 停在「看起来改了、其实没改」。
+主动写一次绑定值才能触发响应式更新。
+
+**配套**：加 `submitting: Set<id>` 拦连点（`el-switch` 的 `:loading`），
+否则用户狂点会发出一串状态翻转请求。
+
+### 5.45 `reserve-selection` 是双刃剑：翻页保留，改条件必须清
+
+**症状**：用户勾了 3 行，翻到第 2 页再勾 2 行，回到第 1 页发现 5 行都选着——
+这是 `reserve-selection` 的**设计意图**（跨页批量操作），不是 bug。
+真正的 bug 是：改了筛选条件（搜索关键字、清空查询）后旧选择还在，
+用户点「导出选中项」会导出**两个查询条件混合**的数据。
+
+**正确做法**：`reserve-selection` 保留，但 `search()` / `resetQuery()` /
+删除成功后主动清：
+
+```ts
+function clearSelection(): void {
+  tableRef.value?.clearSelection()   // 需要 <el-table ref="tableRef">
+}
+```
+
+**判断标准**：**保留选择的前提是「数据集合没变」**。翻页没变，改筛选条件变了。
+
+### 5.46 `el-pagination` 改 pageSize 会双发 `change`
+
+**症状**：切换「每页条数」时父组件收到**两次** `change`，列表接口发两遍。
+原因：`el-pagination` 内部在 pageSize 变化时会自行重算 current-page，
+于是 `size` 和 `currentPage` 两个 setter 各触发一次 `emit('change')`。
+`el-table` 自身的 size-change/change 同理。
+
+**正确做法**：同 tick 内归并，**不要用防抖**（防抖会延迟翻页点击，手感变差）。
+
+```ts
+const changePending = ref(false)
+function emitChangeOnce(): void {
+  if (changePending.value) return
+  changePending.value = true
+  void Promise.resolve().then(() => {   // 微任务：同 tick 内的多次触发只发一次
+    changePending.value = false
+    emit('change')
+  })
+}
+```
+
+顺带在 setter 里加 `if (value !== props.pageSize)` 挡掉重复赋值。
+改公共 `Pagination.vue` 一处，user/role/dept/menu 四个页面同时受益——
+**这类共性缺陷优先在组件层修，不要每个页面各修一遍。**
+
+### 5.47 `formRef.value?.validate()` 返回 undefined 被 `if (!valid) return` 静默吞掉
+
+**症状**：首屏点「登录」毫无反应，连报错都没有。
+
+**根因**：`formRef.value?.validate().catch(() => false)` —— 当 `formRef.value`
+是 `undefined` 时，optional chaining 让整个表达式变成 `undefined`；
+`if (!valid) return` 把 `undefined` 当成「校验未通过」直接吞掉。
+用户看到的是「点了没反应」。
+
+**正确做法**：三道防线。
+
+```ts
+if (loading.value) return                          // ① validate 是异步的，validate→loading 置位有空窗，防连点
+if (!formRef.value) {                             // ② formRef 兜底，必须给用户明确提示
+  ElMessage.warning('表单尚未就绪，请稍后重试')
+  return
+}
+const valid = await formRef.value.validate().catch(() => false)
+if (!valid) {
+  focusFirstInvalidField()                        // ③ 焦点落到第一个出错字段，别让用户自己找
+  return
+}
+```
+
+**配套**：只挂 `trigger: 'blur'` 是不够的。用户「输入 → 直接回车」这条
+最常见路径**全程不失焦**，错误提示要到点登录往返后才出现。
+密码这类「长度/强度」规则必须 `trigger: ['blur', 'change']`。
+
+**判断标准**：`?.` 和 `&&` 一样，都是**静默的失败通道**。
+链式调用里只要有一步可能缺席，就必须显式处理缺席分支——
+否则错误会被当成「正常但不通过」而无声消失。
+
+### 5.48 用 CDP 合成事件验证 `el-checkbox` / `el-switch` 会假阴性
+
+**症状**：用 `element.click()` 或 `dispatchEvent(new MouseEvent('click'))`
+驱动 Element Plus 的 `el-checkbox` / `el-switch`，DOM 上 `.is-checked` 已经变了，
+但页面的计数不变 —— 断言 FAIL，改代码改到怀疑人生，实际代码是对的。
+
+**根因**：这些是**受控组件**，内部状态由 Vue 响应式数据决定，
+合成事件驱动不了响应式系统。必须走浏览器的**真实命中测试**路径。
+
+**正确做法**：用 CDP `Input.dispatchMouseEvent` 按元素中心坐标点真实鼠标。
+
+```js
+await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 })
+await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 })
+```
+
+**另一个假阴性**：`v-perm` 隐藏的元素走 `visibility: hidden`，
+此时 `innerText` **取不到内容**。验证计数要改用 DOM 状态
+（如 `document.querySelectorAll('.el-table__body .el-checkbox.is-checked').length`），
+不要断言文案。
+
+**教训**：验证脚本报 FAIL 时，先证明「脚本是对的」再改产品代码。
+双向验证（把修复临时退回去，确认用例真的会 FAIL）能省掉大量无效排查。
+
 ---
 
 ## 6. 验证流程（改完必跑）
@@ -1149,6 +1281,34 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs   # 验证生产�
 12. **暗色下弹窗 / 下拉弹层 / 输入框的底色**（最容易漏改的三类组件）
 
 退出码非 0 即存在失败项，可直接接进 CI。
+
+### 6.1 交互缺陷另跑 `interaction-verify.mjs`
+
+改了 `el-switch` / `el-checkbox` / `el-form` / 分页 / 选择类交互，必须再跑一次：
+
+```bash
+node scripts/interaction-verify.mjs
+APP_URL=http://localhost:4173 node scripts/interaction-verify.mjs   # 验证生产产物
+```
+
+共 9 项断言，覆盖 §5.44–§5.47：
+
+1. 空表单点登录有明确提示（而非「点了没反应」）
+2. 焦点自动落到第一个出错字段
+3. **未失焦**时长度校验已生效（输入 → 直接回车这条路径）
+4. 改筛选条件后旧勾选归零
+5. switch 取消确认后回到原状态
+6. switch 请求失败时错误被捕获（不静默吞掉）
+7. 日志页首屏不请求登录日志
+8. 切 tab 才加载登录日志
+9. 改每页条数只发一次列表请求
+
+两个脚本的分工：`browser-verify.mjs` 管**结构性**问题（权限指令、部门树、请求层、
+keep-alive、主题对比度），`interaction-verify.mjs` 管**受控组件交互正确性**。
+
+⚠️ 写这个脚本（或任何 Element Plus 交互验证）时注意 §5.48：
+合成事件驱动不了受控组件，必须 `Input.dispatchMouseEvent` 点真实坐标；
+`v-perm` 隐藏元素的 `innerText` 为空，计数要断言 DOM 状态。
 
 ---
 
@@ -1293,6 +1453,20 @@ sheet.Download(c, "用户列表_20260929_205419.xlsx", data)
 - **`pageSize` 封顶不等于 `page` 封顶**，客户端可控整数参与算术前查溢出与量级（§5.41）
 - **聚合查询不吞 error**，把「查不到」渲染成「没配置」是把故障伪装成业务结论（§5.42）
 - **失败路径不静默**，`ch == nil` 这类要打日志且只打一次（§5.43）
+- **受控组件的取消/失败路径必须显式回写绑定值**，否则 UI「看起来改了、其实没改」（§5.44）
+- **`reserve-selection` 只在数据集合未变时可保留**，改筛选条件必须清选择（§5.45）
+- **`?.` 与 `&&` 都是静默失败通道**，链式调用有环节可能缺席时必须显式处理（§5.47）
+
+## 8.1 交互正确性红线
+
+以下几条不属于「安全」，但会直接导致**用户看到的状态与真实状态不符**，
+在管理后台里这类缺陷的实际危害不低于安全漏洞。
+
+- **状态变更必须能回滚**：取消确认、请求失败两条路径都要恢复原值并以服务端数据为准（§5.44）
+- **分页/筛选参数变更只发一次请求**，用同 tick 归并而非防抖（§5.46）
+- **表单校验要覆盖「不回车不丢焦」路径**，长度类规则必须挂 `change` 触发（§5.47）
+- **公共组件的共性缺陷在组件层修**，不要每个页面各修一遍（§5.46）
+- **自动化验证脚本报 FAIL 时先证明脚本是对的**，双向验证（退回修复确认用例会 FAIL）再改产品代码（§5.48）
 
 ---
 

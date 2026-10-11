@@ -141,6 +141,43 @@ async function loadModules(): Promise<void> {
   }
 }
 
+// ---------------- 按需加载 ----------------
+/**
+ * 哪个 tab 已经拉过数据。
+ *
+ * 原实现在 onMounted 里 `Promise.all([loadOperations(), loadLogins(), loadModules()])`
+ * —— 三个请求同时发出，但默认只显示「操作日志」，登录日志那一屏用户根本看不到。
+ * 日志页首屏白等一次登录日志的往返，而它还会拖慢首屏表格的 loading 结束时机。
+ */
+const operationLoaded = ref(false)
+const loginLoaded = ref(false)
+
+async function ensureOperations(): Promise<void> {
+  if (operationLoaded.value) return
+  operationLoaded.value = true
+  await loadOperations()
+}
+
+async function ensureLogins(): Promise<void> {
+  if (loginLoaded.value) return
+  loginLoaded.value = true
+  await loadLogins()
+}
+
+/**
+ * 切换 tab：首次进入才加载，之后直接用已有数据。
+ *
+ * 数据「陈旧」由刷新动作负责，而不是靠每次切 tab 重拉 —— 日志页切 tab 是高频操作，
+ * 每次都发请求既浪费又会打断正在进行的阅读。
+ */
+async function handleTabChange(name: string | number): Promise<void> {
+  if (name === 'operation') {
+    await ensureOperations()
+  } else if (name === 'login') {
+    await ensureLogins()
+  }
+}
+
 /** 状态码对应的标签类型 */
 function statusTagType(status: number): 'success' | 'warning' | 'danger' {
   if (status < 300) return 'success'
@@ -149,14 +186,15 @@ function statusTagType(status: number): 'success' | 'warning' | 'danger' {
 }
 
 onMounted(async () => {
-  await Promise.all([loadOperations(), loadLogins(), loadModules()])
+  // 首屏只有「操作日志」可见：只加载它 + 模块下拉，登录日志等切过去再说
+  await Promise.all([ensureOperations(), loadModules()])
 })
 </script>
 
 <template>
   <div class="log-page">
     <div class="page-card">
-      <el-tabs v-model="activeTab">
+      <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <!-- 操作日志 -->
         <el-tab-pane label="操作日志" name="operation">
           <el-form :inline="true" class="search-bar" @submit.prevent>

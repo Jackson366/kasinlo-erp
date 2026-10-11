@@ -1336,18 +1336,24 @@ node scripts/browser-verify.mjs
 [ ] 没有写死颜色，全部用 CSS 变量
 [ ] 新颜色令牌亮/暗两套都补了
 [ ] 按钮级权限用了 v-perm
+[ ] 状态变更类操作有取消/失败回滚（写回绑定值 + 以服务端为准）
+[ ] 会改筛选条件的页面，在 search/resetQuery 后清了表格选择
+[ ] 表单提交前有 loading 前置守卫 + formRef 存在性兜底
+[ ] 提交按钮所在的 el-form 有 validate，且长度类规则挂了 change 触发
+[ ] 表单错误提示会聚焦到第一个出错字段
 
 文档与验证
 [ ] AGENTS.md 的测试计数已更新
 [ ] 接口有变动：handler 注解已补，并执行 scripts/gen-swagger.sh 重新生成（backend/api/docs/ 一并提交）
 [ ] 接口有变动则同步 docs/API.md
 [ ] 表结构有变动则同步 docs/DATABASE.md
-[ ] 跑了浏览器验证（改了路由/守卫/主题时必跑）
+[ ] 跑了浏览器验证（改了路由/守卫/主题时必跑）→ node scripts/browser-verify.mjs
+[ ] 改了 switch/checkbox/表单/分页/选择类交互时跑了交互验证 → node scripts/interaction-verify.mjs
 ```
 
 ## 3.8 必读的八个坑
 
-完整 30 条见 [`AGENTS.md` §5](../AGENTS.md)。以下八条是新增业务时**最常撞上**的：
+完整 48 条见 [`AGENTS.md` §5](../AGENTS.md)。以下八条是新增业务时**最常撞上**的：
 
 | # | 坑 | 症状 | 正确做法 |
 | --- | --- | --- | --- |
@@ -1359,6 +1365,44 @@ node scripts/browser-verify.mjs
 | 6 | `status` 字段加了 `default:1` | 「禁用」被静默写成「启用」 | 零值与默认值语义相反的字段**不加 default** |
 | 7 | 用 `s[:n]` 截断写库文本 | 中文被切坏 → 数据库拒收整行 | 统一走 `pkg/textutil.Fit` |
 | 8 | 给老库加 `NOT NULL` 列没带默认值 | 新库正常，**老库起不来** | 带 `default`，并写 `upgrade_test.go` |
+
+## 3.8.1 前端交互必读的五个坑
+
+这五条都是 Element Plus 受控组件带来的，**编译与类型检查都发现不了**，
+只会在用户点下去的那一刻才暴露。对应 `AGENTS.md` §5.44–§5.48。
+
+| # | 坑 | 症状 | 正确做法 |
+| --- | --- | --- | --- |
+| 9 | 取消确认 / 请求失败后没回写绑定值 | `el-switch` 看起来变了，实际没变 | 两条路径都 `row.status = origin`，`finally` 里 `loadList()` 兜底 |
+| 10 | 状态按钮不拦连点 | 狂点发出串行翻转请求 | `submitting: Set<id>` + `:loading="isSubmitting(id)"` |
+| 11 | `reserve-selection` 在改筛选条件后没清 | 「导出选中」导出**两个查询条件混合**的数据 | `search()` / `resetQuery()` / 删除成功后 `clearSelection()` |
+| 12 | `el-pagination` 改 pageSize 双发 `change` | 一次操作发两遍列表请求 | 组件层同 tick 微任务归并 `emitChangeOnce()`，**别用防抖** |
+| 13 | `formRef.value?.validate()` 返回 `undefined` | 首屏点登录**毫无反应** | 显式 `if (!formRef.value)` 兜底 + `focusFirstInvalidField()` |
+
+第 12 条的共性启示：**这类缺陷优先在公共组件层修**。改 `Pagination.vue` 一处，
+user/role/dept/menu 四个页面同时受益，不要每个页面各修一遍。
+
+第 13 条的通用规律：**`?.` 和 `&&` 一样，都是静默的失败通道**。
+链式调用里只要有一步可能缺席，就必须显式处理缺席分支，
+否则错误会被当成「正常但不通过」而无声消失。
+
+### 用浏览器验证这类交互
+
+受控组件**无法用合成事件驱动**——`element.click()`、`dispatchEvent(new MouseEvent('click'))`
+都不会触发 Vue 响应式更新，DOM 上 `.is-checked` 变了但业务计数不变，
+验证会得到假阴性。必须走真实坐标点击：
+
+```js
+// scripts/browser-verify.mjs 里的做法
+await cdp('Input.dispatchMouseEvent', { type: 'mousePressed',   x, y, button: 'left', clickCount: 1 })
+await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 })
+```
+
+另注意：`v-perm` 隐藏的元素走 `visibility: hidden`，此时 **`innerText` 取不到内容**。
+验证计数请断言 DOM 状态（如 `querySelectorAll('.is-checked').length`）而不是文案。
+
+**脚本报 FAIL 时，先证明脚本是对的再改产品代码**——
+把修复临时退回去，确认用例真的会 FAIL，这一步能省掉大量无效排查。
 
 ---
 
@@ -1585,9 +1629,15 @@ bash scripts/gen-swagger.sh        # 内部就是 swag init --parseInternal
 
 **合计 63 个测试 / 137 个子用例**，全部可在进程内运行（`httptest`），无需启动服务。
 
-> 后端测试覆盖不到的三类缺陷，需要浏览器验证（零依赖 CDP 脚本，见 `scripts/browser-verify.mjs`）：
+> 后端测试覆盖不到的交互类缺陷，需要浏览器验证（零依赖 CDP 脚本，见 `scripts/browser-verify.mjs`）：
 > 权限指令是否真的隐藏（而非摘除）节点、上级部门下拉是否误排除兄弟节点、
-> 并发 401 是否只弹一次提示、连续刷新是否泄漏 keep-alive 实例。
+> 并发 401 是否只弹一次提示、连续刷新是否泄漏 keep-alive 实例、
+> 状态开关取消后是否真的回滚、跨页勾选是否会残留到新查询、
+> 首屏空表单点登录是否有提示、分页改每页条数是否只发一次请求。
+>
+> 注意：**受控组件无法用合成事件驱动**（`element.click()` / 合成 `MouseEvent` 不触发 Vue 响应式更新），
+> 必须用 CDP `Input.dispatchMouseEvent` 按坐标点真实鼠标；`v-perm` 隐藏元素的 `innerText` 为空，
+> 计数要断言 DOM 状态而非文案。详见 §3.8.1。
 
 另有不依赖数据库的包级单测：`internal/middleware`（Trace ID 收敛、限流中间件）、
 `internal/pkg/limiter`（失败限流器的阈值/重置/窗口）、`internal/module/user`（导入校验的 seen 语义）。
