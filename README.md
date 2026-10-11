@@ -236,6 +236,7 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs    # 验证生产�
 - 接口清单与响应约定 → [`docs/API.md`](docs/API.md)
   （在线版：后端开启 `app.swagger` 后访问 `/swagger/index.html`，由 swag 注解自动生成）
 - 数据表结构与索引设计 → [`docs/DATABASE.md`](docs/DATABASE.md)
+- 后台系统独立升级方案（目录契约 / 迁移分段 / 升级 SOP） → [`docs/UPGRADE.md`](docs/UPGRADE.md)
 - 新增模块 / 新增页面的标准做法、踩坑记录 → [`AGENTS.md`](AGENTS.md)
 
 ---

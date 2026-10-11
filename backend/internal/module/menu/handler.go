@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"nova-admin/internal/middleware"
 	"nova-admin/internal/pkg/bind"
 	"nova-admin/internal/pkg/errcode"
 	"nova-admin/internal/pkg/response"
@@ -86,7 +87,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "新增菜单")
-	id, err := h.svc.Create(req)
+	id, err := h.svc.Create(req, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -119,7 +120,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "修改菜单")
-	if err := h.svc.Update(id, req); err != nil {
+	if err := h.svc.Update(id, req, middleware.CurrentIdentity(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}

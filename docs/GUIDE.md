@@ -6,9 +6,10 @@
 > 文档分工：
 > - **本文** —— 项目说明、使用步骤、新增业务的全流程
 > - [`README.md`](../README.md) —— 快速开始与目录速览
-> - [`AGENTS.md`](../AGENTS.md) —— 改代码前必读的约定与 26 个已知坑
+> - [`AGENTS.md`](../AGENTS.md) —— 改代码前必读的约定与 56 个已知坑
 > - [`docs/API.md`](API.md) —— 接口清单与响应约定
 > - [`docs/DATABASE.md`](DATABASE.md) —— 表结构与索引设计
+> - [`docs/UPGRADE.md`](UPGRADE.md) —— 后台系统独立于业务的升级方案（目录契约、迁移分段、升级 SOP）
 
 ---
 
@@ -1348,12 +1349,16 @@ node scripts/browser-verify.mjs
 [ ] 接口有变动则同步 docs/API.md
 [ ] 表结构有变动则同步 docs/DATABASE.md
 [ ] 跑了浏览器验证（改了路由/守卫/主题时必跑）→ node scripts/browser-verify.mjs
+[ ] 依赖方向检查（改了框架层时必跑，见 docs/UPGRADE.md §2.2）：
+    grep -rn "internal/module/" --include="*.go" internal/pkg/ internal/authz/ \
+      internal/middleware/ internal/oplog/ internal/database/ internal/seed/ cmd/
+    有输出 = 框架反向依赖业务，必须整改
 [ ] 改了 switch/checkbox/表单/分页/选择类交互时跑了交互验证 → node scripts/interaction-verify.mjs
 ```
 
 ## 3.8 必读的八个坑
 
-完整 53 条见 [`AGENTS.md` §5](../AGENTS.md)。以下八条是新增业务时**最常撞上**的：
+完整 56 条见 [`AGENTS.md` §5](../AGENTS.md)。以下八条是新增业务时**最常撞上**的：
 
 | # | 坑 | 症状 | 正确做法 |
 | --- | --- | --- | --- |
@@ -1648,7 +1653,8 @@ bash scripts/gen-swagger.sh        # 内部就是 swag init --parseInternal
 | --- | --- |
 | 项目怎么跑起来、有哪些功能 | 本文第一、二部分 |
 | 怎么加一个新模块 | 本文第三部分 |
-| 改代码前必读的约定与 33 个坑 | [`AGENTS.md`](../AGENTS.md) |
+| 改代码前必读的约定与 56 个坑 | [`AGENTS.md`](../AGENTS.md) |
 | 每个接口的入参出参与示例 | 在线文档 `/swagger/index.html`；业务语义见 [`docs/API.md`](API.md) |
 | 表结构、索引设计、字段约定 | [`docs/DATABASE.md`](DATABASE.md) |
+| 独立升级方案（边界、SOP、回滚） | [`docs/UPGRADE.md`](UPGRADE.md) |
 | 快速开始与目录速览 | [`README.md`](../README.md) |

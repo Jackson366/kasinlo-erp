@@ -1,13 +1,14 @@
 package log
 
 import (
-	"nova-admin/internal/pkg/textutil"
 	"strconv"
 
+	"nova-admin/internal/authz"
 	"nova-admin/internal/model"
 	"nova-admin/internal/pkg/errcode"
 	"nova-admin/internal/pkg/page"
 	"nova-admin/internal/pkg/sheet"
+	"nova-admin/internal/pkg/textutil"
 )
 
 // 导出时对超长文本做截断，避免单元格内容撑爆表格
@@ -16,9 +17,9 @@ const (
 	maxExportUserAgent = 120
 )
 
-// ExportOperations 查询待导出的操作日志。
-func (s *Service) ExportOperations(q page.Query, f OperationQuery) ([]model.OperationLog, error) {
-	filter := buildOperationFilter(q, f)
+// ExportOperations 查询待导出的操作日志（数据范围与列表同口径）。
+func (s *Service) ExportOperations(q page.Query, f OperationQuery, actor *authz.Identity) ([]model.OperationLog, error) {
+	filter := buildOperationFilter(q, f, authz.ResolveScope(actor))
 
 	var rows []model.OperationLog
 	// 多查一条用于判断是否超限
@@ -33,9 +34,9 @@ func (s *Service) ExportOperations(q page.Query, f OperationQuery) ([]model.Oper
 	return rows, nil
 }
 
-// ExportLogins 查询待导出的登录日志。
-func (s *Service) ExportLogins(q page.Query, f LoginQuery) ([]model.LoginLog, error) {
-	filter := buildLoginFilter(q, f)
+// ExportLogins 查询待导出的登录日志（数据范围与列表同口径）。
+func (s *Service) ExportLogins(q page.Query, f LoginQuery, actor *authz.Identity) ([]model.LoginLog, error) {
+	filter := buildLoginFilter(q, f, authz.ResolveScope(actor))
 
 	var rows []model.LoginLog
 	if err := filter(s.db.Model(&model.LoginLog{})).

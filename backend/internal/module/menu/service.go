@@ -51,7 +51,13 @@ func (s *Service) Get(id int64) (*Node, error) {
 }
 
 // Create 新增菜单。
-func (s *Service) Create(req CreateReq) (int64, error) {
+//
+// actor 不可省：非超管创建带 permission 的菜单时，该码必须是自己持有的
+// （否则造出一个带任意权限码的菜单，再由角色管理挂上即完成授权扩散）。
+func (s *Service) Create(req CreateReq, actor *authz.Identity) (int64, error) {
+	if err := authz.EnsurePermissionGrantable(actor, req.Permission); err != nil {
+		return 0, err
+	}
 	if err := s.checkParent(req.ParentID, 0); err != nil {
 		return 0, err
 	}
@@ -74,7 +80,15 @@ func (s *Service) Create(req CreateReq) (int64, error) {
 }
 
 // Update 修改菜单。
-func (s *Service) Update(id int64, req UpdateReq) error {
+//
+// permission 的子集校验只看「本次提交值」：把码从 A 改成自己没有的 B
+// 等价于给所有挂载角色批量发新权限；改回空串或自己的码都放行。
+// 历史上菜单挂了什么角色不改变这一判定——角色侧的授予校验
+// （EnsureRoleMenusGrantable）负责另一条轴。
+func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
+	if err := authz.EnsurePermissionGrantable(actor, req.Permission); err != nil {
+		return err
+	}
 	var m model.Menu
 	if err := s.db.First(&m, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

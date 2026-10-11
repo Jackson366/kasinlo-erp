@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"nova-admin/internal/middleware"
 	"nova-admin/internal/pkg/bind"
 	"nova-admin/internal/pkg/errcode"
 	"nova-admin/internal/pkg/page"
@@ -50,7 +51,7 @@ func (h *Handler) Operations(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	rows, total, err := h.svc.Operations(q, f)
+	rows, total, err := h.svc.Operations(q, f, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -80,7 +81,7 @@ func (h *Handler) Logins(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	rows, total, err := h.svc.Logins(q, f)
+	rows, total, err := h.svc.Logins(q, f, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -98,7 +99,7 @@ func (h *Handler) Logins(c *gin.Context) {
 // @Failure      403  {object}  response.Body  "缺少 system:log:list 权限"
 // @Router       /system/logs/modules [get]
 func (h *Handler) Modules(c *gin.Context) {
-	items, err := h.svc.Modules()
+	items, err := h.svc.Modules(middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -124,7 +125,7 @@ func (h *Handler) ClearOperations(c *gin.Context) {
 		req = ClearReq{}
 	}
 	c.Set("opAction", "清空操作日志")
-	n, err := h.svc.ClearOperations(parseTime(req.Before))
+	n, err := h.svc.ClearOperations(parseTime(req.Before), middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -149,7 +150,7 @@ func (h *Handler) ClearLogins(c *gin.Context) {
 		req = ClearReq{}
 	}
 	c.Set("opAction", "清空登录日志")
-	n, err := h.svc.ClearLogins(parseTime(req.Before))
+	n, err := h.svc.ClearLogins(parseTime(req.Before), middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -181,7 +182,7 @@ func (h *Handler) ExportOperations(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	rows, err := h.svc.ExportOperations(q, f)
+	rows, err := h.svc.ExportOperations(q, f, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -220,7 +221,7 @@ func (h *Handler) ExportLogins(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	rows, err := h.svc.ExportLogins(q, f)
+	rows, err := h.svc.ExportLogins(q, f, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return

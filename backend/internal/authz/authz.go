@@ -310,6 +310,23 @@ func EnsureGrantable(actor *Identity, roles []model.Role) error {
 // 为什么与 EnsureGrantable 并列存在：EnsureGrantable 管的是「把角色给人」，
 // 而修改角色的菜单相当于「先改角色、再批量授予」，是绕过前者的另一条路。
 // 两处判定口径必须一致：都只认「启用、未删除、permission 非空」的菜单。
+// EnsurePermissionGrantable 校验 actor 是否能把菜单的 permission 设为给定权限码。
+//
+// 菜单上的 permission 就是授权单元：把它改成某个码，所有挂着这个菜单的角色
+// 的持有者在 authz 缓存失效后立刻获得该权限——所以「改 permission」等价于一次
+// 批量授权，必须与角色授予同一条红线：非超管只能设置自己持有的权限码（子集校验）。
+// 与 EnsureRoleMenusGrantable 同口径：permission 是整串单码，不做逗号拆分。
+func EnsurePermissionGrantable(actor *Identity, permission string) error {
+	if actor == nil || actor.IsSuper || permission == "" {
+		return nil
+	}
+	if _, ok := actor.Permissions[permission]; !ok {
+		return errcode.Newf(errcode.ErrForbidden,
+			"不能设置自己不持有的权限码「%s」（修改权限码等于批量授权）", permission)
+	}
+	return nil
+}
+
 func EnsureRoleMenusGrantable(actor *Identity, menuIDs []int64) error {
 	if actor == nil || actor.IsSuper || len(menuIDs) == 0 {
 		return nil

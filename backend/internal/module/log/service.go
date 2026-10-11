@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"nova-admin/internal/authz"
 	"nova-admin/internal/config"
 	"nova-admin/internal/database"
 	"nova-admin/internal/model"
@@ -72,8 +73,12 @@ func parseTime(s string) *time.Time {
 }
 
 // Operations 分页查询操作日志。
-func (s *Service) Operations(q page.Query, f OperationQuery) ([]model.OperationLog, int64, error) {
-	filter := buildOperationFilter(q, f)
+//
+// actor 决定数据范围：日志含 IP / UA 等敏感信息，只持有 system:log:list
+// 不等于可以看全库——部门管理员只能看到自己范围内的用户产生的日志
+// （口径与 dashboard 一致，见 authz.Scope.ApplyLog）。
+func (s *Service) Operations(q page.Query, f OperationQuery, actor *authz.Identity) ([]model.OperationLog, int64, error) {
+	filter := buildOperationFilter(q, f, authz.ResolveScope(actor))
 
 	var total int64
 	if err := filter(s.db.Model(&model.OperationLog{})).Count(&total).Error; err != nil {
@@ -89,9 +94,11 @@ func (s *Service) Operations(q page.Query, f OperationQuery) ([]model.OperationL
 }
 
 // buildOperationFilter 构造操作日志的 where 子句。
-// 分页查询与 Excel 导出共用，保证导出的范围与页面筛选结果一致。
-func buildOperationFilter(q page.Query, f OperationQuery) func(*gorm.DB) *gorm.DB {
+// 分页查询与 Excel 导出共用，保证导出的范围与页面筛选结果一致；
+// 数据范围也在这里统一叠加，导出不可能比列表看到更多。
+func buildOperationFilter(q page.Query, f OperationQuery, scope *authz.Scope) func(*gorm.DB) *gorm.DB {
 	return func(tx *gorm.DB) *gorm.DB {
+		tx = scope.ApplyLog(tx)
 		if q.Keyword != "" {
 			kw := "%" + q.Keyword + "%"
 			tx = tx.Where("username ILIKE ? OR action ILIKE ? OR path ILIKE ?", kw, kw, kw)
@@ -118,9 +125,9 @@ func buildOperationFilter(q page.Query, f OperationQuery) func(*gorm.DB) *gorm.D
 	}
 }
 
-// Logins 分页查询登录日志。
-func (s *Service) Logins(q page.Query, f LoginQuery) ([]model.LoginLog, int64, error) {
-	filter := buildLoginFilter(q, f)
+// Logins 分页查询登录日志（数据范围同 Operations）。
+func (s *Service) Logins(q page.Query, f LoginQuery, actor *authz.Identity) ([]model.LoginLog, int64, error) {
+	filter := buildLoginFilter(q, f, authz.ResolveScope(actor))
 
 	var total int64
 	if err := filter(s.db.Model(&model.LoginLog{})).Count(&total).Error; err != nil {
@@ -136,8 +143,9 @@ func (s *Service) Logins(q page.Query, f LoginQuery) ([]model.LoginLog, int64, e
 }
 
 // buildLoginFilter 构造登录日志的 where 子句，分页与导出共用。
-func buildLoginFilter(q page.Query, f LoginQuery) func(*gorm.DB) *gorm.DB {
+func buildLoginFilter(q page.Query, f LoginQuery, scope *authz.Scope) func(*gorm.DB) *gorm.DB {
 	return func(tx *gorm.DB) *gorm.DB {
+		tx = scope.ApplyLog(tx)
 		if q.Keyword != "" {
 			kw := "%" + q.Keyword + "%"
 			tx = tx.Where("username ILIKE ? OR ip ILIKE ? OR message ILIKE ?", kw, kw, kw)
@@ -158,10 +166,13 @@ func buildLoginFilter(q page.Query, f LoginQuery) func(*gorm.DB) *gorm.DB {
 	}
 }
 
-// Modules 返回出现过的模块名，供筛选下拉使用。
-func (s *Service) Modules() ([]string, error) {
+// Modules 返回范围内出现过的模块名，供筛选下拉使用。
+// 模块名本身不敏感，但全库模块列表会告诉部门管理员「系统里还有哪些业务」，
+// 顺带按范围过滤也保证下拉选项与列表内容一致。
+func (s *Service) Modules(actor *authz.Identity) ([]string, error) {
+	scope := authz.ResolveScope(actor)
 	var out []string
-	if err := s.db.Model(&model.OperationLog{}).
+	if err := scope.ApplyLog(s.db.Model(&model.OperationLog{})).
 		Distinct().Order("module ASC").Pluck("module", &out).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
@@ -169,8 +180,13 @@ func (s *Service) Modules() ([]string, error) {
 }
 
 // ClearOperations 清空指定时间之前的操作日志；before 为 nil 时全部清空。
-func (s *Service) ClearOperations(before *time.Time) (int64, error) {
-	tx := s.db.Where("1 = 1")
+//
+// 清空是写操作，按「读与写一起收窄」原则同样受数据范围约束：
+// 非超管只能清掉范围内用户产生的日志（含 user_id=0 的匿名记录删不到，
+// 与 ApplyLog 的读口径完全一致）。「清空全部」按钮对范围管理员而言
+// 语义上是「清空我范围内能看到的全部」，前端提示无需区分。
+func (s *Service) ClearOperations(before *time.Time, actor *authz.Identity) (int64, error) {
+	tx := authz.ResolveScope(actor).ApplyLog(s.db.Where("1 = 1"))
 	if before != nil {
 		tx = tx.Where("created_at < ?", *before)
 	}
@@ -187,16 +203,18 @@ func (s *Service) ClearOperations(before *time.Time) (int64, error) {
 // 若允许把这段时间的记录一并删掉，「清空登录日志」就等于「解除所有账号的锁定」——
 // 攻击者只要能触发锁定，就能靠这个接口（或有权限的管理员误点一次）立刻恢复无限次尝试。
 // 因此 earliest 是硬下界：无论 before 传什么，都不会删掉仍在锁定期内的记录。
-func (s *Service) ClearLogins(before *time.Time) (int64, error) {
+func (s *Service) ClearLogins(before *time.Time, actor *authz.Identity) (int64, error) {
 	lockSeconds := s.sec.LoginLockSeconds
 	if lockSeconds <= 0 {
 		lockSeconds = 300
 	}
 	// 锁定期内的日志一律保留
 	earliest := time.Now().Add(-time.Duration(lockSeconds) * time.Second)
-	tx := s.db.Where("created_at < ?", earliest)
+	// 范围约束与 ClearOperations 同口径；self-only 的范围管理员
+	// 只能清掉自己的登录日志，锁定计数由认证中间件继续积累不受影响。
+	tx := authz.ResolveScope(actor).ApplyLog(s.db.Where("created_at < ?", earliest))
 	if before != nil && before.Before(earliest) {
-		tx = s.db.Where("created_at < ?", *before)
+		tx = authz.ResolveScope(actor).ApplyLog(s.db.Where("created_at < ?", *before))
 	}
 	res := tx.Delete(&model.LoginLog{})
 	if res.Error != nil {
