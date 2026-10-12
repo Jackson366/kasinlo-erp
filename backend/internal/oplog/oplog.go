@@ -50,7 +50,25 @@ var (
 	lastDrop  time.Time
 	dropMu    sync.Mutex
 	dropped   int64
+
+	// writeMu 把「关通道」和「往通道发」变成互斥操作：
+	// Write 全程持 RLock 做非阻塞发送，Shutdown 持 Lock 置位 closed 再 close(ch)。
+	// 没有它，srv.Shutdown 超时后 defer 的 oplog.Shutdown 关闭通道，
+	// 仍在收尾的 handler 再调 Write 就是 send on closed channel —— 直接 panic 崩进程。
+	writeMu          sync.RWMutex
+	closed           bool
+	shutdownWarnOnce sync.Once
 )
+
+// reportAfterShutdown 在关断后收到写入时打一条 WARN（仅一次）。
+// 优雅关停窗口内存活请求写完日志是正常现象，不值得 ERROR；
+// 但必须留痕，否则「退出前最后一批日志去哪了」永远说不清。
+func reportAfterShutdown() {
+	shutdownWarnOnce.Do(func() {
+		logger.Warn("操作日志已关断，关断后的写入被丢弃",
+			zap.String("场景", "优雅关停窗口内仍有请求在写日志"))
+	})
+}
 
 // Init 启动日志写入协程。db 为数据库句柄。
 func Init(db *gorm.DB) {
@@ -68,7 +86,16 @@ func Init(db *gorm.DB) {
 // 某个测试直接构造了 Service），此时**所有**审计日志都在无声消失，
 // 而页面上看不到任何异常 —— 审计链断了却没人知道。
 // 这种情况要明确记一条 ERROR，且只记一次（否则每个请求刷一行日志，反过来把日志淹掉）。
+//
+// 同理，关断后（closed）也不能静默 return：记一条 WARN 留痕后返回。
+// 整个发送过程持 writeMu.RLock，保证不会和 Shutdown 的 close(ch) 交叠。
 func Write(e Entry) {
+	writeMu.RLock()
+	defer writeMu.RUnlock()
+	if closed {
+		reportAfterShutdown()
+		return
+	}
 	if ch == nil {
 		reportUninitialized()
 		return
@@ -117,6 +144,7 @@ func Flush(timeout time.Duration) error {
 }
 
 // Shutdown 先把缓冲日志刷盘，再关闭通道。ctx 用于约束刷盘等待上限。
+// 关通道前先置 closed，此后迟到的 Write 直接丢弃并留痕，不会 panic。
 func Shutdown(ctx context.Context) {
 	closeOnce.Do(func() {
 		if ch == nil {
@@ -131,7 +159,10 @@ func Shutdown(ctx context.Context) {
 		if err := Flush(timeout); err != nil {
 			logger.Warn("退出前刷新操作日志超时", zap.Error(err))
 		}
+		writeMu.Lock()
+		closed = true
 		close(ch)
+		writeMu.Unlock()
 	})
 }
 

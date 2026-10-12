@@ -1,8 +1,6 @@
 package log
 
 import (
-	"time"
-
 	"github.com/gin-gonic/gin"
 
 	"nova-admin/internal/middleware"
@@ -11,6 +9,7 @@ import (
 	"nova-admin/internal/pkg/page"
 	"nova-admin/internal/pkg/response"
 	"nova-admin/internal/pkg/sheet"
+	"nova-admin/internal/pkg/textutil"
 )
 
 // ClearReq 清空日志请求，before 为空表示清空全部。
@@ -196,7 +195,7 @@ func (h *Handler) ExportOperations(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	sheet.Download(c, "操作日志_"+time.Now().Format("20060102_150405")+".xlsx", data)
+	sheet.Download(c, "操作日志_"+textutil.Timestamp()+".xlsx", data)
 }
 
 // ExportLogins 导出登录日志
@@ -235,5 +234,5 @@ func (h *Handler) ExportLogins(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	sheet.Download(c, "登录日志_"+time.Now().Format("20060102_150405")+".xlsx", data)
+	sheet.Download(c, "登录日志_"+textutil.Timestamp()+".xlsx", data)
 }

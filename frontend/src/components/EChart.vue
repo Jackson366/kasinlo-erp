@@ -9,7 +9,6 @@ import {
   TooltipComponent,
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { readToken } from '@/utils/theme'
 
 // 按需注册，避免打包整个 echarts
 echarts.use([
@@ -22,16 +21,17 @@ echarts.use([
   CanvasRenderer,
 ])
 
+// 曾经有一个 loading prop（转发到 echarts.showLoading），但没有任何调用方
+// 传过它——页面级 loading 统一由 v-loading 指令负责。留着一段永远走不到
+// 的分支，还要为它维护 readToken 的色值，删掉。
 const props = withDefaults(
   defineProps<{
     /** ECharts 配置项 */
     option: echarts.EChartsCoreOption
     /** 图表高度 */
     height?: string
-    /** 是否显示加载态 */
-    loading?: boolean
   }>(),
-  { height: '320px', loading: false },
+  { height: '320px' },
 )
 
 const container = ref<HTMLDivElement>()
@@ -62,23 +62,6 @@ watch(
   () => props.option,
   () => render(),
   { deep: true },
-)
-
-watch(
-  () => props.loading,
-  (value) => {
-    if (value) {
-      // 加载态由 ECharts 自己画在 canvas 上，只能用具体色值，故从令牌读取
-      chart.value?.showLoading('default', {
-        text: '加载中',
-        color: readToken('--brand-primary', '#2563eb'),
-        textColor: readToken('--app-text-secondary', '#6b7280'),
-        maskColor: readToken('--app-chart-mask', 'rgba(255, 255, 255, 0.65)'),
-      })
-    } else {
-      chart.value?.hideLoading()
-    }
-  },
 )
 
 onBeforeUnmount(() => {

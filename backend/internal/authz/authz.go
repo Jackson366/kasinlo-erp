@@ -100,7 +100,14 @@ func Load(userID int64) (*Identity, error) {
 }
 
 // Invalidate 清除单个用户的身份缓存（用户、角色、菜单变更时调用）。
+//
+// version.Add(1) 不可省：只有 delete 的话，「并发请求在 Load 里 build 出旧身份、
+// 写回缓存」与 Invalidate 之间存在竞态窗口——旧身份会被重新写回并存活至多
+// SessionTTL（30s）。被摘超管角色的用户在这 30s 内仍持旧身份行事。
+// InvalidateAll 正是靠抬版本号让旧 version 的脏写在下次读时被判失效，单用户
+// 路径必须同构；「不波及他人」的微优化在正确性面前不值钱。
 func Invalidate(userID int64) {
+	version.Add(1)
 	mu.Lock()
 	delete(entries, userID)
 	mu.Unlock()
@@ -203,12 +210,17 @@ func rolePermissions(roleIDs []int64) (map[int64][]string, error) {
 		Permission string
 	}
 	var rows []row
+	// 角色 status 过滤不能省：与 build() 经 Preload("Roles") 的口径对齐
+	// （那里只认启用角色）。漏掉它会把禁用角色的权限也计入判定——
+	// 方向偏保守（过严），但给用户分配一个禁用角色就会收到无意义 403。
 	if err := database.DB().Model(&model.Menu{}).
 		Select("rm.role_id AS role_id, sys_menus.permission AS permission").
 		Joins("JOIN sys_role_menus rm ON rm.menu_id = sys_menus.id").
+		Joins("JOIN sys_roles r ON r.id = rm.role_id").
 		Where("rm.role_id IN ?", roleIDs).
 		Where("sys_menus.status = ? AND sys_menus.deleted_at IS NULL AND sys_menus.permission <> ''",
 			model.StatusEnabled).
+		Where("r.status = ? AND r.deleted_at IS NULL", model.StatusEnabled).
 		Scan(&rows).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
@@ -218,16 +230,19 @@ func rolePermissions(roleIDs []int64) (map[int64][]string, error) {
 	return out, nil
 }
 
-// scopeText 返回数据范围的中文描述，用于拒绝原因。
-func scopeText(scope int16) string {
+// ScopeText 返回数据范围的中文描述，用于拒绝原因。
+//
+// 导出给各模块共用：role 服务与授权拒绝提示曾经各写一份 switch，
+// 连 case 的数值都是手写的魔法数（1/2/3/4），加一种范围时两处必然漏改一处。
+func ScopeText(scope int16) string {
 	switch scope {
-	case 1:
+	case model.DataScopeAll:
 		return "全部数据"
-	case 2:
+	case model.DataScopeDept:
 		return "本部门"
-	case 3:
+	case model.DataScopeDeptAndSub:
 		return "本部门及以下"
-	case 4:
+	case model.DataScopeSelf:
 		return "仅本人"
 	default:
 		return "未知"
@@ -250,7 +265,7 @@ func bannedReason(actor *Identity, r model.Role, perms []string) string {
 	// 数值越小范围越宽，因此「比调用者更宽」等价于「小于调用者」
 	if actor.DataScope > 0 && r.DataScope > 0 && r.DataScope < actor.DataScope {
 		return fmt.Sprintf("无权授予角色「%s」：它的数据范围（%s）比你的（%s）更宽",
-			r.Name, scopeText(r.DataScope), scopeText(actor.DataScope))
+			r.Name, ScopeText(r.DataScope), ScopeText(actor.DataScope))
 	}
 	for _, p := range perms {
 		if _, ok := actor.Permissions[p]; !ok {

@@ -3,7 +3,6 @@
 package seed
 
 import (
-	"errors"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -461,6 +460,11 @@ func seedUsers(db *gorm.DB) error {
 const MenuIDFloor = 1000
 
 // resetSequences 同步自增序列，避免手工指定 ID 后新增数据主键冲突。
+//
+// 表不存在属于真实故障（迁移先于种子执行），直接报错让启动失败：
+// 曾经这里有一个 errors.Is(err, gorm.ErrRecordNotFound) 的「表不存在就跳过」分支，
+// 但 PostgreSQL 报的是 42P01，永远匹配不上 gorm.ErrRecordNotFound ——
+// 死分支只会给人「这种情况已被处理」的错觉。
 func resetSequences(db *gorm.DB) error {
 	targets := []struct {
 		table string
@@ -477,10 +481,6 @@ func resetSequences(db *gorm.DB) error {
 			t.table, t.table, t.floor,
 		)
 		if err := db.Exec(stmt).Error; err != nil {
-			// 表不存在时忽略（例如尚未启用菜单表）
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
-			}
 			return fmt.Errorf("重置 %s 自增序列失败: %w", t.table, err)
 		}
 	}

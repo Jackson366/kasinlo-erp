@@ -4,7 +4,10 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import { deptApi } from '@/api'
 import type { DeptNode, DeptPayload } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
+import StatusTag from '@/components/StatusTag.vue'
 import { formatDate, flattenTree } from '@/utils/format'
+import { useLatestGuard } from '@/composables/useLatestGuard'
+import { useCrudDialog } from '@/composables/useCrudDialog'
 
 defineOptions({ name: 'SystemDept' })
 
@@ -13,21 +16,30 @@ const loading = ref(false)
 const tree = ref<DeptNode[]>([])
 const keyword = ref('')
 
+const treeGuard = useLatestGuard()
+
 async function loadTree(): Promise<void> {
+  const ticket = treeGuard.start()
   loading.value = true
   try {
-    tree.value = await deptApi.list({ keyword: keyword.value || undefined })
+    const data = await deptApi.list({ keyword: keyword.value || undefined })
+    if (!treeGuard.isCurrent(ticket)) return // 连续查询时丢弃过期响应
+    tree.value = data
   } finally {
-    loading.value = false
+    if (treeGuard.isCurrent(ticket)) loading.value = false
   }
 }
 
 // ---------------- 新增 / 编辑 ----------------
-const dialogVisible = ref(false)
-const dialogMode = ref<'create' | 'edit'>('create')
-const submitting = ref(false)
 const formRef = ref<FormInstance>()
-const editingId = ref<number | null>(null)
+const dialog = useCrudDialog<DeptPayload>({
+  formRef,
+  create: (payload) => deptApi.create(payload),
+  update: (id, payload) => deptApi.update(id, payload),
+  messages: { create: '部门创建成功', update: '部门已更新' },
+})
+// 解构保持模板里的旧名字：模板只展开 setup 顶层绑定，不会展开 dialog.visible 这类嵌套 ref
+const { visible: dialogVisible, mode: dialogMode, submitting, editingId } = dialog
 
 const form = reactive<DeptPayload>({
   parentId: 0,
@@ -71,8 +83,7 @@ const parentOptions = computed(() => {
 })
 
 function openCreate(parentId = 0): void {
-  dialogMode.value = 'create'
-  editingId.value = null
+  // 先灌表单再开窗：反序的话弹窗会先用上一轮的旧值渲染一帧
   Object.assign(form, {
     parentId,
     name: '',
@@ -82,12 +93,10 @@ function openCreate(parentId = 0): void {
     sort: 0,
     status: 1,
   })
-  dialogVisible.value = true
+  dialog.openCreate()
 }
 
 function openEdit(row: DeptNode): void {
-  dialogMode.value = 'edit'
-  editingId.value = row.id
   Object.assign(form, {
     parentId: row.parentId,
     name: row.name,
@@ -97,27 +106,11 @@ function openEdit(row: DeptNode): void {
     sort: row.sort,
     status: row.status,
   })
-  dialogVisible.value = true
+  dialog.openEdit(row.id)
 }
 
 async function submitForm(): Promise<void> {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
-
-  submitting.value = true
-  try {
-    if (dialogMode.value === 'create') {
-      await deptApi.create({ ...form })
-      ElMessage.success('部门创建成功')
-    } else if (editingId.value) {
-      await deptApi.update(editingId.value, { ...form })
-      ElMessage.success('部门已更新')
-    }
-    dialogVisible.value = false
-    loadTree()
-  } finally {
-    submitting.value = false
-  }
+  await dialog.submit(loadTree, () => ({ ...form }))
 }
 
 async function removeDept(row: DeptNode): Promise<void> {
@@ -135,6 +128,11 @@ async function removeDept(row: DeptNode): Promise<void> {
 }
 
 const totalCount = computed(() => flattenTree(tree.value).length)
+
+function resetQuery(): void {
+  keyword.value = ''
+  loadTree()
+}
 
 onMounted(loadTree)
 </script>
@@ -157,16 +155,7 @@ onMounted(loadTree)
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
-          <el-button
-            @click="
-              () => {
-                keyword = ''
-                loadTree()
-              }
-            "
-          >
-            重置
-          </el-button>
+          <el-button @click="resetQuery">重置</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -222,9 +211,7 @@ onMounted(loadTree)
         <el-table-column prop="sort" label="排序" width="70" align="center" />
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small" effect="light">
-              {{ row.status === 1 ? '启用' : '停用' }}
-            </el-tag>
+            <StatusTag :status="row.status" />
           </template>
         </el-table-column>
         <el-table-column label="创建时间" width="120">
@@ -313,35 +300,6 @@ onMounted(loadTree)
 </template>
 
 <style scoped lang="scss">
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-
-  &__title {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-
-    h3 {
-      margin: 0;
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--app-text);
-    }
-
-    span {
-      font-size: 12px;
-    }
-  }
-
-  &__actions {
-    display: flex;
-    gap: 8px;
-  }
-}
-
 .cell-title {
   display: inline-flex;
   align-items: center;

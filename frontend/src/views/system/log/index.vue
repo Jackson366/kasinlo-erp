@@ -1,85 +1,48 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useLatestGuard } from '@/composables/useLatestGuard'
+import { useTableQuery } from '@/composables/useTableQuery'
 import { logApi, type LoginLogQuery, type OperationLogQuery } from '@/api/log'
 import type { LoginLogItem, OperationLogItem } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
-import { fileStamp, formatDateTime, formatLatency, fromNow } from '@/utils/format'
+import { exportStamp, formatDateTime, formatLatency, fromNow } from '@/utils/format'
 
 defineOptions({ name: 'SystemLog' })
 
 const activeTab = ref<'operation' | 'login'>('operation')
 
 // ---------------- 操作日志 ----------------
-const opLoading = ref(false)
-const opRows = ref<OperationLogItem[]>([])
-const opTotal = ref(0)
 const opModules = ref<string[]>([])
-const opQuery = reactive<OperationLogQuery>({ page: 1, pageSize: 10, keyword: '' })
 
 const methodOptions = ['POST', 'PUT', 'DELETE', 'PATCH']
 
-const opGuard = useLatestGuard()
-
-async function loadOperations(): Promise<void> {
-  const ticket = opGuard.start()
-  opLoading.value = true
-  try {
-    const data = await logApi.operations({ ...opQuery, keyword: opQuery.keyword || undefined })
-    if (!opGuard.isCurrent(ticket)) return // 快速切换查询时丢弃过期响应
-    opRows.value = data.list
-    opTotal.value = data.total
-  } finally {
-    if (opGuard.isCurrent(ticket)) opLoading.value = false
-  }
-}
-
-function searchOperations(): void {
-  opQuery.page = 1
-  loadOperations()
-}
-
-function resetOperations(): void {
-  opQuery.keyword = ''
-  opQuery.module = undefined
-  opQuery.method = undefined
-  opQuery.status = undefined
-  searchOperations()
-}
+const {
+  query: opQuery,
+  loading: opLoading,
+  rows: opRows,
+  total: opTotal,
+  load: loadOperations,
+  search: searchOperations,
+  reset: resetOperations,
+} = useTableQuery<OperationLogQuery, OperationLogItem>(
+  { keyword: '', module: undefined, method: undefined, status: undefined },
+  (params) => logApi.operations({ ...params, keyword: params.keyword || undefined }),
+)
 
 // ---------------- 登录日志 ----------------
-const loginLoading = ref(false)
-const loginRows = ref<LoginLogItem[]>([])
-const loginTotal = ref(0)
-const loginQuery = reactive<LoginLogQuery>({ page: 1, pageSize: 10, keyword: '' })
-
-const loginGuard = useLatestGuard()
-
-async function loadLogins(): Promise<void> {
-  const ticket = loginGuard.start()
-  loginLoading.value = true
-  try {
-    const data = await logApi.logins({ ...loginQuery, keyword: loginQuery.keyword || undefined })
-    if (!loginGuard.isCurrent(ticket)) return // 快速切换查询时丢弃过期响应
-    loginRows.value = data.list
-    loginTotal.value = data.total
-  } finally {
-    if (loginGuard.isCurrent(ticket)) loginLoading.value = false
-  }
-}
-
-function searchLogins(): void {
-  loginQuery.page = 1
-  loadLogins()
-}
-
-function resetLogins(): void {
-  loginQuery.keyword = ''
-  loginQuery.success = undefined
-  searchLogins()
-}
+const {
+  query: loginQuery,
+  loading: loginLoading,
+  rows: loginRows,
+  total: loginTotal,
+  load: loadLogins,
+  search: searchLogins,
+  reset: resetLogins,
+} = useTableQuery<LoginLogQuery, LoginLogItem>(
+  { keyword: '', success: undefined },
+  (params) => logApi.logins({ ...params, keyword: params.keyword || undefined }),
+)
 
 // ---------------- 导出 ----------------
 const exportingOp = ref(false)
@@ -95,7 +58,7 @@ async function exportOperations(): Promise<void> {
   try {
     await logApi.exportOperations(
       { ...opQuery, keyword: opQuery.keyword || undefined },
-      `操作日志_${fileStamp()}.xlsx`,
+      exportStamp('操作日志'),
     )
     ElMessage.success('导出成功')
   } catch {
@@ -110,7 +73,7 @@ async function exportLogins(): Promise<void> {
   try {
     await logApi.exportLogins(
       { ...loginQuery, keyword: loginQuery.keyword || undefined },
-      `登录日志_${fileStamp()}.xlsx`,
+      exportStamp('登录日志'),
     )
     ElMessage.success('导出成功')
   } catch {

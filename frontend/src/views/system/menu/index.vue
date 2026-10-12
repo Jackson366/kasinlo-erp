@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { menuApi } from '@/api'
 import type { MenuNode, MenuPayload, MenuType } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
+import StatusTag from '@/components/StatusTag.vue'
 import { iconMap } from '@/components/icons'
 import { flattenTree } from '@/utils/format'
+import { useLatestGuard } from '@/composables/useLatestGuard'
+import { useCrudDialog } from '@/composables/useCrudDialog'
 
 defineOptions({ name: 'SystemMenu' })
 
@@ -15,6 +18,8 @@ const tree = ref<MenuNode[]>([])
 const keyword = ref('')
 const typeFilter = ref<MenuType | ''>('')
 
+const treeGuard = useLatestGuard()
+
 const typeMeta: Record<MenuType, { label: string; tag: 'primary' | 'success' | 'info' }> = {
   dir: { label: '目录', tag: 'info' },
   menu: { label: '菜单', tag: 'primary' },
@@ -22,12 +27,14 @@ const typeMeta: Record<MenuType, { label: string; tag: 'primary' | 'success' | '
 }
 
 async function loadTree(): Promise<void> {
+  const ticket = treeGuard.start()
   loading.value = true
   try {
     const data = await menuApi.list({ keyword: keyword.value || undefined })
+    if (!treeGuard.isCurrent(ticket)) return // 连续查询时丢弃过期响应
     tree.value = data
   } finally {
-    loading.value = false
+    if (treeGuard.isCurrent(ticket)) loading.value = false
   }
 }
 
@@ -78,11 +85,15 @@ const displayTree = computed(() => {
 })
 
 // ---------------- 新增 / 编辑 ----------------
-const dialogVisible = ref(false)
-const dialogMode = ref<'create' | 'edit'>('create')
-const submitting = ref(false)
 const formRef = ref<FormInstance>()
-const editingId = ref<number | null>(null)
+const dialog = useCrudDialog<MenuPayload>({
+  formRef,
+  create: (payload) => menuApi.create(payload),
+  update: (id, payload) => menuApi.update(id, payload),
+  messages: { create: '菜单创建成功', update: '菜单已更新' },
+})
+// 解构保持模板里的旧名字：模板只展开 setup 顶层绑定，不会展开 dialog.visible 这类嵌套 ref
+const { visible: dialogVisible, mode: dialogMode, submitting, editingId } = dialog
 
 const form = reactive<MenuPayload>({
   parentId: 0,
@@ -119,8 +130,7 @@ const rules = computed<FormRules<MenuPayload>>(() => ({
 const iconNames = Object.keys(iconMap)
 
 function openCreate(parentId = 0): void {
-  dialogMode.value = 'create'
-  editingId.value = null
+  // 先灌表单再开窗：反序的话弹窗会先用上一轮的旧值渲染一帧
   Object.assign(form, {
     parentId,
     name: '',
@@ -137,12 +147,10 @@ function openCreate(parentId = 0): void {
     isExternal: false,
     status: 1,
   })
-  dialogVisible.value = true
+  dialog.openCreate()
 }
 
 function openEdit(row: MenuNode): void {
-  dialogMode.value = 'edit'
-  editingId.value = row.id
   Object.assign(form, {
     parentId: row.parentId,
     name: row.name,
@@ -159,27 +167,11 @@ function openEdit(row: MenuNode): void {
     isExternal: row.isExternal,
     status: row.status,
   })
-  dialogVisible.value = true
+  dialog.openEdit(row.id)
 }
 
 async function submitForm(): Promise<void> {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
-
-  submitting.value = true
-  try {
-    if (dialogMode.value === 'create') {
-      await menuApi.create({ ...form })
-      ElMessage.success('菜单创建成功')
-    } else if (editingId.value) {
-      await menuApi.update(editingId.value, { ...form })
-      ElMessage.success('菜单已更新')
-    }
-    dialogVisible.value = false
-    loadTree()
-  } finally {
-    submitting.value = false
-  }
+  await dialog.submit(loadTree, () => ({ ...form }))
 }
 
 async function removeMenu(row: MenuNode): Promise<void> {
@@ -206,6 +198,19 @@ const stats = computed(() => {
     button: flat.filter((item) => item.type === 'button').length,
   }
 })
+
+function resetQuery(): void {
+  keyword.value = ''
+  typeFilter.value = ''
+  loadTree()
+}
+
+// 类型切换会换掉 path/component 的校验规则（button 两者都不要）：不清掉旧报错，
+// 用户会看到针对已隐藏字段的红字，submit 也会被陈旧的 validate 状态挡住。
+watch(
+  () => form.type,
+  () => formRef.value?.clearValidate(),
+)
 
 onMounted(loadTree)
 </script>
@@ -235,17 +240,7 @@ onMounted(loadTree)
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
-          <el-button
-            @click="
-              () => {
-                keyword = ''
-                typeFilter = ''
-                loadTree()
-              }
-            "
-          >
-            重置
-          </el-button>
+          <el-button @click="resetQuery">重置</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -311,9 +306,7 @@ onMounted(loadTree)
         <el-table-column prop="sort" label="排序" width="70" align="center" />
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small" effect="light">
-              {{ row.status === 1 ? '启用' : '停用' }}
-            </el-tag>
+            <StatusTag :status="row.status" />
           </template>
         </el-table-column>
         <el-table-column label="操作" width="170" fixed="right" align="center">
@@ -473,35 +466,6 @@ onMounted(loadTree)
 </template>
 
 <style scoped lang="scss">
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-
-  &__title {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-
-    h3 {
-      margin: 0;
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--app-text);
-    }
-
-    span {
-      font-size: 12px;
-    }
-  }
-
-  &__actions {
-    display: flex;
-    gap: 8px;
-  }
-}
-
 .cell-title {
   display: inline-flex;
   align-items: center;

@@ -2,9 +2,7 @@ package user
 
 import (
 	"io"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -15,6 +13,7 @@ import (
 	"nova-admin/internal/pkg/page"
 	"nova-admin/internal/pkg/response"
 	"nova-admin/internal/pkg/sheet"
+	"nova-admin/internal/pkg/textutil"
 )
 
 // Handler 用户接口处理器。
@@ -88,7 +87,7 @@ func (h *Handler) Options(c *gin.Context) {
 // @Failure      404  {object}  response.Body  "用户不存在"
 // @Router       /system/users/{id} [get]
 func (h *Handler) Detail(c *gin.Context) {
-	id, err := pathID(c)
+	id, err := bind.PathID(c)
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -144,7 +143,7 @@ func (h *Handler) Create(c *gin.Context) {
 // @Failure      404   {object}  response.Body  "用户不存在"
 // @Router       /system/users/{id} [put]
 func (h *Handler) Update(c *gin.Context) {
-	id, err := pathID(c)
+	id, err := bind.PathID(c)
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -174,7 +173,7 @@ func (h *Handler) Update(c *gin.Context) {
 // @Failure      404  {object}  response.Body  "用户不存在"
 // @Router       /system/users/{id} [delete]
 func (h *Handler) Delete(c *gin.Context) {
-	id, err := pathID(c)
+	id, err := bind.PathID(c)
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -201,7 +200,7 @@ func (h *Handler) Delete(c *gin.Context) {
 // @Failure      404   {object}  response.Body  "用户不存在"
 // @Router       /system/users/{id}/status [put]
 func (h *Handler) UpdateStatus(c *gin.Context) {
-	id, err := pathID(c)
+	id, err := bind.PathID(c)
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -233,7 +232,7 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 // @Failure      404   {object}  response.Body  "用户不存在"
 // @Router       /system/users/{id}/password [put]
 func (h *Handler) ResetPassword(c *gin.Context) {
-	id, err := pathID(c)
+	id, err := bind.PathID(c)
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -249,14 +248,6 @@ func (h *Handler) ResetPassword(c *gin.Context) {
 		return
 	}
 	response.OKMsg(c, "密码已重置")
-}
-
-func pathID(c *gin.Context) (int64, error) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || id <= 0 {
-		return 0, errcode.New(errcode.ErrBadRequest, "路径参数 id 非法")
-	}
-	return id, nil
 }
 
 // actor 返回当前请求的身份，供数据范围过滤使用。
@@ -306,7 +297,7 @@ func (h *Handler) Export(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	sheet.Download(c, "用户列表_"+timestamp()+".xlsx", data)
+	sheet.Download(c, "用户列表_"+textutil.Timestamp()+".xlsx", data)
 }
 
 // ImportTemplate 下载用户导入模板
@@ -400,6 +391,3 @@ func (h *Handler) Import(c *gin.Context) {
 	}
 	response.OK(c, result)
 }
-
-// timestamp 生成导出文件名用的时间戳。
-func timestamp() string { return time.Now().Format("20060102_150405") }

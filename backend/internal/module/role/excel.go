@@ -1,12 +1,13 @@
 package role
 
 import (
-	"nova-admin/internal/pkg/textutil"
 	"strconv"
 
 	"nova-admin/internal/model"
+	"nova-admin/internal/pkg/dbquery"
 	"nova-admin/internal/pkg/errcode"
 	"nova-admin/internal/pkg/sheet"
+	"nova-admin/internal/pkg/textutil"
 )
 
 // Export 查询待导出的角色。
@@ -17,12 +18,12 @@ func (s *Service) Export(keyword string) ([]VO, error) {
 		tx = tx.Where("name ILIKE ? OR code ILIKE ?", kw, kw)
 	}
 
-	var roles []model.Role
-	// 多查一条用于判断是否超限
-	if err := tx.Order("sort ASC, id ASC").Limit(sheet.MaxExportRows + 1).Find(&roles).Error; err != nil {
-		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	// 多查一条用于判断是否超限（dbquery 内部处理，调用方只关心 exceeded）
+	roles, exceeded, err := dbquery.FetchWithCap[model.Role](tx.Order("sort ASC, id ASC"), sheet.MaxExportRows)
+	if err != nil {
+		return nil, err
 	}
-	if len(roles) > sheet.MaxExportRows {
+	if exceeded {
 		return nil, errcode.Newf(errcode.ErrBadRequest,
 			"单次导出上限 %d 条，请缩小筛选范围后重试", sheet.MaxExportRows)
 	}

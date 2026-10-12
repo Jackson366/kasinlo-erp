@@ -8,6 +8,7 @@ import (
 	"nova-admin/internal/authz"
 	"nova-admin/internal/database"
 	"nova-admin/internal/model"
+	"nova-admin/internal/pkg/dberr"
 	"nova-admin/internal/pkg/errcode"
 	"nova-admin/internal/pkg/page"
 )
@@ -38,8 +39,9 @@ func (s *Service) List(q page.Query) ([]VO, int64, error) {
 		return nil, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	var roles []model.Role
-	if err := tx.Order(q.SafeOrderBy(roleOrderWhitelist, "sys_roles.sort ASC, sys_roles.id ASC")).
-		Offset(q.Offset()).Limit(q.Limit()).Find(&roles).Error; err != nil {
+	if err := q.Paginate(tx).
+		Order(q.SafeOrderBy(roleOrderWhitelist, "sys_roles.sort ASC, sys_roles.id ASC")).
+		Find(&roles).Error; err != nil {
 		return nil, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 
@@ -72,7 +74,7 @@ func (s *Service) Options(actor *authz.Identity) ([]Option, error) {
 		tx = tx.Where("id IN ?", ids)
 	}
 
-	var out []Option
+	out := make([]Option, 0, 16)
 	if err := tx.Order("sort ASC, id ASC").
 		Select("id", "name", "code").Scan(&out).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
@@ -119,7 +121,7 @@ func (s *Service) Create(req CreateReq, actor *authz.Identity) (int64, error) {
 	}
 	if actor != nil && !actor.IsSuper && scope < actor.DataScope {
 		return 0, errcode.Newf(errcode.ErrForbidden,
-			"不能创建数据范围比自身更宽的角色（当前 %s）", scopeName(scope))
+			"不能创建数据范围比自身更宽的角色（当前 %s）", authz.ScopeText(scope))
 	}
 	if err := authz.EnsureRoleMenusGrantable(actor, req.MenuIDs); err != nil {
 		return 0, err
@@ -139,6 +141,11 @@ func (s *Service) Create(req CreateReq, actor *authz.Identity) (int64, error) {
 		return replaceMenus(tx, r.ID, req.MenuIDs)
 	})
 	if err != nil {
+		// ensureCodeFree 是「先查后插」，两个请求同时通过预检时靠唯一索引兜底。
+		// 不映射的话前端看到的是 50100「数据库操作失败」，真相只是标识重名。
+		if dberr.IsUniqueViolation(err) {
+			return 0, errcode.Newf(errcode.ErrConflict, "角色标识 %s 已存在", req.Code)
+		}
 		return 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	authz.InvalidateAll()
@@ -185,7 +192,7 @@ func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 		// 不允许把角色调到比调用者更宽的数据范围（1 最小 = 最宽）
 		if actor != nil && !actor.IsSuper && req.DataScope < actor.DataScope {
 			return errcode.Newf(errcode.ErrForbidden,
-				"不能把角色的数据范围调得比自身更宽（当前 %s）", scopeName(req.DataScope))
+				"不能把角色的数据范围调得比自身更宽（当前 %s）", authz.ScopeText(req.DataScope))
 		}
 		updates["data_scope"] = req.DataScope
 	}
@@ -219,22 +226,6 @@ func ensureRoleMutable(actor *authz.Identity, r model.Role) error {
 		return errcode.New(errcode.ErrForbidden, "无权修改「超级管理员」角色")
 	}
 	return nil
-}
-
-// scopeName 返回数据范围的中文名，仅用于错误提示。
-func scopeName(scope int16) string {
-	switch scope {
-	case model.DataScopeAll:
-		return "全部数据"
-	case model.DataScopeDept:
-		return "本部门"
-	case model.DataScopeDeptAndSub:
-		return "本部门及以下"
-	case model.DataScopeSelf:
-		return "仅本人"
-	default:
-		return "未知"
-	}
 }
 
 // Delete 删除角色。

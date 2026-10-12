@@ -219,10 +219,47 @@ db.Offset(q.Offset()).Limit(q.Limit()).Order(order)
 | `router/` | `index.ts` 常量路由 · `helper.ts` 后端菜单 → 路由 · `guard.ts` 守卫 |
 | `layout/` | 布局骨架 |
 | `views/` | 页面 |
-| `components/` | 跨页面复用组件 |
-| `styles/` | `variables.scss`（设计令牌，亮/暗两套）· `element.scss`（Element Plus 覆写）· `index.scss` |
-| `utils/` | `auth`（令牌）· `request`（axios）· `format`（格式化）· `theme`（主题状态与令牌读取） |
+| `components/` | 跨页面复用组件：`AppIcon` · `EChart` · `Pagination` · `StatusTag` |
+| `composables/` | 跨页面状态机：`useLatestGuard`（请求竞态）· `useTableQuery`（列表查询）· `useCrudDialog`（弹窗）· `useLogout`（登出三件套） |
+| `styles/` | `variables.scss`（设计令牌，亮/暗两套）· `element.scss`（Element Plus 覆写）· `index.scss`（含 `.page-card` `.toolbar` 等公共版式类） |
+| `utils/` | `auth`（令牌）· `request`（axios）· `format`（格式化，含 `exportStamp`）· `theme`（主题状态与令牌读取） |
 | `types/api.ts` | **与后端 DTO 一一对应**，新增字段先改这里 |
+
+### 列表页的三个公共抽象（新页面照抄，不要重写）
+
+系统管理四个页面（user/role/menu/dept）与日志页曾各自维护同一套状态与骨架，
+差异只在「调哪个接口」。这些已经收敛成组合式函数，**新列表页直接用**：
+
+```ts
+// 列表查询：query/loading/rows/total + 竞态守卫 + search/reset
+const {
+  query, loading, rows, total,
+  load: loadList, search: searchTable, reset: resetTable,
+} = useTableQuery<UserQuery, UserItem>(
+  { keyword: '', status: undefined },            // initial：reset() 会恢复成这些值
+  (params) => userApi.list({ ...params, keyword: params.keyword || undefined }),
+)
+
+// 新增/编辑弹窗：visible/mode/submitting/editingId + 校验→建改→关窗→刷新
+const dialog = useCrudDialog<UserPayload>({
+  formRef,
+  create: (payload) => userApi.create(payload),
+  update: (id, payload) => userApi.update(id, payload),
+  messages: { create: '用户创建成功', update: '用户信息已更新' },
+})
+```
+
+两条硬约束：
+
+1. **解构后再用**。模板只展开 setup 顶层绑定，`table.query` 这种嵌套 ref 不会被展开，
+   写进模板就是拿到一个 ref 对象本身（比较、判断全错）。页面上沿用的旧名字用解构别名保住：
+   `load: loadList`、`reset: resetQuery`。
+2. **页面独有的附加动作包一层**，不要塞进组合式函数。例如 user 页 `search()` 还要
+   `clearSelection()`（§5.45），就写成 `function search() { clearSelection(); searchTable() }`。
+
+状态列的「启用/停用」标签统一用 `components/StatusTag.vue`，不要在表格里再写三元表达式
+（配色口径必须全站一致）。导出文件名统一 `utils/format.ts` 的 `exportStamp('用户列表')`。
+
 
 ### 页面命名约定
 
@@ -1381,6 +1418,47 @@ Layout 挂载 Navbar，每次「退出登录 → 再登录」都重新 setup 并
 的失败信息。同类基础设施（异步审计、异步统计、消息队列）一律如此，
 不要在「概率性失败」和「固定大 sleep」之间二选一。
 
+### 5.57 组合式函数里 `reactive<泛型>` 传给回调，TS 会拒绝
+
+**症状**：写 `useTableQuery` 时这样声明，`fetch(query)` 报错：
+
+```ts
+const query = reactive<TableQuery<F>>({ page: 1, pageSize: 10, ...initial })
+const data = await fetch(query)
+// Argument of type 'Reactive<TableQuery<F>>' is not assignable to parameter of type 'TableQuery<F>'.
+//   'Reactive<...>' is assignable to the constraint of type 'F',
+//   but 'F' could be instantiated with a different subtype of constraint 'PageQuery'.
+```
+
+**根因**：`reactive` 的返回类型是 `Reactive<T>` = `UnwrapNestedRefs<T>`。参数是**泛型**时，
+TS 无法证明 `UnwrapNestedRefs<F & {...}>` 就等于 `F`——它能证明的只有「满足 F 的约束」，
+而约束满足不等于类型相等，于是拒绝赋值。
+
+**正确做法**：**先让 TS 推断、再一次性断言**，不要在 `reactive` 上写泛型实参：
+
+```ts
+// 推断出具体类型后断言收口；写成 reactive<TableQuery<F>>(...) 会在另一个位置
+// 报「对象字面量不满足 F 的未知成员」，换汤不换药
+const query = reactive({ page: 1, pageSize: 10, ...initial }) as TableQuery<F>
+```
+
+断言只出现在组合式函数内部一处，调用方拿到的仍是完整类型。同类问题在
+「泛型参数 + Vue 包装类型（`reactive`/`ref`/`computed`）」组合下都会复现。
+
+### 5.58 没有调用方的 prop 是负债，别「留着以后用」
+
+**症状**：`components/EChart.vue` 有个 `loading` prop，转发到
+`echarts.showLoading`，还为它从设计令牌读三个色值。全项目**没有任何调用方**
+传过它——页面级 loading 一律由 `v-loading` 指令负责。
+
+**为什么要删而不是留**：这类「预留」代价不是几行代码，而是它会**永久绑住**别的东西：
+`readToken` 的引入、一套色值的亮暗一致性、一段永远走不到的分支（改主题时还得验它）。
+删掉后 `readToken` 的 import 也随之消失。判断标准很简单：**搜一遍 prop 名，
+没有传参处就是死代码**。
+
+**同类信号**：`onMounted` 里注册但没人 await 的回调、`defineEmits` 里没人 `@` 的事件、
+`defineExpose` 里没人 `ref` 的方法。审计时按「谁在用」而不是「看起来有用」来判断。
+
 ---
 
 ## 6. 验证流程（改完必跑）
@@ -1446,6 +1524,10 @@ APP_URL=http://localhost:4173 node scripts/interaction-verify.mjs   # 验证生�
 7. 日志页首屏不请求登录日志
 8. 切 tab 才加载登录日志
 9. 改每页条数只发一次列表请求
+
+**用生产产物跑时第 6 项会显式跳过**（它靠 `import('/src/api/user.ts')` 注入坏令牌，
+而 `vite preview` 只发 dist、没有 `/src/*`）。跳过与通过分开计数并打印原因——
+把它算成通过等于谎报「已验证」，算成失败则是假失败。要覆盖它就用 dev server（默认 5173）。
 
 两个脚本的分工：`browser-verify.mjs` 管**结构性**问题（权限指令、部门树、请求层、
 keep-alive、主题对比度），`interaction-verify.mjs` 管**受控组件交互正确性**。
@@ -1613,6 +1695,11 @@ sheet.Download(c, "用户列表_20260929_205419.xlsx", data)
 - **表单校验要覆盖「不回车不丢焦」路径**，长度类规则必须挂 `change` 触发（§5.47）
 - **公共组件的共性缺陷在组件层修**，不要每个页面各修一遍（§5.46）
 - **自动化验证脚本报 FAIL 时先证明脚本是对的**，双向验证（退回修复确认用例会 FAIL）再改产品代码（§5.48）
+- **列表页与弹窗的状态机只留一份**：新页用 `useTableQuery` / `useCrudDialog`，
+  不要在页面里再抄一套 query/loading/rows 与弹窗四态（§3）
+- **状态列一律用 `StatusTag`、导出名一律用 `exportStamp`**，同一个口径不能有两个实现（§3）
+- **无调用方的 prop / 事件 / expose 直接删**，别「留着以后用」——它绑着依赖、色值与
+  永不执行的分支（§5.58）
 
 ---
 

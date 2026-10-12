@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +28,37 @@ func Query(c *gin.Context, obj any) error {
 		return translate(obj, err)
 	}
 	return nil
+}
+
+// PathID 解析路径参数 :id（int64，必须为正）。
+//
+// 四个模块（user/role/menu/dept）曾经各有一份私有的 pathID：
+// 判错口径（<=0 算非法）、错误文案都要各自维护，迟早漂移。
+// 路径参数解析没有 per-module 差异，收敛到这里。
+func PathID(c *gin.Context) (int64, error) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		return 0, errcode.New(errcode.ErrBadRequest, "路径参数 id 非法")
+	}
+	return id, nil
+}
+
+// StatusQuery 解析可选的 status 查询参数（0/1）。
+//
+// 返回 nil 表示「请求没带该参数，不过滤」。
+// 非法值（?status=abc、?status=9）一律 400，**不**静默忽略：
+// 静默忽略等于用户要「只看禁用」却拿到全量，筛选条件被悄悄丢掉了。
+func StatusQuery(c *gin.Context) (*int16, error) {
+	v := c.Query("status")
+	if v == "" {
+		return nil, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 || n > 1 {
+		return nil, errcode.Newf(errcode.ErrBadRequest, "查询参数 status 非法：%s（仅支持 0/1）", v)
+	}
+	s := int16(n)
+	return &s, nil
 }
 
 func translate(obj any, err error) error {

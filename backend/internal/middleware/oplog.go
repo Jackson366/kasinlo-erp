@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"nova-admin/internal/oplog"
+	"nova-admin/internal/pkg/textutil"
 )
 
 // sensitiveKeys 命中这些关键字的字段在入库前会被脱敏。
@@ -162,7 +163,8 @@ func sanitize(raw []byte) string {
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		// 非 JSON 提交：先剔除非法 UTF-8 字节，再按「字符」截断。
 		// 两处都必要 —— 按字节截断会把多字节中文切成两半，同样造出非法 UTF-8。
-		return truncateRunes(strings.ToValidUTF8(string(raw), ""), maxRawBodyChars)
+		// 截断逻辑收敛在 textutil，与导出表格、日志落盘同一份实现。
+		return textutil.TruncateEllipsis(strings.ToValidUTF8(string(raw), ""), maxRawBodyChars, "...")
 	}
 	out, err := json.Marshal(redact(obj))
 	if err != nil {
@@ -206,18 +208,6 @@ func isSensitiveKey(key string) bool {
 		}
 	}
 	return false
-}
-
-// truncateRunes 按字符数截断，保证结果仍是合法 UTF-8。
-func truncateRunes(s string, limit int) string {
-	if limit <= 0 {
-		return s
-	}
-	runes := []rune(s)
-	if len(runes) <= limit {
-		return s
-	}
-	return string(runes[:limit]) + "..."
 }
 
 // resolveModule 从路径推导业务模块名，例如 /api/v1/system/users/3 -> users。

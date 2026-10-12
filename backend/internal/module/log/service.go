@@ -72,6 +72,27 @@ func parseTime(s string) *time.Time {
 	return nil
 }
 
+// parseTimeStrict 与 parseTime 的区别：解析失败返回错误。
+// 清空接口必须用它——「before 传错值」若静默返回 nil，语义会从
+// 「按时间清空」放大成「清空范围内全部」，仅剩锁定窗口兜底。
+func parseTimeStrict(s string) (*time.Time, error) {
+	if s == "" {
+		return nil, nil
+	}
+	layouts := []string{
+		time.RFC3339,
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05",
+		"2006-01-02",
+	}
+	for _, l := range layouts {
+		if t, err := time.ParseInLocation(l, s, time.Local); err == nil {
+			return &t, nil
+		}
+	}
+	return nil, errcode.Newf(errcode.ErrBadRequest, "时间格式无法解析：%s", s)
+}
+
 // Operations 分页查询操作日志。
 //
 // actor 决定数据范围：日志含 IP / UA 等敏感信息，只持有 system:log:list
@@ -84,10 +105,11 @@ func (s *Service) Operations(q page.Query, f OperationQuery, actor *authz.Identi
 	if err := filter(s.db.Model(&model.OperationLog{})).Count(&total).Error; err != nil {
 		return nil, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
-	var rows []model.OperationLog
-	if err := filter(s.db.Model(&model.OperationLog{})).
+	// 预分配空切片：无记录时返回 [] 而不是 null，前端表格不必各自判空
+	rows := make([]model.OperationLog, 0, q.Limit())
+	if err := q.Paginate(filter(s.db.Model(&model.OperationLog{}))).
 		Order(q.SafeOrderBy(opOrderWhitelist, "created_at DESC")).
-		Offset(q.Offset()).Limit(q.Limit()).Find(&rows).Error; err != nil {
+		Find(&rows).Error; err != nil {
 		return nil, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	return rows, total, nil
@@ -133,10 +155,10 @@ func (s *Service) Logins(q page.Query, f LoginQuery, actor *authz.Identity) ([]m
 	if err := filter(s.db.Model(&model.LoginLog{})).Count(&total).Error; err != nil {
 		return nil, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
-	var rows []model.LoginLog
-	if err := filter(s.db.Model(&model.LoginLog{})).
+	rows := make([]model.LoginLog, 0, q.Limit())
+	if err := q.Paginate(filter(s.db.Model(&model.LoginLog{}))).
 		Order(q.SafeOrderBy(loginOrderWhitelist, "created_at DESC")).
-		Offset(q.Offset()).Limit(q.Limit()).Find(&rows).Error; err != nil {
+		Find(&rows).Error; err != nil {
 		return nil, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	return rows, total, nil
@@ -171,7 +193,7 @@ func buildLoginFilter(q page.Query, f LoginQuery, scope *authz.Scope) func(*gorm
 // 顺带按范围过滤也保证下拉选项与列表内容一致。
 func (s *Service) Modules(actor *authz.Identity) ([]string, error) {
 	scope := authz.ResolveScope(actor)
-	var out []string
+	out := make([]string, 0, 16)
 	if err := scope.ApplyLog(s.db.Model(&model.OperationLog{})).
 		Distinct().Order("module ASC").Pluck("module", &out).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
@@ -186,7 +208,9 @@ func (s *Service) Modules(actor *authz.Identity) ([]string, error) {
 // 与 ApplyLog 的读口径完全一致）。「清空全部」按钮对范围管理员而言
 // 语义上是「清空我范围内能看到的全部」，前端提示无需区分。
 func (s *Service) ClearOperations(before *time.Time, actor *authz.Identity) (int64, error) {
-	tx := authz.ResolveScope(actor).ApplyLog(s.db.Where("1 = 1"))
+	// s.db 是共享句柄，GORM 链式调用即克隆（Open 返回 clone=1），
+	// 不需要 Where("1 = 1") 占位——那样反而让 WHERE 恒真一眼看不出真假。
+	tx := authz.ResolveScope(actor).ApplyLog(s.db)
 	if before != nil {
 		tx = tx.Where("created_at < ?", *before)
 	}
@@ -210,12 +234,16 @@ func (s *Service) ClearLogins(before *time.Time, actor *authz.Identity) (int64, 
 	}
 	// 锁定期内的日志一律保留
 	earliest := time.Now().Add(-time.Duration(lockSeconds) * time.Second)
+	// cutoff = min(before, earliest)：无论 before 传什么，硬下界不变。
+	// 先算好再单次 ResolveScope——「本部门及以下」范围每次 ResolveScope 都会
+	// 全表扫一遍 sys_depts 展开部门树，调两次纯属翻倍开销。
+	cutoff := earliest
+	if before != nil && before.Before(earliest) {
+		cutoff = *before
+	}
 	// 范围约束与 ClearOperations 同口径；self-only 的范围管理员
 	// 只能清掉自己的登录日志，锁定计数由认证中间件继续积累不受影响。
-	tx := authz.ResolveScope(actor).ApplyLog(s.db.Where("created_at < ?", earliest))
-	if before != nil && before.Before(earliest) {
-		tx = authz.ResolveScope(actor).ApplyLog(s.db.Where("created_at < ?", *before))
-	}
+	tx := authz.ResolveScope(actor).ApplyLog(s.db.Where("created_at < ?", cutoff))
 	res := tx.Delete(&model.LoginLog{})
 	if res.Error != nil {
 		return 0, errcode.Wrap(errcode.ErrDatabase, res.Error)

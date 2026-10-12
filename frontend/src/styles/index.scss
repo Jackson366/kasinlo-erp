@@ -128,6 +128,38 @@ a {
   margin-bottom: 16px;
 }
 
+// ---------- 列表页工具栏 ----------
+// 四个系统页（user/role/menu/dept）曾各自在 scoped 样式里抄了同一份，
+// 现在收敛到全局：新增页面直接用 .toolbar / .toolbar__title / .toolbar__actions。
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+
+  &__title {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+
+    h3 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--app-text);
+    }
+
+    span {
+      font-size: 12px;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    gap: 8px;
+  }
+}
+
 // ---------- 首屏骨架 ----------
 .app-loading {
   display: flex;

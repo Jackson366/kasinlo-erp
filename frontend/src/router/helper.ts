@@ -47,7 +47,6 @@ export function buildRoutes(records: RouteRecord[]): RouteRecordRaw[] {
           icon: record.meta?.icon ?? '',
           keepAlive: record.meta?.keepAlive ?? false,
           hidden: record.meta?.hidden ?? false,
-          permission: record.meta?.permission ?? '',
         },
       })
     })

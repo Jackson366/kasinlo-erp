@@ -8,6 +8,7 @@ import (
 	"nova-admin/internal/authz"
 	"nova-admin/internal/database"
 	"nova-admin/internal/model"
+	"nova-admin/internal/pkg/dberr"
 	"nova-admin/internal/pkg/errcode"
 	"nova-admin/internal/pkg/hash"
 	"nova-admin/internal/pkg/page"
@@ -43,11 +44,10 @@ func (s *Service) List(q page.Query, f ListQuery, actor *authz.Identity) ([]VO, 
 	}
 
 	var users []model.User
-	if err := filter(s.db.Model(&model.User{})).
+	if err := q.Paginate(filter(s.db.Model(&model.User{})).
 		Preload("Dept").
-		Preload("Roles").
+		Preload("Roles")).
 		Order(q.SafeOrderBy(userOrderWhitelist, "id DESC")).
-		Offset(q.Offset()).Limit(q.Limit()).
 		Find(&users).Error; err != nil {
 		return nil, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
@@ -95,7 +95,7 @@ func (s *Service) Options(keyword string, actor *authz.Identity) ([]Option, erro
 		kw := "%" + keyword + "%"
 		tx = tx.Where("username ILIKE ? OR nickname ILIKE ?", kw, kw)
 	}
-	var out []Option
+	out := make([]Option, 0, 100)
 	if err := tx.Order("id ASC").Limit(100).
 		Select("id", "username", "nickname").Scan(&out).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
@@ -150,13 +150,26 @@ func (s *Service) ensureInScope(actor *authz.Identity, targetID int64) error {
 // checkDeptInScope 校验所属部门是否在数据范围内（新增用户 / 调整部门时使用）。
 func (s *Service) checkDeptInScope(actor *authz.Identity, deptID *int64) error {
 	scope := authz.ResolveScope(actor)
-	if scope.Unrestricted {
-		return nil
-	}
 	if deptID == nil {
+		if scope.Unrestricted {
+			return nil
+		}
 		// 「仅本人」没有可写部门；但如果是「本部门」而请求没带部门，
 		// 说明调用方漏传了，不能默默放行成「不属于任何部门」。
 		return errcode.New(errcode.ErrBadRequest, "请选择你数据范围内的部门")
+	}
+	if scope.Unrestricted {
+		// 超管也不能把用户挂到不存在的部门上。这里补一道存在性检查：
+		// 没有它，错误要等 INSERT 撞外键才暴露，那是 500 而不是 400，
+		// 前端看到的会是「服务器故障」而不是「部门选错了」。
+		var cnt int64
+		if err := s.db.Model(&model.Dept{}).Where("id = ?", *deptID).Count(&cnt).Error; err != nil {
+			return errcode.Wrap(errcode.ErrDatabase, err)
+		}
+		if cnt == 0 {
+			return errcode.New(errcode.ErrBadRequest, "所选部门不存在")
+		}
+		return nil
 	}
 	return scope.EnsureDeptWritable(*deptID)
 }
@@ -291,8 +304,8 @@ func saveErr(err error) error {
 	// 并发撞 username 部分唯一索引（23505）：ensureUsernameFree 的
 	// 「先查后插」存在 TOCTOU 窗口，数据库兜住数据正确性，但错误码
 	// 要归一成 409 冲突而不是 50100 数据库错误（excel.go 的导入路径
-	// 已经用 isDuplicateKey 做了同样的映射）。
-	if isDuplicateKey(err) {
+	// 与 role / menu 的创建路径都走同一个 dberr 判定）。
+	if dberr.IsUniqueViolation(err) {
 		return errcode.New(errcode.ErrConflict, "用户名已存在")
 	}
 	return errcode.Wrap(errcode.ErrDatabase, err)

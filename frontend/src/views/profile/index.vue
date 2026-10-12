@@ -5,12 +5,12 @@ import { profileApi } from '@/api'
 import type { ProfileInfo } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import { useUserStore } from '@/store'
-import { useRouter } from 'vue-router'
+import { useLogout } from '@/composables/useLogout'
 
 defineOptions({ name: 'Profile' })
 
 const userStore = useUserStore()
-const router = useRouter()
+const { logout } = useLogout()
 
 const loading = ref(true)
 const profile = ref<ProfileInfo | null>(null)
@@ -44,7 +44,9 @@ const infoRules: FormRules<typeof infoForm> = {
 }
 
 async function submitInfo(): Promise<void> {
-  const valid = await infoFormRef.value?.validate().catch(() => false)
+  // 不能写成 infoFormRef.value?.validate().catch(...)：表单未挂载时 ?. 短路出
+  // undefined，再 .catch 就是 TypeError，整个提交静默崩溃。
+  const valid = infoFormRef.value ? await infoFormRef.value.validate().catch(() => false) : false
   if (!valid) return
   infoSubmitting.value = true
   try {
@@ -83,7 +85,9 @@ const pwdRules: FormRules<typeof pwdForm> = {
 }
 
 async function submitPassword(): Promise<void> {
-  const valid = await pwdFormRef.value?.validate().catch(() => false)
+  // 不能写成 pwdFormRef.value?.validate().catch(...)：表单未挂载时 ?. 短路出
+  // undefined，再 .catch 就是 TypeError，整个提交静默崩溃。
+  const valid = pwdFormRef.value ? await pwdFormRef.value.validate().catch(() => false) : false
   if (!valid) return
   pwdSubmitting.value = true
   try {
@@ -94,11 +98,10 @@ async function submitPassword(): Promise<void> {
     ElMessage.success('密码修改成功，请重新登录')
     // 后端已通过 token_epoch 让旧令牌失效，前端必须真的退出并跳登录页，
     // 否则提示与行为不符：用户停留在页面上，下一个请求就会 401。
-    try {
-      await userStore.logout()
-    } finally {
-      await router.push('/login')
-    }
+    // 退出清理（清令牌、卸载动态路由、清标签页）走 useLogout，
+    // 与 Navbar 的退出登录同一套——少了后两步，重新登录后会挂着
+    // 上一个账号的标签页，而对应路由已卸载，点哪个都 404。
+    await logout()
   } finally {
     pwdSubmitting.value = false
   }

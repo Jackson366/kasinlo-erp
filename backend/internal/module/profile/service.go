@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"errors"
 	"regexp"
 
 	"gorm.io/gorm"
@@ -28,6 +29,12 @@ func NewService() *Service {
 func (s *Service) Info(id *authz.Identity) (*Info, error) {
 	var u model.User
 	if err := s.db.Preload("Dept").Preload("Roles").First(&u, id.UserID).Error; err != nil {
+		// 令牌有效但用户已不存在（删除账号后旧令牌仍在有效期内的窗口）。
+		// 按数据库错误返回 500 会把问题描成「服务端故障」；
+		// 按 401 返回前端才会走重新登录，与「账号已被删除」的事实对齐。
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errcode.New(errcode.ErrUnauthorized, "账号不存在或已被删除，请重新登录")
+		}
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	out := &Info{

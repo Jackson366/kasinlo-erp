@@ -20,7 +20,6 @@ watch(
     appStore.addTag({
       path: route.path,
       title: route.meta.title as string,
-      name: route.name as string | undefined,
       closable: route.path !== homePath.value,
     })
   },

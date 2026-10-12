@@ -3,20 +3,17 @@ import { computed, nextTick, onMounted, reactive, ref, type Ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import type { ElTree } from 'element-plus'
 import { menuApi, roleApi } from '@/api'
-import { useLatestGuard } from '@/composables/useLatestGuard'
-import type { MenuNode, RoleItem, RolePayload } from '@/types/api'
+import { useTableQuery } from '@/composables/useTableQuery'
+import { useCrudDialog } from '@/composables/useCrudDialog'
+import type { MenuNode, PageQuery, RoleItem, RolePayload } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
+import StatusTag from '@/components/StatusTag.vue'
 import Pagination from '@/components/Pagination.vue'
-import { formatDate, fileStamp, flattenTree } from '@/utils/format'
+import { formatDate, exportStamp, flattenTree } from '@/utils/format'
 
 defineOptions({ name: 'SystemRole' })
 
 // ---------------- 列表 ----------------
-const loading = ref(false)
-const rows = ref<RoleItem[]>([])
-const total = ref(0)
-const query = reactive({ page: 1, pageSize: 10, keyword: '' })
-
 const dataScopeLabels: Record<number, string> = {
   1: '全部数据',
   2: '本部门',
@@ -24,25 +21,19 @@ const dataScopeLabels: Record<number, string> = {
   4: '仅本人',
 }
 
-const loadGuard = useLatestGuard()
-
-async function loadList(): Promise<void> {
-  const ticket = loadGuard.start()
-  loading.value = true
-  try {
-    const data = await roleApi.list({ ...query, keyword: query.keyword || undefined })
-    if (!loadGuard.isCurrent(ticket)) return // 快速连续查询时丢弃过期响应
-    rows.value = data.list
-    total.value = data.total
-  } finally {
-    if (loadGuard.isCurrent(ticket)) loading.value = false
-  }
-}
-
-function search(): void {
-  query.page = 1
-  loadList()
-}
+// 解构时起别名：模板里沿用的名字（loadList / search / resetQuery / query / rows / total / loading）不动
+const {
+  query,
+  loading,
+  rows,
+  total,
+  load: loadList,
+  search,
+  reset: resetQuery,
+} = useTableQuery<PageQuery, RoleItem>(
+  { keyword: '' },
+  (params) => roleApi.list({ ...params, keyword: params.keyword || undefined }),
+)
 
 // ---------------- 导出 ----------------
 const exporting = ref(false)
@@ -53,7 +44,7 @@ async function handleExport(): Promise<void> {
   try {
     await roleApi.export(
       { keyword: query.keyword || undefined },
-      `角色列表_${fileStamp()}.xlsx`,
+      exportStamp('角色列表'),
     )
     ElMessage.success('导出成功')
   } catch {
@@ -91,11 +82,15 @@ function collectMenuIds(): number[] {
 }
 
 // ---------------- 新增 / 编辑 ----------------
-const dialogVisible = ref(false)
-const dialogMode = ref<'create' | 'edit'>('create')
-const submitting = ref(false)
 const formRef = ref<FormInstance>()
-const editingId = ref<number | null>(null)
+const dialog = useCrudDialog<RolePayload>({
+  formRef,
+  create: (payload) => roleApi.create(payload),
+  update: (id, payload) => roleApi.update(id, payload),
+  messages: { create: '角色创建成功', update: '角色已更新' },
+})
+// 解构保持模板里的旧名字：模板只展开 setup 顶层绑定，不会展开 dialog.visible 这类嵌套 ref
+const { visible: dialogVisible, mode: dialogMode, submitting, editingId } = dialog
 
 const form = reactive<RolePayload>({
   name: '',
@@ -121,17 +116,13 @@ const rules: FormRules<RolePayload> = {
 const isBuiltin = computed(() => rows.value.find((item) => item.id === editingId.value)?.isBuiltin === true)
 
 async function openCreate(): Promise<void> {
-  dialogMode.value = 'create'
-  editingId.value = null
   Object.assign(form, { name: '', code: '', sort: 0, status: 1, dataScope: 1, remark: '' })
-  dialogVisible.value = true
+  dialog.openCreate()
   if (await whenTreeReady(treeRef)) setCheckedMenus([])
   else ElMessage.warning('权限树尚未就绪，请重新打开弹窗')
 }
 
 async function openEdit(row: RoleItem): Promise<void> {
-  dialogMode.value = 'edit'
-  editingId.value = row.id
   Object.assign(form, {
     name: row.name,
     code: row.code,
@@ -140,7 +131,7 @@ async function openEdit(row: RoleItem): Promise<void> {
     dataScope: row.dataScope,
     remark: row.remark,
   })
-  dialogVisible.value = true
+  dialog.openEdit(row.id)
   if (await whenTreeReady(treeRef)) setCheckedMenus(row.menuIds)
   else ElMessage.warning('权限树尚未就绪，请重新打开弹窗')
 }
@@ -160,25 +151,11 @@ async function whenTreeReady(tree: Ref<InstanceType<typeof ElTree> | undefined>)
 }
 
 async function submitForm(): Promise<void> {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
-
-  const payload: RolePayload = { ...form, menuIds: collectMenuIds() }
-  submitting.value = true
-  try {
-    if (dialogMode.value === 'create') {
-      await roleApi.create(payload)
-      ElMessage.success('角色创建成功')
-    } else if (editingId.value) {
-      delete payload.code // 角色标识创建后不允许修改
-      await roleApi.update(editingId.value, payload)
-      ElMessage.success('角色已更新')
-    }
-    dialogVisible.value = false
-    loadList()
-  } finally {
-    submitting.value = false
-  }
+  await dialog.submit(loadList, (mode) => {
+    const payload: RolePayload = { ...form, menuIds: collectMenuIds() }
+    if (mode === 'edit') delete payload.code // 角色标识创建后不允许修改
+    return payload
+  })
 }
 
 // ---------------- 分配权限 ----------------
@@ -228,6 +205,10 @@ async function removeRole(row: RoleItem): Promise<void> {
   }
   await roleApi.remove(row.id)
   ElMessage.success('角色已删除')
+  // 删的是末页唯一一条时先回退一页，否则会停在一个空白页上
+  if (rows.value.length === 1 && query.page > 1) {
+    query.page -= 1
+  }
   loadList()
 }
 
@@ -255,16 +236,7 @@ onMounted(async () => {
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
-          <el-button
-            @click="
-              () => {
-                query.keyword = ''
-                search()
-              }
-            "
-          >
-            重置
-          </el-button>
+          <el-button @click="resetQuery">重置</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -314,9 +286,7 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="状态" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small" effect="light">
-              {{ row.status === 1 ? '启用' : '禁用' }}
-            </el-tag>
+            <StatusTag :status="row.status" disabled-text="禁用" />
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
@@ -470,35 +440,6 @@ onMounted(async () => {
 </template>
 
 <style scoped lang="scss">
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-
-  &__title {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-
-    h3 {
-      margin: 0;
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--app-text);
-    }
-
-    span {
-      font-size: 12px;
-    }
-  }
-
-  &__actions {
-    display: flex;
-    gap: 8px;
-  }
-}
-
 .cell-role {
   display: flex;
   align-items: center;

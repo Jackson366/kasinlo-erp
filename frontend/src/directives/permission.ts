@@ -108,5 +108,4 @@ export function setupPermissionDirective(app: App): void {
   app.directive('perm', permission)
 }
 
-export { PERM_ATTR, DENIED_CLASS }
 export default permission

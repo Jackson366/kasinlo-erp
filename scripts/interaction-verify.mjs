@@ -22,6 +22,10 @@
  * 用法：先启动后端与前端 dev server，再执行
  *   node scripts/interaction-verify.mjs
  *   APP_URL=http://localhost:4173 node scripts/interaction-verify.mjs   # 验证生产产物
+ *
+ * 生产产物下有一项会**跳过**并显式报出来：「switch：请求失败时错误被捕获」。
+ * 它靠 import 页面里的源码模块（`/src/api/user.ts`）来注入坏令牌，而
+ * vite preview 只发 dist 产物，没有 `/src/*`。跳过 ≠ 通过，汇总里单独计数。
  */
 
 import { spawn } from 'node:child_process'
@@ -148,6 +152,28 @@ const results = []
 function check(name, pass, detail) {
   results.push({ name, pass, detail })
   console.log(`${pass ? '✅' : '❌'} ${name}${detail ? ' — ' + detail : ''}`)
+}
+
+/**
+ * 跳过一项并显式报出来。
+ *
+ * 为什么不直接 pass：跳过与通过是两件事。生产产物（vite preview）下没有
+ * 可 import 的源码模块，依赖 `/src/...` 的断言根本执行不到——
+ * 把它算成「通过」等于把没验证的东西报成已验证的，正是本项目最忌讳的
+ * 「静默失败通道」。
+ */
+function skip(name, reason) {
+  results.push({ name, pass: true, skipped: true, detail: reason })
+  console.log(`⏭️  ${name} — 跳过：${reason}`)
+}
+
+/** 当前页面能否 import 源码模块（只有 dev server 提供 /src/*，生产产物不行） */
+async function canImportSources() {
+  try {
+    return await evaluate(`import('/src/utils/auth.ts').then(() => true).catch(() => false)`, true)
+  } catch {
+    return false
+  }
 }
 
 const INJECT = (tk) => `(() => {
@@ -308,18 +334,25 @@ async function main() {
       `初始 checked=${swState.before} → 点开关 ${swState.afterClick} → 取消后 ${swState.afterCancel}（确认框出现=${swState.appeared}）`)
 
     // 请求失败回滚：用无效令牌调用 updateStatus
-    const failRollback = await evaluate(`(async () => {
-      const api = await import('/src/api/user.ts');
-      const auth = await import('/src/utils/auth.ts');
-      const good = auth.getAccessToken();
-      auth.setTokens('bad.token.value', 'bad.refresh.value');
-      let code = 'no-throw';
-      try { await api.userApi.updateStatus(${tmpID}, 0); } catch (e) { code = String(e.code ?? e.message); }
-      auth.setTokens(good, ${JSON.stringify(admin.refresh)});
-      return { code };
-    })()`, true)
-    check('switch：请求失败时错误被捕获（不静默吞掉）', failRollback.code !== 'no-throw',
-      `失败返回码 ${failRollback.code}`)
+    // 这一步要靠源码模块拿到 api/auth，因此只对 dev server 有效；
+    // 生产产物下必须显式跳过而不是报 FAIL，也不能悄悄算通过。
+    if (await canImportSources()) {
+      const failRollback = await evaluate(`(async () => {
+        const api = await import('/src/api/user.ts');
+        const auth = await import('/src/utils/auth.ts');
+        const good = auth.getAccessToken();
+        auth.setTokens('bad.token.value', 'bad.refresh.value');
+        let code = 'no-throw';
+        try { await api.userApi.updateStatus(${tmpID}, 0); } catch (e) { code = String(e.code ?? e.message); }
+        auth.setTokens(good, ${JSON.stringify(admin.refresh)});
+        return { code };
+      })()`, true)
+      check('switch：请求失败时错误被捕获（不静默吞掉）', failRollback.code !== 'no-throw',
+        `失败返回码 ${failRollback.code}`)
+    } else {
+      skip('switch：请求失败时错误被捕获（不静默吞掉）',
+        '当前是生产产物，拿不到 /src/api/user.ts；不带 APP_URL 用 dev server 跑即可覆盖')
+    }
 
     // ---------- 4. 日志页请求数 ----------
     await navigate(`${APP}/?boot=${Date.now()}#/login`)
@@ -390,7 +423,12 @@ async function main() {
   ;[...new Set(pageErrors)].slice(0, 5).forEach((t) => console.log('  •', String(t).slice(0, 200)))
 
   const failed = results.filter((r) => !r.pass)
-  console.log(`\n通过 ${results.length - failed.length}/${results.length}`)
+  const skipped = results.filter((r) => r.skipped)
+  const passed = results.length - failed.length - skipped.length
+  console.log(
+    `\n通过 ${passed}/${passed + failed.length}` +
+      (skipped.length ? `，跳过 ${skipped.length}（需 dev server）` : ''),
+  )
 
   fs.writeFileSync(path.join(OUT_DIR, 'p3-result.json'),
     JSON.stringify({ results, consoleLogs, pageErrors }, null, 2))

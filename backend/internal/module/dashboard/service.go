@@ -88,8 +88,10 @@ func (s *Service) Overview(actor *authz.Identity) (*Overview, error) {
 		}
 	}
 
-	// 近 7 天活跃用户（有操作记录的去重用户数）
-	weekAgo := time.Now().AddDate(0, 0, -7)
+	// 近 7 天活跃用户（有操作记录的去重用户数）。
+	// 时区取数据库会话时区而非裸 time.Now()：与 Trend / todayRange 同一口径，
+	// 避免「文件里三种时间来源」这种肉眼难查的不一致。
+	weekAgo := time.Now().In(database.Location()).AddDate(0, 0, -7)
 	if err := scope.ApplyLog(s.db.Model(&model.OperationLog{}).
 		Where("created_at >= ? AND user_id > 0", weekAgo)).
 		Distinct("user_id").Count(&out.ActiveUserWeek).Error; err != nil {
@@ -165,6 +167,10 @@ func (s *Service) Trend(days int, actor *authz.Identity) ([]TrendPoint, error) {
 }
 
 // ModuleStats 返回最近 days 天各模块操作量排行。
+//
+// 时间窗是「向前滚动 days 天」而非对齐自然日：与 Overview 的 weekAgo 同口径，
+// 时区统一取数据库会话时区（created_at 是 timestamptz，按瞬时比较，
+// 时区只影响表示，但口径统一能防住将来改成按日分桶时整段错位）。
 func (s *Service) ModuleStats(days, limit int, actor *authz.Identity) ([]ModuleStat, error) {
 	if days <= 0 || days > 90 {
 		days = 7
@@ -172,8 +178,10 @@ func (s *Service) ModuleStats(days, limit int, actor *authz.Identity) ([]ModuleS
 	if limit <= 0 || limit > 50 {
 		limit = 8
 	}
-	since := time.Now().AddDate(0, 0, -days)
-	var out []ModuleStat
+	since := time.Now().In(database.Location()).AddDate(0, 0, -days)
+	// 预分配空切片：没有数据时返回 [] 而不是 null。
+	// 前端拿到 null 时表格组件要各自判空，契约不统一。
+	out := make([]ModuleStat, 0, limit)
 	tx := authz.ResolveScope(actor).ApplyLog(s.db.Model(&model.OperationLog{})).
 		Select("module, COUNT(*) AS total").
 		Where("created_at >= ? AND module <> ''", since)
@@ -191,8 +199,8 @@ func (s *Service) RecentLogins(limit int, actor *authz.Identity) ([]model.LoginL
 	if limit <= 0 || limit > 50 {
 		limit = 8
 	}
-	var rows []model.LoginLog
-	tx := authz.ResolveScope(actor).ApplyLog(s.db).Where("1 = 1")
+	rows := make([]model.LoginLog, 0, limit)
+	tx := authz.ResolveScope(actor).ApplyLog(s.db)
 	if err := tx.Order("created_at DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}

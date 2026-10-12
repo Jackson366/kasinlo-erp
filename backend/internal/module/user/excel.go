@@ -1,17 +1,17 @@
 package user
 
 import (
-	"errors"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
 	"nova-admin/internal/authz"
 	"nova-admin/internal/model"
+	"nova-admin/internal/pkg/dberr"
+	"nova-admin/internal/pkg/dbquery"
 	"nova-admin/internal/pkg/errcode"
 	"nova-admin/internal/pkg/hash"
 	"nova-admin/internal/pkg/sheet"
@@ -71,12 +71,12 @@ func (s *Service) Export(keyword string, f ExportQuery, actor *authz.Identity) (
 		tx = s.buildFilter(keyword, f.ListQuery)(tx)
 	}
 
-	var users []model.User
-	// 多查一条用于判断是否超限
-	if err := tx.Order("id ASC").Limit(sheet.MaxExportRows + 1).Find(&users).Error; err != nil {
-		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	// 多查一条用于判断是否超限（dbquery 内部处理，调用方只关心 exceeded）
+	users, exceeded, err := dbquery.FetchWithCap[model.User](tx.Order("id ASC"), sheet.MaxExportRows)
+	if err != nil {
+		return nil, err
 	}
-	if len(users) > sheet.MaxExportRows {
+	if exceeded {
 		return nil, errcode.Newf(errcode.ErrBadRequest,
 			"单次导出上限 %d 条，请缩小筛选范围后重试", sheet.MaxExportRows)
 	}
@@ -448,22 +448,13 @@ func (s *Service) bulkCreateUsers(candidates []importCandidate) (int, error) {
 	if err != nil {
 		// 唯一键冲突一般意味着「预览与实际写库之间数据变了」（别人同时建了同名用户）。
 		// 直接抛「数据库操作失败」用户完全无从下手，这里换成可操作的提示并回 409。
-		if isDuplicateKey(err) {
+		if dberr.IsUniqueViolation(err) {
 			return 0, errcode.New(errcode.ErrConflict,
 				"导入时出现唯一性冲突，可能有同名用户被同时创建，请重新上传文件校验后再试")
 		}
 		return 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	return len(users), nil
-}
-
-// isDuplicateKey 判断是否为 PostgreSQL 唯一约束冲突（SQLSTATE 23505）。
-func isDuplicateKey(err error) bool {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		return pgErr.Code == "23505"
-	}
-	return false
 }
 
 // importRefs 汇总导入校验所需的参照数据。

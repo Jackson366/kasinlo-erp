@@ -9,6 +9,7 @@ import (
 	"nova-admin/internal/database"
 	"nova-admin/internal/model"
 	"nova-admin/internal/pkg/errcode"
+	"nova-admin/internal/pkg/tree"
 )
 
 // Service 部门服务。
@@ -289,22 +290,15 @@ func (s *Service) checkParent(parentID, selfID int64) error {
 }
 
 func buildTree(depts []model.Dept, counts map[int64]int64) []*Node {
-	nodes := make(map[int64]*Node, len(depts))
-	for _, d := range depts {
-		nodes[d.ID] = &Node{
-			ID: d.ID, ParentID: d.ParentID, Name: d.Name, Leader: d.Leader,
-			Phone: d.Phone, Email: d.Email, Sort: d.Sort, Status: d.Status,
-			UserCount: counts[d.ID], CreatedAt: d.CreatedAt,
-		}
-	}
-	roots := make([]*Node, 0)
-	for _, d := range depts {
-		node := nodes[d.ID]
-		if parent, ok := nodes[d.ParentID]; ok && d.ParentID != 0 {
-			parent.Children = append(parent.Children, node)
-		} else {
-			roots = append(roots, node)
-		}
-	}
-	return roots
+	return tree.Build(depts,
+		func(d model.Dept) *Node {
+			return &Node{
+				ID: d.ID, ParentID: d.ParentID, Name: d.Name, Leader: d.Leader,
+				Phone: d.Phone, Email: d.Email, Sort: d.Sort, Status: d.Status,
+				UserCount: counts[d.ID], CreatedAt: d.CreatedAt,
+			}
+		},
+		func(d model.Dept) (int64, int64) { return d.ID, d.ParentID },
+		func(parent, child *Node) { parent.Children = append(parent.Children, child) },
+	)
 }

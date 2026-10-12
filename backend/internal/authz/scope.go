@@ -23,7 +23,7 @@ import (
 // 在仪表盘上看到全库人数，这属于典型的「读漏了」型越权。
 //
 // 两条通用原则：
-//  1. 读与写必须一起收窄。写接口要调 EnsureDeptWritable / EnsureUserVisible，
+//  1. 读与写必须一起收窄。写接口要调 EnsureDeptWritable，
 //     否则「看不到但能改/能删」的洞依旧存在。
 //  2. 越界一律按「不存在」处理（404），避免用返回信息探测其他部门有哪些数据。
 
@@ -77,20 +77,6 @@ func (s *Scope) AllowsDept(id int64) bool {
 		}
 	}
 	return false
-}
-
-// AllowsUser 判断用户是否落在范围内。deptID 为 nil 表示该用户未归属部门。
-func (s *Scope) AllowsUser(userID int64, deptID *int64) bool {
-	if s.Unrestricted {
-		return true
-	}
-	if s.SelfOnly {
-		return userID == s.UserID
-	}
-	if deptID == nil {
-		return false
-	}
-	return s.AllowsDept(*deptID)
 }
 
 // DeptIn 返回「部门 ID IN (...)」的 SQL 片段与参数；不受限时 ok=false。
@@ -169,20 +155,17 @@ func (s *Scope) EnsureDeptVisible(id int64) error {
 	return errcode.New(errcode.ErrNotFound, "部门不存在")
 }
 
-// EnsureDeptWritable 校验部门是否可写。与可见性同口径：看得到就管得了。
+// EnsureDeptWritable 校验部门是否可写。
+//
+// 注意与 EnsureDeptVisible 的**返回码刻意不同**：可见性是「读漏了」型越权，
+// 按不存在（404）处理避免探测；可写性是用户正在执行的操作，返回 403
+// 「超出数据范围」能说清为什么没做成，比 404 更可诊断。
+// 判据本身一致：看得到就管得了。
 func (s *Scope) EnsureDeptWritable(id int64) error {
 	if s.AllowsDept(id) {
 		return nil
 	}
-	return errcode.New(errcode.ErrForbidden, "目标部门超出你的数据范围")
-}
-
-// EnsureUserVisible 校验用户是否可见；越界按「不存在」返回。
-func (s *Scope) EnsureUserVisible(userID int64, deptID *int64) error {
-	if s.AllowsUser(userID, deptID) {
-		return nil
-	}
-	return errcode.New(errcode.ErrNotFound, "用户不存在")
+	return errcode.New(errcode.ErrForbidden, "超出数据范围")
 }
 
 // DeptTreeIDs 返回部门及其所有子部门 ID（BFS）。

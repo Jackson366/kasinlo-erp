@@ -6,7 +6,6 @@ import { applyTheme, persistTheme, resolveInitialTheme, type ThemeMode } from '@
 export interface TagView {
   path: string
   title: string
-  name?: string
   closable: boolean
 }
 

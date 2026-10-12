@@ -25,10 +25,22 @@ func FormatTime(t time.Time) string {
 	return t.Format("2006-01-02 15:04:05")
 }
 
+// Timestamp 返回导出文件名用的紧凑时间戳 "20060102_150405"。
+// 四个导出入口（用户 / 角色 / 操作日志 / 登录日志）曾经各写一遍
+// time.Now().Format("20060102_150405")，格式串漂移过一次（少一位年份），
+// 收敛到这里只有一个真相。
+func Timestamp() string { return time.Now().Format("20060102_150405") }
+
 // Fit 把 s 收敛到 limit 个字符以内，并保证结果是合法 UTF-8。
 // limit <= 0 表示不限长度，但仍会剔除非法 UTF-8 字节。
 func Fit(s string, limit int) string {
-	s = strings.ToValidUTF8(s, "")
+	return Truncate(strings.ToValidUTF8(s, ""), limit)
+}
+
+// Truncate 按字符（而非字节）截断到 limit 个字符以内。
+// limit <= 0 表示不限长度。不追加省略号 —— 追加了省略号的长度就超了，
+// 展示场景要省略号请用 TruncateEllipsis。
+func Truncate(s string, limit int) string {
 	if limit <= 0 {
 		return s
 	}
@@ -37,4 +49,21 @@ func Fit(s string, limit int) string {
 		return s
 	}
 	return string(runes[:limit])
+}
+
+// TruncateEllipsis 按字符截断并追加 suffix（如 "…"）。
+//
+// 与 Truncate 的区别只在「截断了要不要告诉读者」：审计日志的错误信息、
+// 导出表格的 UserAgent 都属于「内容被砍过」必须可见的场景。
+// 注意 suffix 本身也会让结果变长，仅用于展示，不要用于数据库写入边界
+// （那里用 Fit/Truncate，长度必须严格收敛）。
+func TruncateEllipsis(s string, limit int, suffix string) string {
+	if limit <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	return string(runes[:limit]) + suffix
 }

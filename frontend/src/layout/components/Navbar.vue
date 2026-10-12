@@ -2,14 +2,15 @@
 import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useAppStore, usePermissionStore, useUserStore } from '@/store'
+import { useAppStore, useUserStore } from '@/store'
+import { useLogout } from '@/composables/useLogout'
 import AppIcon from '@/components/AppIcon.vue'
 import Breadcrumb from './Breadcrumb.vue'
 
 const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
-const permissionStore = usePermissionStore()
+const { logout } = useLogout()
 
 const fullscreen = ref(false)
 const collapsed = computed(() => appStore.sidebarCollapsed)
@@ -46,11 +47,10 @@ async function handleLogout(): Promise<void> {
   } catch {
     return // 用户取消
   }
-  await userStore.logout()
-  permissionStore.reset()
-  appStore.clearTags()
+  // 清理（卸载动态路由、清标签、跳登录页）都在 composable 里，
+  // 两个退出入口共用同一套，避免再出现「漏清标签」的半截会话
+  await logout()
   ElMessage.success('已退出登录')
-  router.push('/login')
 }
 
 function handleCommand(command: string): void {

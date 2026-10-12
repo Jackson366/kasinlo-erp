@@ -10,8 +10,6 @@ import "fmt"
 type Code int
 
 const (
-	OK Code = 0
-
 	// 通用客户端错误 40xxx
 	ErrBadRequest   Code = 40000 // 请求参数错误
 	ErrUnauthorized Code = 40100 // 未登录或令牌失效
@@ -29,14 +27,11 @@ const (
 	ErrOldPasswordWrong  Code = 40106 // 原密码错误
 
 	// 通用服务端错误 50xxx
-	ErrInternal     Code = 50000 // 服务器内部错误
-	ErrDatabase     Code = 50100 // 数据库操作失败
-	ErrConfig       Code = 50200 // 配置错误
-	ErrExternalCall Code = 50300 // 外部服务调用失败
+	ErrInternal Code = 50000 // 服务器内部错误
+	ErrDatabase Code = 50100 // 数据库操作失败
 )
 
 var messages = map[Code]string{
-	OK:                   "success",
 	ErrBadRequest:        "请求参数错误",
 	ErrUnauthorized:      "登录状态已失效，请重新登录",
 	ErrForbidden:         "没有操作权限",
@@ -51,8 +46,6 @@ var messages = map[Code]string{
 	ErrOldPasswordWrong:  "原密码错误",
 	ErrInternal:          "服务器内部错误",
 	ErrDatabase:          "数据库操作失败",
-	ErrConfig:            "服务配置异常",
-	ErrExternalCall:      "外部服务调用失败",
 }
 
 // Message 返回错误码对应的默认提示。
@@ -75,8 +68,6 @@ func (c Code) Message() string {
 //	50000-59999 -> 500   服务端错误
 func (c Code) HTTPStatus() int {
 	switch {
-	case c == OK:
-		return 200
 	case c >= 40000 && c < 40100:
 		return 400
 	case c >= 40100 && c < 40200:

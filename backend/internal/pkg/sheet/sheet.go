@@ -24,6 +24,7 @@ import (
 	"github.com/xuri/excelize/v2"
 
 	"nova-admin/internal/pkg/errcode"
+	"nova-admin/internal/pkg/textutil"
 )
 
 const (
@@ -320,11 +321,8 @@ func sanitizeSheetName(name string) string {
 	}
 	replacer := strings.NewReplacer("/", "_", "\\", "_", "?", "_", "*", "_", "[", "_", "]", "_", ":", "_")
 	name = replacer.Replace(name)
-	runes := []rune(name)
-	if len(runes) > 31 {
-		name = string(runes[:31])
-	}
-	return name
+	// 31 是 Excel 工作表名的硬上限，按字符截断（中文一个字算一个字符）
+	return textutil.Truncate(name, 31)
 }
 
 // autoWidth 按表头与数据内容估算列宽。

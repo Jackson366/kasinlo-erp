@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 const (
@@ -79,6 +80,16 @@ func (q Query) Offset() int {
 
 // Limit 返回 SQL LIMIT。
 func (q Query) Limit() int { return q.PageSize }
+
+// Paginate 把 OFFSET / LIMIT 叠到查询上。
+//
+// 四个列表接口（用户 / 角色 / 操作日志 / 登录日志）原来各自手写
+// `.Offset(q.Offset()).Limit(q.Limit())`。分页语义全在 Offset()/Limit()
+// 两个方法里（含 maxOffset 收敛），链式调用点没有存在意义，
+// 留一个统一入口，将来改分页行为只改一处。
+func (q Query) Paginate(tx *gorm.DB) *gorm.DB {
+	return tx.Offset(q.Offset()).Limit(q.Limit())
+}
 
 // SafeOrderBy 返回受白名单约束的排序子句。
 func (q Query) SafeOrderBy(allowed map[string]string, fallback string) string {

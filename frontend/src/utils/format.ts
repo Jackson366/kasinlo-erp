@@ -39,6 +39,16 @@ export function fileStamp(date = new Date()): string {
   return `${d}_${t}`
 }
 
+/**
+ * 导出文件名：业务前缀 + 时间戳 + .xlsx，例如 用户列表_20260929_203045.xlsx。
+ *
+ * 各列表页原先各自拼 `xxx_${fileStamp()}.xlsx`，四处重复；收敛成一个函数，
+ * 后缀与分隔符只有一处定义，改则全改。
+ */
+export function exportStamp(prefix: string): string {
+  return `${prefix}_${fileStamp()}.xlsx`
+}
+
 /** 把树形数组拍平成列表，便于查找 */
 export function flattenTree<T extends { children?: T[] }>(nodes: T[]): T[] {
   const out: T[] = []

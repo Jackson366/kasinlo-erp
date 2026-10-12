@@ -9,7 +9,9 @@ import (
 	"nova-admin/internal/authz"
 	"nova-admin/internal/database"
 	"nova-admin/internal/model"
+	"nova-admin/internal/pkg/dberr"
 	"nova-admin/internal/pkg/errcode"
+	"nova-admin/internal/pkg/tree"
 )
 
 // Service 菜单服务。
@@ -73,6 +75,11 @@ func (s *Service) Create(req CreateReq, actor *authz.Identity) (int64, error) {
 		return attachToSuperRole(tx, m.ID)
 	})
 	if err != nil {
+		// ensureNameFree 是「先查后插」：并发同名的情形由唯一索引兜底，
+		// 映射成 409 而不是 50100，与 role / user 的创建路径同一口径。
+		if dberr.IsUniqueViolation(err) {
+			return 0, errcode.Newf(errcode.ErrConflict, "路由名称 %s 已存在", req.Name)
+		}
 		return 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	authz.InvalidateAll()
@@ -86,15 +93,19 @@ func (s *Service) Create(req CreateReq, actor *authz.Identity) (int64, error) {
 // 历史上菜单挂了什么角色不改变这一判定——角色侧的授予校验
 // （EnsureRoleMenusGrantable）负责另一条轴。
 func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
-	if err := authz.EnsurePermissionGrantable(actor, req.Permission); err != nil {
-		return err
-	}
+	// 存在性先行：对不存在的 ID 应报 404「不存在」，
+	// 而不是先撞权限子集校验报 403「不能设置自己不持有的权限码」——
+	// 后者会暴露「这个 ID 存不存在」之外无关的授权信息，也违反
+	// 「越界/不存在一律按不存在处理」的口径。
 	var m model.Menu
 	if err := s.db.First(&m, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errcode.New(errcode.ErrNotFound, "菜单不存在")
 		}
 		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if err := authz.EnsurePermissionGrantable(actor, req.Permission); err != nil {
+		return err
 	}
 	if req.ParentID == id {
 		return errcode.New(errcode.ErrBadRequest, "上级菜单不能是自己")
@@ -125,6 +136,11 @@ func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 		updates["status"] = *req.Status
 	}
 	if err := s.db.Model(&model.Menu{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		// 改名撞唯一索引：ensureNameFree 同样是「先查后改」，
+		// 并发场景靠数据库兜底，映射成 409 与 Create 对称。
+		if dberr.IsUniqueViolation(err) {
+			return errcode.Newf(errcode.ErrConflict, "路由名称 %s 已存在", req.Name)
+		}
 		return errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	authz.InvalidateAll()
@@ -344,52 +360,35 @@ func toNode(m model.Menu) Node {
 }
 
 func buildTree(menus []model.Menu) []*Node {
-	nodes := make(map[int64]*Node, len(menus))
-	for _, m := range menus {
-		n := toNode(m)
-		nodes[m.ID] = &n
-	}
-	roots := make([]*Node, 0)
-	for _, m := range menus {
-		node := nodes[m.ID]
-		if parent, ok := nodes[m.ParentID]; ok && m.ParentID != 0 {
-			parent.Children = append(parent.Children, node)
-		} else {
-			roots = append(roots, node)
-		}
-	}
-	return roots
+	return tree.Build(menus,
+		func(m model.Menu) *Node { n := toNode(m); return &n },
+		func(m model.Menu) (int64, int64) { return m.ID, m.ParentID },
+		func(parent, child *Node) { parent.Children = append(parent.Children, child) },
+	)
 }
 
 func buildRouteTree(menus []model.Menu) []*Route {
-	nodes := make(map[int64]*Route, len(menus))
-	for _, m := range menus {
-		nodes[m.ID] = &Route{
-			ID:        m.ID,
-			Name:      m.Name,
-			Path:      m.Path,
-			Component: m.Component,
-			Redirect:  m.Redirect,
-			Meta: RouteMeta{
-				Title:      m.Title,
-				Icon:       m.Icon,
-				Hidden:     m.Hidden,
-				KeepAlive:  m.KeepAlive,
-				IsExternal: m.IsExternal,
-				Permission: m.Permission,
-			},
-		}
-	}
-	roots := make([]*Route, 0)
-	for _, m := range menus {
-		node := nodes[m.ID]
-		if parent, ok := nodes[m.ParentID]; ok && m.ParentID != 0 {
-			parent.Children = append(parent.Children, node)
-		} else {
-			roots = append(roots, node)
-		}
-	}
-	return roots
+	return tree.Build(menus,
+		func(m model.Menu) *Route {
+			return &Route{
+				ID:        m.ID,
+				Name:      m.Name,
+				Path:      m.Path,
+				Component: m.Component,
+				Redirect:  m.Redirect,
+				Meta: RouteMeta{
+					Title:      m.Title,
+					Icon:       m.Icon,
+					Hidden:     m.Hidden,
+					KeepAlive:  m.KeepAlive,
+					IsExternal: m.IsExternal,
+					Permission: m.Permission,
+				},
+			}
+		},
+		func(m model.Menu) (int64, int64) { return m.ID, m.ParentID },
+		func(parent, child *Route) { parent.Children = append(parent.Children, child) },
+	)
 }
 
 // attachToSuperRole 将新菜单授权给超管角色，超管也会走角色授权（冗余但更直观）。

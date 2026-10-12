@@ -238,7 +238,9 @@ backend/
 ```
 src/
 ├── api/              一个模块一个文件，只做接口封装，返回 Promise<T>
-├── components/       AppIcon / EChart / Pagination / icons.ts
+├── components/       AppIcon / EChart / Pagination / StatusTag / icons.ts
+├── composables/      useLatestGuard（请求竞态）/ useTableQuery（列表查询）/
+│                     useCrudDialog（新增编辑弹窗）/ useLogout（登出三件套）
 ├── directives/       permission.ts（v-perm 指令）
 ├── layout/           index.vue + Sidebar / Navbar / TagsView / Breadcrumb
 ├── router/
@@ -248,9 +250,13 @@ src/
 ├── store/            user（身份权限）/ permission（菜单路由）/ app（UI 偏好、标签、主题）
 ├── styles/           variables.scss（亮暗两套设计令牌）+ element.scss + index.scss
 ├── types/api.ts      与后端 DTO 一一对应
-├── utils/            auth（令牌）/ request（axios）/ download / format / theme
+├── utils/            auth（令牌）/ request（axios）/ download / format（含 exportStamp）/ theme
 └── views/            页面
 ```
+
+系统管理那几个列表页（user/role/menu/dept 与日志页）的查询状态与弹窗骨架
+都复用上面的组合式函数，页面里只写「调哪个接口」和「本页独有的附加动作」，
+约定见 `AGENTS.md` §3。
 
 **前端路由是「菜单驱动」的**，这是本项目最省事也最容易误解的一点：
 

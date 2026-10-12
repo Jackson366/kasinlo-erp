@@ -1,13 +1,10 @@
 package menu
 
 import (
-	"strconv"
-
 	"github.com/gin-gonic/gin"
 
 	"nova-admin/internal/middleware"
 	"nova-admin/internal/pkg/bind"
-	"nova-admin/internal/pkg/errcode"
 	"nova-admin/internal/pkg/response"
 )
 
@@ -30,12 +27,10 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 // @Failure      403      {object}  response.Body  "缺少 system:menu:list 权限"
 // @Router       /system/menus [get]
 func (h *Handler) List(c *gin.Context) {
-	var status *int16
-	if v := c.Query("status"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			s := int16(n)
-			status = &s
-		}
+	status, err := bind.StatusQuery(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
 	}
 	tree, err := h.svc.List(c.Query("keyword"), status)
 	if err != nil {
@@ -55,7 +50,7 @@ func (h *Handler) List(c *gin.Context) {
 // @Failure      404  {object}  response.Body  "菜单不存在"
 // @Router       /system/menus/{id} [get]
 func (h *Handler) Detail(c *gin.Context) {
-	id, err := pathID(c)
+	id, err := bind.PathID(c)
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -109,7 +104,7 @@ func (h *Handler) Create(c *gin.Context) {
 // @Failure      404   {object}  response.Body  "菜单不存在"
 // @Router       /system/menus/{id} [put]
 func (h *Handler) Update(c *gin.Context) {
-	id, err := pathID(c)
+	id, err := bind.PathID(c)
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -138,7 +133,7 @@ func (h *Handler) Update(c *gin.Context) {
 // @Failure      409  {object}  response.Body  "存在子菜单"
 // @Router       /system/menus/{id} [delete]
 func (h *Handler) Delete(c *gin.Context) {
-	id, err := pathID(c)
+	id, err := bind.PathID(c)
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -149,12 +144,4 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 	response.OKMsg(c, "删除成功")
-}
-
-func pathID(c *gin.Context) (int64, error) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || id <= 0 {
-		return 0, errcode.New(errcode.ErrBadRequest, "路径参数 id 非法")
-	}
-	return id, nil
 }

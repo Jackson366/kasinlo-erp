@@ -85,7 +85,6 @@ export interface RouteMeta {
   hidden: boolean
   keepAlive: boolean
   isExternal: boolean
-  permission?: string
 }
 
 export interface RouteRecord {
