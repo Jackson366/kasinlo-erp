@@ -13,6 +13,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"nova-admin/internal/assembly"
 	"nova-admin/internal/bootstrap"
 	"nova-admin/internal/database"
 	"nova-admin/internal/logger"
@@ -50,8 +51,12 @@ func main() {
 }
 
 func run(configPath string, seedOnly bool) error {
-	// 1. 基础设施初始化（配置 / 日志 / 令牌 / 数据库 / 迁移 / 种子数据）
-	res, err := bootstrap.Init(configPath, true)
+	// 1. 基础设施初始化（配置 / 日志 / 令牌 / 数据库 / 迁移 / 模块装配 / 种子数据）
+	//    模块清单来自组装层：这里是全项目唯一知道「有哪些模块」的调用点。
+	res, err := bootstrap.Init(configPath, bootstrap.Options{
+		SeedData: true,
+		Modules:  assembly.Modules,
+	})
 	if err != nil {
 		return err
 	}

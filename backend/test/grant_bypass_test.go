@@ -44,14 +44,14 @@ func TestRoleCreateCannotExceedGranter(t *testing.T) {
 	// 3. 范围合法但挂上自己没有的权限码（103 = system:user:delete）→ 403
 	unowned := call(t, http.MethodPost, "/api/v1/system/roles", scopedToken, map[string]any{
 		"name": fmt.Sprintf("越权菜单角色%d", suffix), "code": fmt.Sprintf("cre_menu_%d", suffix),
-		"sort": 99, "dataScope": 3, "menuIds": []int64{11, 103},
+		"sort": 99, "dataScope": 3, "menuIds": []int64{menuID(t, "system:user:list"), menuID(t, "system:user:delete")},
 	})
 	assertStatus(t, unowned, http.StatusForbidden, "挂上自己没有的权限码")
 
 	// 4. 反向确认：本部门及以下 + 自己有的菜单 → 0（否则是误伤）
 	ok := call(t, http.MethodPost, "/api/v1/system/roles", scopedToken, map[string]any{
 		"name": fmt.Sprintf("合规角色%d", suffix), "code": fmt.Sprintf("cre_ok_%d", suffix),
-		"sort": 99, "dataScope": 3, "menuIds": []int64{11, 101},
+		"sort": 99, "dataScope": 3, "menuIds": []int64{menuID(t, "system:user:list"), menuID(t, "system:user:create")},
 	})
 	assertCode(t, ok, 0, "创建合规角色")
 	roleID := num(ok.obj(t), "id")
@@ -78,7 +78,7 @@ func TestRoleUpdateCannotGrantUnownedMenus(t *testing.T) {
 
 	createRole := call(t, http.MethodPost, "/api/v1/system/roles", scopedToken, map[string]any{
 		"name": fmt.Sprintf("回显角色%d", suffix), "code": fmt.Sprintf("upd_%d", suffix),
-		"sort": 99, "dataScope": 3, "menuIds": []int64{11, 101},
+		"sort": 99, "dataScope": 3, "menuIds": []int64{menuID(t, "system:user:list"), menuID(t, "system:user:create")},
 	})
 	assertCode(t, createRole, 0, "受限管理员创建合规角色")
 	roleID := num(createRole.obj(t), "id")
@@ -90,12 +90,12 @@ func TestRoleUpdateCannotGrantUnownedMenus(t *testing.T) {
 
 	// 1. 把角色菜单改成包含 103（system:user:delete，自己都没有）→ 403
 	escalate := call(t, http.MethodPut, "/api/v1/system/roles/"+itoa(roleID), scopedToken,
-		map[string]any{"name": fmt.Sprintf("回显角色%d", suffix), "menuIds": []int64{11, 103}})
+		map[string]any{"name": fmt.Sprintf("回显角色%d", suffix), "menuIds": []int64{menuID(t, "system:user:list"), menuID(t, "system:user:delete")}})
 	assertStatus(t, escalate, http.StatusForbidden, "修改角色挂上自己没有的权限码")
 	assertCode(t, escalate, 40300, "修改角色挂上自己没有的权限码")
 
 	// 2. 反向确认：换成自己有的菜单组合 → 0
 	legit := call(t, http.MethodPut, "/api/v1/system/roles/"+itoa(roleID), scopedToken,
-		map[string]any{"name": fmt.Sprintf("回显角色%d", suffix), "menuIds": []int64{11, 102}})
+		map[string]any{"name": fmt.Sprintf("回显角色%d", suffix), "menuIds": []int64{menuID(t, "system:user:list"), menuID(t, "system:user:update")}})
 	assertCode(t, legit, 0, "修改角色为自身能力范围内的菜单")
 }

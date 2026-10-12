@@ -7,6 +7,19 @@ import type { RouteRecord } from '@/types/api'
  */
 const viewModules = import.meta.glob('../views/**/*.vue')
 
+/**
+ * 可供菜单挂载的页面组件路径（如 system/user/index）。
+ *
+ * 与 resolveComponent 共用同一份 glob：菜单表单的下拉一旦从这里取，
+ * 「下拉里选得到」与「运行时加载得到」就是同一件事，
+ * 手工敲错组件路径导致的白屏从根上消失。
+ */
+export function availableViewPaths(): string[] {
+  return Object.keys(viewModules)
+    .map((key) => key.replace(/^\.\.\/views\//, '').replace(/\.vue$/, ''))
+    .sort()
+}
+
 /** 把后端返回的组件路径（如 system/user/index）解析为异步组件 */
 function resolveComponent(path: string): (() => Promise<unknown>) | undefined {
   if (!path) return undefined

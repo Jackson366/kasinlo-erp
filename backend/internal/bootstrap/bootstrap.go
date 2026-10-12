@@ -10,6 +10,7 @@ import (
 	"nova-admin/internal/config"
 	"nova-admin/internal/database"
 	"nova-admin/internal/logger"
+	"nova-admin/internal/module"
 	"nova-admin/internal/pkg/jwt"
 	"nova-admin/internal/seed"
 )
@@ -20,9 +21,22 @@ type Result struct {
 	DB     *gorm.DB
 }
 
-// Init 按顺序完成：加载配置 -> 初始化日志 -> 初始化令牌 -> 连接数据库 -> 迁移表结构 -> 写入种子数据。
-// seedData 为 false 时跳过种子数据初始化（用于不需要演示数据的场景）。
-func Init(configPath string, seedData bool) (*Result, error) {
+// Options 是启动选项。
+type Options struct {
+	// SeedData 为 false 时跳过种子数据初始化（用于不需要演示数据的场景）。
+	SeedData bool
+
+	// Modules 返回本进程要装配的全部模块，由组装层（internal/assembly）提供。
+	//
+	// 之所以传函数而不是直接 import：本包属于框架层，一旦 import 了具体模块，
+	// 业务模块就再也删不掉了（编译期就依赖它）。传函数之后，「谁知道有哪些模块」
+	// 这件事被完整地留在组装层，框架层保持零业务依赖。
+	Modules func(*config.Config) []module.Module
+}
+
+// Init 按顺序完成：加载配置 -> 初始化日志 -> 初始化令牌 -> 连接数据库 ->
+// 迁移表结构 -> 装配模块 -> 写入种子数据。
+func Init(configPath string, opts Options) (*Result, error) {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return nil, err
@@ -42,7 +56,15 @@ func Init(configPath string, seedData bool) (*Result, error) {
 	if err := database.EnsureIndexes(); err != nil {
 		return nil, fmt.Errorf("创建索引失败: %w", err)
 	}
-	if seedData {
+
+	// 装配必须早于种子数据：内置菜单是从模块清单聚合出来的，
+	// 登记表还空着就播种，只会写出一张空菜单表 —— 而服务照样能起来。
+	if opts.Modules != nil {
+		if err := module.Build(opts.Modules(cfg)...); err != nil {
+			return nil, fmt.Errorf("模块装配失败: %w", err)
+		}
+	}
+	if opts.SeedData {
 		if err := seed.Run(); err != nil {
 			return nil, err
 		}

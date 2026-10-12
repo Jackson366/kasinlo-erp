@@ -29,7 +29,7 @@ func TestLogScopeRestrictsDeptAdmin(t *testing.T) {
 	// 「本部门及以下 + system:log:list/delete」的角色，才能覆盖清空路径。
 	createRole := call(t, http.MethodPost, "/api/v1/system/roles", adminToken, map[string]any{
 		"name": fmt.Sprintf("日志清理角色%d", suffix), "code": fmt.Sprintf("log_clr_%d", suffix),
-		"sort": 99, "dataScope": 3, "menuIds": []int64{15, 141},
+		"sort": 99, "dataScope": 3, "menuIds": []int64{menuID(t, "system:log:list"), menuID(t, "system:log:delete")},
 	})
 	assertCode(t, createRole, 0, "创建日志清理角色")
 	roleID := num(createRole.obj(t), "id")
@@ -145,8 +145,8 @@ func TestMenuPermissionSubset(t *testing.T) {
 	// 开头无条件恢复一次，保证测试库状态可重复。
 	// 注意必须传全量字段：menu Update 是整体覆盖，漏掉 component/icon/keepAlive
 	// 会把它们清空，破坏 TestProfile 的路由树断言。
-	restore := call(t, http.MethodPut, "/api/v1/system/menus/11", adminToken, map[string]any{
-		"parentId": 10, "name": "SystemUser", "path": "/system/user",
+	restore := call(t, http.MethodPut, "/api/v1/system/menus/"+itoa(menuID(t, "system:user:list")), adminToken, map[string]any{
+		"parentId": menuIDByName(t, "System"), "name": "SystemUser", "path": "/system/user",
 		"component": "system/user/index", "title": "用户管理", "icon": "User",
 		"type": "menu", "permission": "system:user:list", "sort": 1, "keepAlive": true,
 	})
@@ -155,14 +155,14 @@ func TestMenuPermissionSubset(t *testing.T) {
 	// 1. A 先自建一个持有码按钮（自建资源，不碰种子数据），再尝试把它的
 	//    permission 改成自己没有的码 → 403
 	btn := call(t, http.MethodPost, "/api/v1/system/menus", aToken, map[string]any{
-		"parentId": 11, "name": fmt.Sprintf("SubBtn%d", suffix), "title": "子集探针按钮",
+		"parentId": menuID(t, "system:user:list"), "name": fmt.Sprintf("SubBtn%d", suffix), "title": "子集探针按钮",
 		"type": "button", "permission": "system:user:update", "sort": 99,
 	})
 	assertCode(t, btn, 0, "自建持有码按钮")
 	btnID := num(btn.obj(t), "id")
 
 	escalate := call(t, http.MethodPut, "/api/v1/system/menus/"+itoa(btnID), aToken, map[string]any{
-		"parentId": 11, "name": fmt.Sprintf("SubBtn%d", suffix), "title": "子集探针按钮",
+		"parentId": menuID(t, "system:user:list"), "name": fmt.Sprintf("SubBtn%d", suffix), "title": "子集探针按钮",
 		"type": "button", "permission": "system:user:delete", "sort": 99,
 	})
 	assertStatus(t, escalate, http.StatusForbidden, "把自己没有的权限码设到菜单上")
@@ -170,21 +170,21 @@ func TestMenuPermissionSubset(t *testing.T) {
 
 	// 2. 反向确认：设回自己持有的码 → 0
 	legit := call(t, http.MethodPut, "/api/v1/system/menus/"+itoa(btnID), aToken, map[string]any{
-		"parentId": 11, "name": fmt.Sprintf("SubBtn%d", suffix), "title": "子集探针按钮",
+		"parentId": menuID(t, "system:user:list"), "name": fmt.Sprintf("SubBtn%d", suffix), "title": "子集探针按钮",
 		"type": "button", "permission": "system:user:update", "sort": 99,
 	})
 	assertCode(t, legit, 0, "设置自己持有的权限码应放行")
 
 	// 3. 新建带自己没有的权限码的按钮 → 403
 	createEvil := call(t, http.MethodPost, "/api/v1/system/menus", aToken, map[string]any{
-		"parentId": 11, "name": fmt.Sprintf("EvilBtn%d", suffix), "title": "越权按钮",
+		"parentId": menuID(t, "system:user:list"), "name": fmt.Sprintf("EvilBtn%d", suffix), "title": "越权按钮",
 		"type": "button", "permission": "system:user:delete", "sort": 99,
 	})
 	assertStatus(t, createEvil, http.StatusForbidden, "新建带越权权限码的菜单")
 
 	// 4. 反向确认：新建自己持有的权限码按钮 → 0（并清理两个探针按钮）
 	createOk := call(t, http.MethodPost, "/api/v1/system/menus", aToken, map[string]any{
-		"parentId": 11, "name": fmt.Sprintf("OwnBtn%d", suffix), "title": "自有按钮",
+		"parentId": menuID(t, "system:user:list"), "name": fmt.Sprintf("OwnBtn%d", suffix), "title": "自有按钮",
 		"type": "button", "permission": "system:user:list", "sort": 99,
 	})
 	assertCode(t, createOk, 0, "新建自带有权限码的菜单")

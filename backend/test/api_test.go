@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"nova-admin/internal/oplog"
-	"nova-admin/internal/seed"
 )
 
 // TestHealth 健康检查。
@@ -314,7 +313,7 @@ func TestRoleCRUD(t *testing.T) {
 
 	res := call(t, http.MethodPost, "/api/v1/system/roles", token, map[string]any{
 		"name": "端到端角色", "code": "e2e_role", "sort": 99, "dataScope": 4,
-		"menuIds": []int64{1, 10, 11},
+		"menuIds": []int64{menuID(t, "dashboard:view"), menuIDByName(t, "System"), menuID(t, "system:user:list")},
 	})
 	assertCode(t, res, 0, "新增角色")
 	roleID := num(res.obj(t), "id")
@@ -356,7 +355,8 @@ func TestRoleCRUD(t *testing.T) {
 
 	t.Run("重新分配菜单权限", func(t *testing.T) {
 		assign := call(t, http.MethodPut, "/api/v1/system/roles/"+itoa(roleID)+"/menus", token, map[string]any{
-			"menuIds": []int64{1, 10, 11, 12},
+			"menuIds": []int64{menuID(t, "dashboard:view"), menuIDByName(t, "System"),
+				menuID(t, "system:user:list"), menuID(t, "system:role:list")},
 		})
 		assertCode(t, assign, 0, "分配权限")
 		detail := call(t, http.MethodGet, "/api/v1/system/roles/"+itoa(roleID), token, nil)
@@ -372,7 +372,7 @@ func TestRoleCRUD(t *testing.T) {
 	})
 
 	t.Run("超管角色不可裁剪权限", func(t *testing.T) {
-		assign := call(t, http.MethodPut, "/api/v1/system/roles/1/menus", token, map[string]any{"menuIds": []int64{1}})
+		assign := call(t, http.MethodPut, "/api/v1/system/roles/1/menus", token, map[string]any{"menuIds": []int64{menuID(t, "dashboard:view")}})
 		assertCode(t, assign, 40000, "裁剪超管权限")
 	})
 }
@@ -390,7 +390,7 @@ func TestMenuTree(t *testing.T) {
 	})
 
 	t.Run("菜单详情", func(t *testing.T) {
-		res := call(t, http.MethodGet, "/api/v1/system/menus/11", token, nil)
+		res := call(t, http.MethodGet, "/api/v1/system/menus/"+itoa(menuID(t, "system:user:list")), token, nil)
 		assertCode(t, res, 0, "菜单详情")
 		if str(res.obj(t), "permission") != "system:user:list" {
 			t.Fatalf("权限标识不匹配: %v", res.Data)
@@ -398,7 +398,7 @@ func TestMenuTree(t *testing.T) {
 	})
 
 	t.Run("存在子菜单时不可删除", func(t *testing.T) {
-		res := call(t, http.MethodDelete, "/api/v1/system/menus/10", token, nil)
+		res := call(t, http.MethodDelete, "/api/v1/system/menus/"+itoa(menuIDByName(t, "System")), token, nil)
 		assertCode(t, res, 40900, "删除含子节点菜单")
 	})
 
@@ -409,11 +409,10 @@ func TestMenuTree(t *testing.T) {
 		})
 		assertCode(t, create, 0, "新增菜单")
 		id := num(create.obj(t), "id")
-		// 用户自建菜单必须落在自增区间，不能侵占内置菜单预留的 1-999：
-		// 一旦占掉，内置权限点就再也补不进来（软删除的记录会一直占着那个主键）
-		if id < seed.MenuIDFloor {
-			t.Fatalf("用户自建菜单 ID 应不小于 %d，实际 %d（已侵占内置菜单 ID 段）",
-				seed.MenuIDFloor, id)
+		// 内置菜单与用户自建菜单共用同一条自增序列，主键不可能撞车 ——
+		// 这正是「内置菜单预留 1-999 段」那条历史约束可以撤掉的原因。
+		if id <= 0 {
+			t.Fatalf("新增菜单未返回有效主键: %d", id)
 		}
 
 		dup := call(t, http.MethodPost, "/api/v1/system/menus", token, map[string]any{
@@ -426,7 +425,7 @@ func TestMenuTree(t *testing.T) {
 	})
 
 	t.Run("不能把菜单挂到自己的子节点下", func(t *testing.T) {
-		res := call(t, http.MethodPut, "/api/v1/system/menus/10", token, map[string]any{
+		res := call(t, http.MethodPut, "/api/v1/system/menus/"+itoa(menuIDByName(t, "System")), token, map[string]any{
 			"parentId": 11, "name": "System", "path": "/system", "title": "系统管理", "type": "dir",
 		})
 		assertCode(t, res, 40000, "环路校验")

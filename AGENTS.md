@@ -28,11 +28,20 @@
 | `internal/authz` | 身份 + 权限集合（30 秒缓存） | 不在业务里查授权表 |
 | `internal/middleware` | 横切关注点 | 不写业务判断 |
 | `internal/model` | GORM 模型 | 不放 DTO |
-| `internal/module/<模块>` | **业务代码** | 不跨模块直接引用别人的 `service` |
+| `internal/module`（根目录的 `contract.go`） | **模块契约**：`Module` / `MenuNode` 类型与登记表 | 不 import 任何具体模块 |
+| `internal/module/<模块>` | **业务代码 + 自描述清单 `module.go`** | 不跨模块直接引用别人的 `service` |
+| `internal/assembly` | **组装层**：唯一列出全部模块的地方 | 不写业务逻辑；只做装配 |
 | `internal/pkg` | 无业务依赖的通用工具 | 不 import `internal/module/*` |
-| `internal/router` | 只做路由装配 | 不写 handler |
+| `internal/router` | 遍历登记表注册路由 | 不写 handler，不认识任何具体模块 |
 
-**依赖方向**：`module → pkg / model / authz`，`pkg → 标准库与第三方`。`pkg` 反向依赖 `module` 必须禁止。
+**依赖方向**：`具体模块 → module 契约 / pkg / model / authz`，`pkg → 标准库与第三方`。
+
+**框架层一切包（`pkg` / `authz` / `middleware` / `oplog` / `database` / `seed` /
+`router` / `bootstrap` / `model` / `config` / `logger`，以及 `module` 契约本身）
+都不许 import 具体模块**，唯一例外是 `internal/assembly`。
+跑 `bash scripts/check-module-boundary.sh` 校验；越界时它会指名道姓地列出来。
+为什么这条线值得一条门禁：框架一旦依赖了业务，那个业务模块就再也删不掉了 ——
+而且是编译期报错的「删不掉」，比「不敢删」更硬。
 
 ---
 
@@ -46,6 +55,7 @@ internal/module/article/
 ├── service.go  # 业务逻辑（不感知 HTTP）
 ├── handler.go  # HTTP 入参出参
 ├── route.go    # 路由 + 权限码
+├── module.go   # ★ 自描述清单：命名空间 + 路由 + 菜单树（见 Step 6）
 └── excel.go    # 可选：导入导出（见 §7.1）
 ```
 
@@ -173,13 +183,55 @@ if exists {
 }
 ```
 
-### Step 6 — 挂到路由树
+### Step 6 — 写 `module.go` 清单，并在组装层登记
 
-在 `internal/router/router.go` 里加一行：
+以前「加一个模块」要改 5 处：`route.go` 写权限码、`seed.go` 的 `menuDefs()` 手工
+分配菜单 ID、`seed.go` 的 `builtinRoleGrants()` 把 ID 再抄一遍、前端加页面、
+最后去菜单管理页手工录一条。权限码写两遍最危险 —— 漂移后的症状是
+**「菜单点得进去、接口 403」**，排查成本极高。
+
+现在模块自己描述自己，一段清单说清命名空间、路由、菜单树：
 
 ```go
-article.Register(base)
+// internal/module/article/module.go
+package article
+
+import "nova-admin/internal/module"
+
+func Module() module.Module {
+	return module.Module{
+		Namespace: "article",   // 权限码必须以它开头，Build 会校验
+		Register:  Register,    // 就是 route.go 里那个函数
+		Menus: []module.MenuNode{
+			{
+				Name: "ArticleList", Title: "文章管理", Icon: "Document",
+				Path: "/article", Component: "article/index",
+				Permission: "article:list",
+				Children: []module.MenuNode{
+					{Name: "ArticleCreate", Title: "新增文章", Type: module.TypeButton, Permission: "article:create"},
+				},
+			},
+		},
+	}
+}
 ```
+
+然后在**组装层**加一行：
+
+```go
+// internal/assembly/assembly.go → Modules()
+article.Module(),
+```
+
+要点：
+
+- **`Sort` 可以完全不写**：留空即按声明顺序排，所以清单里读不到一个手工数字。
+- **`Type` 留空即菜单**，只有按钮和目录需要显式写。
+- **路由注册也由登记表驱动**，`internal/router/router.go` 一个字都不用改。
+- 多个模块共用一个目录时用 `module.Group`（见 §2.1），别让模块自己声明挂在哪个目录下。
+
+装配顺序（`Modules()` 的排列）等于路由注册顺序与菜单插入顺序。校验在启动时跑，
+清单写错直接起不来，报错会指出是哪个节点的哪一处 —— 比运行期 403 好查得多。
 
 ### Step 7 — 分页查询用 `pkg/page`
 
@@ -201,7 +253,7 @@ db.Offset(q.Offset()).Limit(q.Limit()).Order(order)
 
 ### Step 9 — 前端接上（可选）
 
-- 在 `sys_menus` 里加一条菜单（`component` 填 `article/index`）
+- **菜单不用手工加**：Step 6 的清单里写过了，启动时自动补进 `sys_menus`
 - 在 `src/views/article/index.vue` 建页面
 - 在 `src/api/article.ts` 加接口封装
 - 在 `src/types/api.ts` 加类型
@@ -549,15 +601,20 @@ Status int16 `gorm:"not null" json:"status"`
 **原因**：软删除只是写入 `deleted_at`，**行还在表里，主键仍被占用**。
 `WHERE id = 142` 默认会被 GORM 附加 `deleted_at IS NULL`，所以「查不到」不等于「可以复用」。
 
-本项目的内置菜单用**硬编码 ID** 写入，而「菜单管理」新建的菜单走 `bigserial` 自增，
-两者共用同一段 ID 空间时就会互相踩。
+**历史成因**：内置菜单当时用**硬编码 ID** 写入，
+而「菜单管理」新建的菜单走 `bigserial` 自增，两者共用同一段 ID 空间时就会互相踩。
 
 **约定**：
 
-- **1–999 保留给内置菜单，自增菜单从 1000 起**（`seed.MenuIDFloor = 1000`）
-- `seedMenus` 区分 `active`（存活）与 `occupied`（被软删除占用）：
-  遇到占用会 `logger.Warn` 并在最后返回错误，**不静默丢弃**
-- 查真实占用情况要显式绕过软删除：`SELECT id, title, deleted_at FROM sys_menus WHERE id < 1000`
+- **内置菜单的 ID 现在也交给数据库自增**，幂等键是「权限码（按钮）/ 路由名（目录、页面）」，
+  于是 `1–999 给内置 / 1000+ 给自增` 那套手工分段作废（原先靠 `seed.MenuIDFloor = 1000` 兜着）
+- `seedMenus` / `ensureNode` 按幂等键做**三态处理**：
+  命中存活记录 → 复用原 ID 且不覆盖字段；命中**已被软删**的记录（`db.Unscoped()` 查得到）
+  → `logger.Warn("内置菜单已被删除，跳过该节点及其子节点")` 并整棵子树跳过；
+  都不命中 → 新建。**绝不静默丢弃，也绝不让管理员删掉的菜单自己复活**
+- 查真实占用情况要显式绕过软删除：
+  `SELECT id, title, deleted_at FROM sys_menus WHERE deleted_at IS NOT NULL`
+  （不要用 `WHERE id = N` 判断某号是否空闲 —— 那个判断本身就会被软删除骗过）
 
 **另一条相关约定**：`syncBuiltinRoleMenus` 必须清理**孤儿授权**
 （`menu_id` 指向已软删除菜单的 `sys_role_menus` 行）。
@@ -1445,6 +1502,47 @@ const query = reactive({ page: 1, pageSize: 10, ...initial }) as TableQuery<F>
 断言只出现在组合式函数内部一处，调用方拿到的仍是完整类型。同类问题在
 「泛型参数 + Vue 包装类型（`reactive`/`ref`/`computed`）」组合下都会复现。
 
+### 5.59 手工分配的 ID 是隐式契约，抄进第二份清单就开始漂移
+
+菜单原来用硬编码 ID（`1`、`10`、`101~149`），`seed.go` 里既要定义它、又要
+在 `builtinRoleGrants()` 里把这些数字再抄一遍做授权。两份清单必须手工同步，
+改歪一处就是**静默的权限错配**：角色少一个按钮、或者多一个本不该有的。
+
+**改成按语义定位**：菜单的幂等键用权限码（有权限码的节点）或路由名（纯目录），
+授权规则按节点语义（类型 / 权限码后缀 / 命名空间）判定。于是：
+
+- 主键交给数据库自增，清单里一个数字都不用写；
+- 老库平滑迁移 —— 历史记录带着同样的权限码/路由名，照样被认出来复用，
+  ID 与已有授权关系一个都不动；
+- 新增模块无需回来改授权清单。
+
+**判断标准**：如果两份清单里出现同一批字面量（ID、路径、权限码），它们迟早会分叉。
+让其中一份只描述**意图**，让另一份在运行时**求解**出具体值。
+
+### 5.60 框架层 import 具体模块，那个模块就变成「删不掉」
+
+「业务模块能不能整块删掉」不是靠自觉，而是取决于框架层认不认识它。
+只要有一个框架包写了 `import "…/internal/module/invflow"`，
+删掉 invflow 就是编译失败 —— 这比「不敢删」更硬。
+
+做法：框架层只认**契约类型**（`module.Module` / `module.MenuNode`），
+把「有哪些模块」这件事整体交给组装层 `internal/assembly`。
+需要配置的模块在自己的包内构造闭包（`log.Module(cfg.Security)`），
+于是契约包连 `config` 都不必依赖。
+
+`scripts/check-module-boundary.sh` 钉住这条线。它比「grep 业务模块名」更强的地方是
+把「框架包引用 `internal/module/<任意子包>`」整体禁掉 —— 新增模块不必维护白名单。
+
+### 5.61 新版 Element Plus 的 `el-select`，选中值不在 `input.value` 里
+
+自动化验证里读下拉当前值时，**不要读 `input.value`**：新版 `el-select`
+把选中值渲染进 `.el-select__selected-item`，`<input>` 只剩过滤框的作用，
+永远为空。照旧读会得到「明明选了却读成空」的假失败，然后你会去改本来正确的业务代码。
+
+顺带一个同源的坑：**`el-dialog` 里按 Escape 会关掉整个弹窗**（`close-on-press-escape`
+默认为 true）。用 Escape 收 `el-select` 的浮层时，后续所有断言都会落在已关闭的
+DOM 上，表现为「改完之后所有字段都读不到」。收起浮层改成点弹窗标题。
+
 ### 5.58 没有调用方的 prop 是负债，别「留着以后用」
 
 **症状**：`components/EChart.vue` 有个 `loading` prop，转发到
@@ -1684,6 +1782,8 @@ sheet.Download(c, "用户列表_20260929_205419.xlsx", data)
 - **`?.` 与 `&&` 都是静默失败通道**，链式调用有环节可能缺席时必须显式处理（§5.47）
 - **「能把权限写进持久层」的入口全是授权行为**，Update/Create 与 Assign 必须过同一道防线（§5.49）
 - **404 页不进白名单**，兜底路由在冷启动会吃掉深链，放行分支必须先过登录判定（§5.50）
+- **框架层不得 import 具体模块**，只有 `internal/assembly` 可以（§5.60，`scripts/check-module-boundary.sh`）
+- **内置菜单的幂等键是权限码/路由名，不是主键**，新模块的菜单不会被自动授予内置角色，除非把命名空间加进 `seed.frameworkNamespaces`（§5.59）
 
 ## 8.1 交互正确性红线
 

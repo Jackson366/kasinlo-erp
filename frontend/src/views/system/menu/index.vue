@@ -7,6 +7,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { iconMap } from '@/components/icons'
 import { flattenTree } from '@/utils/format'
+import { availableViewPaths } from '@/router/helper'
 import { useLatestGuard } from '@/composables/useLatestGuard'
 import { useCrudDialog } from '@/composables/useCrudDialog'
 
@@ -84,6 +85,16 @@ const displayTree = computed(() => {
   return filter(tree.value)
 })
 
+/** 按 id 在菜单树里找节点（用于取父级的权限码与同级排序） */
+function findNode(nodes: MenuNode[], id: number): MenuNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node
+    const found = node.children?.length ? findNode(node.children, id) : null
+    if (found) return found
+  }
+  return null
+}
+
 // ---------------- 新增 / 编辑 ----------------
 const formRef = ref<FormInstance>()
 const dialog = useCrudDialog<MenuPayload>({
@@ -124,13 +135,139 @@ const rules = computed<FormRules<MenuPayload>>(() => ({
   ],
   path: form.type === 'button' ? [] : [{ required: true, message: '请输入路由路径', trigger: 'blur' }],
   component:
-    form.type === 'menu' ? [{ required: true, message: '请输入组件路径', trigger: 'blur' }] : [],
+    form.type === 'menu' ? [{ required: true, message: '请选择组件路径', trigger: 'change' }] : [],
 }))
 
 const iconNames = Object.keys(iconMap)
 
+// ---------------- 表单辅助：把易错的手输项换成可选项 ----------------
+
+/** 可挂载的页面组件，与动态路由共用同一份 glob，选得到就一定加载得到 */
+const componentOptions = availableViewPaths()
+
+/** 常用动作词。用下拉而非自由输入，避免同义不同码（list / query / search 混用） */
+const ACTION_OPTIONS = [
+  'list',
+  'create',
+  'update',
+  'delete',
+  'export',
+  'import',
+  'reset',
+  'assign',
+  'view',
+]
+
+/** 已有权限码里出现过的模块名，供下拉复用；下拉支持直接输入新的模块名 */
+const namespaceOptions = computed(() => {
+  const set = new Set<string>()
+  flattenTree(tree.value).forEach((node) => {
+    const ns = node.permission.split(':')[0]
+    if (ns) set.add(ns)
+  })
+  return [...set].sort()
+})
+
+/**
+ * 权限码拆成「模块 : 资源 : 动作」三段分别填写。
+ *
+ * 权限码的惯例就是三段式，而同一页面下的按钮共享前两段。拆开之后，
+ * 用户改父级菜单时模块段与资源段自动跟随，只有动作需要选一次 ——
+ * 既少打字，也从根上杜绝 system:user:create 被敲成 system:urser:create
+ * 那种「菜单点得进去、接口 403」的排查噩梦。
+ */
+const permNs = ref('')
+const permRes = ref('')
+const permAction = ref('')
+
+/** 三段拼回权限码。空段直接丢弃，于是 dashboard + '' + view 还原为 dashboard:view */
+function syncPermission(): void {
+  form.permission = [permNs.value, permRes.value, permAction.value]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(':')
+}
+watch([permNs, permRes, permAction], syncPermission)
+
+/** 反向解析已有的权限码。两段式（如 dashboard:view）按「模块 + 动作」还原 */
+function parsePermission(permission: string): void {
+  const parts = permission.split(':').filter(Boolean)
+  if (parts.length >= 3) {
+    permNs.value = parts[0]
+    permRes.value = parts[1]
+    permAction.value = parts.slice(2).join(':')
+  } else if (parts.length === 2) {
+    permNs.value = parts[0]
+    permRes.value = ''
+    permAction.value = parts[1]
+  } else {
+    permNs.value = parts[0] ?? ''
+    permRes.value = ''
+    permAction.value = ''
+  }
+}
+
+/**
+ * 从父级菜单继承权限码的前两段。
+ *
+ * 按钮一定挂在某个页面上，模块段与资源段必定与父级一致；菜单则只继承模块段，
+ * 资源段留给用户按页面自身命名。父级是目录时没有权限码可继承，保持原样。
+ */
+function inheritFromParent(parentId: number): void {
+  const parts = (findNode(tree.value, parentId)?.permission ?? '').split(':').filter(Boolean)
+  if (!parts.length) return
+  permNs.value = parts[0]
+  if (form.type === 'button' && parts.length >= 2) permRes.value = parts[1]
+}
+
+/** 同级排序取「当前最大值 + 1」，新增的菜单默认排到末尾，不用手填 */
+function nextSort(parentId: number): number {
+  const siblings = parentId ? (findNode(tree.value, parentId)?.children ?? []) : tree.value
+  return siblings.reduce((max, node) => Math.max(max, node.sort), 0) + 1
+}
+
+/** 由路径推导路由名：/system/user → SystemUser */
+function deriveName(path: string): string {
+  return path
+    .split('/')
+    .filter(Boolean)
+    .flatMap((seg) => seg.split(/[-_]/))
+    .filter(Boolean)
+    .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
+    .join('')
+}
+
+/** 用户一旦手改过路由名就停止联动，避免「改完又被自动改回去」 */
+const nameTouched = ref(false)
+
+watch(
+  () => form.path,
+  (path) => {
+    // 编辑已有菜单时不覆盖：它的路由名可能已被外部引用
+    if (dialogMode.value !== 'create' || nameTouched.value) return
+    // 按钮类型不带路径，推导结果会是空串，把用户手填的名字抹掉
+    if (!path) return
+    form.name = deriveName(path)
+  },
+)
+
+// 父级变化时重新继承前两段。编辑态不参与 —— 否则会把已保存的权限码冲掉。
+watch(
+  () => form.parentId,
+  (parentId) => {
+    if (dialogMode.value !== 'create') return
+    inheritFromParent(parentId)
+  },
+)
+
 function openCreate(parentId = 0): void {
-  // 先灌表单再开窗：反序的话弹窗会先用上一轮的旧值渲染一帧
+  // 先置模式再灌表单（useCrudDialog 的约定）。上面的 path / parentId 两个联动
+  // watcher 都按 mode 分流，它们在本轮 flush 时才执行 —— mode 必须先就位。
+  dialog.openCreate()
+  nameTouched.value = false
+  permNs.value = ''
+  permRes.value = ''
+  permAction.value = ''
   Object.assign(form, {
     parentId,
     name: '',
@@ -141,16 +278,19 @@ function openCreate(parentId = 0): void {
     icon: '',
     type: 'menu' as MenuType,
     permission: '',
-    sort: 0,
+    sort: nextSort(parentId),
     hidden: false,
     keepAlive: false,
     isExternal: false,
     status: 1,
   })
-  dialog.openCreate()
+  // 显式继承一次：父级与上次相同时 watch 不会触发
+  inheritFromParent(parentId)
 }
 
 function openEdit(row: MenuNode): void {
+  // 同上：mode 若不是 'edit'，路径联动会把已保存的路由名改写成推导值
+  dialog.openEdit(row.id)
   Object.assign(form, {
     parentId: row.parentId,
     name: row.name,
@@ -167,7 +307,7 @@ function openEdit(row: MenuNode): void {
     isExternal: row.isExternal,
     status: row.status,
   })
-  dialog.openEdit(row.id)
+  parsePermission(row.permission)
 }
 
 async function submitForm(): Promise<void> {
@@ -207,9 +347,13 @@ function resetQuery(): void {
 
 // 类型切换会换掉 path/component 的校验规则（button 两者都不要）：不清掉旧报错，
 // 用户会看到针对已隐藏字段的红字，submit 也会被陈旧的 validate 状态挡住。
+// 顺带重新继承一次权限码：切到按钮时要连资源段一起补上，否则从菜单改按钮会缺一段。
 watch(
   () => form.type,
-  () => formRef.value?.clearValidate(),
+  () => {
+    formRef.value?.clearValidate()
+    if (dialogMode.value === 'create') inheritFromParent(form.parentId)
+  },
 )
 
 onMounted(loadTree)
@@ -370,14 +514,18 @@ onMounted(loadTree)
         </el-row>
 
         <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="路由名称" prop="name">
-              <el-input v-model="form.name" placeholder="全局唯一，如 SystemUser" />
-            </el-form-item>
-          </el-col>
           <el-col v-if="form.type !== 'button'" :span="12">
             <el-form-item label="路由路径" prop="path">
               <el-input v-model="form.path" placeholder="以 / 开头，如 /system/user" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="路由名称" prop="name">
+              <el-input
+                v-model="form.name"
+                placeholder="默认由路径推导，可改"
+                @input="nameTouched = true"
+              />
             </el-form-item>
           </el-col>
         </el-row>
@@ -385,7 +533,20 @@ onMounted(loadTree)
         <el-row v-if="form.type === 'menu'" :gutter="16">
           <el-col :span="12">
             <el-form-item label="组件路径" prop="component">
-              <el-input v-model="form.component" placeholder="如 system/user/index" />
+              <el-select
+                v-model="form.component"
+                filterable
+                clearable
+                placeholder="选择页面文件"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="path in componentOptions"
+                  :key="path"
+                  :label="path"
+                  :value="path"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -422,18 +583,46 @@ onMounted(loadTree)
           </el-col>
         </el-row>
 
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="权限标识">
-              <el-input v-model="form.permission" placeholder="如 system:user:create" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="排序">
-              <el-input-number v-model="form.sort" :min="0" :max="9999" controls-position="right" />
-            </el-form-item>
-          </el-col>
-        </el-row>
+        <el-form-item label="权限标识">
+          <div class="perm">
+            <el-select
+              v-model="permNs"
+              class="perm__ns"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="模块"
+            >
+              <el-option v-for="ns in namespaceOptions" :key="ns" :label="ns" :value="ns" />
+            </el-select>
+            <span class="perm__sep">:</span>
+            <el-input v-model="permRes" class="perm__res" placeholder="资源，如 user" />
+            <span class="perm__sep">:</span>
+            <el-select
+              v-model="permAction"
+              class="perm__action"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="动作"
+            >
+              <el-option
+                v-for="action in ACTION_OPTIONS"
+                :key="action"
+                :label="action"
+                :value="action"
+              />
+            </el-select>
+          </div>
+          <div class="perm__preview">
+            生成：<code>{{ form.permission || '（留空表示不校验权限）' }}</code>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="排序">
+          <el-input-number v-model="form.sort" :min="0" :max="9999" controls-position="right" />
+          <span class="form-hint">默认排到同级末尾</span>
+        </el-form-item>
 
         <el-row :gutter="16">
           <el-col :span="8">
@@ -493,5 +682,50 @@ onMounted(loadTree)
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+// 权限码三段式：模块 : 资源 : 动作。三格共行，分隔符由自己画，
+// 免得用户以为要在输入框里手打冒号。
+.perm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+
+  &__ns {
+    flex: 0 0 128px;
+  }
+
+  &__res {
+    flex: 1 1 auto;
+  }
+
+  &__action {
+    flex: 0 0 132px;
+  }
+
+  &__sep {
+    flex: 0 0 auto;
+    color: var(--app-text-muted);
+  }
+
+  &__preview {
+    width: 100%;
+    margin-top: 2px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--tone-blue);
+    }
+  }
+}
+
+.form-hint {
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--app-text-muted);
 }
 </style>

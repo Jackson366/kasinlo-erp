@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"nova-admin/internal/assembly"
 	"nova-admin/internal/bootstrap"
 	"nova-admin/internal/model"
 	"nova-admin/internal/oplog"
@@ -45,7 +46,12 @@ var (
 func setup(t *testing.T) *gin.Engine {
 	t.Helper()
 	setupOnce.Do(func() {
-		res, err := bootstrap.Init(testConfig, true)
+		res, err := bootstrap.Init(testConfig, bootstrap.Options{
+			SeedData: true,
+			// 与 main 共用同一个组装入口：测试少装一个模块的话，
+			// 问题只会在某条用例莫名其妙 404 时才暴露，代价太高。
+			Modules: assembly.Modules,
+		})
 		if err != nil {
 			setupErr = fmt.Errorf("测试环境初始化失败: %w", err)
 			return
@@ -68,6 +74,30 @@ func setup(t *testing.T) *gin.Engine {
 		t.Fatalf("测试环境初始化失败: %v", setupErr)
 	}
 	return engine
+}
+
+// menuID 按权限码返回内置菜单的主键。
+//
+// 用例里不再硬编码菜单主键：主键现在由数据库自增分配，「哪个节点拿到哪个 ID」
+// 取决于模块清单的声明顺序。把它写死等于把声明顺序变成一条隐式契约 ——
+// 调整一下清单就会让全套用例集体飘红，真正的回归信号反而被淹没。
+func menuID(t *testing.T, permission string) int64 {
+	t.Helper()
+	var m model.Menu
+	if err := testDB.Where("permission = ?", permission).Take(&m).Error; err != nil {
+		t.Fatalf("按权限码 %q 查菜单失败: %v", permission, err)
+	}
+	return m.ID
+}
+
+// menuIDByName 按路由名返回菜单主键。目录节点没有权限码，只能按名字定位。
+func menuIDByName(t *testing.T, name string) int64 {
+	t.Helper()
+	var m model.Menu
+	if err := testDB.Where("name = ?", name).Take(&m).Error; err != nil {
+		t.Fatalf("按路由名 %q 查菜单失败: %v", name, err)
+	}
+	return m.ID
 }
 
 // response 是统一响应体的解析结果。

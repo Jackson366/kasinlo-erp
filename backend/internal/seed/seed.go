@@ -3,7 +3,9 @@
 package seed
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -12,6 +14,7 @@ import (
 	"nova-admin/internal/database"
 	"nova-admin/internal/logger"
 	"nova-admin/internal/model"
+	"nova-admin/internal/module"
 	"nova-admin/internal/pkg/hash"
 )
 
@@ -24,7 +27,14 @@ const (
 )
 
 // Run 执行全部种子数据初始化。
+//
+// 前置条件是模块清单已登记（由 assembly.Build 在启动流程里完成）。
+// 登记表为空时直接报错而不是静默跳过：静默跳过只会写出一张空菜单表，
+// 而服务照样能起来，问题要等到「侧边栏什么都没有」时才被发现。
 func Run() error {
+	if len(module.All()) == 0 {
+		return fmt.Errorf("模块登记表为空：请先经 bootstrap.Init（会调用 assembly.Build）再播种")
+	}
 	db := database.DB()
 	steps := []struct {
 		name string
@@ -67,145 +77,139 @@ func seedDepts(db *gorm.DB) error {
 	return nil
 }
 
-// menuDefs 返回内置菜单定义（含按钮级权限点）。
-func menuDefs() []model.Menu {
-	on := model.StatusEnabled
-	menu := func(id, parent int64, name, path, component, title, icon, perm string, sort int, keepAlive bool) model.Menu {
-		return model.Menu{
-			BaseModel: model.BaseModel{ID: id}, ParentID: parent, Name: name, Path: path,
-			Component: component, Title: title, Icon: icon, Type: model.MenuTypeMenu,
-			Permission: perm, Sort: sort, KeepAlive: keepAlive, Status: on,
-		}
-	}
-	button := func(id, parent int64, name, title, perm string, sort int) model.Menu {
-		return model.Menu{
-			BaseModel: model.BaseModel{ID: id}, ParentID: parent, Name: name, Title: title,
-			Type: model.MenuTypeButton, Permission: perm, Sort: sort, Status: on,
-		}
-	}
-
-	return []model.Menu{
-		// 顶层目录与菜单
-		{
-			BaseModel: model.BaseModel{ID: 1},
-			ParentID:  0, Name: "Dashboard", Path: "/dashboard", Component: "dashboard/index",
-			Title: "仪表盘", Icon: "Odometer", Type: model.MenuTypeMenu,
-			Permission: "dashboard:view", Sort: 1, KeepAlive: true, Status: on,
-		},
-		{
-			BaseModel: model.BaseModel{ID: 10},
-			ParentID:  0, Name: "System", Path: "/system", Title: "系统管理",
-			Icon: "Setting", Type: model.MenuTypeDir, Redirect: "/system/user", Sort: 2, Status: on,
-		},
-		menu(11, 10, "SystemUser", "/system/user", "system/user/index", "用户管理", "User", "system:user:list", 1, true),
-		menu(12, 10, "SystemRole", "/system/role", "system/role/index", "角色管理", "Key", "system:role:list", 2, true),
-		menu(13, 10, "SystemMenu", "/system/menu", "system/menu/index", "菜单管理", "Menu", "system:menu:list", 3, false),
-		menu(14, 10, "SystemDept", "/system/dept", "system/dept/index", "部门管理", "OfficeBuilding", "system:dept:list", 4, false),
-		menu(15, 10, "SystemLog", "/system/log", "system/log/index", "操作日志", "Document", "system:log:list", 5, false),
-
-		// 用户管理按钮权限
-		button(101, 11, "SystemUserCreate", "新增用户", "system:user:create", 1),
-		button(102, 11, "SystemUserUpdate", "修改用户", "system:user:update", 2),
-		button(103, 11, "SystemUserDelete", "删除用户", "system:user:delete", 3),
-		button(104, 11, "SystemUserReset", "重置密码", "system:user:reset", 4),
-		button(105, 11, "SystemUserExport", "导出用户", "system:user:export", 5),
-		button(106, 11, "SystemUserImport", "导入用户", "system:user:import", 6),
-
-		// 角色管理按钮权限
-		button(111, 12, "SystemRoleCreate", "新增角色", "system:role:create", 1),
-		button(112, 12, "SystemRoleUpdate", "修改角色", "system:role:update", 2),
-		button(113, 12, "SystemRoleDelete", "删除角色", "system:role:delete", 3),
-		button(114, 12, "SystemRoleAssign", "分配权限", "system:role:assign", 4),
-		button(115, 12, "SystemRoleExport", "导出角色", "system:role:export", 5),
-
-		// 菜单管理按钮权限
-		button(121, 13, "SystemMenuCreate", "新增菜单", "system:menu:create", 1),
-		button(122, 13, "SystemMenuUpdate", "修改菜单", "system:menu:update", 2),
-		button(123, 13, "SystemMenuDelete", "删除菜单", "system:menu:delete", 3),
-
-		// 部门管理按钮权限
-		button(131, 14, "SystemDeptCreate", "新增部门", "system:dept:create", 1),
-		button(132, 14, "SystemDeptUpdate", "修改部门", "system:dept:update", 2),
-		button(133, 14, "SystemDeptDelete", "删除部门", "system:dept:delete", 3),
-
-		// 日志管理按钮权限
-		button(141, 15, "SystemLogDelete", "清空日志", "system:log:delete", 1),
-		button(149, 15, "SystemLogExport", "导出日志", "system:log:export", 2),
-	}
-}
-
-// seedMenus 写入内置菜单。
+// seedMenus 按模块清单补齐内置菜单。
 //
-// 采用「按 ID 补齐」而非「表为空才写入」：这样后续新增的权限点
-// 能自动补进已经初始化过的数据库，不必手工执行 SQL 或重建库。
-// 已存在的记录一律不覆盖，避免冲掉管理员对菜单文案的调整。
+// 幂等键是「权限码」（有权限码的节点）或「路由名」（纯目录节点），不再是手工
+// 分配的菜单 ID —— 主键交给数据库自增，本来就不该由清单操心。这也顺带解决了
+// 老库的平滑迁移：历史记录带着同样的权限码/路由名，照样被认出来并复用，
+// 既不重复插入，也不会改动它原有的 ID 与角色授权关系。
 func seedMenus(db *gorm.DB) error {
-	menus := menuDefs()
-
-	// 正常存在的记录
-	var activeIDs []int64
-	if err := db.Model(&model.Menu{}).Pluck("id", &activeIDs).Error; err != nil {
-		return err
-	}
-	active := make(map[int64]bool, len(activeIDs))
-	for _, id := range activeIDs {
-		active[id] = true
-	}
-
-	// 含软删除的全部 ID：软删除的记录仍然占用主键，
-	// 直接插入同一个 ID 会触发唯一冲突。
-	var allIDs []int64
-	if err := db.Unscoped().Model(&model.Menu{}).Pluck("id", &allIDs).Error; err != nil {
-		return err
-	}
-	occupied := make(map[int64]bool, len(allIDs))
-	for _, id := range allIDs {
-		occupied[id] = true
-	}
-
-	missing := make([]model.Menu, 0, len(menus))
-	conflicts := 0
-	for _, m := range menus {
-		if active[m.ID] {
-			continue
+	added, skipped := 0, 0
+	for _, m := range module.All() {
+		for i, node := range m.Menus {
+			a, s, err := insertNode(db, node, 0, nodeSort(node, i))
+			if err != nil {
+				return err
+			}
+			added += a
+			skipped += s
 		}
-		if occupied[m.ID] {
-			// ID 被软删除的历史记录占住。此时既不能直接插入（主键冲突），
-			// 也不该擅自硬删用户数据，只能显式告警 —— 静默跳过会让权限点凭空消失，
-			// 表现为「菜单里看不到、接口 403」，极难排查。
-			conflicts++
-			logger.Warn("内置菜单 ID 被已软删除的历史记录占用，该权限点未能写入",
-				zap.Int64("id", m.ID),
-				zap.String("name", m.Name),
-				zap.String("permission", m.Permission),
-			)
-			continue
-		}
-		missing = append(missing, m)
 	}
-
-	if len(missing) > 0 {
-		if err := db.Create(&missing).Error; err != nil {
-			return err
-		}
-		logger.Info("已补齐缺失的内置菜单", zap.Int("count", len(missing)))
+	if added > 0 {
+		logger.Info("已补齐缺失的内置菜单", zap.Int("count", added))
 	}
-	if conflicts > 0 {
-		return fmt.Errorf(
-			"有 %d 个内置菜单因主键 ID 被占用而未能写入，请清理 sys_menus 表中对应的历史数据后重启",
-			conflicts)
+	if skipped > 0 {
+		logger.Warn("有内置菜单因曾被删除而未补齐，如确需恢复请手工处理",
+			zap.Int("count", skipped))
 	}
 	return nil
 }
 
-// allMenuIDs 返回全部菜单 ID。
-func allMenuIDs() []int64 {
-	menus := menuDefs()
-	ids := make([]int64, 0, len(menus))
-	for _, m := range menus {
-		ids = append(ids, m.ID)
+// insertNode 递归补齐一个节点及其子节点，返回 (新增条数, 跳过条数)。
+//
+// 必须自顶向下插入：子节点的 parent_id 要用父节点刚落库的主键，
+// 而主键现在由数据库分配，清单里拿不到。
+func insertNode(db *gorm.DB, node module.MenuNode, parentID int64, sort int) (int, int, error) {
+	id, created, omitted, err := ensureNode(db, node, parentID, sort)
+	if err != nil {
+		return 0, 0, err
 	}
-	return ids
+	if omitted {
+		// 父节点曾被删除，整棵子树一起跳过：挂到一个不存在的父级下，
+		// 子节点在侧边栏里就会散架，比不创建更难排查
+		return 0, countNodes(node), nil
+	}
+
+	added, skipped := 0, 0
+	if created {
+		added = 1
+	}
+	for i, child := range node.Children {
+		a, s, err := insertNode(db, child, id, nodeSort(child, i))
+		if err != nil {
+			return added, skipped, err
+		}
+		added += a
+		skipped += s
+	}
+	return added, skipped, nil
+}
+
+// ensureNode 保证节点存在，返回 (菜单 ID, 是否新建, 是否跳过, 错误)。
+func ensureNode(db *gorm.DB, node module.MenuNode, parentID int64, sort int) (int64, bool, bool, error) {
+	var existing model.Menu
+	err := keyQuery(db.Model(&model.Menu{}), node).Take(&existing).Error
+	if err == nil {
+		// 已存在：沿用原 ID，字段一律不覆盖 ——
+		// 管理员对标题、图标、排序的调整必须保留
+		return existing.ID, false, false, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, false, false, err
+	}
+
+	// 未被软删除的记录里没有，再看一眼是不是被管理员删掉了。
+	// 直接重建会让「删掉的菜单下次重启又冒出来」，与旧版一致：告警并跳过。
+	var removed model.Menu
+	err = keyQuery(db.Unscoped().Model(&model.Menu{}), node).Take(&removed).Error
+	if err == nil {
+		logger.Warn("内置菜单已被删除，跳过该节点及其子节点",
+			zap.String("name", node.Name),
+			zap.String("title", node.Title),
+			zap.String("permission", node.Permission),
+		)
+		return 0, false, true, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, false, false, err
+	}
+
+	row := model.Menu{
+		ParentID:   parentID,
+		Name:       node.Name,
+		Path:       node.Path,
+		Component:  node.Component,
+		Redirect:   node.Redirect,
+		Title:      node.Title,
+		Icon:       node.Icon,
+		Type:       node.TypeOf(),
+		Permission: node.Permission,
+		Sort:       sort,
+		Hidden:     node.Hidden,
+		KeepAlive:  node.KeepAlive,
+		IsExternal: node.IsExternal,
+		Status:     model.StatusEnabled,
+	}
+	if err := db.Create(&row).Error; err != nil {
+		return 0, false, false, fmt.Errorf("写入内置菜单 %q 失败: %w", node.Name, err)
+	}
+	return row.ID, true, false, nil
+}
+
+// keyQuery 按幂等键定位菜单：有权限码用权限码，否则用路由名。
+func keyQuery(db *gorm.DB, node module.MenuNode) *gorm.DB {
+	if node.Permission != "" {
+		return db.Where("permission = ?", node.Permission)
+	}
+	return db.Where("name = ?", node.Name)
+}
+
+// nodeSort 取节点排序：声明了就用声明的，否则按同级声明顺序递增。
+// 于是「写清单」不必再为每个节点算一个数字，声明顺序就是展示顺序。
+func nodeSort(node module.MenuNode, index int) int {
+	if node.Sort > 0 {
+		return node.Sort
+	}
+	return index + 1
+}
+
+// countNodes 统计一棵子树的节点数，用于统计被跳过的条数。
+func countNodes(node module.MenuNode) int {
+	total := 1
+	for _, child := range node.Children {
+		total += countNodes(child)
+	}
+	return total
 }
 
 func seedRoles(db *gorm.DB) error {
@@ -300,32 +304,117 @@ func createBuiltinRoles(db *gorm.DB) error {
 	return nil
 }
 
-// builtinRoleGrants 返回各内置角色应有的菜单授权。
+// frameworkNamespaces 是框架自带模块的权限命名空间。
 //
-// 注意：user:export / role:export / log:export 这类「批量取数」权限
-// 刻意不授予「只读访客」—— 能查看列表与能批量导出属于两个风险等级。
-func builtinRoleGrants() map[int64][]int64 {
-	readOnly := []int64{1, 10, 11, 12, 13, 14, 15}
-	adminMenus := append([]int64{}, readOnly...)
-	adminMenus = append(adminMenus,
-		101, 102, 104, 105, 106, // 用户：新增/修改/重置/导出/导入（无删除）
-		111, 112, 114, 115, // 角色：新增/修改/分配/导出（无删除）
-		121, 122, // 菜单：新增/修改
-		131, 132, // 部门：新增/修改
-		149, // 日志：导出
-	)
-	return map[int64][]int64{
-		1: allMenuIDs(),
-		2: adminMenus,
-		3: readOnly,
+// 内置角色的自动授权只覆盖它们：新增一个业务模块时，只读访客与系统管理员
+// 不会凭空多出该模块的菜单 —— 那对敏感业务就是静默越权。业务模块要把菜单
+// 发给内置角色，在这里加上它的命名空间，或到「角色管理」里手工分配。
+var frameworkNamespaces = []string{"dashboard", "system", "profile", "auth"}
+
+// grantRule 描述一个内置角色应有的菜单授权。
+type grantRule struct {
+	roleID     int64
+	name       string
+	reason     string
+	namespaces []string                               // 为空表示不限命名空间
+	match      func(menuType, permission string) bool // 按节点语义判定
+}
+
+// grantRules 是内置角色的授权规则。
+//
+// 不再抄一份菜单 ID 清单。原先那份（1,10,11,…,101,102,104,…）有两个毛病：
+// 读不出意图，而且必须与 menuDefs() 里的 ID 手工保持对齐 ——
+// 两边改歪一处就是静默的权限错配。改成按节点语义判定后，规则本身就是文档。
+//
+// 下面的规则与旧清单逐条等价：
+//   - 只读访客   = 所有非按钮节点（即各列表菜单）
+//   - 系统管理员 = 除 *:delete 外的全部节点
+//
+// 刻意不授予「只读访客」任何导出/导入：能查看列表与能批量取数
+// 属于两个风险等级。
+var grantRules = []grantRule{
+	{
+		roleID: 1, name: "超级管理员",
+		reason: "拥有全部菜单与按钮权限",
+		match:  func(string, string) bool { return true },
+	},
+	{
+		roleID: 2, name: "系统管理员",
+		reason:     "可维护框架模块，但不具备任何删除类权限（清空日志同属删除）",
+		namespaces: frameworkNamespaces,
+		match:      func(_, permission string) bool { return !strings.HasSuffix(permission, ":delete") },
+	},
+	{
+		roleID: 3, name: "只读访客",
+		reason:     "只浏览各列表；导出/导入属于批量取数，故不授予任何按钮权限",
+		namespaces: frameworkNamespaces,
+		match:      func(menuType, _ string) bool { return menuType != model.MenuTypeButton },
+	},
+}
+
+// covers 判断某个菜单是否落在该规则的授权范围内。
+func (r grantRule) covers(menuType, permission string) bool {
+	if !r.match(menuType, permission) {
+		return false
 	}
+	ns := namespaceOf(permission)
+	if ns == "" {
+		// 没有权限码的节点只可能是目录：它只是分组，授予它不放大任何权限；
+		// 而不授予的话，其下的子菜单会失去父级、在侧边栏里散架
+		return true
+	}
+	if len(r.namespaces) == 0 {
+		return true
+	}
+	for _, allowed := range r.namespaces {
+		if allowed == ns {
+			return true
+		}
+	}
+	return false
+}
+
+// namespaceOf 取权限码的命名空间段，如 system:user:list -> system。
+func namespaceOf(permission string) string {
+	if permission == "" {
+		return ""
+	}
+	if i := strings.Index(permission, ":"); i > 0 {
+		return permission[:i]
+	}
+	return permission
+}
+
+// resolveGrants 在当前库里真实存在的菜单上求解授权规则，得到 角色 -> 菜单 ID。
+//
+// 「求解」而不是「硬编码」的意义：老库的 ID、新库的 ID、管理员重建过的 ID
+// 各不相同，但语义相同。规则只在语义层描述，落库前才解析成具体 ID。
+func resolveGrants(db *gorm.DB) (map[int64][]int64, error) {
+	var menus []model.Menu
+	if err := db.Model(&model.Menu{}).Find(&menus).Error; err != nil {
+		return nil, err
+	}
+	grants := make(map[int64][]int64, len(grantRules))
+	for _, rule := range grantRules {
+		ids := make([]int64, 0, len(menus))
+		for _, m := range menus {
+			if rule.covers(m.Type, m.Permission) {
+				ids = append(ids, m.ID)
+			}
+		}
+		grants[rule.roleID] = ids
+	}
+	return grants, nil
 }
 
 // syncBuiltinRoleMenus 为内置角色补齐缺失的菜单授权。
 // 只增不减（管理员对授权做过的裁剪不会被覆盖回去），但会清理两类无意义记录：
 // 指向「不存在或已软删除菜单」的孤儿授权，以及菜单已被删除后残留的授权。
 func syncBuiltinRoleMenus(db *gorm.DB) error {
-	grants := builtinRoleGrants()
+	grants, err := resolveGrants(db)
+	if err != nil {
+		return err
+	}
 
 	// 现有菜单 ID：授权只能指向真实存在且未删除的菜单，
 	// 否则会产生孤儿记录 —— 在内置菜单 ID 被软删除的历史记录占用时就会发生。
@@ -451,37 +540,17 @@ func seedUsers(db *gorm.DB) error {
 	})
 }
 
-// MenuIDFloor 是用户自建菜单的起始 ID。
-//
-// 内置菜单使用硬编码 ID，约定占用 1-999 这一段；自增生成的菜单必须从 1000 起，
-// 两者不能混在一起。否则新建菜单会占掉内置菜单预留的 ID，此后新增的权限点
-// 就再也补不进来了 —— 软删除的记录会一直占着那个主键，
-// 而这类冲突既不会报错也不会留下线索。这条约束是踩过坑之后才加上的。
-const MenuIDFloor = 1000
-
-// resetSequences 同步自增序列，避免手工指定 ID 后新增数据主键冲突。
-//
-// 表不存在属于真实故障（迁移先于种子执行），直接报错让启动失败：
-// 曾经这里有一个 errors.Is(err, gorm.ErrRecordNotFound) 的「表不存在就跳过」分支，
-// 但 PostgreSQL 报的是 42P01，永远匹配不上 gorm.ErrRecordNotFound ——
-// 死分支只会给人「这种情况已被处理」的错觉。
 func resetSequences(db *gorm.DB) error {
-	targets := []struct {
-		table string
-		floor int64
-	}{
-		{"sys_users", 1},
-		{"sys_roles", 1},
-		{"sys_depts", 1},
-		{"sys_menus", MenuIDFloor},
-	}
-	for _, t := range targets {
+	// 内置菜单不再使用硬编码 ID（清单只声明权限码与路由名，主键交给自增），
+	// 于是「用户自建菜单必须从 1000 起」那条约束随之作废 —— 它当初存在的唯一
+	// 理由是避免自增主键侵占内置菜单预留的 1-999 段，现在没有预留段了。
+	for _, table := range []string{"sys_users", "sys_roles", "sys_depts", "sys_menus"} {
 		stmt := fmt.Sprintf(
-			`SELECT setval(pg_get_serial_sequence('%s','id'), GREATEST(COALESCE((SELECT MAX(id) FROM %s), 1) + 1, %d), false)`,
-			t.table, t.table, t.floor,
+			`SELECT setval(pg_get_serial_sequence('%s','id'), GREATEST(COALESCE((SELECT MAX(id) FROM %s), 1) + 1, 1), false)`,
+			table, table,
 		)
 		if err := db.Exec(stmt).Error; err != nil {
-			return fmt.Errorf("重置 %s 自增序列失败: %w", t.table, err)
+			return fmt.Errorf("重置 %s 自增序列失败: %w", table, err)
 		}
 	}
 	return nil

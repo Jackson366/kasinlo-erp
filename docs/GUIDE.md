@@ -27,7 +27,7 @@ Nova Admin 是一套**简洁够用的后台管理系统骨架**：Go + Vue 3 + P
 
 | 取向 | 具体表现 |
 | --- | --- |
-| **模块化** | 业务代码只放 `internal/module/<模块>/`，固定四文件制。加功能 = 加目录，不是改老文件 |
+| **模块化** | 业务代码只放 `internal/module/<模块>/`，固定「四实现文件 + 一份 `module.go` 清单」。加功能 = 加目录 + 组装层加一行，不改框架文件 |
 | **约定优于配置** | 菜单即权限即路由。在 `sys_menus` 里加一条记录，前端路由与侧边栏自动出现 |
 | **安全默认** | 鉴权在后端、越权按 404、审计不可被客户端搞挂、改密即吊销令牌 —— 都做成了默认行为而不是可选项 |
 
@@ -179,7 +179,9 @@ scope.EnsureDeptWritable(id) // 写操作前的闸门
 
 ## 1.5 目录结构详解
 
-目录划分直接落地了「模块化」这条铁律：后端业务代码全部收在 `internal/module/<模块>/` 下，一个模块固定四个文件；
+目录划分直接落地了「模块化」这条铁律：后端业务代码全部收在 `internal/module/<模块>/` 下，
+每个模块固定四个实现文件（`dto/service/handler/route`）外加一份 `module.go` **自描述清单**；
+`internal/assembly/` 是**全项目唯一** import 具体模块的地方。
 前端页面按 `views/<模块>/index.vue` 组织。先看后端，再看前端。
 
 ### 后端 `backend/`
@@ -189,22 +191,28 @@ backend/
 ├── cmd/server/main.go              进程入口：参数解析 + 优雅关停
 ├── config.example.yaml             配置模板（复制为 config.yaml）
 ├── internal/
-│   ├── bootstrap/                  装配顺序：配置→日志→JWT→数据库→迁移→种子
+│   ├── bootstrap/                  装配顺序：配置→日志→JWT→数据库→迁移→模块登记→种子
 │   ├── config/                     读 YAML + NOVA_* 环境变量覆盖 + 校验
 │   ├── logger/                     zap 初始化与全局 L()
 │   ├── database/                   连接、AutoMigrate、EnsureIndexes（部分唯一索引）
 │   ├── authz/                      身份与权限集合，30 秒缓存
 │   ├── middleware/                 TraceID / Logger / OperationLog / Recovery / CORS / Auth / RequirePerm
 │   ├── model/                      GORM 模型（对应 8 张表）
-│   ├── module/<模块>/              ★ 业务代码都在这里，固定四文件制
+│   ├── module/contract.go          ★ 模块契约：MenuNode / Module / Build / Group（纯类型，不 import 任何具体模块）
+│   ├── module/<模块>/              ★ 业务代码都在这里，固定四实现文件 + module.go 清单
+│   ├── assembly/assembly.go        ★ 组装层：全项目唯一 import 具体模块、声明模块清单的地方
 │   ├── oplog/                      操作日志异步落库
 │   ├── pkg/                        无业务依赖的通用工具
-│   ├── router/router.go            路由总装配
-│   └── seed/seed.go                幂等种子数据 + 老库数据修正
+│   ├── router/router.go            遍历模块登记表挂路由（不 import 具体模块）
+│   └── seed/seed.go                幂等种子数据 + 老库数据修正（内置菜单来自登记表）
 └── test/                           进程内 E2E 测试（独立测试库 nova_admin_v5_test）
 ```
 
-**依赖方向**：`module → pkg / model / authz`，`pkg → 标准库与第三方`。
+**依赖方向**（单向，禁止反向）：
+`assembly → <具体模块> → module（契约）/ pkg / model / authz → 标准库与第三方`。
+`internal/module/contract.go` 只定义类型与校验，不 import 任何具体模块；
+`internal/router`、`internal/seed` 只认契约类型 `module.Module`，靠 `module.All()` 拿到登记表 ——
+所以**把某个业务模块整个删掉，框架照样编译通过**（边界靠编译器验证，不靠自觉）。
 `pkg` 反向依赖 `module` **必须禁止**，否则通用层就被业务污染了。
 
 各目录的「不要做的事」：
@@ -216,9 +224,15 @@ backend/
 | `internal/database` | 不在别处写 DDL |
 | `internal/authz` | 不在业务代码里查授权表 |
 | `internal/model` | 不放 DTO |
-| `internal/module/*` | 不跨模块直接引用别人的 `service` |
+| `internal/module/*` | 不跨模块直接引用别人的 `service`；不 import `internal/module/<其他模块>` |
+| `internal/module/contract.go` | 只放类型与校验，不 import 任何具体模块 |
+| `internal/assembly` | 只做组装（列出模块），不写业务逻辑 |
 | `internal/pkg` | 不 import `internal/module/*` |
-| `internal/router` | 不写 handler |
+| `internal/router` | 不写 handler，不 import 具体模块 |
+
+> 以上边界由 `scripts/check-module-boundary.sh` 钉住：它用 grep 把「框架包 import 任意
+> `internal/module/<子包>`」整体禁掉（排除组装层与 `_test.go`），比逐个枚举业务模块名更强 ——
+> **新增模块不必维护白名单**。改动框架层后跑一次，有输出即违规。
 
 ### `internal/pkg/` 通用工具
 
@@ -336,7 +350,7 @@ src/
 3. **`many2many` 必须写完整表名**（`many2many:sys_user_roles`），否则 GORM 会推导出不存在的表名。
 4. **时间字段统一 `timestamptz`**，时区取配置项 `database.timezone`（默认 `Asia/Shanghai`）。
 
-**内置数据**（`internal/seed/`，幂等，仅在表为空时写入）：
+**内置数据**（`internal/seed/`，幂等，按幂等键补齐缺失项）：
 
 | 项 | 数量 | 内容 |
 | --- | --- | --- |
@@ -346,15 +360,18 @@ src/
 | 角色 | 3 | `super_admin` / `system_admin` / `viewer` |
 | 用户 | 2 | `admin`、`demo` |
 
-**菜单 ID 的分配规则**（重要，撞号会导致启动报错）：
+**菜单主键怎么分配**（重构后不再需要手工选号）：
 
-| 区间 | 归属 | 现有占用 |
-| --- | --- | --- |
-| `1–999` | **内置菜单**（写在 `seed.go` 里） | `1`=仪表盘，`10`=系统管理目录，`11–15`=页面菜单，`101+`=按钮权限 |
-| `1000+` | **管理员在界面上自建的菜单**（自增序列起点） | `seed.MenuIDFloor = 1000` |
+| 场景 | 主键来源 |
+| --- | --- |
+| 内置菜单（各模块 `module.go` 的 `Menus`） | 播种时由数据库**自增**分配；老库里命中同一幂等键的记录**原样沿用其已有 ID** |
+| 管理员在菜单管理页自建 | 同样自增 |
 
-所以给一个新的**内置**业务模块分配 ID 时，要在 `1–999` 里找空档，
-沿用现有分组习惯即可（目录用 `10` 的倍数、按钮用 `1xx` 段）。
+也就是说，`1–999` / `1000+` 那套手工分段已经作废 ——
+幂等键从「手工 ID」换成了**权限码（按钮）/ 路由名（目录、页面）**。
+加一个内置菜单不需要挑号，也不会再撞号。
+老库升级时内置菜单 ID 保持不变（`1`、`10`、`11`…`149` 仍是原值），
+新库则从 `1` 开始按声明顺序自增。
 
 ## 1.8 依赖与许可
 
@@ -673,7 +690,7 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产
 | 层 | 命令 | 覆盖 | 规模 |
 | --- | --- | --- | --- |
 | 编译期 | `gofmt -l .` / `go vet ./...` / `npm run typecheck` | 语法、类型、常见误用 | — |
-| 进程内 E2E | `go test ./test/... -count=1` | 行为契约（进程内 `httptest` 驱动完整路由） | **63 个测试 / 137 个子用例** |
+| 进程内 E2E | `go test ./test/... -count=1` | 行为契约（进程内 `httptest` 驱动完整路由） | **69 个测试 / 141 个子用例** |
 | 接口冒烟 | `node scripts/api-smoke.mjs` | 协议层（真实 HTTP、二进制响应、文件上传下载） | **90 项断言** |
 | 浏览器运行时 | `node scripts/browser-verify.mjs` | 真实渲染（白屏、主题、控制台报错） | **49 项断言** |
 
@@ -726,25 +743,28 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产
 | 4 | 新增 | `backend/internal/module/article/service.go` | ✅ |
 | 5 | 新增 | `backend/internal/module/article/handler.go` | ✅ |
 | 6 | 新增 | `backend/internal/module/article/route.go` | ✅ |
-| 7 | 可选 | `backend/internal/module/article/excel.go` | 需要导入导出时 |
-| 8 | 修改 | `backend/internal/router/router.go`（加一行 `article.Register(base)`） | ✅ |
-| 9 | 新增 | `backend/test/api_test.go` 里的 `TestArticleCRUD` | ✅ |
-| 10 | 修改 | `backend/internal/seed/seed.go`（加菜单 + 权限点） | ✅ |
+| 7 | 新增 | `backend/internal/module/article/module.go`（自描述清单：命名空间 + Register + 菜单树） | ✅ |
+| 8 | 可选 | `backend/internal/module/article/excel.go` | 需要导入导出时 |
+| 9 | 修改 | `backend/internal/assembly/assembly.go`（加一行 `article.Module()`） | ✅ |
+| 10 | 新增 | `backend/test/api_test.go` 里的 `TestArticleCRUD` | ✅ |
 | 11 | 新增 | `frontend/src/api/article.ts` | ✅ |
 | 12 | 修改 | `frontend/src/types/api.ts`（加类型） | ✅ |
 | 13 | 新增 | `frontend/src/views/article/index.vue` | ✅ |
 
-**一共只修改 4 个已有文件**，其余全是新增。
+**一共只修改 2 个已有文件**（`assembly.go` 与 `types/api.ts`），其余全是新增。
+加菜单/权限**不用碰 `seed.go`** —— 写在 `module.go` 的 `Menus` 里，启动时按权限码自动补齐。
 
 ## 3.2 后端九步
 
-后端加一个模块固定是这九步，顺序不能乱：先建目录与文件，再写 model 与 DTO，接着注册迁移，最后挂路由与权限。
+后端加一个模块固定是这九步，顺序不能乱：先建目录与文件，再写 model 与 DTO，
+接着注册迁移，最后写清单挂路由、把菜单交给框架播种。
 下面逐步给出每一步的命令与代码。
 
-### Step 1 — 建目录与四个文件
+### Step 1 — 建目录与文件
 
 ```
 internal/module/article/
+├── module.go   # ★ 自描述清单：命名空间 + Register + 菜单树（框架靠它装配与播种）
 ├── dto.go      # 请求 / 响应结构体
 ├── service.go  # 业务逻辑（不感知 HTTP）
 ├── handler.go  # HTTP 入参出参
@@ -755,6 +775,9 @@ internal/module/article/
 四文件制的意义：**职责边界靠文件名就能看清**。
 `service` 不知道 `gin.Context` 的存在，所以它能被单测直接调用；
 `handler` 只做「绑参 → 调 service → 出参」，不含业务判断。
+
+`module.go` 让模块**自描述**：框架不必知道「article 这个包长什么样」，
+只读登记表就能把路由挂上、把菜单播下去（见 Step 7）。
 
 ### Step 2 — 定义模型（需要落库时）
 
@@ -917,17 +940,79 @@ return 0, errcode.Wrap(errcode.ErrDatabase, err)                 // 前端看到
 `Wrap` 与 `New` 的差别是**信息暴露程度**：`Wrap` 把底层错误藏进日志，
 只在响应里给出安全的通用提示。涉及数据库、外部调用的错误一律用 `Wrap`。
 
-### Step 7 — 挂到路由树
+### Step 7 — 写 `module.go` 清单，并在组装层登记
+
+先写模块自己的清单文件 —— **菜单、按钮权限点都归声明它们的模块所有**：
 
 ```go
-// internal/router/router.go
-user.Register(base)
-role.Register(base)
-menu.Register(base)
-dept.Register(base)
-log.Register(base)
-article.Register(base)   // ← 加这一行
+// internal/module/article/module.go
+package article
+
+import "nova-admin/internal/module"
+
+// Module 返回文章模块的自描述清单。
+func Module() module.Module {
+	return module.Module{
+		Namespace: "article",   // ★ 下面所有权限码必须以它开头，Build 会校验
+		Register:  Register,    // 即 Step 4 的 route.go:Register
+		Menus: []module.MenuNode{
+			// 目录节点只做分组，不产生路由
+			{Name: "ArticleRoot", Title: "内容管理", Icon: "Document",
+				Path: "/article", Redirect: "/article/list", Sort: 4,
+				Children: []module.MenuNode{
+					{Name: "Article", Title: "文章管理", Icon: "Notebook",
+						Path: "/article/list", Component: "article/index",
+						Permission: "article:list", KeepAlive: true,
+						Children: []module.MenuNode{
+							{Name: "ArticleCreate", Title: "新增文章",
+								Type: module.TypeButton, Permission: "article:create"},
+							{Name: "ArticleDelete", Title: "删除文章",
+								Type: module.TypeButton, Permission: "article:delete"},
+						}},
+				}},
+		},
+	}
+}
 ```
+
+字段与旧写法（`menu(id, parent, …)` 手工分配 ID）的差别：
+**没有 ID 了** —— 主键交给数据库自增，靠 `Permission`（按钮）或 `Name`（目录/页面）做幂等键。
+`Type` 省略即 `menu`（页面），目录节点写 `TypeDir`，按钮写 `TypeButton`。
+
+然后到组装层加一行：
+
+```go
+// internal/assembly/assembly.go
+func Modules(cfg *config.Config) []module.Module {
+	return []module.Module{
+		// ... 框架模块
+		module.Group(
+			module.MenuNode{Name: "System", Title: "系统管理", Icon: "Setting",
+				Path: "/system", Redirect: "/system/user", Sort: 2},
+			user.Module(), role.Module(), menu.Module(), dept.Module(), log.Module(cfg.Security),
+		),
+		article.Module(),   // ← 加这一行；业务模块归在顶层就写在这
+	}
+}
+```
+
+**`internal/router/router.go` 不用动** —— 它只遍历 `module.All()` 挨个调 `Register`；
+`seed.go` 也不用动，它同样遍历登记表播种菜单。
+
+`module.Build()` 会在启动时校验清单（越界即启动失败，不是运行到一半才 404）：
+
+| 校验项 | 反例 |
+| --- | --- |
+| 权限码必须以 `Namespace` 开头 | `Namespace: "article"` 却写 `system:order:list` |
+| 路由名 / 路径 / 组件路径全局唯一 | 两个模块都叫 `ArticleRoot` |
+| 按钮节点必须有权限码 | `TypeButton` 但没有 `Permission` |
+| 页面节点必须有组件路径 | 有 `Path` 却没有 `Component` |
+| 组件路径不带 `.vue`、不带前导 `/` | `"article/index.vue"`、`"/article/index"` |
+| 分组节点必须带一个路由函数 | 否则整组接口静默 404，编译期查不出来 |
+
+> **`module.Group` 的坑**：分组要同时汇总子模块的 `Register` 与 `Menus`。
+> 只收菜单不收路由的话，菜单点得进去、接口全 404，而且**没有任何编译错误** ——
+> 所以契约单测里专门有一条 `TestGroupComposesRoutesAndMenus` 钉住它。
 
 ### Step 8 — 分页与排序
 
@@ -1058,81 +1143,66 @@ var historicalRoleDataFixes = []struct {
 
 后端写完了，但**前端还看不到任何东西**。原因是前端路由完全由菜单驱动。
 
-### 加菜单记录
+好消息是：**菜单不用再手工加了。** 从上一步的 `module.go` 起，菜单已经跟着模块走 ——
+启动时 `seed` 遍历登记表，把每个模块的 `Menus` 自动播进库里。
 
-在 `internal/seed/seed.go` 的 `menuDefs()` 里追加。注意 ID 要落在 **`1–999`** 的空档里
-（`1000+` 是管理员自建菜单的自增区间，见 §1.7）：
+### 菜单怎么入库（幂等三态）
 
-```go
-// 目录（不产生路由，只做侧边栏分组）
-{
-	BaseModel: model.BaseModel{ID: 20},
-	ParentID:  0, Name: "ArticleRoot", Path: "/article", Title: "内容管理",
-	Icon: "Document", Type: model.MenuTypeDir, Redirect: "/article/list",
-	Sort: 4, Status: on,
-},
+播种时每个节点按幂等键（按钮用 `Permission`，目录/页面用 `Name`）在库里查一次，分三种情况：
 
-// 页面菜单（产生一条动态路由）
-menu(21, 20, "Article", "/article/list", "article/index", "文章管理",
-	"Notebook", "article:list", 1, true),
+| 情况 | 处理 | 结果 |
+| --- | --- | --- |
+| 命中**未删除**的记录 | 复用原 ID，**不覆盖任何字段** | 管理员改过的文案/图标不会被冲掉 |
+| 命中**已软删**的记录 | 打印告警，**跳过整棵子树** | 管理员删掉的菜单不会「复活」 |
+| 都没命中 | 新建，主键由数据库自增 | 新权限点自动补齐，不必重建库 |
 
-// 按钮权限点（只提供权限码，不显示）
-button(201, 21, "ArticleCreate", "新增文章", "article:create", 1),
-button(202, 21, "ArticleDelete", "删除文章", "article:delete", 2),
-```
+> 所以**新增一个按钮权限，只需要在 `module.go` 的 `Children` 里加一行**；
+> 内置菜单的新 ID 由自增分配，老库已有的 ID 原样保留 —— 不再有「1–999 空档不够用」的烦恼。
 
-`menu(...)` 与 `button(...)` 是 `menuDefs()` 里现成的小构造器，参数顺序：
-
-```
-menu(id, parent, name, path, component, title, icon, permission, sort, keepAlive)
-button(id, parent, name, title, permission, sort)
-```
-
-字段对照：
+字段要求：
 
 | 字段 | 要求 |
 | --- | --- |
-| `ID` | 内置菜单用 `1–999` 的空档，**不要与已有 ID 重复** |
-| `ParentID` | 上级菜单 ID；`0` 表示顶级 |
 | `Name` | 大驼峰、全局唯一，**必须与页面 `defineOptions({ name })` 一致** |
-| `Component` | `src/views` 下的相对路径，**无扩展名** |
-| `Permission` | `模块:资源:动作`，与 `route.go` 里的完全一致 |
-| `Type` | `dir` / `menu` / `button` |
+| `Path` | 页面/目录的路由路径；按钮不填 |
+| `Component` | `src/views` 下的相对路径，**无扩展名、无前导斜杠** |
+| `Permission` | `模块:资源:动作`，**必须以本模块 `Namespace` 开头**，且与 `route.go` 里的完全一致 |
+| `Type` | 省略 = 页面（`menu`）；目录写 `module.TypeDir`；按钮写 `module.TypeButton` |
 | `Redirect` | 目录节点建议指向第一个子页面 |
 
-> `seedMenus()` 采用「**按 ID 补齐**」而非「表为空才写入」，所以新增的权限点
-> 能自动补进已经初始化过的数据库，不必手工执行 SQL 或重建库。
-> 但它**不覆盖**已存在的记录 —— 管理员调整过的菜单文案不会被冲掉。
-> 如果 ID 被历史数据占用，启动会明确报错并点名是哪个 ID，按提示清理即可。
+> 在**菜单管理页**手工建菜单时，权限码不用自己拼：表单把「模块 : 资源 : 动作」拆成三段，
+> 自动继承父级的模块段（按钮还会带上资源段），组件路径也是从 `import.meta.glob` 的同一份
+> 清单里下拉选，选得到就一定加载得到。
 
 ### 授权给角色
 
-`builtinRoleGrants()` 里把新菜单 ID 加进对应角色的授权列表：
+授权规则也不再抄 ID 清单，而是**按节点语义求解**（`seed.go` 的 `grantRules`）：
 
 ```go
-func builtinRoleGrants() map[int64][]int64 {
-	readOnly := []int64{1, 10, 11, 12, 13, 14, 15}
-	adminMenus := append([]int64{}, readOnly...)
-	adminMenus = append(adminMenus,
-		101, 102, 104, 105, 106,
-		111, 112, 114, 115,
-		121, 122,
-		131, 132,
-		149,
-		20, 21, 201, 202,   // ← 加：文章模块的目录、页面、两个按钮
-	)
-	return map[int64][]int64{
-		1: allMenuIDs(),          // 超管：全部
-		2: adminMenus,            // 系统管理员：管理权限 + 文章
-		3: readOnly,              // 只读访客：不给（不含任何 export）
-	}
+var frameworkNamespaces = []string{"dashboard", "system", "profile", "auth"}
+
+var grantRules = []grantRule{
+	{roleID: 1, name: "超级管理员", match: func(string, string) bool { return true }},
+	{roleID: 2, name: "系统管理员",   // 框架命名空间内，除 *:delete 外全部
+		namespaces: frameworkNamespaces,
+		match:      func(_, permission string) bool { return !strings.HasSuffix(permission, ":delete") }},
+	{roleID: 3, name: "只读访客",     // 框架命名空间内，非按钮节点（即各列表菜单）
+		namespaces: frameworkNamespaces,
+		match:      func(menuType, _ string) bool { return menuType != model.MenuTypeButton }},
 }
 ```
 
-`syncBuiltinRoleMenus()` 会在每次启动时**补齐缺失的授权**（只增不减，
-不会覆盖管理员手工做过的裁剪），所以加完授权重启即可生效。
+`resolveGrants()` 在**运行库现有菜单**上求解出具体 ID，每次启动补齐缺失的授权
+（只增不减，不覆盖管理员手工做过的裁剪）。
 
-> **只读角色不要授予 `*:export`。** 「能查看列表」与「能批量导出」是两个风险等级。
+两条设计约束，别踩：
+
+1. **`frameworkNamespaces` 决定内置角色「自动获得谁」。**
+   业务模块（如 `article`）**默认不会**自动进入系统管理员和只读访客的授权范围 ——
+   否则新增一个敏感业务模块就等于给所有老角色静默越权。要发，就把命名空间加进
+   `frameworkNamespaces`，或到「角色管理」页手工分配。
+2. **只读角色不要授予任何按钮权限。** 「能查看列表」与「能批量导出」是两个风险等级 ——
+   导出等于把整批数据带走。
 
 ## 3.5 前端接线
 
@@ -1273,21 +1343,24 @@ go run ./cmd/server -config config.yaml -seed
 **第二步：后端接口层**
 
 ```bash
-# 新建 internal/module/article/{dto,service,handler,route}.go
-# 在 router.go 加 article.Register(base)
+# 新建 internal/module/article/{module,dto,service,handler,route}.go
+# 在 internal/assembly/assembly.go 的模块清单里加一行 article.Module()
 cd backend
 gofmt -l . && go vet ./... && go build ./...
 ```
 
-**第三步：加菜单与权限**
+**第三步：菜单与权限（已随模块自动生效）**
 
-在 `seed.go` 的 `menuDefs()` 加菜单、`builtinRoleGrants()` 加授权，然后：
+菜单写在 `module.go` 的 `Menus` 里，不用再改 `seed.go`；授权规则按命名空间语义求解。
+只要重启即可：
 
 ```bash
 go run ./cmd/server -config config.yaml -seed
 ```
 
-重启后登录 `admin`，侧边栏应该出现「内容管理 → 文章管理」。
+重启后登录 `admin`，侧边栏应出现「内容管理 → 文章管理」。
+若业务模块要发给系统管理员/只读访客，把 `article` 加进 `seed.go` 的 `frameworkNamespaces`
+（或到「角色管理」页手工分配）。
 
 **第四步：前端页面**
 
@@ -1333,6 +1406,8 @@ node scripts/browser-verify.mjs
 [ ] 写库前的文本都过了 textutil.Fit
 [ ] 新增 NOT NULL 列都带了 default
 [ ] 唯一约束用的是部分唯一索引
+[ ] 新增模块有 module.go 清单，已在 internal/assembly/assembly.go 登记
+[ ] 权限码以模块 Namespace 开头（module.Build 会在启动时校验）
 [ ] 测试数据已清理
 
 前端
@@ -1356,15 +1431,14 @@ node scripts/browser-verify.mjs
 [ ] 表结构有变动则同步 docs/DATABASE.md
 [ ] 跑了浏览器验证（改了路由/守卫/主题时必跑）→ node scripts/browser-verify.mjs
 [ ] 依赖方向检查（改了框架层时必跑，见 docs/UPGRADE.md §2.2）：
-    grep -rn "internal/module/" --include="*.go" internal/pkg/ internal/authz/ \
-      internal/middleware/ internal/oplog/ internal/database/ internal/seed/ cmd/
-    有输出 = 框架反向依赖业务，必须整改
+    bash scripts/check-module-boundary.sh
+    有输出 = 框架反向依赖了具体模块，必须整改
 [ ] 改了 switch/checkbox/表单/分页/选择类交互时跑了交互验证 → node scripts/interaction-verify.mjs
 ```
 
 ## 3.8 必读的八个坑
 
-完整 56 条见 [`AGENTS.md` §5](../AGENTS.md)。以下八条是新增业务时**最常撞上**的：
+完整 61 条见 [`AGENTS.md` §5](../AGENTS.md)。以下八条是新增业务时**最常撞上**的：
 
 | # | 坑 | 症状 | 正确做法 |
 | --- | --- | --- | --- |
@@ -1414,6 +1488,20 @@ await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'le
 
 **脚本报 FAIL 时，先证明脚本是对的再改产品代码**——
 把修复临时退回去，确认用例真的会 FAIL，这一步能省掉大量无效排查。
+
+## 3.8.2 模块化之后新增的三条坑
+
+这三条是本次「模块自描述清单」改造带来的，对应 `AGENTS.md` §5.59–§5.61。
+
+| # | 坑 | 症状 | 正确做法 |
+| --- | --- | --- | --- |
+| 14 | 手工分配的菜单 ID 是隐式契约 | 菜单清单与授权清单一处改歪 → **静默权限错配**（点得进去、接口 403） | 别抄第二份 ID；改为在 `module.go` 里声明 + 按语义求解授权 |
+| 15 | 框架层 import 了具体模块 | 那个模块从此**删不掉**（删了框架编译不过） | 模块名只出现在 `internal/assembly`；其余框架包只认契约类型 `module.Module` |
+| 16 | `module.Group` 只汇总菜单没收路由 | 菜单点得进去、**该组接口整块 404**，且无编译错误 | 分组必须带上子模块的 `Register`（已由 `contract_test.go` 钉住） |
+
+一句话记住边界的心智模型：
+**`internal/assembly` 是唯一「知道有哪些模块」的地方，其他所有包只认「一份契约」。**
+这也是「框架能独立于业务升级」的地基 —— 删除任何业务模块，框架的 diff 都是零。
 
 ---
 
@@ -1631,14 +1719,19 @@ bash scripts/gen-swagger.sh        # 内部就是 swag init --parseInternal
 | `excel_test.go` | 5 个 | 用户导出、导入、拒绝坏文件、导入导出权限隔离、内置权限补齐 |
 | `hardening_test.go` | 9 个 | 超长 UA 登录日志、审计 IP 防伪造、改密吊销令牌、数据范围读写约束、未匹配路由的审计、按账号+IP 的登录锁定、角色授予越权（含数据范围轴）、Trace ID 注入 |
 | `authz_scope_test.go` | 4 个 | 导入不得绕过授予校验、宽数据范围角色不可授予/不可改宽、不传 roleIds 也不能禁用超管、半更新不清空部门 |
+| `grant_bypass_test.go` | 2 个 | 建角色不能授予超出授予者自身的权限、改角色不能授予自己未持有的菜单（越权授予的两条通道） |
 | `data_scope_test.go` | 6 个 | 部门树/详情/增改删受数据范围约束（含「挂到范围外父部门下」）、仪表盘概览与最近登录按范围收窄、个人资料半更新不清空字段、清空登录日志不得解除账号锁定 |
+| `log_scope_test.go` | 2 个 | 日志模块按数据范围收窄（部门管理员只看本部门）、菜单 `permission` 必须是父级权限码的子集 |
 | `regression_test.go` | 6 个 | 大文件导入、角色去重、导出参数校验、导出/导入审计、敌意输入、长字段截断 |
-| `robustness_test.go` | 16 个 | 限流器并发原子性（100 并发只放行阈值数）、key 数量硬上界、JWT 拒绝 HS384/HS512/alg=none/错误 issuer/uid≤0、分页 OFFSET 上界与整型溢出、角色聚合查询错误必须上报而非静默返回空 |
+| `robustness_test.go` | 18 个 | 限流器并发原子性（100 并发只放行阈值数）、key 数量硬上界、限流器空接收者安全、JWT 拒绝 HS384/HS512/alg=none/错误 issuer/错误密钥/uid≤0、过期令牌仍报「已过期」、真实登录令牌仍有效、分页 OFFSET 上界与整型溢出、角色列表/详情查询错误必须上报而非静默返回空 |
 | `status_test.go` | 2 个 | 「禁用」状态不被默认值吃掉（四条创建路径 + 导入路径） |
 | `swagger_test.go` | 1 个 | 在线接口文档可访问、`basePath` 与配置一致、未开启时不暴露 |
 | `upgrade_test.go` | 4 个 | 老库补列、老库数据修正、不覆盖显式配置、升级后禁用账号仍被拦 |
 
-**合计 63 个测试 / 137 个子用例**，全部可在进程内运行（`httptest`），无需启动服务。
+**合计 69 个测试 / 141 个子用例**，全部可在进程内运行（`httptest`），无需启动服务。
+包内单测另有 11 个（21 个子用例，`go test ./internal/...`），其中
+`internal/module/contract_test.go` 的 4 个用例（含 10 个「该拒绝的清单」子用例）
+专门钉住模块契约的校验规则。
 
 > 后端测试覆盖不到的交互类缺陷，需要浏览器验证（零依赖 CDP 脚本，见 `scripts/browser-verify.mjs`）：
 > 权限指令是否真的隐藏（而非摘除）节点、上级部门下拉是否误排除兄弟节点、

@@ -396,7 +396,10 @@ func TestBuiltinPermissionsBackfilled(t *testing.T) {
 	// 系统管理员应已获得这 4 个按钮的授权
 	var adminGrants int64
 	db.Model(&model.RoleMenu{}).
-		Where("role_id = ? AND menu_id IN ?", 2, []int64{105, 106, 115, 149}).
+		Where("role_id = ? AND menu_id IN ?", 2, []int64{
+			menuID(t, "system:user:export"), menuID(t, "system:user:import"),
+			menuID(t, "system:role:export"), menuID(t, "system:log:export"),
+		}).
 		Count(&adminGrants)
 	if adminGrants != 4 {
 		t.Fatalf("系统管理员应获得 4 个新增按钮授权，实际 %d 个", adminGrants)
@@ -405,7 +408,10 @@ func TestBuiltinPermissionsBackfilled(t *testing.T) {
 	// 只读访客不得获得导出/导入授权
 	var viewerGrants int64
 	db.Model(&model.RoleMenu{}).
-		Where("role_id = ? AND menu_id IN ?", 3, []int64{105, 106, 115, 149}).
+		Where("role_id = ? AND menu_id IN ?", 3, []int64{
+			menuID(t, "system:user:export"), menuID(t, "system:user:import"),
+			menuID(t, "system:role:export"), menuID(t, "system:log:export"),
+		}).
 		Count(&viewerGrants)
 	if viewerGrants != 0 {
 		t.Fatalf("只读访客不应获得导出/导入授权，实际获得 %d 个", viewerGrants)

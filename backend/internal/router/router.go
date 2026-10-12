@@ -12,14 +12,7 @@ import (
 	"nova-admin/internal/config"
 	"nova-admin/internal/logger"
 	"nova-admin/internal/middleware"
-	"nova-admin/internal/module/auth"
-	"nova-admin/internal/module/dashboard"
-	"nova-admin/internal/module/dept"
-	"nova-admin/internal/module/log"
-	"nova-admin/internal/module/menu"
-	"nova-admin/internal/module/profile"
-	"nova-admin/internal/module/role"
-	"nova-admin/internal/module/user"
+	"nova-admin/internal/module"
 )
 
 // New 构建 gin 引擎并装配全局中间件与业务模块路由。
@@ -84,17 +77,13 @@ func New(cfg *config.Config) *gin.Engine {
 	// 业务路由统一前缀，例如 /api/v1
 	base := engine.Group(cfg.App.BasePath())
 
-	// 公开接口（登录、刷新令牌）
-	auth.Register(base, cfg.Security)
-
-	// 需要登录的模块，各模块自行声明鉴权与权限要求
-	profile.Register(base)
-	dashboard.Register(base)
-	user.Register(base)
-	role.Register(base)
-	menu.Register(base)
-	dept.Register(base)
-	log.Register(base, cfg.Security)
+	// 各模块自己声明鉴权与权限要求，装配顺序由组装层（internal/assembly）决定。
+	// 本包不再认识任何具体模块 —— 加一个模块不必改这里。
+	for _, m := range module.All() {
+		if m.Register != nil {
+			m.Register(base)
+		}
+	}
 
 	return engine
 }

@@ -27,16 +27,20 @@ nova-admin 的定位是「可复用的后台管理底座」，业务（如进销
 backend/
 ├── cmd/server/              # 框架：组装入口
 ├── internal/
+│   ├── module/contract.go   # 框架：模块契约 MenuNode / Module / Build / Group（纯类型，不 import 具体模块）
+│   ├── assembly/            # 框架：组装层（composition root）——全项目唯一 import 具体模块的地方
 │   ├── authz/               # 框架：授权、数据范围（业务只准调用，不准修改语义）
 │   ├── middleware/          # 框架：认证、限流、oplog
 │   ├── oplog/               # 框架：操作日志基础设施
 │   ├── pkg/                 # 框架：errcode/page/response/sheet/textutil/jwt/limiter/bind
 │   ├── module/
-│   │   ├── user|role|menu|dept|log|dashboard|auth/   # 框架：系统模块（菜单表里的内置部分）
+│   │   ├── user|role|menu|dept|log|dashboard|auth/   # 框架：系统模块（每个含 module.go 自描述清单）
 │   │   └── invflow|.../     # 业务：业务模块（每个业务一个子目录，准出规则见 §3）
 │   ├── database/            # 框架：连接、时区、迁移入口
+│   ├── router/              # 框架：遍历模块登记表挂路由（不 import 具体模块）
 │   └── seed/                # 框架：内置角色/菜单/账号（业务 seed 单独文件，见 §4.2）
 ├── migrations/              # 框架：0001~N 系统迁移；业务迁移独立编号段（§4.1）
+├── scripts/                 # 框架：check-module-boundary.sh（依赖方向门禁）等
 └── test/                    # 框架回归套件（系统测试）+ 业务测试分文件
 frontend/
 ├── src/
@@ -55,18 +59,23 @@ frontend/
 - 只通过「业务菜单管理」挂上来的模块 = 业务。
 - `internal/pkg`、`internal/authz`、`middleware` 只服务系统语义；业务要扩展行为时**提钩子**，不直接改。
 
+**边界是怎么被编译器强制的（本方案的落地形态）：**
+
+系统模块与业务模块都只实现同一份契约（`module.Module`），由 `internal/assembly` 汇总登记；
+`router` 与 `seed` 只读登记表。于是「删掉一个业务模块」= 删目录 + 在组装层删一行，
+框架其余部分 diff 为零 —— **边界不是靠自觉，是删不掉的反面：删得掉**。
+
 ### 2.2 三条铁律
 
 1. **依赖方向单向**：`业务 → 框架` 永远合法；`框架 → 业务` 一次都不许出现。
-   CI 用一条命令钉住：
+   已经落地成一条命令（`scripts/check-module-boundary.sh`，改动框架层后必跑）：
    ```bash
-   # 框架包不许 import 业务模块（出现即构建失败）
-   grep -rn "internal/module/invflow\|internal/module/<biz>" \
-     internal/pkg internal/authz internal/middleware internal/oplog \
-     internal/database internal/seed cmd/ && exit 1 || true
+   # 框架包不许 import 具体模块（internal/module/<任意子包>），出现即视为破坏
+   bash scripts/check-module-boundary.sh
    ```
-   （业务模块清单增长时把名字加进 grep 即可；更彻底的做法是在 CI 脚本里用
-   `go list -deps` 对比框架入口与业务包的依赖闭包。）
+   它用「框架路径白名单 + grep `internal/module/<子包>`」判定，比逐个枚举业务模块名更强 ——
+   **新增模块不必维护白名单**；排除 `internal/assembly/`（组装层本就是唯一该 import 具体模块的地方）
+   与 `_test.go`。
 2. **系统表与业务表不互相外键**：系统表（sys_*）只允许被业务表**引用**（业务表存
    user_id/dept_id），系统表永远不存业务表主键、不加指向业务表的 FK。
 3. **框架不改业务行为**：框架升级 diff 里出现业务模块的文件 = 违规，
@@ -79,10 +88,13 @@ frontend/
 - [ ] 只 import 框架层（`internal/pkg/*`、`authz`、`model` 基础类型），不 import 其他业务模块
       ——确需跨业务调用时走**接口注入**（在 wire/组装处把 A 业务的能力作为接口传给 B），
       不直接包引用
-- [ ] 路由全部经 `route.go` 注册，权限码走菜单表（动态下发），**不在前端写死路由**
+- [ ] 有 `module.go` 自描述清单（`Namespace` + `Register` + `Menus`），并在 `internal/assembly` 登记一行；
+      框架其余包对它零引用（`bash scripts/check-module-boundary.sh` 必须无输出）
+- [ ] 路由全部经 `route.go` 注册、由清单的 `Register` 带出，权限码走菜单表（动态下发），
+      **不在前端写死路由**；菜单写在清单的 `Menus` 里，框架 `seed.go` 不出现业务菜单
 - [ ] 数据表名带业务前缀（`inv_*`、`crm_*`），迁移文件放业务编号段（§4.1）
-- [ ] 权限码用业务命名空间（`inv:order:create`），不冒用 `system:*`
-- [ ] seed 数据放独立文件 `internal/seed/biz_<name>.go`，由 `seed.Run` 显式调用；
+- [ ] 权限码用业务命名空间（`inv:order:create`），不冒用 `system:*`（契约校验会拦）
+- [ ] 业务演示数据放独立文件 `internal/seed/biz_<name>.go`，由 `seed.Run` 显式调用；
       框架 seed 文件不出现业务名
 - [ ] 有独立的业务回归测试文件，可整体删除而不破坏 `go test ./test/...`
 
@@ -103,9 +115,13 @@ frontend/
 
 ### 4.2 seed 分层
 
-框架 seed（内置角色、内置菜单、admin/demo 账号）与业务 seed（业务菜单树、演示数据）
-分文件存放。框架升级重放 seed 时只保证系统对象幂等；业务菜单树由业务 seed 自己
-幂等（按 ID 补齐模式已有，沿用）。
+框架 seed（内置角色、内置菜单、admin/demo 账号）与业务 seed（业务演示数据）
+分开：**内置菜单不再来自框架 seed 的手工清单，而是各模块 `module.go` 的 `Menus`**，
+由 `seed` 遍历模块登记表统一播种；业务菜单树天然跟着业务模块走，不必另开 seed 文件。
+
+幂等键从「手工 ID」换成「权限码（按钮）/ 路由名（目录、页面）」，兼容三态：
+命中未删除记录 → 复用原 ID 且不覆盖字段；命中已软删记录 → 告警并跳过整棵子树（不复活）；
+都不命中 → 新建（主键自增）。业务演示数据仍放 `internal/seed/biz_<name>.go`，自行幂等。
 
 ## 5. API 与前端分层升级
 
@@ -187,6 +203,7 @@ MAJOR——发布前用 `CHANGELOG` 声明并给一个版本的过渡期）。
 3. 全量回归门禁（必须全绿才允许合并）：
    go vet && go test ./test/... ./internal/...
    npm run typecheck && npm run build
+   bash scripts/check-module-boundary.sh   # 依赖方向门禁（框架不许 import 具体模块）
    node scripts/api-smoke.mjs        # 90 项接口断言
    node scripts/browser-verify.mjs   # 49 项结构断言
    node scripts/interaction-verify.mjs # 9 项交互断言
@@ -218,18 +235,23 @@ MAJOR——发布前用 `CHANGELOG` 声明并给一个版本的过渡期）。
 | --- | --- | --- |
 | 动态路由 + 菜单表 | ✅ | 业务页面与框架解耦 |
 | 权限码全部走菜单表 | ✅ | 业务权限不写死在前端 |
+| 模块契约 + 组装层（`module/contract.go` + `internal/assembly`） | ✅ | 业务模块可整块增删，框架 diff 为零 |
+| 模块自描述清单（每个模块 `module.go`：`Namespace` + `Register` + `Menus`） | ✅ | 加菜单/权限不必再改框架 seed |
+| seed 幂等键 = 权限码 / 路由名（兼容三态迁移） | ✅ | 重复执行安全，老库 ID 原样保留 |
+| 依赖方向门禁 `scripts/check-module-boundary.sh` | ✅ | 框架反向依赖被脚本拦下 |
 | 迁移文件按序号管理 | ✅ | 只需引入编号分段约定 |
 | upgrade_test 旧库升级用例 | ✅ | 框架段升级有回归 |
 | 三层浏览器验证 + 接口冒烟 | ✅ | 升级门禁现成 |
-| seed 按 ID 补齐幂等 | ✅ | 重复执行安全 |
 | `config.yaml version` 字段 | ✅ | 版本号落地处 |
 
 **缺口（需按本方案补齐）：**
 
 1. 业务模块目录约定（`module/<biz>/`、`views/biz/`）——尚无业务入驻，先立规矩
+   （模块契约已就位，业务模块现在就能按 §3 准出清单落地）
 2. 迁移编号分段——框架段未用满 999 时提前预留即可
-3. CI 依赖方向检查（§2.2 的 grep 门禁）——加进提交前检查清单
-   （已演练：当前框架目录对 `internal/module/*` 零引用，基线干净）
+3. ~~CI 依赖方向检查~~ —— **已落地**：`scripts/check-module-boundary.sh` 已进入提交前检查清单
+   （GUIDE §3.7），契约本身另由 `internal/module/contract_test.go` 的 4 个用例
+   （含 10 个「该拒绝的清单」子用例）兜住
 
 ## 8. 风险与限制
 
@@ -243,9 +265,12 @@ MAJOR——发布前用 `CHANGELOG` 声明并给一个版本的过渡期）。
 
 ## 9. 落地顺序建议
 
-1. **立规矩（本方案评审通过即生效）**：目录契约、三条铁律、迁移编号段
-2. **补门禁**：依赖方向 grep 进 CI；GUIDE 提交前清单加「业务 PR 不碰框架目录」
-3. **演练一次**：用 PATCH 版本号走一遍 §6.2 SOP，验证门禁与回滚可行性
+1. [x] **立规矩**：目录契约、三条铁律、迁移编号段 —— 已生效
+2. [x] **补门禁**：依赖方向门禁落地为 `scripts/check-module-boundary.sh`，并进入 GUIDE §3.7
+       提交前检查清单；契约本身另由 `internal/module/contract_test.go` 兜底
+3. [x] **模块自描述清单 + 组装层**：把「加一个菜单要改 5 处」收敛成
+       「在模块自己的 `module.go` 里写一段」，框架层与业务层的 diff 从此互不重叠
+4. [ ] **演练一次**：用 PATCH 版本号走一遍 §6.2 SOP，验证门禁与回滚可行性
 
 ## 10. 复杂性权衡（这套方案到底贵不贵）
 
@@ -256,7 +281,7 @@ MAJOR——发布前用 `CHANGELOG` 声明并给一个版本的过渡期）。
 | 维度 | 增量 | 说明 |
 | --- | --- | --- |
 | 运行时代码 | ≈ 0 | 无新服务、新中间件、新代码路径，方案只有约定与门禁 |
-| 构建/CI | 一条 grep | 秒级；误报（注释命中）人工判断 |
+| 构建/CI | 一条脚本 | 秒级；误报（注释命中）人工判断 |
 | 心智负担 | 少量、持续 | 业务模块对照 6 项准出清单；测试两条新约束（不碰种子数据、异步断言轮询） |
 | 升级流程 | 6 步 SOP | 换来「依赖升级不被业务绑架」 |
 | 换回来的 | 大幅下降 | 业务与框架纠缠后的解耦成本、依赖版本冲突、全量回归 |
