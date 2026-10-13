@@ -124,6 +124,9 @@ func (s *Service) Settle(req SettleReq, actorID int64) error {
 	if o.Status != model.InvStatusDone {
 		return errcode.New(errcode.ErrConflict, "仅已审核单据可登记收付款")
 	}
+	// 事务外的校验只是「快速失败 + 友好提示」；真正的防线在事务内的条件更新。
+	// 两个并发登记读到同一份 outstanding 都能通过下面的 if，
+	// 各自累加就会把 settled_amount 顶到 total_amount 之上 —— 超额结算。
 	outstanding := round2(o.TotalAmount - o.SettledAmount)
 	if outstanding <= 0 {
 		return errcode.New(errcode.ErrConflict, "该单据已结清")
@@ -142,16 +145,28 @@ func (s *Service) Settle(req SettleReq, actorID int64) error {
 	if method == "" {
 		method = "银行转账"
 	}
+	amount := round2(req.Amount)
 	return saveErr(s.db.Transaction(func(tx *gorm.DB) error {
 		rec := model.InvSettlement{
 			OrderID: o.ID, BizType: o.BizType, PartyID: o.PartyID,
-			Amount: round2(req.Amount), Method: method, SettledAt: settledAt,
+			Amount: amount, Method: method, SettledAt: settledAt,
 			Remark: req.Remark, CreatedBy: actorID,
 		}
 		if err := tx.Create(&rec).Error; err != nil {
 			return err
 		}
-		return tx.Model(&model.InvOrder{}).Where("id = ?", o.ID).
-			UpdateColumn("settled_amount", gorm.Expr("settled_amount + ?", round2(req.Amount))).Error
+		// 条件更新：把「结算后不能超过总额」放进 WHERE。并发时第二个事务的
+		// UPDATE 会等第一个提交后按最新 settled_amount 重新评估条件，
+		// 超限则 0 行 → 回滚整个事务（结算记录也一起撤销）。
+		res := tx.Model(&model.InvOrder{}).
+			Where("id = ? AND settled_amount + ? <= total_amount + 0.001", o.ID, amount).
+			UpdateColumn("settled_amount", gorm.Expr("settled_amount + ?", amount))
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errcode.New(errcode.ErrConflict, "结算金额超出未结余额，请刷新后重试")
+		}
+		return nil
 	}))
 }

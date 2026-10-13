@@ -79,8 +79,8 @@ func (s *Service) partyList(bizType string, q page.Query, status *int16) ([]Part
 
 	tx := s.db.Model(&model.InvCustomer{})
 	if q.Keyword != "" {
-		kw := "%" + q.Keyword + "%"
-		tx = tx.Where("code ILIKE ? OR name ILIKE ? OR contact ILIKE ?", kw, kw, kw)
+		kw := likeKW(q.Keyword)
+		tx = tx.Where(likeExpr("code")+" OR "+likeExpr("name")+" OR "+likeExpr("contact"), kw, kw, kw)
 	}
 	if status != nil {
 		tx = tx.Where("status = ?", *status)
@@ -419,7 +419,10 @@ func (s *Service) buildSpecVOs(specs []model.InvProductSpec) ([]ProductSpecVO, i
 	for _, sp := range specs {
 		vo := ProductSpecVO{
 			ID: sp.ID, Spec: sp.Spec, Stock: sp.Stock, WarnStock: sp.WarnStock,
-			Warn: sp.WarnStock > 0 && sp.Stock <= sp.WarnStock, Status: sp.Status,
+			// 停用的规格不算预警：它已经退出新单据，库存只会原地停留或清零，
+			// 把它标红只会误导「还欠这个规格的货」。与 Inventory / 概览口径一致。
+			Warn: sp.Status == model.StatusEnabled && sp.WarnStock > 0 && sp.Stock <= sp.WarnStock,
+			Status: sp.Status,
 			Units: make([]ProductUnitVO, 0, len(units[sp.ID])),
 		}
 		if vo.Warn {

@@ -28,9 +28,13 @@ func (s *Service) Overview() (*OverviewVO, error) {
 		{&out.MonthNewCustomer, &model.InvCustomer{}, "created_at >= ?", []any{monthFrom}},
 		{&out.ProductCount, &model.InvProduct{}, "status = ?", []any{model.StatusEnabled}},
 		// 预警按**规格**统计：库存记在规格上，同一个商品下的 φ20 缺货、
-		// φ25 充足是常态，按商品维度统计只会得出「这个商品有库存」的错误结论
+		// φ25 充足是常态，按商品维度统计只会得出「这个商品有库存」的错误结论。
+		// 还要排除「商品已停用」的规格：商品停用后规格仍可能留在启用态，
+		// 若不联表校验，预警数会把早就下架的商品也算进去（与 Inventory 的口径一致）。
 		{&out.WarnProductCount, &model.InvProductSpec{},
-			"status = ? AND warn_stock > 0 AND stock <= warn_stock", []any{model.StatusEnabled}},
+			"status = ? AND warn_stock > 0 AND stock <= warn_stock AND product_id IN (?)",
+			[]any{model.StatusEnabled,
+				s.db.Model(&model.InvProduct{}).Select("id").Where("status = ?", model.StatusEnabled)}},
 		{&out.PendingOrders, &model.InvOrder{}, "status = ?", []any{model.InvStatusPending}},
 	}
 	for _, c := range counts {

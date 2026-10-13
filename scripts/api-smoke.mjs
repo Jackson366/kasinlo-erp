@@ -289,6 +289,10 @@ async function main() {
   ok('客户列表', invCustomers.json?.code === 0 && invCustomers.json.data.total >= 5, `total=${invCustomers.json?.data?.total}`)
   const invSuppliers = await request('GET', '/inv/suppliers?page=1&pageSize=5', { token })
   ok('供应商列表', invSuppliers.json?.code === 0 && invSuppliers.json.data.total >= 5, `total=${invSuppliers.json?.data?.total}`)
+  // 客户 / 供应商搜索同样要转义通配符 —— 供应商分支转义过、客户分支曾漏改，
+  // 这条断言钉住「两条业务线的搜索口径一致」（AGENTS §5.76）
+  const custKw = await request('GET', '/inv/customers?keyword=_', { token })
+  ok('客户搜索的 _ 不当通配符', custKw.json?.data?.total === 0, `total=${custKw.json?.data?.total}`)
   // 列表行要带上「应收余额 + 单据数」，否则客户页只能逐行再发一次请求
   const firstParty = invCustomers.json?.data?.list?.[0] || {}
   ok(
@@ -969,6 +973,24 @@ async function main() {
     body: { orderId: orderId, amount: 1 },
   })
   ok('对不存在的单据登记收付款被拒', overSettle.json?.code !== 0, JSON.stringify(overSettle.json))
+
+  // 登记收付款不能超额：settled + amount 顶破 total_amount 就返回 409。
+  // 后端用条件更新兜底并发（AGENTS §5.75），这里先断言「单次超额」这条基线
+  const recvProbe = await request('GET', '/inv/finance/receivables?page=1&pageSize=1', { token })
+  const recvRow = recvProbe.json?.data?.list?.[0]
+  if (recvRow && recvRow.outstanding > 0) {
+    const over = await request('POST', '/inv/finance/settlements', {
+      token,
+      body: { orderId: recvRow.orderId, amount: recvRow.outstanding + 100 },
+    })
+    ok(
+      '登记收付款超额被拒(40900)',
+      over.json?.code === 40900,
+      JSON.stringify(over.json),
+    )
+  } else {
+    ok('存在可结算的应收单（跳过超额断言）', false, JSON.stringify(recvRow))
+  }
 
   const invOverview = await request('GET', '/inv/overview', { token })
   ok(

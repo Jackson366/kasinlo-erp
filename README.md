@@ -194,7 +194,7 @@ nova-erp/
 │       ├── utils/                      # auth / request / download / format / theme
 │       └── views/                      # 页面：system / inv（进销存）/ dashboard
 ├── scripts/
-│   ├── api-smoke.mjs                   # 零依赖接口冒烟脚本（203 项）
+│   ├── api-smoke.mjs                   # 零依赖接口冒烟脚本（205 项）
 │   ├── browser-verify.mjs              # 零依赖浏览器运行时验证（73 项 / 16 个页面，含双主题）
 │   ├── interaction-verify.mjs          # 零依赖受控组件交互验证（9 项）
 │   ├── gen-swagger.sh                  # swag init 封装：重新生成 OpenAPI 文档
