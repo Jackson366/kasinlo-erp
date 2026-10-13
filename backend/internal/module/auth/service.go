@@ -6,16 +6,16 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"nova-admin/internal/authz"
-	"nova-admin/internal/config"
-	"nova-admin/internal/database"
-	"nova-admin/internal/logger"
-	"nova-admin/internal/model"
-	"nova-admin/internal/pkg/errcode"
-	"nova-admin/internal/pkg/hash"
-	"nova-admin/internal/pkg/jwt"
-	"nova-admin/internal/pkg/limiter"
-	"nova-admin/internal/pkg/textutil"
+	"nova-erp/internal/authz"
+	"nova-erp/internal/config"
+	"nova-erp/internal/database"
+	"nova-erp/internal/logger"
+	"nova-erp/internal/model"
+	"nova-erp/internal/pkg/errcode"
+	"nova-erp/internal/pkg/hash"
+	"nova-erp/internal/pkg/jwt"
+	"nova-erp/internal/pkg/limiter"
+	"nova-erp/internal/pkg/textutil"
 )
 
 // Service 认证服务。

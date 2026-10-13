@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"nova-admin/internal/config"
-	"nova-admin/internal/router"
+	"nova-erp/internal/config"
+	"nova-erp/internal/router"
 )
 
 // TestSwaggerDocServedAndGated 校验在线接口文档「能生成、能访问、且默认不对外暴露」。

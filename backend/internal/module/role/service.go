@@ -5,12 +5,12 @@ import (
 
 	"gorm.io/gorm"
 
-	"nova-admin/internal/authz"
-	"nova-admin/internal/database"
-	"nova-admin/internal/model"
-	"nova-admin/internal/pkg/dberr"
-	"nova-admin/internal/pkg/errcode"
-	"nova-admin/internal/pkg/page"
+	"nova-erp/internal/authz"
+	"nova-erp/internal/database"
+	"nova-erp/internal/model"
+	"nova-erp/internal/pkg/dberr"
+	"nova-erp/internal/pkg/errcode"
+	"nova-erp/internal/pkg/page"
 )
 
 // Service 角色服务。

@@ -3,7 +3,7 @@ package test
 // 本文件钉住两条授权扩散旁路（详见 authz_scope_test.go / grant_bypass_test.go 背景）：
 //
 //  1. 日志模块此前完全不接数据范围：内置 system_admin 就持有 system:log:list/export，
-//     部门管理员能看到全库登录日志（含 IP / UA）与操作日志——与 dashboard
+//     部门管理员能看到全库登录日志（含 IP / UA）与操作日志——与框架概览
 //     模块自己声明的「范围管理员只看范围内」口径直接矛盾。
 //     修复后列表 / 导出 / 模块下拉 / 清空四条路径统一走 authz.Scope.ApplyLog。
 //  2. 菜单 permission 此前任何持 system:menu:update 的人都能随意改写：

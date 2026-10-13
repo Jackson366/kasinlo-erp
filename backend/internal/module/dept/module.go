@@ -1,6 +1,6 @@
 package dept
 
-import "nova-admin/internal/module"
+import "nova-erp/internal/module"
 
 // Module 返回部门模块的自描述清单。
 func Module() module.Module {

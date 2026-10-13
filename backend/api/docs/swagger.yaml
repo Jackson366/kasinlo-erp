@@ -33,43 +33,6 @@ definitions:
     required:
     - refreshToken
     type: object
-  dashboard.ModuleStat:
-    properties:
-      module:
-        type: string
-      total:
-        type: integer
-    type: object
-  dashboard.Overview:
-    properties:
-      activeUserWeek:
-        type: integer
-      deptCount:
-        type: integer
-      menuCount:
-        type: integer
-      roleCount:
-        type: integer
-      todayFailures:
-        type: integer
-      todayLogins:
-        type: integer
-      todayOps:
-        type: integer
-      userCount:
-        type: integer
-    type: object
-  dashboard.TrendPoint:
-    properties:
-      date:
-        type: string
-      failCount:
-        type: integer
-      logins:
-        type: integer
-      opers:
-        type: integer
-    type: object
   dept.CreateReq:
     properties:
       email:
@@ -148,6 +111,787 @@ definitions:
         type: integer
     required:
     - name
+    type: object
+  inv.CategoryOption:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  inv.CategoryReq:
+    properties:
+      name:
+        maxLength: 64
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+      sort:
+        type: integer
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+    required:
+    - name
+    type: object
+  inv.CategoryRow:
+    properties:
+      createdAt:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      productCount:
+        type: integer
+      remark:
+        type: string
+      sort:
+        type: integer
+      status:
+        type: integer
+    type: object
+  inv.FinanceRow:
+    properties:
+      dueDate:
+        description: 选填：未填时为 null，不参与逾期判定
+        type: string
+      orderDate:
+        type: string
+      orderId:
+        type: integer
+      orderNo:
+        type: string
+      outstanding:
+        type: number
+      overdue:
+        type: boolean
+      partyId:
+        type: integer
+      partyName:
+        type: string
+      settleStatus:
+        type: string
+      settledAmount:
+        type: number
+      totalAmount:
+        type: number
+    type: object
+  inv.InventoryRow:
+    properties:
+      categoryName:
+        type: string
+      productCode:
+        type: string
+      productId:
+        type: integer
+      productName:
+        type: string
+      purchasePrice:
+        description: 基本单位的采购价，用于算库存成本
+        type: number
+      spec:
+        type: string
+      specId:
+        type: integer
+      stock:
+        type: number
+      unit:
+        description: 基本单位（库存的计数单位）
+        type: string
+      unitId:
+        type: integer
+      warn:
+        type: boolean
+      warnStock:
+        type: number
+    type: object
+  inv.OrderDetail:
+    properties:
+      bizType:
+        type: string
+      createdAt:
+        type: string
+      dueDate:
+        description: 选填：未填时为 null
+        type: string
+      id:
+        type: integer
+      itemCount:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/inv.OrderItemVO'
+        type: array
+      operator:
+        type: string
+      orderDate:
+        type: string
+      orderNo:
+        type: string
+      partyId:
+        type: integer
+      partyName:
+        type: string
+      remark:
+        type: string
+      settleStatus:
+        type: string
+      settledAmount:
+        type: number
+      status:
+        type: integer
+      totalAmount:
+        type: number
+    type: object
+  inv.OrderItemReq:
+    properties:
+      price:
+        minimum: 0
+        type: number
+      productId:
+        type: integer
+      qty:
+        type: number
+      specId:
+        type: integer
+      unitId:
+        type: integer
+    required:
+    - productId
+    - qty
+    - specId
+    - unitId
+    type: object
+  inv.OrderItemVO:
+    properties:
+      amount:
+        type: number
+      id:
+        type: integer
+      price:
+        type: number
+      productCode:
+        type: string
+      productId:
+        type: integer
+      productName:
+        type: string
+      qty:
+        type: number
+      qtyBase:
+        type: number
+      rate:
+        type: number
+      spec:
+        type: string
+      specId:
+        type: integer
+      unit:
+        type: string
+      unitId:
+        type: integer
+    type: object
+  inv.OrderReq:
+    properties:
+      bizType:
+        enum:
+        - purchase
+        - sales
+        type: string
+      dueDate:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/inv.OrderItemReq'
+        minItems: 1
+        type: array
+      orderDate:
+        type: string
+      partyId:
+        type: integer
+      remark:
+        maxLength: 255
+        type: string
+    required:
+    - bizType
+    - items
+    - orderDate
+    - partyId
+    type: object
+  inv.OrderRow:
+    properties:
+      bizType:
+        type: string
+      createdAt:
+        type: string
+      dueDate:
+        description: 选填：未填时为 null
+        type: string
+      id:
+        type: integer
+      itemCount:
+        type: integer
+      orderDate:
+        type: string
+      orderNo:
+        type: string
+      partyId:
+        type: integer
+      partyName:
+        type: string
+      remark:
+        type: string
+      settleStatus:
+        type: string
+      settledAmount:
+        type: number
+      status:
+        type: integer
+      totalAmount:
+        type: number
+    type: object
+  inv.OverviewVO:
+    properties:
+      activeCustomer:
+        type: integer
+      customerCount:
+        type: integer
+      monthNewCustomer:
+        type: integer
+      monthPurchase:
+        type: number
+      monthSales:
+        type: number
+      payableTotal:
+        type: number
+      pendingOrders:
+        type: integer
+      productCount:
+        type: integer
+      receivableTotal:
+        type: number
+      warnProductCount:
+        type: integer
+    type: object
+  inv.PartyReq:
+    properties:
+      address:
+        maxLength: 255
+        type: string
+      code:
+        maxLength: 32
+        type: string
+      contact:
+        maxLength: 64
+        type: string
+      name:
+        maxLength: 128
+        type: string
+      phone:
+        maxLength: 32
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+      taxNo:
+        maxLength: 64
+        type: string
+    required:
+    - code
+    - name
+    type: object
+  inv.PartyRow:
+    properties:
+      address:
+        type: string
+      balance:
+        type: number
+      code:
+        type: string
+      contact:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      orderCount:
+        type: integer
+      phone:
+        type: string
+      remark:
+        type: string
+      status:
+        type: integer
+      taxNo:
+        type: string
+    type: object
+  inv.PickSpecVO:
+    properties:
+      id:
+        type: integer
+      spec:
+        type: string
+      stock:
+        type: number
+      units:
+        items:
+          $ref: '#/definitions/inv.PickUnitVO'
+        type: array
+    type: object
+  inv.PickUnitVO:
+    properties:
+      id:
+        type: integer
+      isBase:
+        type: boolean
+      purchasePrice:
+        type: number
+      rate:
+        type: number
+      salePrice:
+        type: number
+      unit:
+        type: string
+    type: object
+  inv.PrintTemplateReq:
+    properties:
+      code:
+        maxLength: 32
+        type: string
+      content:
+        maxLength: 8000
+        type: string
+      docType:
+        maxLength: 32
+        type: string
+      name:
+        maxLength: 64
+        type: string
+      paper:
+        enum:
+        - A4
+        - A5
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+    required:
+    - code
+    - name
+    type: object
+  inv.PrintTemplateRow:
+    properties:
+      code:
+        type: string
+      content:
+        type: string
+      createdAt:
+        type: string
+      docType:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      paper:
+        type: string
+      remark:
+        type: string
+      status:
+        type: integer
+    type: object
+  inv.ProductDupRow:
+    properties:
+      categoryName:
+        type: string
+      code:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      specSummary:
+        type: string
+      status:
+        type: integer
+    type: object
+  inv.ProductPickResult:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/inv.ProductPickVO'
+        type: array
+      total:
+        type: integer
+      truncated:
+        type: boolean
+    type: object
+  inv.ProductPickVO:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      specs:
+        items:
+          $ref: '#/definitions/inv.PickSpecVO'
+        type: array
+    type: object
+  inv.ProductReq:
+    properties:
+      categoryId:
+        type: integer
+      code:
+        maxLength: 32
+        type: string
+      name:
+        maxLength: 128
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+      specs:
+        items:
+          $ref: '#/definitions/inv.ProductSpecReq'
+        minItems: 1
+        type: array
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+    required:
+    - code
+    - name
+    - specs
+    type: object
+  inv.ProductRow:
+    properties:
+      categoryId:
+        type: integer
+      categoryName:
+        type: string
+      code:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      remark:
+        type: string
+      specCount:
+        type: integer
+      specs:
+        items:
+          $ref: '#/definitions/inv.ProductSpecVO'
+        type: array
+      status:
+        type: integer
+      totalStock:
+        type: number
+      unitCount:
+        type: integer
+      warn:
+        type: boolean
+    type: object
+  inv.ProductSpecReq:
+    properties:
+      id:
+        type: integer
+      spec:
+        maxLength: 64
+        type: string
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+      units:
+        items:
+          $ref: '#/definitions/inv.ProductUnitReq'
+        minItems: 1
+        type: array
+      warnStock:
+        minimum: 0
+        type: number
+    required:
+    - spec
+    - units
+    type: object
+  inv.ProductSpecVO:
+    properties:
+      id:
+        type: integer
+      spec:
+        type: string
+      status:
+        type: integer
+      stock:
+        type: number
+      units:
+        items:
+          $ref: '#/definitions/inv.ProductUnitVO'
+        type: array
+      warn:
+        type: boolean
+      warnStock:
+        type: number
+    type: object
+  inv.ProductUnitReq:
+    properties:
+      isBase:
+        type: boolean
+      purchasePrice:
+        minimum: 0
+        type: number
+      rate:
+        type: number
+      salePrice:
+        minimum: 0
+        type: number
+      status:
+        enum:
+        - 0
+        - 1
+        type: integer
+      unit:
+        maxLength: 16
+        type: string
+    required:
+    - rate
+    - unit
+    type: object
+  inv.ProductUnitVO:
+    properties:
+      id:
+        type: integer
+      isBase:
+        type: boolean
+      purchasePrice:
+        type: number
+      rate:
+        type: number
+      salePrice:
+        type: number
+      status:
+        type: integer
+      unit:
+        type: string
+    type: object
+  inv.ReportCategoryRow:
+    properties:
+      amount:
+        type: number
+      category:
+        type: string
+      ratio:
+        type: number
+    type: object
+  inv.ReportRankRow:
+    properties:
+      amount:
+        type: number
+      orderCount:
+        type: integer
+      partyId:
+        type: integer
+      partyName:
+        type: string
+      rank:
+        type: integer
+      ratio:
+        type: number
+    type: object
+  inv.ReportSummary:
+    properties:
+      costAmount:
+        type: number
+      grossProfit:
+        type: number
+      grossRate:
+        type: number
+      purchases:
+        type: number
+      range:
+        type: string
+      salesAmount:
+        type: number
+      salesOrders:
+        type: integer
+    type: object
+  inv.ReportTrendPoint:
+    properties:
+      date:
+        type: string
+      purchaseAmount:
+        type: number
+      salesAmount:
+        type: number
+    type: object
+  inv.SettleReq:
+    properties:
+      amount:
+        type: number
+      method:
+        maxLength: 32
+        type: string
+      orderId:
+        type: integer
+      remark:
+        maxLength: 255
+        type: string
+      settledAt:
+        type: string
+    required:
+    - amount
+    - orderId
+    type: object
+  inv.StatusReq:
+    properties:
+      status:
+        enum:
+        - 1
+        - 2
+        - 3
+        type: integer
+    required:
+    - status
+    type: object
+  inv.StockItemReq:
+    properties:
+      productId:
+        type: integer
+      qty:
+        type: number
+      specId:
+        type: integer
+      unitId:
+        type: integer
+    required:
+    - productId
+    - qty
+    - specId
+    - unitId
+    type: object
+  inv.StockOrderDetail:
+    properties:
+      direction:
+        type: string
+      id:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/inv.StockPrintItem'
+        type: array
+      operator:
+        description: 制单人昵称
+        type: string
+      orderDate:
+        type: string
+      orderNo:
+        type: string
+      remark:
+        type: string
+      sourceOrderNo:
+        description: 来源采购 / 销售单号，手工单为空
+        type: string
+      sourceType:
+        type: string
+      totalQty:
+        type: number
+    type: object
+  inv.StockOrderReq:
+    properties:
+      direction:
+        enum:
+        - in
+        - out
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/inv.StockItemReq'
+        minItems: 1
+        type: array
+      orderDate:
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+      sourceType:
+        enum:
+        - purchase
+        - sales
+        - manual
+        type: string
+    required:
+    - direction
+    - items
+    - orderDate
+    type: object
+  inv.StockOrderRow:
+    properties:
+      createdAt:
+        type: string
+      direction:
+        type: string
+      id:
+        type: integer
+      itemCount:
+        type: integer
+      orderDate:
+        type: string
+      orderNo:
+        type: string
+      remark:
+        type: string
+      sourceId:
+        type: integer
+      sourceType:
+        type: string
+      status:
+        type: integer
+      totalQty:
+        type: number
+    type: object
+  inv.StockPrintItem:
+    properties:
+      productCode:
+        type: string
+      productName:
+        type: string
+      qty:
+        type: number
+      qtyBase:
+        type: number
+      rate:
+        type: number
+      spec:
+        type: string
+      unit:
+        type: string
+      unitBase:
+        description: 基本单位名，用于把基本数量写清楚
+        type: string
     type: object
   log.ClearReq:
     properties:
@@ -750,7 +1494,7 @@ definitions:
     type: object
 info:
   contact:
-    name: Nova Admin 开发组
+    name: Nova ERP 开发组
   description: |-
     基于 Gin + GORM + PostgreSQL 的权限管理后台后端。
     所有接口统一返回 {code, message, data, traceId}，业务码 0 表示成功。
@@ -760,7 +1504,7 @@ info:
   license:
     name: MIT
   termsOfService: https://example.com/terms/
-  title: Nova Admin API
+  title: Nova ERP API
   version: "1.0"
 paths:
   /auth/login:
@@ -868,16 +1612,904 @@ paths:
       summary: 刷新访问令牌
       tags:
       - 认证
-  /dashboard/modules:
+  /inv/categories:
     get:
       parameters:
-      - default: 7
-        description: 统计天数
+      - description: 页码
         in: query
-        name: days
+        name: page
         type: integer
-      - default: 8
-        description: 返回条数
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      - description: 分类名称
+        in: query
+        name: keyword
+        type: string
+      - description: 状态 1 启用 0 停用
+        in: query
+        name: status
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.CategoryRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 商品分类列表
+      tags:
+      - 进销存-商品分类
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 分类信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.CategoryReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 新增商品分类
+      tags:
+      - 进销存-商品分类
+  /inv/categories/{id}:
+    delete:
+      parameters:
+      - description: 分类 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除商品分类
+      tags:
+      - 进销存-商品分类
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 分类 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 分类信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.CategoryReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改商品分类
+      tags:
+      - 进销存-商品分类
+  /inv/categories/options:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/inv.CategoryOption'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 商品分类下拉项（仅启用）
+      tags:
+      - 进销存-商品分类
+  /inv/customers:
+    get:
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      - description: 编号 / 名称 / 联系人
+        in: query
+        name: keyword
+        type: string
+      - description: 状态 1 启用 0 禁用
+        in: query
+        name: status
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.PartyRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 客户列表
+      tags:
+      - 进销存-客户
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 客户信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.PartyReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 新增客户
+      tags:
+      - 进销存-客户
+  /inv/customers/{id}:
+    delete:
+      parameters:
+      - description: 客户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除客户
+      tags:
+      - 进销存-客户
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 客户 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 客户信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.PartyReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改客户
+      tags:
+      - 进销存-客户
+  /inv/finance/payables:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.FinanceRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 应付明细
+      tags:
+      - 进销存-应收应付
+  /inv/finance/receivables:
+    get:
+      parameters:
+      - description: unpaid | partial | paid | overdue
+        in: query
+        name: settle
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.FinanceRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 应收明细
+      tags:
+      - 进销存-应收应付
+  /inv/finance/settlements:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 结算信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.SettleReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 登记收付款
+      tags:
+      - 进销存-应收应付
+  /inv/inventory:
+    get:
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      - description: 编码 / 名称 / 规格
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.InventoryRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 库存查询（按规格出账，含预警标记）
+      tags:
+      - 进销存-库存
+  /inv/orders:
+    get:
+      parameters:
+      - description: purchase | sales
+        in: query
+        name: bizType
+        required: true
+        type: string
+      - description: 单号 / 往来单位
+        in: query
+        name: keyword
+        type: string
+      - description: 1 待处理 2 已审核 3 已取消
+        in: query
+        name: status
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.OrderRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 单据列表
+      tags:
+      - 进销存-单据
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 单据信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.OrderReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 新增单据
+      tags:
+      - 进销存-单据
+  /inv/orders/{id}:
+    delete:
+      parameters:
+      - description: 单据 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除单据
+      tags:
+      - 进销存-单据
+    get:
+      parameters:
+      - description: 单据 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.OrderDetail'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 单据详情
+      tags:
+      - 进销存-单据
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 单据 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 单据信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.OrderReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改单据
+      tags:
+      - 进销存-单据
+  /inv/orders/{id}/status:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 单据 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 目标状态
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.StatusReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 审核单据（审核通过时自动生成出入库单并调整库存）
+      tags:
+      - 进销存-单据
+  /inv/overview:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.OverviewVO'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 数据概览
+      tags:
+      - 进销存-报表
+  /inv/print-templates:
+    get:
+      parameters:
+      - description: 编码 / 名称 / 单据类型
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.PrintTemplateRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 打印模板列表
+      tags:
+      - 进销存-打印模板
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 模板信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.PrintTemplateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 新增打印模板
+      tags:
+      - 进销存-打印模板
+  /inv/print-templates/{id}:
+    delete:
+      parameters:
+      - description: 模板 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除打印模板
+      tags:
+      - 进销存-打印模板
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 模板 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 模板信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.PrintTemplateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改打印模板
+      tags:
+      - 进销存-打印模板
+  /inv/products:
+    get:
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      - description: 编码 / 名称 / 规格
+        in: query
+        name: keyword
+        type: string
+      - description: 状态 1 启用 0 停用
+        in: query
+        name: status
+        type: integer
+      - description: 商品分类 ID
+        in: query
+        name: categoryId
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.ProductRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 商品列表（含规格与计量单位）
+      tags:
+      - 进销存-商品
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 商品信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.ProductReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 新增商品（含规格与计量单位）
+      tags:
+      - 进销存-商品
+  /inv/products/{id}:
+    delete:
+      parameters:
+      - description: 商品 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除商品
+      tags:
+      - 进销存-商品
+    get:
+      parameters:
+      - description: 商品 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.ProductRow'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 商品详情（含规格与计量单位）
+      tags:
+      - 进销存-商品
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 商品 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 商品信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.ProductReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改商品（含规格与计量单位）
+      tags:
+      - 进销存-商品
+  /inv/products/duplicates:
+    get:
+      parameters:
+      - description: 商品名称（支持部分匹配）
+        in: query
+        name: name
+        required: true
+        type: string
+      - description: 编辑时排除自己的 ID
+        in: query
+        name: excludeId
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/inv.ProductDupRow'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 同名商品提示（录商品时防止录重）
+      tags:
+      - 进销存-商品
+  /inv/products/pick:
+    get:
+      parameters:
+      - description: 编码 / 名称 / 规格
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.ProductPickResult'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 商品级联选项（供单据明细选择规格与单位）
+      tags:
+      - 进销存-商品
+  /inv/report/category:
+    get:
+      parameters:
+      - description: 时间范围
+        in: query
+        name: range
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/inv.ReportCategoryRow'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 品类销售占比
+      tags:
+      - 进销存-报表
+  /inv/report/ranking:
+    get:
+      parameters:
+      - description: 时间范围
+        in: query
+        name: range
+        type: string
+      - description: 条数，默认 5
         in: query
         name: limit
         type: integer
@@ -892,52 +2524,21 @@ paths:
             - properties:
                 data:
                   items:
-                    $ref: '#/definitions/dashboard.ModuleStat'
+                    $ref: '#/definitions/inv.ReportRankRow'
                   type: array
               type: object
-        "401":
-          description: 未登录或令牌失效
-          schema:
-            $ref: '#/definitions/response.Body'
       security:
       - BearerAuth: []
-      summary: 模块操作量排行
+      summary: 销售排行（按客户）
       tags:
-      - 仪表盘
-  /dashboard/overview:
-    get:
-      description: |-
-        返回用户、角色、部门、菜单总数以及今日登录/操作/失败次数、近一周活跃用户数。
-        与「人」有关的统计受调用者的数据范围约束，范围外的用户不计入。
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.Body'
-            - properties:
-                data:
-                  $ref: '#/definitions/dashboard.Overview'
-              type: object
-        "401":
-          description: 未登录或令牌失效
-          schema:
-            $ref: '#/definitions/response.Body'
-      security:
-      - BearerAuth: []
-      summary: 仪表盘概览统计
-      tags:
-      - 仪表盘
-  /dashboard/recent-logins:
+      - 进销存-报表
+  /inv/report/summary:
     get:
       parameters:
-      - default: 8
-        description: 返回条数
+      - description: today | week | month | quarter | year
         in: query
-        name: limit
-        type: integer
+        name: range
+        type: string
       produces:
       - application/json
       responses:
@@ -948,24 +2549,17 @@ paths:
             - $ref: '#/definitions/response.Body'
             - properties:
                 data:
-                  items:
-                    $ref: '#/definitions/model.LoginLog'
-                  type: array
+                  $ref: '#/definitions/inv.ReportSummary'
               type: object
-        "401":
-          description: 未登录或令牌失效
-          schema:
-            $ref: '#/definitions/response.Body'
       security:
       - BearerAuth: []
-      summary: 最近登录记录
+      summary: 报表汇总（营业收入 / 成本 / 毛利）
       tags:
-      - 仪表盘
-  /dashboard/trend:
+      - 进销存-报表
+  /inv/report/trend:
     get:
       parameters:
-      - default: 7
-        description: 统计天数
+      - description: 天数，默认 30
         in: query
         name: days
         type: integer
@@ -980,18 +2574,220 @@ paths:
             - properties:
                 data:
                   items:
-                    $ref: '#/definitions/dashboard.TrendPoint'
+                    $ref: '#/definitions/inv.ReportTrendPoint'
                   type: array
               type: object
-        "401":
-          description: 未登录或令牌失效
+      security:
+      - BearerAuth: []
+      summary: 销售与采购趋势
+      tags:
+      - 进销存-报表
+  /inv/stock-orders:
+    get:
+      parameters:
+      - description: in 入库 / out 出库
+        in: query
+        name: direction
+        type: string
+      - description: 单号
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.StockOrderRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 出入库单据列表
+      tags:
+      - 进销存-库存
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 出入库信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.StockOrderReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 新增出入库单据
+      tags:
+      - 进销存-库存
+  /inv/stock-orders/{id}:
+    delete:
+      parameters:
+      - description: 单据 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
           schema:
             $ref: '#/definitions/response.Body'
       security:
       - BearerAuth: []
-      summary: 登录与操作趋势
+      summary: 作废出入库单据（回滚库存）
       tags:
-      - 仪表盘
+      - 进销存-库存
+    get:
+      parameters:
+      - description: 出入库单 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.StockOrderDetail'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 出入库单详情（打印用）
+      tags:
+      - 进销存-库存管理
+  /inv/suppliers:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.PartyRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 供应商列表
+      tags:
+      - 进销存-供应商
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 供应商信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.PartyReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 新增供应商
+      tags:
+      - 进销存-供应商
+  /inv/suppliers/{id}:
+    delete:
+      parameters:
+      - description: 供应商 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除供应商
+      tags:
+      - 进销存-供应商
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 供应商 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 供应商信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.PartyReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改供应商
+      tags:
+      - 进销存-供应商
   /profile:
     get:
       description: 返回个人资料、角色与权限码集合（超管不返回权限码，前端以其 isSuper 判定放行）。

@@ -3,9 +3,9 @@ package authz
 import (
 	"gorm.io/gorm"
 
-	"nova-admin/internal/database"
-	"nova-admin/internal/model"
-	"nova-admin/internal/pkg/errcode"
+	"nova-erp/internal/database"
+	"nova-erp/internal/model"
+	"nova-erp/internal/pkg/errcode"
 )
 
 // ---------------- 数据范围（数据权限） ----------------

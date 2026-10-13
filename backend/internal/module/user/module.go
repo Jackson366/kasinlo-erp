@@ -1,6 +1,6 @@
 package user
 
-import "nova-admin/internal/module"
+import "nova-erp/internal/module"
 
 // Module 返回用户模块的自描述清单。
 //

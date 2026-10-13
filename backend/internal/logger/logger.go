@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"nova-admin/internal/config"
+	"nova-erp/internal/config"
 )
 
 var log *zap.Logger

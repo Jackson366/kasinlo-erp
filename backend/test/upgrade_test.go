@@ -12,9 +12,9 @@ import (
 	"net/http"
 	"testing"
 
-	"nova-admin/internal/database"
-	"nova-admin/internal/model"
-	"nova-admin/internal/seed"
+	"nova-erp/internal/database"
+	"nova-erp/internal/model"
+	"nova-erp/internal/seed"
 )
 
 // columnInfo 描述 information_schema 中的一列。

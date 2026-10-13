@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"nova-admin/internal/logger"
+	"nova-erp/internal/logger"
 )
 
 const traceHeader = "X-Trace-Id"

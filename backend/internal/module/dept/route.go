@@ -3,7 +3,7 @@ package dept
 import (
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/middleware"
+	"nova-erp/internal/middleware"
 )
 
 // Register 注册部门模块路由。

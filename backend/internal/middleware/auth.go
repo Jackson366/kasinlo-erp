@@ -6,11 +6,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/authz"
-	"nova-admin/internal/logger"
-	"nova-admin/internal/pkg/errcode"
-	"nova-admin/internal/pkg/jwt"
-	"nova-admin/internal/pkg/response"
+	"nova-erp/internal/authz"
+	"nova-erp/internal/logger"
+	"nova-erp/internal/pkg/errcode"
+	"nova-erp/internal/pkg/jwt"
+	"nova-erp/internal/pkg/response"
 )
 
 // Auth 校验访问令牌并把身份写入上下文。

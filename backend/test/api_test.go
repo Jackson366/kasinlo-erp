@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"nova-admin/internal/oplog"
+	"nova-erp/internal/oplog"
 )
 
 // TestHealth 健康检查。
@@ -128,7 +128,7 @@ func TestProfile(t *testing.T) {
 			t.Fatalf("顶级路由数量不足: %d", len(res.List))
 		}
 		flat := mustJSON(res.Raw)
-		if !contains(flat, "仪表盘") || !contains(flat, "系统管理") {
+		if !contains(flat, "数据概览") || !contains(flat, "进销存") || !contains(flat, "系统管理") {
 			t.Fatalf("路由缺少预期节点: %s", flat)
 		}
 		if contains(flat, "system:user:create") {
@@ -313,7 +313,7 @@ func TestRoleCRUD(t *testing.T) {
 
 	res := call(t, http.MethodPost, "/api/v1/system/roles", token, map[string]any{
 		"name": "端到端角色", "code": "e2e_role", "sort": 99, "dataScope": 4,
-		"menuIds": []int64{menuID(t, "dashboard:view"), menuIDByName(t, "System"), menuID(t, "system:user:list")},
+		"menuIds": []int64{menuID(t, "inv:overview:view"), menuIDByName(t, "System"), menuID(t, "system:user:list")},
 	})
 	assertCode(t, res, 0, "新增角色")
 	roleID := num(res.obj(t), "id")
@@ -355,7 +355,7 @@ func TestRoleCRUD(t *testing.T) {
 
 	t.Run("重新分配菜单权限", func(t *testing.T) {
 		assign := call(t, http.MethodPut, "/api/v1/system/roles/"+itoa(roleID)+"/menus", token, map[string]any{
-			"menuIds": []int64{menuID(t, "dashboard:view"), menuIDByName(t, "System"),
+			"menuIds": []int64{menuID(t, "inv:overview:view"), menuIDByName(t, "System"),
 				menuID(t, "system:user:list"), menuID(t, "system:role:list")},
 		})
 		assertCode(t, assign, 0, "分配权限")
@@ -372,7 +372,7 @@ func TestRoleCRUD(t *testing.T) {
 	})
 
 	t.Run("超管角色不可裁剪权限", func(t *testing.T) {
-		assign := call(t, http.MethodPut, "/api/v1/system/roles/1/menus", token, map[string]any{"menuIds": []int64{menuID(t, "dashboard:view")}})
+		assign := call(t, http.MethodPut, "/api/v1/system/roles/1/menus", token, map[string]any{"menuIds": []int64{menuID(t, "inv:overview:view")}})
 		assertCode(t, assign, 40000, "裁剪超管权限")
 	})
 }
@@ -426,7 +426,7 @@ func TestMenuTree(t *testing.T) {
 
 	t.Run("不能把菜单挂到自己的子节点下", func(t *testing.T) {
 		res := call(t, http.MethodPut, "/api/v1/system/menus/"+itoa(menuIDByName(t, "System")), token, map[string]any{
-			"parentId": 11, "name": "System", "path": "/system", "title": "系统管理", "type": "dir",
+			"parentId": menuIDByName(t, "SystemUser"), "name": "System", "path": "/system", "title": "系统管理", "type": "dir",
 		})
 		assertCode(t, res, 40000, "环路校验")
 	})
@@ -471,40 +471,39 @@ func TestDeptTree(t *testing.T) {
 	})
 }
 
-// TestDashboard 仪表盘统计。
-func TestDashboard(t *testing.T) {
+// TestInvOverview 进销存数据概览（登录落地页的接口）。
+func TestInvOverview(t *testing.T) {
 	token := loginAs(t, adminAccount, adminSecret)
 
 	t.Run("概览统计", func(t *testing.T) {
-		res := call(t, http.MethodGet, "/api/v1/dashboard/overview", token, nil)
+		res := call(t, http.MethodGet, "/api/v1/inv/overview", token, nil)
 		assertCode(t, res, 0, "概览")
 		obj := res.obj(t)
-		if num(obj, "userCount") < 2 {
-			t.Fatalf("用户总数异常: %v", obj["userCount"])
+		// 种子数据：5 客户、8 商品、14 张单据（含待处理）
+		if num(obj, "customerCount") < 5 {
+			t.Fatalf("客户总数异常: %v", obj["customerCount"])
 		}
-		if num(obj, "menuCount") < 20 {
-			t.Fatalf("菜单总数异常: %v", obj["menuCount"])
+		if num(obj, "productCount") < 8 {
+			t.Fatalf("商品总数异常: %v", obj["productCount"])
+		}
+		if num(obj, "pendingOrders") < 1 {
+			t.Fatalf("待处理单据数异常: %v", obj["pendingOrders"])
 		}
 	})
 
-	t.Run("7 天趋势", func(t *testing.T) {
-		res := call(t, http.MethodGet, "/api/v1/dashboard/trend?days=7", token, nil)
+	t.Run("报表汇总", func(t *testing.T) {
+		res := call(t, http.MethodGet, "/api/v1/inv/report/summary?range=month", token, nil)
+		assertCode(t, res, 0, "报表汇总")
+		if num(res.obj(t), "salesOrders") < 1 {
+			t.Fatalf("本月销售单数异常: %v", res.obj(t)["salesOrders"])
+		}
+	})
+
+	t.Run("趋势按天补齐", func(t *testing.T) {
+		res := call(t, http.MethodGet, "/api/v1/inv/report/trend?days=7", token, nil)
 		assertCode(t, res, 0, "趋势")
 		if len(res.List) != 7 {
 			t.Fatalf("趋势点数应为 7，实际 %d", len(res.List))
-		}
-	})
-
-	t.Run("模块排行", func(t *testing.T) {
-		res := call(t, http.MethodGet, "/api/v1/dashboard/modules?days=7&limit=5", token, nil)
-		assertCode(t, res, 0, "模块排行")
-	})
-
-	t.Run("最近登录", func(t *testing.T) {
-		res := call(t, http.MethodGet, "/api/v1/dashboard/recent-logins?limit=5", token, nil)
-		assertCode(t, res, 0, "最近登录")
-		if len(res.List) == 0 {
-			t.Fatal("最近登录记录为空")
 		}
 	})
 }

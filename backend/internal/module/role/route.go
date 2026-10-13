@@ -3,7 +3,7 @@ package role
 import (
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/middleware"
+	"nova-erp/internal/middleware"
 )
 
 // Register 注册角色模块路由。

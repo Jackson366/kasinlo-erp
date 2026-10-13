@@ -23,8 +23,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/xuri/excelize/v2"
 
-	"nova-admin/internal/pkg/errcode"
-	"nova-admin/internal/pkg/textutil"
+	"nova-erp/internal/pkg/errcode"
+	"nova-erp/internal/pkg/textutil"
 )
 
 const (

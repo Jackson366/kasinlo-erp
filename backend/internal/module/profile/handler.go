@@ -3,10 +3,10 @@ package profile
 import (
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/middleware"
-	"nova-admin/internal/pkg/bind"
-	"nova-admin/internal/pkg/errcode"
-	"nova-admin/internal/pkg/response"
+	"nova-erp/internal/middleware"
+	"nova-erp/internal/pkg/bind"
+	"nova-erp/internal/pkg/errcode"
+	"nova-erp/internal/pkg/response"
 )
 
 // Handler 个人中心接口处理器。

@@ -1,4 +1,4 @@
-module nova-admin
+module nova-erp
 
 go 1.25.0
 

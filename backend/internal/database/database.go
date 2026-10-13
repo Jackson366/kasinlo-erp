@@ -12,9 +12,9 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
-	"nova-admin/internal/config"
-	"nova-admin/internal/logger"
-	"nova-admin/internal/model"
+	"nova-erp/internal/config"
+	"nova-erp/internal/logger"
+	"nova-erp/internal/model"
 )
 
 var db *gorm.DB
@@ -83,6 +83,19 @@ func AutoMigrate() error {
 		&model.RoleMenu{},
 		&model.OperationLog{},
 		&model.LoginLog{},
+		// 进销存业务表
+		&model.InvCustomer{},
+		&model.InvSupplier{},
+		&model.InvCategory{},
+		&model.InvProduct{},
+		&model.InvProductSpec{},
+		&model.InvProductUnit{},
+		&model.InvOrder{},
+		&model.InvOrderItem{},
+		&model.InvSettlement{},
+		&model.InvStockOrder{},
+		&model.InvStockItem{},
+		&model.InvPrintTemplate{},
 	)
 }
 
@@ -103,6 +116,168 @@ var partialUniqueIndexes = []struct {
 	{name: "uk_sys_roles_code", table: "sys_roles", legacy: "idx_sys_roles_code", columns: "code", where: "deleted_at IS NULL"},
 	{name: "uk_sys_menus_name", table: "sys_menus", legacy: "idx_sys_menus_name", columns: "name", where: "deleted_at IS NULL"},
 	{name: "uk_sys_depts_parent_name", table: "sys_depts", legacy: "", columns: "parent_id, name", where: "deleted_at IS NULL"},
+	// 进销存业务唯一键：编号/单号在存活数据内唯一（软删除后允许复用）
+	{name: "uk_inv_customers_code", table: "inv_customers", legacy: "", columns: "code", where: "deleted_at IS NULL"},
+	{name: "uk_inv_suppliers_code", table: "inv_suppliers", legacy: "", columns: "code", where: "deleted_at IS NULL"},
+	{name: "uk_inv_products_code", table: "inv_products", legacy: "", columns: "code", where: "deleted_at IS NULL"},
+	{name: "uk_inv_categories_name", table: "inv_categories", legacy: "", columns: "name", where: "deleted_at IS NULL"},
+	// 同一个商品下规格名唯一；同一个规格下单位名唯一。
+	// 少了这两条，「φ20」可以被录两遍，库存被劈成两半且各自都不预警。
+	{name: "uk_inv_product_specs_product_spec", table: "inv_product_specs", legacy: "", columns: "product_id, spec", where: "deleted_at IS NULL"},
+	{name: "uk_inv_product_units_spec_unit", table: "inv_product_units", legacy: "", columns: "spec_id, unit", where: "deleted_at IS NULL"},
+	{name: "uk_inv_orders_no", table: "inv_orders", legacy: "", columns: "order_no", where: "deleted_at IS NULL"},
+	{name: "uk_inv_stock_orders_no", table: "inv_stock_orders", legacy: "", columns: "order_no", where: "deleted_at IS NULL"},
+	{name: "uk_inv_print_templates_code", table: "inv_print_templates", legacy: "", columns: "code", where: "deleted_at IS NULL"},
+}
+
+// dataFixes 是幂等的历史数据修补清单，启动时统一执行。
+//
+// 与 AutoMigrate / EnsureIndexes 的分工：前两者管**结构**，这里管**已落库的值**。
+// 有些缺陷只改代码修不掉 —— 错误的行还躺在库里。把这类修补集中登记在这里，
+// 好处是：幂等（重复启动无副作用）、可审计（改了什么一眼可见）、
+// 不需要运维手工执行 SQL。
+var dataFixes = []struct {
+	name string
+	stmt string
+}{
+	{
+		// 选填的到期日曾经用非指针 time.Time 承载，空串解析出 Go 零值后被原样
+		// 写进 date 列，于是「没填到期日」在库里长成了 0001-01-01。这个值与
+		// 「已过期两千年」无法区分：逾期汇总会多算、打印纸面会多打一行。
+		// 归一成 NULL 后，「未填」才有唯一的表达方式。
+		name: "到期日零值归一为 NULL",
+		stmt: `UPDATE inv_orders SET due_date = NULL WHERE due_date IS NOT NULL AND due_date < '1900-01-01'`,
+	},
+}
+
+// PatchData 执行历史数据修补（幂等）。
+func PatchData() error {
+	if err := migrateLegacyProducts(); err != nil {
+		return err
+	}
+	for _, fix := range dataFixes {
+		res := db.Exec(fix.stmt)
+		if res.Error != nil {
+			return fmt.Errorf("数据修补「%s」失败: %w", fix.name, res.Error)
+		}
+		if res.RowsAffected > 0 {
+			logger.Info("已修补历史数据",
+				zap.String("fix", fix.name),
+				zap.Int64("rows", res.RowsAffected))
+		}
+	}
+	return nil
+}
+
+// legacyProductColumns 是 inv_products 上被淘汰的列。
+//
+// 它们曾经把「一个商品 = 一个规格 + 一个单位 + 一份价格 + 一份库存」压在一行；
+// 商品支持多规格多单位之后，这些列的语义已经无处安放。不删的话，
+// 它们会一直留在库里被误读（读到一个早已不再维护的 stock 而已）。
+var legacyProductColumns = []string{
+	"spec", "unit", "category", "purchase_price", "sale_price", "stock", "warn_stock",
+}
+
+// migrateLegacyProducts 把旧结构的商品档案升级为「商品 → 规格 → 计量单位」三层。
+//
+// 幂等策略与 dataFixes 不同：它依赖的列在迁移完成后就不存在了，所以不能无脑重跑。
+// 先探一次列是否存在，不存在即视为「已经迁过」直接返回；步骤之间全部用
+// NOT EXISTS 兜住，中途失败后重跑也不会产出重复规格。
+func migrateLegacyProducts() error {
+	has, err := columnExists("inv_products", "spec")
+	if err != nil {
+		return err
+	}
+	if !has {
+		return nil
+	}
+
+	steps := []struct {
+		name string
+		stmt string
+	}{
+		{
+			name: "旧品类文本收成分类字典",
+			stmt: `INSERT INTO inv_categories (created_at, updated_at, name, sort, status, remark)
+SELECT NOW(), NOW(), c.name, 0, 1, ''
+FROM (SELECT DISTINCT category AS name FROM inv_products WHERE deleted_at IS NULL AND category <> '') c
+WHERE NOT EXISTS (SELECT 1 FROM inv_categories ic WHERE ic.name = c.name AND ic.deleted_at IS NULL)`,
+		},
+		{
+			name: "回填商品的分类外键",
+			stmt: `UPDATE inv_products p SET category_id = c.id
+FROM inv_categories c
+WHERE c.name = p.category AND c.deleted_at IS NULL
+  AND p.deleted_at IS NULL AND (p.category_id IS NULL OR p.category_id = 0)`,
+		},
+		{
+			name: "商品升级出规格（库存随之迁移）",
+			stmt: `INSERT INTO inv_product_specs (created_at, updated_at, product_id, spec, stock, warn_stock, sort, status)
+SELECT NOW(), NOW(), p.id, COALESCE(NULLIF(p.spec, ''), '默认'), p.stock, p.warn_stock, 0, p.status
+FROM inv_products p
+WHERE p.deleted_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM inv_product_specs s WHERE s.product_id = p.id AND s.deleted_at IS NULL)`,
+		},
+		{
+			name: "规格升级出基本单位（沿用旧单位与双价格）",
+			stmt: `INSERT INTO inv_product_units (created_at, updated_at, spec_id, unit, rate, is_base, purchase_price, sale_price, sort, status)
+SELECT NOW(), NOW(), s.id, COALESCE(NULLIF(p.unit, ''), '个'), 1, TRUE, p.purchase_price, p.sale_price, 0, 1
+FROM inv_product_specs s
+JOIN inv_products p ON p.id = s.product_id AND p.deleted_at IS NULL
+WHERE s.deleted_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM inv_product_units u WHERE u.spec_id = s.id AND u.deleted_at IS NULL)`,
+		},
+		{
+			name: "历史单据明细补规格与基本数量",
+			stmt: `UPDATE inv_order_items i SET spec_id = s.id, unit_id = u.id, qty_base = i.qty
+FROM inv_product_specs s
+JOIN inv_product_units u ON u.spec_id = s.id AND u.is_base AND u.deleted_at IS NULL
+WHERE s.product_id = i.product_id AND s.deleted_at IS NULL
+  AND i.deleted_at IS NULL AND (i.spec_id IS NULL OR i.spec_id = 0)`,
+		},
+		{
+			name: "历史出入库明细补规格与基本数量",
+			stmt: `UPDATE inv_stock_items i SET spec_id = s.id, unit_id = u.id, qty_base = i.qty
+FROM inv_product_specs s
+JOIN inv_product_units u ON u.spec_id = s.id AND u.is_base AND u.deleted_at IS NULL
+WHERE s.product_id = i.product_id AND s.deleted_at IS NULL
+  AND i.deleted_at IS NULL AND (i.spec_id IS NULL OR i.spec_id = 0)`,
+		},
+	}
+	for _, st := range steps {
+		res := db.Exec(st.stmt)
+		if res.Error != nil {
+			return fmt.Errorf("商品多层化迁移「%s」失败: %w", st.name, res.Error)
+		}
+		logger.Info("商品结构升级", zap.String("step", st.name), zap.Int64("rows", res.RowsAffected))
+	}
+
+	// 数据搬到新表之后，旧列才允许删。放在最后一步：中途失败时列还在，
+	// 下次启动会重新走一遍上面的幂等步骤，而不是留下一个半迁移的库。
+	drop := "ALTER TABLE inv_products"
+	for i, col := range legacyProductColumns {
+		if i > 0 {
+			drop += ","
+		}
+		drop += " DROP COLUMN IF EXISTS " + col
+	}
+	if err := db.Exec(drop).Error; err != nil {
+		return fmt.Errorf("清理 inv_products 遗留列失败: %w", err)
+	}
+	logger.Info("已清理 inv_products 遗留列", zap.Strings("columns", legacyProductColumns))
+	return nil
+}
+
+// columnExists 判断当前 schema 下某张表是否有某一列。
+func columnExists(table, column string) (bool, error) {
+	var n int64
+	err := db.Raw(`SELECT COUNT(*) FROM information_schema.columns
+WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?`, table, column).
+		Scan(&n).Error
+	if err != nil {
+		return false, fmt.Errorf("检查列 %s.%s 是否存在失败: %w", table, column, err)
+	}
+	return n > 0, nil
 }
 
 // EnsureIndexes 创建部分唯一索引，并清理历史遗留的普通唯一索引（幂等）。

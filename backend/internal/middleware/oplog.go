@@ -10,8 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/oplog"
-	"nova-admin/internal/pkg/textutil"
+	"nova-erp/internal/oplog"
+	"nova-erp/internal/pkg/textutil"
 )
 
 // sensitiveKeys 命中这些关键字的字段在入库前会被脱敏。

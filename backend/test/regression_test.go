@@ -9,9 +9,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"nova-admin/internal/database"
-	"nova-admin/internal/model"
-	"nova-admin/internal/oplog"
+	"nova-erp/internal/database"
+	"nova-erp/internal/model"
+	"nova-erp/internal/oplog"
 )
 
 // 本文件收录「曾经真实出现过、且只靠编译/常规测试抓不到」的缺陷回归用例。

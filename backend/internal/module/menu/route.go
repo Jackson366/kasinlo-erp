@@ -3,7 +3,7 @@ package menu
 import (
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/middleware"
+	"nova-erp/internal/middleware"
 )
 
 // Register 注册菜单模块路由。

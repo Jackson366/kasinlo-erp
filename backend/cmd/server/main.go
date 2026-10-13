@@ -13,17 +13,17 @@ import (
 
 	"go.uber.org/zap"
 
-	"nova-admin/internal/assembly"
-	"nova-admin/internal/bootstrap"
-	"nova-admin/internal/database"
-	"nova-admin/internal/logger"
-	"nova-admin/internal/oplog"
-	"nova-admin/internal/router"
+	"nova-erp/internal/assembly"
+	"nova-erp/internal/bootstrap"
+	"nova-erp/internal/database"
+	"nova-erp/internal/logger"
+	"nova-erp/internal/oplog"
+	"nova-erp/internal/router"
 )
 
-// Nova Admin 服务端入口。
+// Nova ERP 服务端入口。
 //
-// @title                      Nova Admin API
+// @title                      Nova ERP API
 // @version                    1.0
 // @description                基于 Gin + GORM + PostgreSQL 的权限管理后台后端。
 // @description                所有接口统一返回 {code, message, data, traceId}，业务码 0 表示成功。
@@ -31,7 +31,7 @@ import (
 // @description                除「登录」「刷新令牌」外，所有接口都需要请求头 `Authorization: Bearer <accessToken>`。
 // @description                接口前缀由 config.yaml 的 app.prefix + app.version 决定，服务启动时会同步到本文档。
 // @termsOfService             https://example.com/terms/
-// @contact.name               Nova Admin 开发组
+// @contact.name               Nova ERP 开发组
 // @license.name               MIT
 // @BasePath                   /api/v1
 // @schemes                    http https

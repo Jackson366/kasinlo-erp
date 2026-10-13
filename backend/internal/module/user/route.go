@@ -3,7 +3,7 @@ package user
 import (
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/middleware"
+	"nova-erp/internal/middleware"
 )
 
 // Register 注册用户模块路由。

@@ -6,7 +6,7 @@
 # 测试库（默认 nova_admin_test）会被自动创建，不需要预先建库。
 # 之所以也走模板：它和开发配置一样含数据库口令，不应进版本库。
 app:
-  name: nova-admin-test
+  name: nova-erp-test
   mode: release
   host: 127.0.0.1
   port: 18080
@@ -18,7 +18,7 @@ database:
   port: 5432
   user: postgres
   password: CHANGE_ME     # ← 改成你本机 PostgreSQL 的口令
-  dbname: nova_admin_v5_test
+  dbname: nova_inv_v5_test
   sslmode: disable
   timezone: Asia/Shanghai
   max_idle_conns: 2
@@ -26,8 +26,8 @@ database:
   log_level: silent
 
 jwt:
-  secret: nova-admin-test-secret
-  issuer: nova-admin-test
+  secret: nova-erp-test-secret
+  issuer: nova-erp-test
   access_expire: 600
   refresh_expire: 3600
 

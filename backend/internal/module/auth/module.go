@@ -3,8 +3,8 @@ package auth
 import (
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/config"
-	"nova-admin/internal/module"
+	"nova-erp/internal/config"
+	"nova-erp/internal/module"
 )
 
 // Module 返回认证模块的自描述清单。

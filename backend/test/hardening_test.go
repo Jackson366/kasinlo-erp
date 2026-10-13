@@ -19,9 +19,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"nova-admin/internal/database"
-	"nova-admin/internal/model"
-	"nova-admin/internal/oplog"
+	"nova-erp/internal/database"
+	"nova-erp/internal/model"
+	"nova-erp/internal/oplog"
 )
 
 // loginPair 登录并同时返回访问令牌与刷新令牌。

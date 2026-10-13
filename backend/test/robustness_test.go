@@ -18,10 +18,10 @@ import (
 	// 后者（被测对象）负责验签。两者包名都叫 jwt，故给上游起别名 upstream。
 	upstream "github.com/golang-jwt/jwt/v5"
 
-	"nova-admin/internal/config"
-	"nova-admin/internal/pkg/jwt"
-	"nova-admin/internal/pkg/limiter"
-	"nova-admin/internal/pkg/page"
+	"nova-erp/internal/config"
+	"nova-erp/internal/pkg/jwt"
+	"nova-erp/internal/pkg/limiter"
+	"nova-erp/internal/pkg/page"
 )
 
 // ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"nova-admin/internal/database"
+	"nova-erp/internal/database"
 )
 
 // healthTTL 是健康检查结果的缓存时长。

@@ -3,7 +3,7 @@ package profile
 import (
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/middleware"
+	"nova-erp/internal/middleware"
 )
 
 // Register 注册个人中心模块路由，全部需要登录。

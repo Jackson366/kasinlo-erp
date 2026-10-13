@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
-	"nova-admin/internal/pkg/errcode"
+	"nova-erp/internal/pkg/errcode"
 )
 
 // JSON 绑定 JSON 请求体并校验，失败返回带友好提示的业务错误。
@@ -59,6 +59,23 @@ func StatusQuery(c *gin.Context) (*int16, error) {
 	}
 	s := int16(n)
 	return &s, nil
+}
+
+// IntQuery 解析可选的整数查询参数。
+//
+// 返回 0 表示「请求没带该参数」（0 在业务上等同于「不过滤」）。
+// 与 StatusQuery 同一口径：非法值一律 400 而不是静默忽略 ——
+// ?categoryId=abc 被悄悄当成「不筛选」，用户会以为自己在看某个分类的数据。
+func IntQuery(c *gin.Context, name string) (int64, error) {
+	v := c.Query(name)
+	if v == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n < 0 {
+		return 0, errcode.Newf(errcode.ErrBadRequest, "查询参数 %s 非法：%s", name, v)
+	}
+	return n, nil
 }
 
 func translate(obj any, err error) error {

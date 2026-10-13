@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"nova-admin/internal/database"
-	"nova-admin/internal/model"
+	"nova-erp/internal/database"
+	"nova-erp/internal/model"
 )
 
 // 本文件覆盖第二批修复：「读漏了」型数据范围缺陷。
@@ -16,7 +16,7 @@ import (
 // 这一批堵的是「数据范围只在一部分读接口上生效」：
 //
 //	dept     5 个接口全无actor —— 部门树对任何管理员全量可见，还能改删别人的部门；
-//	dashboard 概览无范围     —— 「本部门」管理员看到的是全库人数与全公司操作量；
+//	概览无范围               —— 「本部门」管理员看到的是全库人数与全公司操作量；
 //	profile  半更新清空      —— 只改昵称会把邮箱/手机号/头像一并清空；
 //	log      清空登录日志    —— 登录失败日志是账号锁定的计数来源，删掉等于解锁。
 //
@@ -116,34 +116,6 @@ func TestDeptDetailAndWriteGuarded(t *testing.T) {
 	}
 }
 
-// TestDashboardOverviewRespectsDataScope 仪表盘必须按数据范围统计（P2）。
-//
-// 概览此前完全无范围：部门管理员在首页就能读到全库人数与全公司今日操作量，
-// 是最容易被忽略的一处泄露面。
-func TestDashboardOverviewRespectsDataScope(t *testing.T) {
-	adminToken := loginAs(t, adminAccount, adminSecret)
-	scopedToken, scopedID := scopedAdmin(t, adminToken, "dash_scope_")
-	defer func() {
-		call(t, http.MethodDelete, "/api/v1/system/users/"+itoa(scopedID), adminToken, nil)
-	}()
-
-	full := call(t, http.MethodGet, "/api/v1/dashboard/overview", adminToken, nil)
-	assertCode(t, full, 0, "超管读取概览")
-	mine := call(t, http.MethodGet, "/api/v1/dashboard/overview", scopedToken, nil)
-	assertCode(t, mine, 0, "受限账号读取概览")
-
-	// 受限账号只看得到技术部的人，总数必然少于全库
-	fullUsers := num(full.obj(t), "userCount")
-	scopeUsers := num(mine.obj(t), "userCount")
-	if scopeUsers >= fullUsers {
-		t.Fatalf("概览未按数据范围收窄：受限账号看到 %d 人，超管看到 %d 人", scopeUsers, fullUsers)
-	}
-	// 且至少能看到自己 —— 收窄过头（返回 0）同样是 bug
-	if scopeUsers < 1 {
-		t.Fatal("受限账号的概览应至少包含自己，实际为 0")
-	}
-}
-
 // TestRecentLoginsRespectsDataScope 最近登录记录必须按数据范围过滤（P2）。
 //
 // 登录日志带用户名、IP、UserAgent，跨部门可见等于把
@@ -156,13 +128,13 @@ func TestRecentLoginsRespectsDataScope(t *testing.T) {
 	}()
 
 	// admin 在运营部之外（其部门未知），先确认超管能看到自己的登录记录
-	full := call(t, http.MethodGet, "/api/v1/dashboard/recent-logins", adminToken, nil)
+	full := call(t, http.MethodGet, "/api/v1/system/logs/logins?page=1&pageSize=10", adminToken, nil)
 	assertCode(t, full, 0, "超管读取最近登录")
 	if len(full.List) == 0 {
 		t.Skip("测试库没有登录记录，跳过")
 	}
 
-	mine := call(t, http.MethodGet, "/api/v1/dashboard/recent-logins", scopedToken, nil)
+	mine := call(t, http.MethodGet, "/api/v1/system/logs/logins?page=1&pageSize=10", scopedToken, nil)
 	assertCode(t, mine, 0, "受限账号读取最近登录")
 	// 受限账号刚登录过，至少应看到自己这一条
 	if len(mine.List) == 0 {

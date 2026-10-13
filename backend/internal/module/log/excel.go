@@ -3,13 +3,13 @@ package log
 import (
 	"strconv"
 
-	"nova-admin/internal/authz"
-	"nova-admin/internal/model"
-	"nova-admin/internal/pkg/dbquery"
-	"nova-admin/internal/pkg/errcode"
-	"nova-admin/internal/pkg/page"
-	"nova-admin/internal/pkg/sheet"
-	"nova-admin/internal/pkg/textutil"
+	"nova-erp/internal/authz"
+	"nova-erp/internal/model"
+	"nova-erp/internal/pkg/dbquery"
+	"nova-erp/internal/pkg/errcode"
+	"nova-erp/internal/pkg/page"
+	"nova-erp/internal/pkg/sheet"
+	"nova-erp/internal/pkg/textutil"
 )
 
 // 导出时对超长文本做截断，避免单元格内容撑爆表格

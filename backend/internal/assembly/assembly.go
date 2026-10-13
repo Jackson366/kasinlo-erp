@@ -13,35 +13,40 @@
 package assembly
 
 import (
-	"nova-admin/internal/config"
-	"nova-admin/internal/module"
-	"nova-admin/internal/module/auth"
-	"nova-admin/internal/module/dashboard"
-	"nova-admin/internal/module/dept"
-	"nova-admin/internal/module/log"
-	"nova-admin/internal/module/menu"
-	"nova-admin/internal/module/profile"
-	"nova-admin/internal/module/role"
-	"nova-admin/internal/module/user"
+	"nova-erp/internal/config"
+	"nova-erp/internal/module"
+	"nova-erp/internal/module/auth"
+	"nova-erp/internal/module/dept"
+	"nova-erp/internal/module/inv"
+	"nova-erp/internal/module/log"
+	"nova-erp/internal/module/menu"
+	"nova-erp/internal/module/profile"
+	"nova-erp/internal/module/role"
+	"nova-erp/internal/module/user"
 )
 
 // Modules 返回本进程要装配的全部模块。
 // 顺序即路由注册顺序与内置菜单的插入顺序：改顺序会改变菜单主键的分配次序，
 // 语义上没有影响，但会让「按 ID 排序」的观感变化，非必要不要动。
+//
+// 下线一个模块 = 从这里摘掉 + 把命名空间记进 seed.retiredModules + 删目录，
+// 三件事缺一不可（见 docs/UPGRADE.md「下线一个模块」）。
 func Modules(cfg *config.Config) []module.Module {
 	return []module.Module{
 		// 公开接口：登录、刷新令牌
 		auth.Module(cfg.Security),
 		// 登录后即可用，没有菜单（入口在右上角头像下拉里）
 		profile.Module(),
-		// 顶层菜单：仪表盘
-		dashboard.Module(),
+		// 业务模块：进销存。「数据概览」是它注册的顶级菜单（Sort=1），
+		// 登录后的落地页就是它；其余 8 个页面归「进销存」目录（Sort=2）。
+		inv.Module(),
 		// 「系统管理」分组。分组挂在哪个目录下属于导航结构，
 		// 是组装决策，所以在这里声明 —— 各系统模块不必知道自己被归在哪个目录。
+		// Sort=3：排在两个进销存顶级入口之后。
 		module.Group(
 			module.MenuNode{
 				Name: "System", Title: "系统管理", Icon: "Setting",
-				Path: "/system", Redirect: "/system/user", Sort: 2,
+				Path: "/system", Redirect: "/system/user", Sort: 3,
 			},
 			user.Module(),
 			role.Module(),
@@ -49,9 +54,6 @@ func Modules(cfg *config.Config) []module.Module {
 			dept.Module(),
 			log.Module(cfg.Security),
 		),
-
-		// 业务模块在此往下追加，例如：
-		//   invflow.Module(),
 	}
 }
 

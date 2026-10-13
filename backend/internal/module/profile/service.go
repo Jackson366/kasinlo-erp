@@ -6,12 +6,12 @@ import (
 
 	"gorm.io/gorm"
 
-	"nova-admin/internal/authz"
-	"nova-admin/internal/database"
-	"nova-admin/internal/model"
-	"nova-admin/internal/module/menu"
-	"nova-admin/internal/pkg/errcode"
-	"nova-admin/internal/pkg/hash"
+	"nova-erp/internal/authz"
+	"nova-erp/internal/database"
+	"nova-erp/internal/model"
+	"nova-erp/internal/module/menu"
+	"nova-erp/internal/pkg/errcode"
+	"nova-erp/internal/pkg/hash"
 )
 
 // Service 个人中心服务。

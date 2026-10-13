@@ -6,8 +6,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"nova-admin/internal/config"
-	"nova-admin/internal/pkg/errcode"
+	"nova-erp/internal/config"
+	"nova-erp/internal/pkg/errcode"
 )
 
 // TokenType 区分访问令牌与刷新令牌。

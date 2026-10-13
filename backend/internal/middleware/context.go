@@ -3,7 +3,7 @@ package middleware
 import (
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/authz"
+	"nova-erp/internal/authz"
 )
 
 // gin.Context 中存放键的常量，避免魔法字符串散落各处。

@@ -8,11 +8,11 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
 
-	"nova-admin/api/docs"
-	"nova-admin/internal/config"
-	"nova-admin/internal/logger"
-	"nova-admin/internal/middleware"
-	"nova-admin/internal/module"
+	"nova-erp/api/docs"
+	"nova-erp/internal/config"
+	"nova-erp/internal/logger"
+	"nova-erp/internal/middleware"
+	"nova-erp/internal/module"
 )
 
 // New 构建 gin 引擎并装配全局中间件与业务模块路由。

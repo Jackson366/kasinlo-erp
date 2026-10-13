@@ -10,12 +10,12 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"nova-admin/internal/authz"
-	"nova-admin/internal/database"
-	"nova-admin/internal/logger"
-	"nova-admin/internal/model"
-	"nova-admin/internal/module"
-	"nova-admin/internal/pkg/hash"
+	"nova-erp/internal/authz"
+	"nova-erp/internal/database"
+	"nova-erp/internal/logger"
+	"nova-erp/internal/model"
+	"nova-erp/internal/module"
+	"nova-erp/internal/pkg/hash"
 )
 
 // 默认账号，仅用于首次初始化，上线前请务必修改密码。
@@ -44,6 +44,10 @@ func Run() error {
 		{"菜单", seedMenus},
 		{"角色", seedRoles},
 		{"用户", seedUsers},
+		{"进销存", seedInv},
+		// 演示档案补齐：老库由单规格结构迁移而来，多计量单位示例需要单独补，
+		// 只补缺、不覆盖（见 seedInvProductTopUp 的说明）
+		{"进销存档案补齐", seedInvProductTopUp},
 	}
 	for _, s := range steps {
 		if err := s.fn(db); err != nil {
@@ -101,6 +105,102 @@ func seedMenus(db *gorm.DB) error {
 	if skipped > 0 {
 		logger.Warn("有内置菜单因曾被删除而未补齐，如确需恢复请手工处理",
 			zap.Int("count", skipped))
+	}
+	if err := retireModules(db); err != nil {
+		return err
+	}
+	return ensureLandingOrder(db)
+}
+
+// retiredModules 登记**已下线**的模块。
+//
+// 模块从 assembly.Modules() 摘掉之后，老库里它的菜单、按钮权限点和角色授权
+// 都还躺着：侧边栏会多一块点不动的区域，`/role` 授权列表里也还看得见。
+// 在这里登记命名空间，播种时就会把它的菜单软删除、并清掉指向这些菜单的授权 ——
+// 删模块因此对存量部署也是干净的，不需要任何人手工执行 SQL。
+//
+// 删除用软删除（deleted_at）：既留了恢复的余地，也保证「模块哪天回来了」
+// 不会和残留记录抢唯一索引（name / permission 都是部分唯一索引，
+// WHERE deleted_at IS NULL，软删后即可复用，见 model.Menu 注释）。
+var retiredModules = []struct {
+	Namespace string   // 权限码命名空间，如 dashboard
+	Names     []string // 无权限码的节点按路由名兜底（目录节点没有权限码）
+}{
+	{Namespace: "dashboard", Names: []string{"Dashboard"}},
+}
+
+// retireModules 清理已下线模块的菜单与角色授权。
+func retireModules(db *gorm.DB) error {
+	for _, r := range retiredModules {
+		conds := db.Where("permission LIKE ?", r.Namespace+":%")
+		if len(r.Names) > 0 {
+			conds = db.Where(conds.Or("name IN ?", r.Names))
+		}
+		var menus []model.Menu
+		if err := db.Where(conds).Find(&menus).Error; err != nil {
+			return err
+		}
+		if len(menus) == 0 {
+			continue
+		}
+		ids := make([]int64, 0, len(menus))
+		for _, m := range menus {
+			ids = append(ids, m.ID)
+		}
+		// 先数后删：Count 放在 Delete 之后永远是 0
+		var grants int64
+		if err := db.Model(&model.RoleMenu{}).Where("menu_id IN ?", ids).Count(&grants).Error; err != nil {
+			return err
+		}
+		// 先清授权再软删菜单：顺序反了的话，角色授权表会留下指向
+		// 已软删菜单的孤儿行，而「超管授权数 == 存活菜单数」这个
+		// 不变量就是被这些行破坏的（见 docs/DATABASE.md 排查小节）
+		if err := db.Where("menu_id IN ?", ids).Delete(&model.RoleMenu{}).Error; err != nil {
+			return err
+		}
+		if err := db.Where("id IN ?", ids).Delete(&model.Menu{}).Error; err != nil {
+			return err
+		}
+		logger.Info("已下线模块的菜单与授权已清理",
+			zap.String("namespace", r.Namespace),
+			zap.Int("menus", len(ids)),
+			zap.Int64("grants", grants))
+	}
+	return nil
+}
+
+// ensureLandingOrder 校准顶层入口结构，保证「数据概览」是顶级菜单且排最前。
+//
+// 前端用「菜单树里第一个可访问的叶子」当登录落地页（AGENTS.md §5.62）。
+// 全新库由模块清单直接建好，无需校准；这里兜的是**老库升级**：
+//   - v1.0 里「数据概览」是「进销存」目录的子项（parent_id ≠ 0），
+//     升级后要被提到顶级，否则落地页推导不出它；
+//   - 顶层 sort 平局按 id ASC 决胜，老库里先建的节点会赢，
+//     所以显式把数据概览压到最前，其余节点一律不动 ——
+//     管理员在菜单管理里对其它顺序的调整仍然是权威。
+func ensureLandingOrder(db *gorm.DB) error {
+	var overview model.Menu
+	err := db.Where("name = ? AND deleted_at IS NULL", "InvOverview").Take(&overview).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil // 这套部署没有进销存菜单，无需校准
+	}
+	if err != nil {
+		return err
+	}
+
+	if overview.ParentID != 0 {
+		// 从「进销存」目录下提取为顶级菜单
+		if err := db.Model(&model.Menu{}).Where("id = ?", overview.ID).
+			Updates(map[string]any{"parent_id": 0, "sort": 1}).Error; err != nil {
+			return err
+		}
+		logger.Info("已将「数据概览」提升为顶级菜单（老库结构迁移）",
+			zap.Int64("id", overview.ID))
+	}
+	// 「进销存」目录退到第二位：不覆盖管理员显式调大的值，只在小了的时候抬
+	if err := db.Model(&model.Menu{}).Where("name = ? AND parent_id = 0", "Inv").
+		Where("sort < ?", 2).Update("sort", 2).Error; err != nil {
+		return err
 	}
 	return nil
 }
@@ -304,12 +404,14 @@ func createBuiltinRoles(db *gorm.DB) error {
 	return nil
 }
 
-// frameworkNamespaces 是框架自带模块的权限命名空间。
+// frameworkNamespaces 是「内置角色自动授权」覆盖的权限命名空间。
 //
-// 内置角色的自动授权只覆盖它们：新增一个业务模块时，只读访客与系统管理员
-// 不会凭空多出该模块的菜单 —— 那对敏感业务就是静默越权。业务模块要把菜单
-// 发给内置角色，在这里加上它的命名空间，或到「角色管理」里手工分配。
-var frameworkNamespaces = []string{"dashboard", "system", "profile", "auth"}
+// 这里同时包含框架自带模块与随本项目一起交付的业务模块（inv 进销存）。
+// 为什么不把 inv 排除在外：本项目就是一套进销存后台，进销存是它的主线功能，
+// 而非「临时插入的敏感业务」——把整条业务线从内置角色里隐去，会让
+// 系统管理员登录后看不到任何业务菜单。若将来引入与主线无关的敏感模块，
+// 请不要加进这里，而是到「角色管理」里手工分配。
+var frameworkNamespaces = []string{"system", "profile", "auth", "inv"}
 
 // grantRule 描述一个内置角色应有的菜单授权。
 type grantRule struct {

@@ -7,12 +7,12 @@ import (
 
 	"gorm.io/gorm"
 
-	"nova-admin/internal/config"
-	"nova-admin/internal/database"
-	"nova-admin/internal/logger"
-	"nova-admin/internal/module"
-	"nova-admin/internal/pkg/jwt"
-	"nova-admin/internal/seed"
+	"nova-erp/internal/config"
+	"nova-erp/internal/database"
+	"nova-erp/internal/logger"
+	"nova-erp/internal/module"
+	"nova-erp/internal/pkg/jwt"
+	"nova-erp/internal/seed"
 )
 
 // Result 是初始化结果。
@@ -55,6 +55,11 @@ func Init(configPath string, opts Options) (*Result, error) {
 	}
 	if err := database.EnsureIndexes(); err != nil {
 		return nil, fmt.Errorf("创建索引失败: %w", err)
+	}
+	// 结构就位后再修补历史数据：修补语句依赖列已经存在（老库升级时
+	// 列可能是本次 AutoMigrate 才加上或改可空的）。
+	if err := database.PatchData(); err != nil {
+		return nil, err
 	}
 
 	// 装配必须早于种子数据：内置菜单是从模块清单聚合出来的，

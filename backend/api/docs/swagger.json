@@ -6,10 +6,10 @@
     "swagger": "2.0",
     "info": {
         "description": "基于 Gin + GORM + PostgreSQL 的权限管理后台后端。\n所有接口统一返回 {code, message, data, traceId}，业务码 0 表示成功。\n业务码前三位即 HTTP 状态码：40000→400、40100~40106→401、40300→403、40400→404、40900→409、42900→429、50000/50100→500。\n除「登录」「刷新令牌」外，所有接口都需要请求头 `Authorization: Bearer \u003caccessToken\u003e`。\n接口前缀由 config.yaml 的 app.prefix + app.version 决定，服务启动时会同步到本文档。",
-        "title": "Nova Admin API",
+        "title": "Nova ERP API",
         "termsOfService": "https://example.com/terms/",
         "contact": {
-            "name": "Nova Admin 开发组"
+            "name": "Nova ERP 开发组"
         },
         "license": {
             "name": "MIT"
@@ -183,7 +183,7 @@
                 }
             }
         },
-        "/dashboard/modules": {
+        "/inv/categories": {
             "get": {
                 "security": [
                     {
@@ -194,21 +194,1577 @@
                     "application/json"
                 ],
                 "tags": [
-                    "仪表盘"
+                    "进销存-商品分类"
                 ],
-                "summary": "模块操作量排行",
+                "summary": "商品分类列表",
                 "parameters": [
                     {
                         "type": "integer",
-                        "default": 7,
-                        "description": "统计天数",
-                        "name": "days",
+                        "description": "页码",
+                        "name": "page",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "default": 8,
-                        "description": "返回条数",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "分类名称",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "状态 1 启用 0 停用",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.CategoryRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-商品分类"
+                ],
+                "summary": "新增商品分类",
+                "parameters": [
+                    {
+                        "description": "分类信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.CategoryReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.IDData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/categories/options": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-商品分类"
+                ],
+                "summary": "商品分类下拉项（仅启用）",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/inv.CategoryOption"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/categories/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-商品分类"
+                ],
+                "summary": "修改商品分类",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "分类 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "分类信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.CategoryReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-商品分类"
+                ],
+                "summary": "删除商品分类",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "分类 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/customers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-客户"
+                ],
+                "summary": "客户列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "编号 / 名称 / 联系人",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "状态 1 启用 0 禁用",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.PartyRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-客户"
+                ],
+                "summary": "新增客户",
+                "parameters": [
+                    {
+                        "description": "客户信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.PartyReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.IDData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/customers/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-客户"
+                ],
+                "summary": "修改客户",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "客户 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "客户信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.PartyReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-客户"
+                ],
+                "summary": "删除客户",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "客户 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/finance/payables": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-应收应付"
+                ],
+                "summary": "应付明细",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.FinanceRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/finance/receivables": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-应收应付"
+                ],
+                "summary": "应收明细",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "unpaid | partial | paid | overdue",
+                        "name": "settle",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.FinanceRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/finance/settlements": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-应收应付"
+                ],
+                "summary": "登记收付款",
+                "parameters": [
+                    {
+                        "description": "结算信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.SettleReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/inventory": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-库存"
+                ],
+                "summary": "库存查询（按规格出账，含预警标记）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "编码 / 名称 / 规格",
+                        "name": "keyword",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.InventoryRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-单据"
+                ],
+                "summary": "单据列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "purchase | sales",
+                        "name": "bizType",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "单号 / 往来单位",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "1 待处理 2 已审核 3 已取消",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.OrderRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-单据"
+                ],
+                "summary": "新增单据",
+                "parameters": [
+                    {
+                        "description": "单据信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.OrderReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.IDData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/orders/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-单据"
+                ],
+                "summary": "单据详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "单据 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.OrderDetail"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-单据"
+                ],
+                "summary": "修改单据",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "单据 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "单据信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.OrderReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-单据"
+                ],
+                "summary": "删除单据",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "单据 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/orders/{id}/status": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-单据"
+                ],
+                "summary": "审核单据（审核通过时自动生成出入库单并调整库存）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "单据 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "目标状态",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.StatusReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/overview": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-报表"
+                ],
+                "summary": "数据概览",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.OverviewVO"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/print-templates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-打印模板"
+                ],
+                "summary": "打印模板列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "编码 / 名称 / 单据类型",
+                        "name": "keyword",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.PrintTemplateRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-打印模板"
+                ],
+                "summary": "新增打印模板",
+                "parameters": [
+                    {
+                        "description": "模板信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.PrintTemplateReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.IDData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/print-templates/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-打印模板"
+                ],
+                "summary": "修改打印模板",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "模板 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "模板信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.PrintTemplateReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-打印模板"
+                ],
+                "summary": "删除打印模板",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "模板 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/products": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-商品"
+                ],
+                "summary": "商品列表（含规格与计量单位）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "编码 / 名称 / 规格",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "状态 1 启用 0 停用",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "商品分类 ID",
+                        "name": "categoryId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.ProductRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-商品"
+                ],
+                "summary": "新增商品（含规格与计量单位）",
+                "parameters": [
+                    {
+                        "description": "商品信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.ProductReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.IDData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/products/duplicates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-商品"
+                ],
+                "summary": "同名商品提示（录商品时防止录重）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "商品名称（支持部分匹配）",
+                        "name": "name",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "编辑时排除自己的 ID",
+                        "name": "excludeId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/inv.ProductDupRow"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/products/pick": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-商品"
+                ],
+                "summary": "商品级联选项（供单据明细选择规格与单位）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "编码 / 名称 / 规格",
+                        "name": "keyword",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.ProductPickResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/products/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-商品"
+                ],
+                "summary": "商品详情（含规格与计量单位）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "商品 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.ProductRow"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-商品"
+                ],
+                "summary": "修改商品（含规格与计量单位）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "商品 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "商品信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.ProductReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-商品"
+                ],
+                "summary": "删除商品",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "商品 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/report/category": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-报表"
+                ],
+                "summary": "品类销售占比",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间范围",
+                        "name": "range",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/inv.ReportCategoryRow"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/report/ranking": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-报表"
+                ],
+                "summary": "销售排行（按客户）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间范围",
+                        "name": "range",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "条数，默认 5",
                         "name": "limit",
                         "in": "query"
                     }
@@ -227,67 +1783,18 @@
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/dashboard.ModuleStat"
+                                                "$ref": "#/definitions/inv.ReportRankRow"
                                             }
                                         }
                                     }
                                 }
                             ]
                         }
-                    },
-                    "401": {
-                        "description": "未登录或令牌失效",
-                        "schema": {
-                            "$ref": "#/definitions/response.Body"
-                        }
                     }
                 }
             }
         },
-        "/dashboard/overview": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "返回用户、角色、部门、菜单总数以及今日登录/操作/失败次数、近一周活跃用户数。\n与「人」有关的统计受调用者的数据范围约束，范围外的用户不计入。",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "仪表盘"
-                ],
-                "summary": "仪表盘概览统计",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/response.Body"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/dashboard.Overview"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "401": {
-                        "description": "未登录或令牌失效",
-                        "schema": {
-                            "$ref": "#/definitions/response.Body"
-                        }
-                    }
-                }
-            }
-        },
-        "/dashboard/recent-logins": {
+        "/inv/report/summary": {
             "get": {
                 "security": [
                     {
@@ -298,15 +1805,14 @@
                     "application/json"
                 ],
                 "tags": [
-                    "仪表盘"
+                    "进销存-报表"
                 ],
-                "summary": "最近登录记录",
+                "summary": "报表汇总（营业收入 / 成本 / 毛利）",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "default": 8,
-                        "description": "返回条数",
-                        "name": "limit",
+                        "type": "string",
+                        "description": "today | week | month | quarter | year",
+                        "name": "range",
                         "in": "query"
                     }
                 ],
@@ -322,26 +1828,17 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/definitions/model.LoginLog"
-                                            }
+                                            "$ref": "#/definitions/inv.ReportSummary"
                                         }
                                     }
                                 }
                             ]
                         }
-                    },
-                    "401": {
-                        "description": "未登录或令牌失效",
-                        "schema": {
-                            "$ref": "#/definitions/response.Body"
-                        }
                     }
                 }
             }
         },
-        "/dashboard/trend": {
+        "/inv/report/trend": {
             "get": {
                 "security": [
                     {
@@ -352,14 +1849,13 @@
                     "application/json"
                 ],
                 "tags": [
-                    "仪表盘"
+                    "进销存-报表"
                 ],
-                "summary": "登录与操作趋势",
+                "summary": "销售与采购趋势",
                 "parameters": [
                     {
                         "type": "integer",
-                        "default": 7,
-                        "description": "统计天数",
+                        "description": "天数，默认 30",
                         "name": "days",
                         "in": "query"
                     }
@@ -378,16 +1874,374 @@
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/definitions/dashboard.TrendPoint"
+                                                "$ref": "#/definitions/inv.ReportTrendPoint"
                                             }
                                         }
                                     }
                                 }
                             ]
                         }
+                    }
+                }
+            }
+        },
+        "/inv/stock-orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-库存"
+                ],
+                "summary": "出入库单据列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "in 入库 / out 出库",
+                        "name": "direction",
+                        "in": "query"
                     },
-                    "401": {
-                        "description": "未登录或令牌失效",
+                    {
+                        "type": "string",
+                        "description": "单号",
+                        "name": "keyword",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.StockOrderRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-库存"
+                ],
+                "summary": "新增出入库单据",
+                "parameters": [
+                    {
+                        "description": "出入库信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.StockOrderReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.IDData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/stock-orders/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-库存管理"
+                ],
+                "summary": "出入库单详情（打印用）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "出入库单 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.StockOrderDetail"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-库存"
+                ],
+                "summary": "作废出入库单据（回滚库存）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "单据 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/suppliers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-供应商"
+                ],
+                "summary": "供应商列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.PartyRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-供应商"
+                ],
+                "summary": "新增供应商",
+                "parameters": [
+                    {
+                        "description": "供应商信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.PartyReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.IDData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/suppliers/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-供应商"
+                ],
+                "summary": "修改供应商",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "供应商 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "供应商信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.PartyReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-供应商"
+                ],
+                "summary": "删除供应商",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "供应商 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/response.Body"
                         }
@@ -2847,63 +4701,6 @@
                 }
             }
         },
-        "dashboard.ModuleStat": {
-            "type": "object",
-            "properties": {
-                "module": {
-                    "type": "string"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "dashboard.Overview": {
-            "type": "object",
-            "properties": {
-                "activeUserWeek": {
-                    "type": "integer"
-                },
-                "deptCount": {
-                    "type": "integer"
-                },
-                "menuCount": {
-                    "type": "integer"
-                },
-                "roleCount": {
-                    "type": "integer"
-                },
-                "todayFailures": {
-                    "type": "integer"
-                },
-                "todayLogins": {
-                    "type": "integer"
-                },
-                "todayOps": {
-                    "type": "integer"
-                },
-                "userCount": {
-                    "type": "integer"
-                }
-            }
-        },
-        "dashboard.TrendPoint": {
-            "type": "object",
-            "properties": {
-                "date": {
-                    "type": "string"
-                },
-                "failCount": {
-                    "type": "integer"
-                },
-                "logins": {
-                    "type": "integer"
-                },
-                "opers": {
-                    "type": "integer"
-                }
-            }
-        },
         "dept.CreateReq": {
             "type": "object",
             "required": [
@@ -3016,6 +4813,1161 @@
                         0,
                         1
                     ]
+                }
+            }
+        },
+        "inv.CategoryOption": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "inv.CategoryReq": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "sort": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "integer",
+                    "enum": [
+                        0,
+                        1
+                    ]
+                }
+            }
+        },
+        "inv.CategoryRow": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "productCount": {
+                    "type": "integer"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "sort": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.FinanceRow": {
+            "type": "object",
+            "properties": {
+                "dueDate": {
+                    "description": "选填：未填时为 null，不参与逾期判定",
+                    "type": "string"
+                },
+                "orderDate": {
+                    "type": "string"
+                },
+                "orderId": {
+                    "type": "integer"
+                },
+                "orderNo": {
+                    "type": "string"
+                },
+                "outstanding": {
+                    "type": "number"
+                },
+                "overdue": {
+                    "type": "boolean"
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "settleStatus": {
+                    "type": "string"
+                },
+                "settledAmount": {
+                    "type": "number"
+                },
+                "totalAmount": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.InventoryRow": {
+            "type": "object",
+            "properties": {
+                "categoryName": {
+                    "type": "string"
+                },
+                "productCode": {
+                    "type": "string"
+                },
+                "productId": {
+                    "type": "integer"
+                },
+                "productName": {
+                    "type": "string"
+                },
+                "purchasePrice": {
+                    "description": "基本单位的采购价，用于算库存成本",
+                    "type": "number"
+                },
+                "spec": {
+                    "type": "string"
+                },
+                "specId": {
+                    "type": "integer"
+                },
+                "stock": {
+                    "type": "number"
+                },
+                "unit": {
+                    "description": "基本单位（库存的计数单位）",
+                    "type": "string"
+                },
+                "unitId": {
+                    "type": "integer"
+                },
+                "warn": {
+                    "type": "boolean"
+                },
+                "warnStock": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.OrderDetail": {
+            "type": "object",
+            "properties": {
+                "bizType": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "dueDate": {
+                    "description": "选填：未填时为 null",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "itemCount": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.OrderItemVO"
+                    }
+                },
+                "operator": {
+                    "type": "string"
+                },
+                "orderDate": {
+                    "type": "string"
+                },
+                "orderNo": {
+                    "type": "string"
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "settleStatus": {
+                    "type": "string"
+                },
+                "settledAmount": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "totalAmount": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.OrderItemReq": {
+            "type": "object",
+            "required": [
+                "productId",
+                "qty",
+                "specId",
+                "unitId"
+            ],
+            "properties": {
+                "price": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "productId": {
+                    "type": "integer"
+                },
+                "qty": {
+                    "type": "number"
+                },
+                "specId": {
+                    "type": "integer"
+                },
+                "unitId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.OrderItemVO": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "price": {
+                    "type": "number"
+                },
+                "productCode": {
+                    "type": "string"
+                },
+                "productId": {
+                    "type": "integer"
+                },
+                "productName": {
+                    "type": "string"
+                },
+                "qty": {
+                    "type": "number"
+                },
+                "qtyBase": {
+                    "type": "number"
+                },
+                "rate": {
+                    "type": "number"
+                },
+                "spec": {
+                    "type": "string"
+                },
+                "specId": {
+                    "type": "integer"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "unitId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.OrderReq": {
+            "type": "object",
+            "required": [
+                "bizType",
+                "items",
+                "orderDate",
+                "partyId"
+            ],
+            "properties": {
+                "bizType": {
+                    "type": "string",
+                    "enum": [
+                        "purchase",
+                        "sales"
+                    ]
+                },
+                "dueDate": {
+                    "type": "string"
+                },
+                "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/inv.OrderItemReq"
+                    }
+                },
+                "orderDate": {
+                    "type": "string"
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 255
+                }
+            }
+        },
+        "inv.OrderRow": {
+            "type": "object",
+            "properties": {
+                "bizType": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "dueDate": {
+                    "description": "选填：未填时为 null",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "itemCount": {
+                    "type": "integer"
+                },
+                "orderDate": {
+                    "type": "string"
+                },
+                "orderNo": {
+                    "type": "string"
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "settleStatus": {
+                    "type": "string"
+                },
+                "settledAmount": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "totalAmount": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.OverviewVO": {
+            "type": "object",
+            "properties": {
+                "activeCustomer": {
+                    "type": "integer"
+                },
+                "customerCount": {
+                    "type": "integer"
+                },
+                "monthNewCustomer": {
+                    "type": "integer"
+                },
+                "monthPurchase": {
+                    "type": "number"
+                },
+                "monthSales": {
+                    "type": "number"
+                },
+                "payableTotal": {
+                    "type": "number"
+                },
+                "pendingOrders": {
+                    "type": "integer"
+                },
+                "productCount": {
+                    "type": "integer"
+                },
+                "receivableTotal": {
+                    "type": "number"
+                },
+                "warnProductCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.PartyReq": {
+            "type": "object",
+            "required": [
+                "code",
+                "name"
+            ],
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "code": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "contact": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "phone": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "status": {
+                    "type": "integer",
+                    "enum": [
+                        0,
+                        1
+                    ]
+                },
+                "taxNo": {
+                    "type": "string",
+                    "maxLength": 64
+                }
+            }
+        },
+        "inv.PartyRow": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "balance": {
+                    "type": "number"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "contact": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "orderCount": {
+                    "type": "integer"
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "taxNo": {
+                    "type": "string"
+                }
+            }
+        },
+        "inv.PickSpecVO": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "spec": {
+                    "type": "string"
+                },
+                "stock": {
+                    "type": "number"
+                },
+                "units": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.PickUnitVO"
+                    }
+                }
+            }
+        },
+        "inv.PickUnitVO": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "isBase": {
+                    "type": "boolean"
+                },
+                "purchasePrice": {
+                    "type": "number"
+                },
+                "rate": {
+                    "type": "number"
+                },
+                "salePrice": {
+                    "type": "number"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "inv.PrintTemplateReq": {
+            "type": "object",
+            "required": [
+                "code",
+                "name"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "content": {
+                    "type": "string",
+                    "maxLength": 8000
+                },
+                "docType": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "paper": {
+                    "type": "string",
+                    "enum": [
+                        "A4",
+                        "A5"
+                    ]
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "status": {
+                    "type": "integer",
+                    "enum": [
+                        0,
+                        1
+                    ]
+                }
+            }
+        },
+        "inv.PrintTemplateRow": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "content": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "docType": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "paper": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.ProductDupRow": {
+            "type": "object",
+            "properties": {
+                "categoryName": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "specSummary": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.ProductPickResult": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.ProductPickVO"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "inv.ProductPickVO": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "specs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.PickSpecVO"
+                    }
+                }
+            }
+        },
+        "inv.ProductReq": {
+            "type": "object",
+            "required": [
+                "code",
+                "name",
+                "specs"
+            ],
+            "properties": {
+                "categoryId": {
+                    "type": "integer"
+                },
+                "code": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "specs": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/inv.ProductSpecReq"
+                    }
+                },
+                "status": {
+                    "type": "integer",
+                    "enum": [
+                        0,
+                        1
+                    ]
+                }
+            }
+        },
+        "inv.ProductRow": {
+            "type": "object",
+            "properties": {
+                "categoryId": {
+                    "type": "integer"
+                },
+                "categoryName": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "specCount": {
+                    "type": "integer"
+                },
+                "specs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.ProductSpecVO"
+                    }
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "totalStock": {
+                    "type": "number"
+                },
+                "unitCount": {
+                    "type": "integer"
+                },
+                "warn": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "inv.ProductSpecReq": {
+            "type": "object",
+            "required": [
+                "spec",
+                "units"
+            ],
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "spec": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "status": {
+                    "type": "integer",
+                    "enum": [
+                        0,
+                        1
+                    ]
+                },
+                "units": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/inv.ProductUnitReq"
+                    }
+                },
+                "warnStock": {
+                    "type": "number",
+                    "minimum": 0
+                }
+            }
+        },
+        "inv.ProductSpecVO": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "spec": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "stock": {
+                    "type": "number"
+                },
+                "units": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.ProductUnitVO"
+                    }
+                },
+                "warn": {
+                    "type": "boolean"
+                },
+                "warnStock": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.ProductUnitReq": {
+            "type": "object",
+            "required": [
+                "rate",
+                "unit"
+            ],
+            "properties": {
+                "isBase": {
+                    "type": "boolean"
+                },
+                "purchasePrice": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "rate": {
+                    "type": "number"
+                },
+                "salePrice": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "status": {
+                    "type": "integer",
+                    "enum": [
+                        0,
+                        1
+                    ]
+                },
+                "unit": {
+                    "type": "string",
+                    "maxLength": 16
+                }
+            }
+        },
+        "inv.ProductUnitVO": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "isBase": {
+                    "type": "boolean"
+                },
+                "purchasePrice": {
+                    "type": "number"
+                },
+                "rate": {
+                    "type": "number"
+                },
+                "salePrice": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "inv.ReportCategoryRow": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "ratio": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.ReportRankRow": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "orderCount": {
+                    "type": "integer"
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "rank": {
+                    "type": "integer"
+                },
+                "ratio": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.ReportSummary": {
+            "type": "object",
+            "properties": {
+                "costAmount": {
+                    "type": "number"
+                },
+                "grossProfit": {
+                    "type": "number"
+                },
+                "grossRate": {
+                    "type": "number"
+                },
+                "purchases": {
+                    "type": "number"
+                },
+                "range": {
+                    "type": "string"
+                },
+                "salesAmount": {
+                    "type": "number"
+                },
+                "salesOrders": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.ReportTrendPoint": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "purchaseAmount": {
+                    "type": "number"
+                },
+                "salesAmount": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.SettleReq": {
+            "type": "object",
+            "required": [
+                "amount",
+                "orderId"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "method": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "orderId": {
+                    "type": "integer"
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "settledAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "inv.StatusReq": {
+            "type": "object",
+            "required": [
+                "status"
+            ],
+            "properties": {
+                "status": {
+                    "type": "integer",
+                    "enum": [
+                        1,
+                        2,
+                        3
+                    ]
+                }
+            }
+        },
+        "inv.StockItemReq": {
+            "type": "object",
+            "required": [
+                "productId",
+                "qty",
+                "specId",
+                "unitId"
+            ],
+            "properties": {
+                "productId": {
+                    "type": "integer"
+                },
+                "qty": {
+                    "type": "number"
+                },
+                "specId": {
+                    "type": "integer"
+                },
+                "unitId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.StockOrderDetail": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.StockPrintItem"
+                    }
+                },
+                "operator": {
+                    "description": "制单人昵称",
+                    "type": "string"
+                },
+                "orderDate": {
+                    "type": "string"
+                },
+                "orderNo": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "sourceOrderNo": {
+                    "description": "来源采购 / 销售单号，手工单为空",
+                    "type": "string"
+                },
+                "sourceType": {
+                    "type": "string"
+                },
+                "totalQty": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.StockOrderReq": {
+            "type": "object",
+            "required": [
+                "direction",
+                "items",
+                "orderDate"
+            ],
+            "properties": {
+                "direction": {
+                    "type": "string",
+                    "enum": [
+                        "in",
+                        "out"
+                    ]
+                },
+                "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/inv.StockItemReq"
+                    }
+                },
+                "orderDate": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "sourceType": {
+                    "type": "string",
+                    "enum": [
+                        "purchase",
+                        "sales",
+                        "manual"
+                    ]
+                }
+            }
+        },
+        "inv.StockOrderRow": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "itemCount": {
+                    "type": "integer"
+                },
+                "orderDate": {
+                    "type": "string"
+                },
+                "orderNo": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "sourceId": {
+                    "type": "integer"
+                },
+                "sourceType": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "totalQty": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.StockPrintItem": {
+            "type": "object",
+            "properties": {
+                "productCode": {
+                    "type": "string"
+                },
+                "productName": {
+                    "type": "string"
+                },
+                "qty": {
+                    "type": "number"
+                },
+                "qtyBase": {
+                    "type": "number"
+                },
+                "rate": {
+                    "type": "number"
+                },
+                "spec": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "unitBase": {
+                    "description": "基本单位名，用于把基本数量写清楚",
+                    "type": "string"
                 }
             }
         },

@@ -3,7 +3,7 @@ package profile
 import (
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/module"
+	"nova-erp/internal/module"
 )
 
 // Module 返回个人中心模块的自描述清单。

@@ -9,7 +9,7 @@ package dbquery
 import (
 	"gorm.io/gorm"
 
-	"nova-admin/internal/pkg/errcode"
+	"nova-erp/internal/pkg/errcode"
 )
 
 // FetchWithCap 按 cap 取数，内部多查一行用于判断是否超限。

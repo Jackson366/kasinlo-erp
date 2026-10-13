@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"nova-admin/internal/database"
-	"nova-admin/internal/model"
+	"nova-erp/internal/database"
+	"nova-erp/internal/model"
 )
 
 // statusCase 描述「新增后回读状态」这一族用例。

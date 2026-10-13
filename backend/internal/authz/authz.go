@@ -8,9 +8,9 @@ import (
 
 	"gorm.io/gorm"
 
-	"nova-admin/internal/database"
-	"nova-admin/internal/model"
-	"nova-admin/internal/pkg/errcode"
+	"nova-erp/internal/database"
+	"nova-erp/internal/model"
+	"nova-erp/internal/pkg/errcode"
 )
 
 // SuperRoleCode 是超级管理员角色标识，拥有全部权限。

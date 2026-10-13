@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"nova-admin/internal/database"
-	"nova-admin/internal/model"
-	"nova-admin/internal/pkg/sheet"
+	"nova-erp/internal/database"
+	"nova-erp/internal/model"
+	"nova-erp/internal/pkg/sheet"
 )
 
 // importHeaders 是导入模板的表头，必须与后端列定义一致。
@@ -365,19 +365,15 @@ func TestBuiltinPermissionsBackfilled(t *testing.T) {
 	setup(t)
 	db := database.DB()
 
-	newMenus := map[string]int64{
-		"system:user:export": 105,
-		"system:user:import": 106,
-		"system:role:export": 115,
-		"system:log:export":  149,
+	// 只校验「补齐了、类型对、不重复」——主键由库分配，会随种子顺序变化，
+	// 断言具体 ID 等于把测试绑死在某一份种子上（dashboard 下线后全表 ID 都变过一轮）。
+	newMenus := []string{
+		"system:user:export", "system:user:import", "system:role:export", "system:log:export",
 	}
-	for perm, menuID := range newMenus {
+	for _, perm := range newMenus {
 		var found model.Menu
 		if err := db.Where("permission = ?", perm).First(&found).Error; err != nil {
 			t.Fatalf("权限点 %s 未补进菜单表: %v", perm, err)
-		}
-		if found.ID != menuID {
-			t.Fatalf("权限点 %s 的菜单 ID 期望 %d，实际 %d", perm, menuID, found.ID)
 		}
 		if found.Type != model.MenuTypeButton {
 			t.Fatalf("权限点 %s 应为按钮类型，实际 %s", perm, found.Type)

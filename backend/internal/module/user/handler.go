@@ -6,14 +6,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/authz"
-	"nova-admin/internal/middleware"
-	"nova-admin/internal/pkg/bind"
-	"nova-admin/internal/pkg/errcode"
-	"nova-admin/internal/pkg/page"
-	"nova-admin/internal/pkg/response"
-	"nova-admin/internal/pkg/sheet"
-	"nova-admin/internal/pkg/textutil"
+	"nova-erp/internal/authz"
+	"nova-erp/internal/middleware"
+	"nova-erp/internal/pkg/bind"
+	"nova-erp/internal/pkg/errcode"
+	"nova-erp/internal/pkg/page"
+	"nova-erp/internal/pkg/response"
+	"nova-erp/internal/pkg/sheet"
+	"nova-erp/internal/pkg/textutil"
 )
 
 // Handler 用户接口处理器。

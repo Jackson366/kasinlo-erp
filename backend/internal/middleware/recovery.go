@@ -7,9 +7,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"nova-admin/internal/logger"
-	"nova-admin/internal/pkg/errcode"
-	"nova-admin/internal/pkg/response"
+	"nova-erp/internal/logger"
+	"nova-erp/internal/pkg/errcode"
+	"nova-erp/internal/pkg/response"
 )
 
 // Recovery 捕获 panic，记录堆栈并返回统一错误响应。

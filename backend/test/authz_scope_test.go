@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"nova-admin/internal/model"
+	"nova-erp/internal/model"
 
-	"nova-admin/internal/database"
+	"nova-erp/internal/database"
 )
 
 // 本文件覆盖「授权入口的唯一性」与「角色属性本身也是授权能力」这两类缺陷。

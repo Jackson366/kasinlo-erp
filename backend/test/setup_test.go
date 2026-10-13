@@ -1,4 +1,4 @@
-// Package test 提供 Nova Admin 的进程内端到端测试。
+// Package test 提供 Nova ERP 的进程内端到端测试。
 // 通过 httptest 直接驱动 gin 引擎，不依赖网络端口，可在任何环境稳定运行。
 package test
 
@@ -17,11 +17,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"nova-admin/internal/assembly"
-	"nova-admin/internal/bootstrap"
-	"nova-admin/internal/model"
-	"nova-admin/internal/oplog"
-	"nova-admin/internal/router"
+	"nova-erp/internal/assembly"
+	"nova-erp/internal/bootstrap"
+	"nova-erp/internal/model"
+	"nova-erp/internal/oplog"
+	"nova-erp/internal/router"
 )
 
 const (

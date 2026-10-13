@@ -5,9 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/pkg/errcode"
-	"nova-admin/internal/pkg/limiter"
-	"nova-admin/internal/pkg/response"
+	"nova-erp/internal/pkg/errcode"
+	"nova-erp/internal/pkg/limiter"
+	"nova-erp/internal/pkg/response"
 )
 
 // RateLimit 返回一个「每 IP 请求数」的滑动窗口限流中间件。

@@ -11,9 +11,9 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"nova-admin/internal/logger"
-	"nova-admin/internal/model"
-	"nova-admin/internal/pkg/textutil"
+	"nova-erp/internal/logger"
+	"nova-erp/internal/model"
+	"nova-erp/internal/pkg/textutil"
 )
 
 // Entry 是一条待写入的操作日志。

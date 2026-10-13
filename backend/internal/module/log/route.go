@@ -3,8 +3,8 @@ package log
 import (
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/config"
-	"nova-admin/internal/middleware"
+	"nova-erp/internal/config"
+	"nova-erp/internal/middleware"
 )
 
 // Register 注册日志模块路由。

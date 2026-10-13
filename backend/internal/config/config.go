@@ -74,9 +74,22 @@ type DatabaseConfig struct {
 }
 
 // DSN 返回 GORM 使用的 PostgreSQL 连接串。
+//
+// statement_cache_mode=describe 是针对「运行时可能改表结构」的刻意选择：
+// AutoMigrate 会在升级时补列/改列（见 test/upgrade_test.go 的老库迁移用例），
+// 而 pgx 默认的 prepare 模式会把语句计划按连接缓存，表结构一变，
+// 同一连接上复用同一 SQL 就会报
+// `已缓冲的计划不能改变结果类型 (SQLSTATE 0A000)` —— 报错点离真正的
+// 变更点很远（表现为登录失败、查询 500），极难排查。
+// describe_exec 模式每次执行前重新 Describe 拿结果类型，代价是一次往返，
+// 换来的是「改表不需要重启所有连接」。
+//
+// 参数名注意：`default_query_exec_mode=describe_exec` 是 pgx v5 的写法，
+// v4 的 `statement_cache_mode` 在 v5 会被当成未知启动参数透传给服务器，
+// 表现是连库时报「未认可的配置参数」(SQLSTATE 42704)。
 func (d DatabaseConfig) DSN() string {
 	return fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=%s default_query_exec_mode=describe_exec",
 		d.Host, d.Port, d.User, d.Password, d.DBName, d.SSLMode, d.TimeZone,
 	)
 }
