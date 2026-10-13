@@ -376,8 +376,9 @@ const PROBE_THEME = `JSON.stringify({
   attr: document.documentElement.dataset.theme || null,
   stored: localStorage.getItem('nova_theme'),
   bodyBg: getComputedStyle(document.body).backgroundColor,
+  // 数据概览页首张指标卡：亮暗两套主题下底色/渐变应不同（原仪表盘欢迎卡探针的下位替代）
+  cardBg: (() => { const e = document.querySelector('.overview-page .stat-card'); return e ? getComputedStyle(e).backgroundImage + '|' + getComputedStyle(e).backgroundColor : null })(),
   contentBg: (() => { const e = document.querySelector('.layout__content'); return e ? getComputedStyle(e).backgroundColor : null })(),
-  helloBg: (() => { const e = document.querySelector('.dashboard__hello'); return e ? getComputedStyle(e).backgroundImage : null })(),
   appBg: getComputedStyle(document.documentElement).getPropertyValue('--app-bg').trim(),
   textColor: getComputedStyle(document.body).color,
 })`
@@ -439,10 +440,15 @@ async function main() {
   void coldCls
 
   const afterLogin = await formLogin(ADMIN.user, ADMIN.secret)
-  check('登录后进入仪表盘', afterLogin === '#/dashboard', `hash=${afterLogin}`)
-  const dash = await inspectPage('#/dashboard')
-  check('仪表盘可见', !!dash.visible && dash.settled, `opacity=${dash.opacity} h=${dash.h} settled=${dash.settled}`)
-  report.phases.login = { coldHash, afterLogin, dash }
+  // 首页是「数据概览」而不是框架自带的仪表盘：进销存是这套后台的主线功能
+  check('登录后进入数据概览', afterLogin === '#/inv/overview', `hash=${afterLogin}`)
+  const invOverview = await inspectPage('#/inv/overview')
+  check(
+    '数据概览可见',
+    !!invOverview.visible && invOverview.settled,
+    `opacity=${invOverview.opacity} h=${invOverview.h} settled=${invOverview.settled}`,
+  )
+  report.phases.login = { coldHash, afterLogin, invOverview }
 
   // ── 阶段 2：动态路由（F5 深链）───────────────────────
   console.log('[2] 动态路由：F5 直接进业务页不应落 404')
@@ -485,7 +491,7 @@ async function main() {
 
   // ── 阶段 3：菜单遍历 ────────────────────────────────
   console.log('[3] 侧边栏菜单遍历（白屏 / 动画卡死检测）')
-  await coldStart(`${APP}/#/dashboard`, 3200)
+  await coldStart(`${APP}/#/inv/overview`, 3200)
   const subTitles = await evaluate(`Array.from(document.querySelectorAll('.layout__aside .el-sub-menu__title')).map(e => e.textContent.trim()).filter(Boolean)`)
   for (const t of subTitles) {
     await clickByText('.layout__aside .el-sub-menu__title', t)
@@ -493,7 +499,17 @@ async function main() {
   }
   const labels = await evaluate(`Array.from(document.querySelectorAll('.layout__aside .el-menu-item')).map(e => e.textContent.trim()).filter(Boolean)`)
   const expected = {
-    仪表盘: { hash: '#/dashboard', cls: 'dashboard' },
+    数据概览: { hash: '#/inv/overview', cls: 'overview-page' },
+    采购管理: { hash: '#/inv/purchase', cls: 'order-page' },
+    销售管理: { hash: '#/inv/sales', cls: 'order-page' },
+    库存管理: { hash: '#/inv/stock', cls: 'stock-page' },
+    应收应付: { hash: '#/inv/finance', cls: 'finance-page' },
+    报表中心: { hash: '#/inv/report', cls: 'report-page' },
+    打印模板: { hash: '#/inv/print', cls: 'print-page' },
+    商品管理: { hash: '#/inv/product', cls: 'product-page' },
+    商品分类: { hash: '#/inv/category', cls: 'category-page' },
+    客户管理: { hash: '#/inv/customer', cls: 'party-page' },
+    供应商管理: { hash: '#/inv/supplier', cls: 'party-page' },
     用户管理: { hash: '#/system/user', cls: 'user-page' },
     角色管理: { hash: '#/system/role', cls: 'role-page' },
     菜单管理: { hash: '#/system/menu', cls: 'menu-page' },
@@ -536,13 +552,97 @@ async function main() {
   }
   report.phases.treeSelect = treeResults
 
+  // ── 阶段 4.1：商品多规格编辑弹窗 ─────────────────────
+  // 这个弹窗里是自绘的「规格卡片 + 单位行」网格，比普通表单更容易出两类问题：
+  //   1. 网格横向溢出弹窗（列宽是写死的 px）；
+  //   2. 逐字段必填渲染了、但「整数组」的跨行校验没接上 prop，
+  //      于是空规格能直接提交（服务端虽然会拦，但用户看到的是「点了确定没反应」）。
+  console.log('[4.1] 商品多规格编辑弹窗（结构 + 嵌套校验）')
+  await coldStart(`${APP}/#/inv/product`, 2800)
+  await evaluate(`(() => { const b = Array.from(document.querySelectorAll('button')).find(e => e.textContent.trim() === '新增商品'); if (b) b.click(); return !!b })()`)
+  await sleep(1200)
+
+  const specLayout = await evaluate(`(() => {
+    const dlg = document.querySelector('.el-dialog');
+    if (!dlg) return { ok: false, reason: 'no dialog' };
+    const cards = dlg.querySelectorAll('.spec-card');
+    const heads = Array.from(dlg.querySelectorAll('.unit-table__row--head .unit-col'))
+      .map(e => e.textContent.trim()).filter(Boolean);
+    return {
+      ok: true,
+      cards: cards.length,
+      rows: dlg.querySelectorAll('.unit-table__row:not(.unit-table__row--head)').length,
+      heads,
+      baseChecked: !!dlg.querySelector('.unit-col--base .el-radio.is-checked'),
+      overflow: Array.from(cards).some(c => c.scrollWidth > c.clientWidth + 2),
+      cols: (dlg.querySelector('.unit-table__row:not(.unit-table__row--head)')?.children || []).length,
+    };
+  })()`)
+  check(
+    '新增商品弹窗渲染规格卡片与单位行（默认一个基本单位）',
+    specLayout.ok && specLayout.cards === 1 && specLayout.rows === 1 && specLayout.baseChecked,
+    `cards=${specLayout.cards} rows=${specLayout.rows} baseChecked=${specLayout.baseChecked}`,
+  )
+  check(
+    '单位行表头齐全（计量单位 / 换算率 / 基本单位 / 采购价 / 销售价）且不横向溢出',
+    ['计量单位', '换算率（1 该单位 = ? 基本单位）', '基本单位', '采购价', '销售价'].every((h) =>
+      specLayout.heads.includes(h),
+    ) &&
+      !specLayout.overflow &&
+      specLayout.cols === 6,
+    `heads=${JSON.stringify(specLayout.heads)} cols=${specLayout.cols} overflow=${specLayout.overflow}`,
+  )
+
+  await evaluate(`(() => {
+    const dlg = document.querySelector('.el-dialog');
+    const pick = (t) => Array.from(dlg.querySelectorAll('button')).find(e => e.textContent.trim() === t);
+    pick('添加计量单位')?.click();
+    pick('添加规格')?.click();
+    return true;
+  })()`)
+  await sleep(500)
+  const grown = await evaluate(`(() => {
+    const dlg = document.querySelector('.el-dialog');
+    return {
+      cards: dlg.querySelectorAll('.spec-card').length,
+      rows: dlg.querySelectorAll('.unit-table__row:not(.unit-table__row--head)').length,
+    };
+  })()`)
+  check('添加规格 / 添加计量单位按钮生效', grown.cards === 2 && grown.rows === 3, `cards=${grown.cards} rows=${grown.rows}`)
+
+  await evaluate(`(() => {
+    const dlg = document.querySelector('.el-dialog');
+    Array.from(dlg.querySelectorAll('.el-button--primary')).find(e => e.textContent.trim() === '确定')?.click();
+    return true;
+  })()`)
+  await sleep(900)
+  const blocked = await evaluate(`(() => {
+    const dlg = document.querySelector('.el-dialog');
+    return {
+      open: !!dlg && getComputedStyle(dlg).display !== 'none',
+      errors: Array.from(document.querySelectorAll('.el-dialog .el-form-item__error')).map(e => e.textContent.trim()).slice(0, 4),
+    };
+  })()`)
+  check(
+    '空规格提交被拦下且弹窗未关闭',
+    blocked.open && blocked.errors.length > 0,
+    `open=${blocked.open} errors=${JSON.stringify(blocked.errors)}`,
+  )
+  await evaluate(`(() => {
+    const dlg = document.querySelector('.el-dialog');
+    Array.from(dlg.querySelectorAll('button')).find(e => e.textContent.trim() === '取消')?.click();
+    return true;
+  })()`)
+  await sleep(600)
+  report.phases.productDialog = { specLayout, grown, blocked }
+
   // ── 阶段 5：低权限账号 ──────────────────────────────
   console.log('[5] 低权限账号：按钮级权限与接口鉴权')
   consoleLogs = []
   pageErrors = []
   await resetSession()
   const viewerHash = await formLogin(VIEWER.user, VIEWER.secret)
-  check('demo 登录成功', viewerHash === '#/dashboard', `hash=${viewerHash}`)
+  check('demo 登录成功', viewerHash === '#/inv/overview', `hash=${viewerHash}`)
   await coldStart(`${APP}/#/system/user`, 2800)
   // §5.34 之后 v-perm 的语义是「CSS 隐藏，绝不摘 DOM」，
   // 所以这里必须检查**可见性**而不是 textContent —— 隐藏的按钮 textContent 仍在。
@@ -586,7 +686,7 @@ async function main() {
 
   await formLogin(ADMIN.user, ADMIN.secret)
   const backHash = await evaluate('location.hash')
-  check('重新以 admin 登录可正常进入', backHash === '#/dashboard', `hash=${backHash}`)
+  check('重新以 admin 登录可正常进入', backHash === '#/inv/overview', `hash=${backHash}`)
   report.phases.switchAccount = { logoutState, backHash }
 
   // ── 阶段 7：暗色主题 ────────────────────────────────
@@ -603,7 +703,7 @@ async function main() {
   // 带着暗色偏好登录，顺带验证选择在路由跳转后不丢
   const darkLoginHash = await formLogin(ADMIN.user, ADMIN.secret)
   const theme2 = JSON.parse(await evaluate(PROBE_THEME))
-  check('登录跳转后仍保持暗色', theme2.dark === true && darkLoginHash === '#/dashboard', `hash=${darkLoginHash} dark=${theme2.dark}`)
+  check('登录跳转后仍保持暗色', theme2.dark === true && darkLoginHash === '#/inv/overview', `hash=${darkLoginHash} dark=${theme2.dark}`)
   check(
     '暗色令牌与内容区底色都变深',
     theme2.appBg === '#0f1420' && theme2.bodyBg === theme2.contentBg && theme2.bodyBg !== theme0.bodyBg,
@@ -658,7 +758,7 @@ async function main() {
 
   // 持久化：F5 后仍是暗色（内联脚本 + store 两条路都要生效）
   console.log('[7.3] 暗色持久化与切回亮色')
-  await coldStart(`${APP}/#/dashboard`, 3000)
+  await coldStart(`${APP}/#/inv/overview`, 3000)
   const persisted = JSON.parse(await evaluate(PROBE_THEME))
   check('刷新后仍是暗色（持久化生效）', persisted.dark === true && persisted.stored === 'dark', `dark=${persisted.dark} stored=${persisted.stored}`)
 
@@ -666,8 +766,8 @@ async function main() {
   await sleep(800)
   const backLight = JSON.parse(await evaluate(PROBE_THEME))
   check('顶栏按钮可切回亮色', backLight.dark === false && backLight.attr === 'light' && backLight.stored === 'light', `dark=${backLight.dark} stored=${backLight.stored}`)
-  check('切回亮色后底色恢复', backLight.bodyBg === theme0.bodyBg && backLight.helloBg !== theme2.helloBg, `body=${backLight.bodyBg} hello 变化=${backLight.helloBg !== theme2.helloBg}`)
-  check('亮色下欢迎卡渐变与暗色不同', String(backLight.helloBg) !== String(persisted.helloBg), `light="${String(backLight.helloBg).slice(0, 46)}"`)
+  check('切回亮色后底色恢复', backLight.bodyBg === theme0.bodyBg && backLight.cardBg !== theme2.cardBg, `body=${backLight.bodyBg} 卡片变化=${backLight.cardBg !== theme2.cardBg}`)
+  check('亮色下指标卡与暗色不同', String(backLight.cardBg) !== String(persisted.cardBg), `light="${String(backLight.cardBg).slice(0, 46)}"`)
 
   const lightContrast = await evaluate(PROBE_CONTRAST)
   const lightLow = lightContrast.filter((c) => c.missing || c.ratio < 4.5)
@@ -680,7 +780,7 @@ async function main() {
   for (const scheme of ['dark', 'light']) {
     await emulateColorScheme(scheme)
     await evaluate(`localStorage.removeItem('nova_theme')`)
-    await coldStart(`${APP}/#/dashboard`, 2800)
+    await coldStart(`${APP}/#/inv/overview`, 2800)
     const st = JSON.parse(await evaluate(PROBE_THEME))
     const ok = st.dark === (scheme === 'dark') && st.stored === null
     check(`系统偏好 ${scheme} → 首屏即为 ${scheme}`, ok, `dark=${st.dark} stored=${st.stored} bg=${st.bodyBg}`)

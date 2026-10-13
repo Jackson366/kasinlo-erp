@@ -32,7 +32,7 @@ FRAMEWORK_PATHS=(
   cmd
 )
 
-violations=$(grep -rn '"nova-admin/internal/module/' \
+violations=$(grep -rn '"nova-erp/internal/module/' \
   "${FRAMEWORK_PATHS[@]}" 2>/dev/null \
   | grep -v '^internal/assembly/' \
   | grep -v '_test\.go:' || true)

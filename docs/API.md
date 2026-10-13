@@ -114,7 +114,7 @@
 
 > **数据范围（`data_scope`）**：角色的数据范围有 4 档（1 全部 / 2 本部门 / 3 本部门及以下 / 4 仅本人），
 > 多角色取最宽松者。它**同时约束读与写**，涉及「人」的接口一律生效：
-> 用户列表与详情、部门树、仪表盘概览与最近登录。
+> 用户列表与详情、部门树、登录与操作日志。
 >
 > | 越界场景 | 返回 |
 > | --- | --- |
@@ -213,7 +213,7 @@
 > 注意：不带 `/api/v1` 前缀。
 
 ```json
-{ "app": "nova-admin", "status": "ok", "version": "v1" }
+{ "app": "nova-erp", "status": "ok", "version": "v1" }
 ```
 
 ---
@@ -311,10 +311,10 @@
 [
   {
     "id": 1,
-    "name": "Dashboard",
-    "path": "/dashboard",
-    "component": "dashboard/index",
-    "meta": { "title": "仪表盘", "icon": "Odometer", "keepAlive": true, "permission": "dashboard:view" }
+    "name": "InvOverview",
+    "path": "/inv/overview",
+    "component": "inv/overview/index",
+    "meta": { "title": "数据概览", "icon": "Odometer", "keepAlive": true, "permission": "inv:overview:view" }
   },
   {
     "id": 10,
@@ -469,31 +469,243 @@
 
 ---
 
-## 十、仪表盘
+## 十、进销存
+## 十一、进销存
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/v1/dashboard/overview` | 用户数/角色数/部门数/今日登录 四项概览 |
-| GET | `/api/v1/dashboard/trend` | 近 N 天登录与操作趋势 |
-| GET | `/api/v1/dashboard/modules` | 各业务模块操作量统计 |
-| GET | `/api/v1/dashboard/recent-logins` | 最近登录记录 |
+进销存是这套后台的主线业务，权限命名空间统一为 `inv`。接口全部挂在 `/api/v1/inv` 下，
+分页、错误码、令牌策略与第一至三章完全一致。
 
-均需登录，无独立权限码。
+> **业务线的二次鉴权**：采购与销售共用 `/inv/orders` 一条路由，路由上的
+> `RequirePerm` 只要求「采购或销售任一读权限」。因此进入 handler 之后
+> 还会按实体的 `bizType` 再做一次 `ensureBizPerm` 判定 ——
+> 只有 `inv:sales:list` 的账号传 `bizType=purchase` 会被拒（403），
+> 否则换个查询参数就能读到另一条业务线的单据。
 
-**四个接口全部按数据范围统计**（见 §1.5）：
+### 11.1 数据概览
 
-| 字段 / 接口 | 是否受范围约束 |
-| --- | --- |
-| `userCount`、今日登录/失败/操作数、近一周活跃用户 | 是 |
-| `roleCount`、`menuCount` | 否（配置元数据，不含业务数据） |
-| `/trend`、`/modules` 的全部计数 | 是 |
-| `/recent-logins` 的每一条记录 | 是（带用户名、IP、UserAgent，跨部门可见等于泄露「谁在何时从哪登录」） |
+| 方法 | 路径 | 权限码 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/v1/inv/overview` | `inv:overview:view` | 客户数/活跃客户/本月新增、应收/应付总额、本月销售/采购、待处理单据、商品数与预警数 |
 
-登录日志中 `userId = 0` 的行（未识别出账号的失败登录）不属于任何人的范围，非超管看不到。
+**这是登录后的落地页**。落地页由前端 `firstLeafPath(menus)` 按菜单树顺序推导 ——
+「数据概览」是**顶级菜单**且 sort=1，第一个叶子就是它（见 AGENTS.md §5.62）。
+
+### 11.2 基础资料（客户 / 供应商 / 商品 / 商品分类）
+
+| 方法 | 路径 | 权限码 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/v1/inv/customers` | `inv:customer:list` | 客户列表（含 `balance` 应收余额、`orderCount` 单据数） |
+| POST | `/api/v1/inv/customers` | `inv:customer:create` | 新增客户 |
+| PUT | `/api/v1/inv/customers/{id}` | `inv:customer:update` | 修改客户 |
+| DELETE | `/api/v1/inv/customers/{id}` | `inv:customer:delete` | 删除客户（被单据引用时 40900） |
+| GET | `/api/v1/inv/suppliers` | `inv:supplier:list` | 供应商列表（`balance` 为应付余额） |
+| POST/PUT/DELETE | `/api/v1/inv/suppliers[/{id}]` | `inv:supplier:*` | 供应商增删改，语义与客户一致 |
+
+**商品是三层结构**：`商品 → 规格 → 计量单位`。
+
+- 第一层 `inv_products` 只放**身份**：编码、名称、分类、状态、备注。
+- 第二层 `inv_product_specs` 是**库存桶**：同一商品的每个规格（如 `φ20`、`φ25`）
+  各自记 `stock` / `warn_stock`。
+- 第三层 `inv_product_units` 是**计量单位**：同一规格下可以有多个单位
+  （如 `根` / `米` / `捆`），各带 `rate` 换算率与采购价 / 销售价。
+
+**库存只记在规格上，且按基本单位计**；**单价记在单位上**。
+于是「`φ20` 剩 30 根 = 180 米」永远只有一个数，「1 箱 100 元 vs 1 个 10.5 元」
+的价差也能被正确带出 —— 库存归属与价格归属分开，是这套模型的关键。
+
+`rate` 的口径固定为「**1 个该单位 = rate 个基本单位**」，基本单位自身 `rate` 恒为 1。
+单据按 `qtyBase = qty × rate` 折算扣减库存。
+
+#### 商品分类（字典表）
+
+| 方法 | 路径 | 权限码 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/v1/inv/categories` | `inv:category:list` | 分类列表（含 `productCount` 引用商品数） |
+| GET | `/api/v1/inv/categories/options` | 同列表 | 启用分类的精简选项，供下拉 |
+| POST | `/api/v1/inv/categories` | `inv:category:create` | 新增分类（名称重复 40900） |
+| PUT | `/api/v1/inv/categories/{id}` | `inv:category:update` | 修改分类（名称 / 排序 / 状态 / 备注） |
+| DELETE | `/api/v1/inv/categories/{id}` | `inv:category:delete` | 删除分类（**仍被商品引用时 40900**，可改为停用） |
+
+分类从「商品表上的一列自由文本」升级为独立字典表，是为了让品类统计稳定 ——
+自由文本下「钢材」「钢材 」会各算一类，报表的品类占比会凭空多出一块。
+删除前必须校验引用：否则 `inv_products.category_id` 悬空，商品还在、分类没了。
+
+#### 商品
+
+| 方法 | 路径 | 权限码 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/v1/inv/products` | `inv:product:list` \| `inv:purchase:list` \| `inv:sales:list` \| `inv:stock:list` | 商品列表（商品管理页分页；含规格数 / 单位数 / 总库存 / 规格明细） |
+| GET | `/api/v1/inv/products/pick` | 同商品列表 | **三级级联选项**：商品 → 规格 → 单位（只含启用且单位非空的规格），供单据明细下拉 |
+
+#### `GET /inv/products/pick` 的返回体
+
+```json
+{ "items": [ { "id": 1, "code": "SP001", "name": "热轧钢板", "specs": [ … ] } ],
+  "total": 9, "truncated": false }
+```
+
+级联选项一次最多给 `pickLimit`（500）个商品，`truncated` 为 `true` 表示**后面还有**。
+这个标记是刻意暴露的：不给的话，商品多了以后下拉里就「少了几个」，
+用户只会以为系统没录进去 —— 静默截断比报错更难排查。
+前端拿到 `truncated=true` 要提示「请用关键字搜索」，并且搜索要走
+`remote-method` 合并服务端结果（不能只靠本地 `filterable`，那是过滤不是搜索）。
+| GET | `/api/v1/inv/products/duplicates` | `inv:product:list` | 按名称查同名商品（`name`、可选 `excludeId`），供录入防重提示 |
+| GET | `/api/v1/inv/products/{id}` | 同商品列表 | 商品详情（含完整规格与单位树） |
+| POST | `/api/v1/inv/products` | `inv:product:create` | 新增商品（编码重复 40900；规格与单位见下方约束） |
+| PUT | `/api/v1/inv/products/{id}` | `inv:product:update` | 修改商品（联动保存规格与单位） |
+| DELETE | `/api/v1/inv/products/{id}` | `inv:product:delete` | 删除商品（被单据明细引用时 40900，可改为停用） |
+
+静态路径 `pick` / `duplicates` 注册在 `/{id}` **之前**，否则会被后者当成 id 吞掉。
+
+商品列表支持 `keyword`（匹配编码 / 名称 / **规格**）、`status`（0/1）、`categoryId` 三个筛选。
+
+**`stock` 是只读字段**：它由出入库单据驱动，新增 / 修改接口都不接受它 ——
+否则档案上会多出一套与单据无关的库存账，盘点对不上时无从追溯。
+`warn` 由 `warn_stock > 0 && stock <= warn_stock` 推导，不入库。
+
+**规格与单位的写入约束**（任一不满足返回 40000）：
+
+- 同一商品下规格名不得重复；同一规格下单位名不得重复。
+- 每个规格**有且只有一个基本单位**（`isBase`），且它的 `rate` 必须等于 1。
+- 每个规格至少带一个计量单位。
+- `rate` 必须 `> 0`。
+
+**改名不能产生僵尸规格**：规格被历史单据引用后是删不掉的（只能停用），
+所以保存时回传规格 / 单位的 `id`，后端**优先按 ID 匹配**、否则按名称匹配，
+再「比对后增删改」而不是全删重建 —— 全删重建会让规格与单位 ID 漂移，
+历史单据明细的 `spec_id` / `unit_id` 随即失效，那张单再保存就会被校验打回。
+被移除但已被引用的规格只做停用（`specInUse`），保住历史单据可编辑。
+
+**明细里的三元组会被校验**：`resolveSpecUnits` 检查 `productId → specId → unitId`
+是否构成真实存在的链（单位属于规格、规格属于商品），**并且三层都必须是启用状态**，
+不成立则 40000（「商品「X」下不存在所选规格」/「规格「Y」下不存在所选计量单位」/
+「规格「X Y」已停用」）。
+不校验的话下拉串了会把库存记到不属于它的规格上，**账面上完全看不出来，要等盘点才发现**；
+不校验状态的话，页面打开后管理员停用档案这段竞态里，停用就形同虚设。
+
+**关键字里的 `%` 与 `_` 不当通配符**：所有模糊搜索统一转义（`ILIKE ? ESCAPE '\'`）。
+否则搜「`M12_40`」会连「`M12X40`」一起出来，搜「`50%`」等于搜 `50` 开头的一切 ——
+结果既不报错也不为空，只是**静默地不是你要的那批**。
+
+**录入防重只提示不拦截**：同名不同规格是合法场景（两家供应商各自的「纸箱」），
+硬拦会挡住正常录入。前端在名称停止输入 400ms 后拉一次 `duplicates`，
+命中则列出「编码 / 名称 / 分类 / 规格摘要」并可一键跳转编辑。
+
+列表行一次返回「余额 + 单据数」，避免前端逐行再发一次请求；余额只在
+`status = 2`（已审核）的单据上累积，待处理与已取消的单据不形成应收应付。
+
+### 11.3 采购 / 销售单据
+
+`bizType` 取值 `purchase` / `sales`，非法值返回 40000（不静默忽略）。
+
+| 方法 | 路径 | 权限码 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/v1/inv/orders?bizType=sales&status=1` | `inv:sales:list` | 单据列表，`status` 1 待处理 / 2 已审核 / 3 已取消 |
+| POST | `/api/v1/inv/orders` | `inv:sales:create` | 新增单据（单价填 0 时取**所选计量单位**的销售价 / 采购价） |
+| GET | `/api/v1/inv/orders/{id}` | 按实体 `bizType` | 单据详情（主表 + 明细；明细带 `productCode`、`specId` / `unitId` / `rate` / `qtyBase`，主表带 `operator` 制单人） |
+| PUT | `/api/v1/inv/orders/{id}` | `inv:sales:update` | 修改单据（仅待处理，整体覆盖明细） |
+| DELETE | `/api/v1/inv/orders/{id}` | `inv:sales:delete` | 删除单据（已审核不可删，返回 40900） |
+| PUT | `/api/v1/inv/orders/{id}/status` | `inv:sales:finish` | 流转状态；置 2 时同事务生成出入库单并按 `qtyBase` 调整库存 |
+
+**业务线二次鉴权要精确到动作**：`/inv/orders` 一条路由服务两条业务线，
+路由上的 `RequirePerm` 只做粗筛（采购或销售任一）；handler 内还要按实体的 `bizType`
+再判一次 —— **读**路径校验「该业务线任意权限」即可，**写**路径必须比对完整的
+`inv:<bizType>:<action>`。只校验业务线的话，持有「采购只读 + 销售审核」的账号
+就能审核采购单（AGENTS.md §5.74）。
+
+**采购与销售共用同一张 `inv_orders` 表**，靠 `biz_type` 区分，避免两套结构
+完全相同的表各自漂移。**明细行必须选到「规格 + 计量单位」**（`specId` / `unitId`
+均为必填），落库时按 `qtyBase = qty × rate` 折算。单价缺省时按方向取**该单位**上的价格：
+
+- `bizType=purchase` → `inv_product_units.purchase_price`
+- `bizType=sales` → `inv_product_units.sale_price`
+
+价格记在单位上而非商品上，是因为「1 箱 100 元」与「1 个 10.5 元」本就不是同一个数；
+若只记商品一个价，按箱买与按个买就会有一个是错的。
+
+明细里的三元组会被 `resolveSpecUnits` 校验（见 11.2），不成立返回 40000。
+
+**结算状态是推导值，不入库**：`settleStatus` 由「总额 − 已结算」算出，
+`unpaid` / `partial` / `paid` 三态。
+
+`dueDate`（结算到期日）是**选填**字段，JSON 里可能为 `null`：
+
+- 不传 / 传空串 → 落库 `NULL`，响应里是 `null`；已填写的也可以再传空串清回 `null`。
+- 内部用途只有一个：判定应收应付是否逾期。
+- **不进打印纸面**：打印版式（`printConfig`）里没有这一项，模板设计器也不提供，
+  因此采购 / 销售单的纸面只有单据编号、单据日期与往来单位。
+
+早期版本用非指针 `time.Time` 承载它，空串会解析出 Go 零值并把 `0001-01-01`
+原样写进库 —— 于是「没填」与「过期两千年」不可区分，逾期汇总多算、
+打印纸面还会多出一行「到期日：0001-01-01」。现在改指针 + 可空列，
+并在启动时做一次幂等数据修补（`database.PatchData`）把存量零值归一成 `NULL`。
+
+### 11.4 库存
+
+| 方法 | 路径 | 权限码 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/v1/inv/inventory` | `inv:stock:list` | 库存查询（**按规格出账**，含 `warn` 预警标记；只看启用商品与启用规格） |
+| GET | `/api/v1/inv/stock-orders` | `inv:stock:list` | 出入库单据（仅 `status = 1` 的有效单） |
+| POST | `/api/v1/inv/stock-orders` | `inv:stock:create` | 手工出入库，**即时过账**（明细需选规格与单位，按 `qtyBase` 折算） |
+| DELETE | `/api/v1/inv/stock-orders/{id}` | `inv:stock:delete` | 作废并按反方向回滚库存 |
+
+库存查询的粒度是**规格**：一行 = 一个商品的一个规格，数量以该规格的
+**基本单位**呈现（`unit` 列即基本单位名），另带 `purchasePrice` 供库存成本参考。
+「一个商品多规格」时会出现多行，这是设计意图 —— 库存本就归属到规格。
+
+**出库校验库存充足**（按 `qtyBase` 折算后比对），不足返回 40900 并带上商品名与现有库存，
+禁止出现负库存。
+`StockOrderRow` 结构里**刻意不含金额字段**：`inv:stock:list` 能看数量，
+不等于能看到成本，这是与 `ProductRow` / `OrderRow` 的差异。
+
+### 11.5 应收应付
+
+| 方法 | 路径 | 权限码 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/v1/inv/finance/receivables?settle=overdue` | `inv:finance:list` | 应收明细 + 汇总 |
+| GET | `/api/v1/inv/finance/payables` | `inv:finance:list` | 应付明细 + 汇总 |
+| POST | `/api/v1/inv/finance/settlements` | `inv:finance:settle` | 登记收款 / 付款 |
+
+`settle` 筛选支持 `unpaid` / `partial` / `paid` / `overdue`。响应把 `summary`
+（`total` / `settled` / `outstanding` / `overdue`）与列表一起返回，前端不必再发一次请求。
+只有**已审核**单据形成应收应付；登记金额超过未结余额会被拒（40900）。
+
+**逾期口径（明细与汇总必须一致）**：一笔单据算逾期需同时满足
+「未结余额 > 0」「`dueDate` 有值且不是零值时间（> 1900-01-01）」「`dueDate < 今天`」。
+未填到期日的单据**永远不算逾期**。SQL 侧用 `dueDateOverdueCond` 常量表达这三条，
+Go 侧用 `isOverdue()`，两处口径由冒烟脚本断言「汇总 == 逐行之和」守住 ——
+历史缺陷正是汇总漏排零值、明细有 `IsZero` 守卫，同一页上出现两个自相矛盾的数字。
+
+### 11.6 报表
+
+| 方法 | 路径 | 权限码 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/v1/inv/report/summary?range=month` | `inv:report:view` | 营业收入 / 销售成本 / 毛利 / 毛利率 |
+| GET | `/api/v1/inv/report/trend?days=30` | `inv:report:view` | 近 N 天销售与采购趋势（按天补齐，缺失日补 0） |
+| GET | `/api/v1/inv/report/ranking?range=month&limit=5` | `inv:report:view` | 客户销售排行 |
+| GET | `/api/v1/inv/report/category?range=month` | `inv:report:view` | 品类销售占比 |
+
+`range` 取值 `today` / `week` / `month` / `quarter` / `year`，无法识别时回退本月。
+**销售成本用商品当前采购价 join 计算**，`毛利 = 营业收入 − 销售成本`。
+
+### 11.7 打印模板
+
+| 方法 | 路径 | 权限码 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/v1/inv/print-templates` | `inv:print:list` | 模板列表（一次 100 条，不分页） |
+| POST | `/api/v1/inv/print-templates` | `inv:print:create` | 新增模板，`paper` 缺省 A4 |
+| PUT | `/api/v1/inv/print-templates/{id}` | `inv:print:update` | 修改模板 |
+| DELETE | `/api/v1/inv/print-templates/{id}` | `inv:print:delete` | 删除模板 |
+
+`paper` 只接受 `A4` / `A5`，其它值返回 40000。
+
+模板的 `content` 字段存**版式配置 JSON**（单据标题 / 明细列显隐 / 字号 / 页脚），
+由前端「打印模板 → 设计」编辑，后端只存取不解释。打印时前端按配置渲染
+纸面并调起系统打印；`content` 为空时按内置默认版式输出。
 
 ---
 
-## 十一、导入导出
+## 十二、导入导出
 
 ### 11.1 导出
 

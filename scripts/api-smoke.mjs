@@ -63,6 +63,26 @@ function section(t) {
 }
 
 /**
+ * 按权限码（或路由名）查菜单 ID。
+ * 菜单主键由数据库分配，会随种子顺序变化 —— 硬编码 ID 的断言
+ * 在菜单结构一变就会莫名其妙失败，所以一律现查。
+ */
+async function menuId(token, key) {
+  const res = await request('GET', '/system/menus', { token })
+  const isPerm = key.includes(':')
+  const found = []
+  const walk = (nodes) => {
+    for (const n of nodes || []) {
+      if (isPerm ? n.permission === key : n.name === key) found.push(n.id)
+      walk(n.children)
+    }
+  }
+  walk(res.json?.data)
+  if (found.length === 0) throw new Error(`菜单不存在: ${key}`)
+  return found[0]
+}
+
+/**
  * 下载二进制响应（导出、模板下载）。
  * 注意：这些接口不返回统一 JSON 响应体，必须按字节流处理。
  */
@@ -135,17 +155,27 @@ async function main() {
   const routeList = routes.json?.data || []
   ok('获取动态路由树', Array.isArray(routeList) && routeList.length > 0, `len=${routeList.length}`)
   const titles = routeList.map((r) => r.meta?.title).join(',')
-  ok('路由包含仪表盘与系统管理', titles.includes('仪表盘') && titles.includes('系统管理'), titles)
+  ok(
+    '路由包含数据概览、进销存与系统管理',
+    titles.includes('数据概览') && titles.includes('进销存') && titles.includes('系统管理'),
+    titles,
+  )
+  // 进销存是主线功能，登录后应直接落在「数据概览」而不是框架自带的仪表盘
+  const firstLeaf = (node) => {
+    for (const child of node.children || []) {
+      if (child.children && child.children.length > 0) {
+        const deep = firstLeaf(child)
+        if (deep) return deep
+      } else {
+        return child
+      }
+    }
+    return null
+  }
+  const landing = firstLeaf({ children: routeList })
+  ok('首页落在进销存数据概览', landing?.meta?.title === '数据概览', landing?.meta?.title)
   const flat = JSON.stringify(routeList)
   ok('动态路由中不含按钮权限点', !flat.includes('system:user:create'), '按钮项应被过滤')
-
-  section('仪表盘')
-  const overview = await request('GET', '/dashboard/overview', { token })
-  ok('概览统计', overview.json?.code === 0 && overview.json.data.userCount >= 2, JSON.stringify(overview.json?.data))
-  const trend = await request('GET', '/dashboard/trend?days=7', { token })
-  ok('趋势数据 7 天', Array.isArray(trend.json?.data) && trend.json.data.length === 7, `len=${trend.json?.data?.length}`)
-  const modules = await request('GET', '/dashboard/modules?days=7', { token })
-  ok('模块排行', Array.isArray(modules.json?.data))
 
   section('用户管理 CRUD')
   const created = await request('POST', '/system/users', {
@@ -199,7 +229,14 @@ async function main() {
 
   const newRole = await request('POST', '/system/roles', {
     token,
-    body: { name: '自测角色', code: 'smoke_role', sort: 9, dataScope: 4, menuIds: [1, 10, 11] },
+    body: {
+      name: '自测角色', code: 'smoke_role', sort: 9, dataScope: 4,
+      menuIds: [
+        await menuId(token, 'inv:overview:view'),
+        await menuId(token, 'inv:customer:list'),
+        await menuId(token, 'system:user:list'),
+      ],
+    },
   })
   ok('新增角色', newRole.json?.code === 0, JSON.stringify(newRole.json))
   const newRoleId = newRole.json?.data?.id
@@ -207,7 +244,17 @@ async function main() {
   const roleDetail = await request('GET', `/system/roles/${newRoleId}`, { token })
   ok('角色详情含已授权菜单', roleDetail.json?.data?.menuIds?.length === 3, JSON.stringify(roleDetail.json?.data?.menuIds))
 
-  const assign = await request('PUT', `/system/roles/${newRoleId}/menus`, { token, body: { menuIds: [1, 10, 11, 12] } })
+  const assign = await request('PUT', `/system/roles/${newRoleId}/menus`, {
+    token,
+    body: {
+      menuIds: [
+        await menuId(token, 'inv:overview:view'),
+        await menuId(token, 'inv:customer:list'),
+        await menuId(token, 'system:user:list'),
+        await menuId(token, 'inv:customer:create'),
+      ],
+    },
+  })
   ok('分配菜单权限', assign.json?.code === 0, JSON.stringify(assign.json))
 
   const builtinDelete = await request('DELETE', '/system/roles/1', { token })
@@ -237,12 +284,895 @@ async function main() {
     (await upload('/system/users/import', demoToken, 'users-import.xlsx', fs.readFileSync(IMPORT_FIXTURE))).status === 403,
   )
 
+  section('进销存：基础资料')
+  const invCustomers = await request('GET', '/inv/customers?page=1&pageSize=5', { token })
+  ok('客户列表', invCustomers.json?.code === 0 && invCustomers.json.data.total >= 5, `total=${invCustomers.json?.data?.total}`)
+  const invSuppliers = await request('GET', '/inv/suppliers?page=1&pageSize=5', { token })
+  ok('供应商列表', invSuppliers.json?.code === 0 && invSuppliers.json.data.total >= 5, `total=${invSuppliers.json?.data?.total}`)
+  // 列表行要带上「应收余额 + 单据数」，否则客户页只能逐行再发一次请求
+  const firstParty = invCustomers.json?.data?.list?.[0] || {}
+  ok(
+    '客户行含余额与单据数',
+    typeof firstParty.balance === 'number' && typeof firstParty.orderCount === 'number' && !!firstParty.address,
+    JSON.stringify(firstParty),
+  )
+
+  const smokeCode = `SMOKE${Date.now()}`
+  const custCreate = await request('POST', '/inv/customers', {
+    token,
+    body: {
+      code: smokeCode,
+      name: '自测客户',
+      contact: '张三',
+      phone: '13800000000',
+      address: '河南省信阳市',
+      taxNo: '91411500MA0000000X',
+    },
+  })
+  ok('新增客户', custCreate.json?.code === 0, JSON.stringify(custCreate.json))
+  const custId = custCreate.json?.data?.id
+
+  const custDup = await request('POST', '/inv/customers', {
+    token,
+    body: { code: smokeCode, name: '重复编号' },
+  })
+  ok('客户编号重复返回 40900', custDup.json?.code === 40900, JSON.stringify(custDup.json))
+
+  const custUpdate = await request('PUT', `/inv/customers/${custId}`, {
+    token,
+    body: { code: smokeCode, name: '自测客户-改', status: 1 },
+  })
+  ok('修改客户', custUpdate.json?.code === 0, JSON.stringify(custUpdate.json))
+
+  // 明细的可选粒度是「商品 → 规格 → 计量单位」三级，先取一组可用选项，
+  // 后面所有单据 / 出入库明细都复用它，避免每处各解析一遍三级结构
+  const picks = await request('GET', '/inv/products/pick', { token })
+  ok(
+    '商品级联选项（商品→规格→单位）',
+    picks.json?.code === 0 &&
+      Array.isArray(picks.json.data.items) &&
+      picks.json.data.items.length >= 8 &&
+      (picks.json.data.items[0].specs?.[0]?.units?.length ?? 0) > 0,
+    `商品数=${picks.json?.data?.items?.length}`,
+  )
+  // 单次上限与截断标记：商品多了以后下拉只加载一部分，
+  // 不给 truncated 用户就会以为「系统里没这个商品」，静默截断最难排查
+  ok(
+    '级联选项带总数与截断标记',
+    typeof picks.json?.data?.total === 'number' && typeof picks.json?.data?.truncated === 'boolean',
+    JSON.stringify({ total: picks.json?.data?.total, truncated: picks.json?.data?.truncated }),
+  )
+  ok(
+    '级联选项不含停用的商品 / 规格',
+    picks.json.data.items.every((p) => p.specs.every((s) => s.units.length > 0)),
+  )
+  const pick0 = picks.json?.data?.items?.[0] || {}
+  const pickSpec0 = pick0.specs?.[0] || {}
+  const pickUnit0 = pickSpec0.units?.find((u) => u.isBase) ?? pickSpec0.units?.[0] ?? {}
+  const productId = pick0.id
+  const specId = pickSpec0.id
+  const unitId = pickUnit0.id
+  /** 单据 / 出入库明细行：三元组由上面的选项提供 */
+  const line = (extra = {}) => ({ productId, specId, unitId, ...extra })
+
+  const products = await request('GET', '/inv/products?page=1&pageSize=200', { token })
+  ok(
+    '商品列表含规格与单位明细',
+    products.json?.code === 0 &&
+      products.json.data.list.length >= 8 &&
+      Array.isArray(products.json.data.list[0].specs) &&
+      typeof products.json.data.list[0].specCount === 'number',
+    `len=${products.json?.data?.list?.length}`,
+  )
+
+  // 库存的粒度是**规格**：每一行都要能对上「哪个商品的哪个规格、按什么基本单位计」
+  const inventory = await request('GET', '/inv/inventory?page=1&pageSize=200', { token })
+  ok(
+    '库存查询按规格出账（含商品编码与基本单位）',
+    inventory.json?.code === 0 &&
+      inventory.json.data.list.length >= 8 &&
+      inventory.json.data.list.every(
+        (r) => typeof r.spec === 'string' && typeof r.productCode === 'string' && typeof r.unit === 'string',
+      ),
+    `len=${inventory.json?.data?.list?.length}`,
+  )
+
+  // ---------------- 商品分类字典 ----------------
+  const catOptions = await request('GET', '/inv/categories/options', { token })
+  ok(
+    '分类下拉返回数组',
+    catOptions.json?.code === 0 && Array.isArray(catOptions.json.data),
+    JSON.stringify(catOptions.json?.data),
+  )
+
+  const catName = `${smokeCode}分类`
+  const catCreate = await request('POST', '/inv/categories', {
+    token,
+    body: { name: catName, sort: 9, status: 1, remark: '接口自测' },
+  })
+  ok('新增商品分类', catCreate.json?.code === 0, JSON.stringify(catCreate.json))
+  const catId = catCreate.json?.data?.id
+
+  const catDup = await request('POST', '/inv/categories', { token, body: { name: catName } })
+  ok('分类重名返回 40900', catDup.json?.code === 40900, JSON.stringify(catDup.json))
+
+  const catUpdate = await request('PUT', `/inv/categories/${catId}`, {
+    token,
+    body: { name: catName, sort: 8, status: 1, remark: '已改' },
+  })
+  ok('修改商品分类', catUpdate.json?.code === 0, JSON.stringify(catUpdate.json))
+
+  const catList = await request('GET', `/inv/categories?keyword=${encodeURIComponent(catName)}`, { token })
+  ok(
+    '分类列表带商品引用数',
+    catList.json?.code === 0 && typeof catList.json.data.list?.[0]?.productCount === 'number',
+    JSON.stringify(catList.json?.data?.list?.[0]),
+  )
+
+  // 有商品引用的分类不能删：删掉之后那些商品的 category_id 会悬空，
+  // 列表里显示为空、报表的品类占比凭空少一块，而且无从追溯
+  const catDelUsed = await request('DELETE', '/inv/categories/1', { token })
+  ok('删除被商品引用的分类被拒(40900)', catDelUsed.json?.code === 40900, JSON.stringify(catDelUsed.json))
+
+  // ---------------- 商品档案：多规格 + 计量单位 ----------------
+  const prodCode = `${smokeCode}P`
+  const prodBody = {
+    code: prodCode,
+    name: '自测商品',
+    categoryId: catId,
+    status: 1,
+    remark: '接口自测',
+    specs: [
+      {
+        spec: 'SM-1',
+        warnStock: 2,
+        units: [
+          { unit: '根', rate: 1, isBase: true, purchasePrice: 3, salePrice: 5 },
+          { unit: '米', rate: 0.25, isBase: false, purchasePrice: 1, salePrice: 2 },
+        ],
+      },
+      {
+        spec: 'SM-2',
+        warnStock: 1,
+        units: [{ unit: '箱', rate: 1, isBase: true, purchasePrice: 30, salePrice: 50 }],
+      },
+    ],
+  }
+  const prodCreate = await request('POST', '/inv/products', { token, body: prodBody })
+  ok('新增多规格商品', prodCreate.json?.code === 0, JSON.stringify(prodCreate.json))
+  const smokeProduct = prodCreate.json?.data?.id
+
+  const prodDetail = await request('GET', `/inv/products/${smokeProduct}`, { token })
+  ok(
+    '商品详情含两级规格与单位',
+    prodDetail.json?.data?.specs?.length === 2 &&
+      prodDetail.json?.data?.specs[0].units?.length === 2 &&
+      prodDetail.json?.data?.specCount === 2 &&
+      prodDetail.json?.data?.unitCount === 3,
+    JSON.stringify({
+      specCount: prodDetail.json?.data?.specCount,
+      unitCount: prodDetail.json?.data?.unitCount,
+    }),
+  )
+
+  const prodDup = await request('POST', '/inv/products', { token, body: prodBody })
+  ok('商品编码重复返回 40900', prodDup.json?.code === 40900, JSON.stringify(prodDup.json))
+
+  // 下面四条都是「结构自洽」的硬约束：放过去的结果是库存的数没有意义
+  const prodBadCases = [
+    ['商品没有规格', { code: `${smokeCode}Q1`, name: '缺规格', specs: [] }],
+    ['规格下没有计量单位', { code: `${smokeCode}Q2`, name: '缺单位', specs: [{ spec: 'A', units: [] }] }],
+    [
+      '同名规格',
+      {
+        code: `${smokeCode}Q3`,
+        name: '规格重名',
+        specs: [
+          { spec: 'A', units: [{ unit: '个', rate: 1, isBase: true }] },
+          { spec: 'A', units: [{ unit: '个', rate: 1, isBase: true }] },
+        ],
+      },
+    ],
+    [
+      '规格没有基本单位',
+      { code: `${smokeCode}Q4`, name: '缺基本单位', specs: [{ spec: 'A', units: [{ unit: '个', rate: 2, isBase: false }] }] },
+    ],
+    [
+      '规格有两个基本单位',
+      {
+        code: `${smokeCode}Q5`,
+        name: '两个基本单位',
+        specs: [{ spec: 'A', units: [{ unit: '个', rate: 1, isBase: true }, { unit: '箱', rate: 1, isBase: true }] }],
+      },
+    ],
+    [
+      '基本单位换算率不为 1',
+      { code: `${smokeCode}Q6`, name: '基本单位换算率错', specs: [{ spec: 'A', units: [{ unit: '个', rate: 3, isBase: true }] }] },
+    ],
+    [
+      '同一规格下单位重名',
+      {
+        code: `${smokeCode}Q7`,
+        name: '单位重名',
+        specs: [{ spec: 'A', units: [{ unit: '个', rate: 1, isBase: true }, { unit: '个', rate: 2, isBase: false }] }],
+      },
+    ],
+  ]
+  for (const [label, body] of prodBadCases) {
+    const r = await request('POST', '/inv/products', { token, body })
+    ok(`${label}返回 40000`, r.json?.code === 40000, JSON.stringify(r.json))
+  }
+
+  // 关键字里的 % 与 _ 不是通配符。不转义的话搜「M12_40」会连「M12X40」一起出来，
+  // 结果既不报错也不为空，只是**静默地不是你要的那批**（AGENTS §5.75）
+  const kwUnderscore = await request('GET', '/inv/products?keyword=_', { token })
+  const kwPercent = await request('GET', '/inv/products?keyword=%25', { token })
+  const kwNormal = await request('GET', '/inv/products?keyword=SP001', { token })
+  ok(
+    '关键字里的 _ 不当通配符（未转义会命中全部）',
+    kwUnderscore.json?.data?.total === 0,
+    `total=${kwUnderscore.json?.data?.total}`,
+  )
+  ok(
+    '关键字里的 % 不当通配符（未转义会命中全部）',
+    kwPercent.json?.data?.total === 0,
+    `total=${kwPercent.json?.data?.total}`,
+  )
+  ok('正常关键字仍能命中', kwNormal.json?.data?.total === 1, `total=${kwNormal.json?.data?.total}`)
+
+  // 停用的规格不能进新单据：页面打开后档案被停用这段竞态，
+  // 以及绕过界面直接调接口的请求，都要在服务端挡住（AGENTS §5.76）
+  const stopTarget = await request('GET', `/inv/products/${productId}`, { token })
+  const stopSpecs = stopTarget.json?.data?.specs || []
+  const stopSpec = stopSpecs[0]
+  const stopBody = {
+    code: stopTarget.json?.data?.code,
+    name: stopTarget.json?.data?.name,
+    categoryId: stopTarget.json?.data?.categoryId ?? 0,
+    status: stopTarget.json?.data?.status,
+    remark: stopTarget.json?.data?.remark,
+    specs: stopSpecs.map((s) => ({
+      ...s,
+      status: s.id === stopSpec.id ? 0 : s.status,
+      units: (s.units || []).map((u) => ({
+        unit: u.unit,
+        rate: u.rate,
+        isBase: u.isBase,
+        purchasePrice: u.purchasePrice,
+        salePrice: u.salePrice,
+        status: u.status,
+      })),
+    })),
+  }
+  await request('PUT', `/inv/products/${productId}`, { token, body: stopBody })
+  const stoppedLine = await request('POST', '/inv/orders', {
+    token,
+    body: {
+      bizType: 'purchase',
+      partyId: invSuppliers.json?.data?.list?.[0]?.id,
+      orderDate: '2025-06-01',
+      items: [
+        { productId, specId: stopSpec.id, unitId: stopSpec.units?.[0]?.id, qty: 1, price: 1 },
+      ],
+    },
+  })
+  ok(
+    '停用规格不能用于新建单据(40000)',
+    stoppedLine.json?.code === 40000,
+    JSON.stringify(stoppedLine.json),
+  )
+  // 复原：这个商品后面还要用来跑其它断言
+  const restoreBody = {
+    ...stopBody,
+    specs: stopSpecs.map((s) => ({
+      ...s,
+      units: (s.units || []).map((u) => ({
+        unit: u.unit,
+        rate: u.rate,
+        isBase: u.isBase,
+        purchasePrice: u.purchasePrice,
+        salePrice: u.salePrice,
+        status: u.status,
+      })),
+    })),
+  }
+  await request('PUT', `/inv/products/${productId}`, { token, body: restoreBody })
+  ok('复原商品规格启用状态', true)
+
+  // 规格改名要按 ID 匹配：只按名字比对的话，「SM-2 → SM-2A」会被当成
+  // 「新增一条 + 删掉一条」，而带历史引用的那条删不掉，于是留下僵尸规格
+  const specId2 = prodDetail.json?.data?.specs?.[1]?.id
+  const prodUpdate = await request('PUT', `/inv/products/${smokeProduct}`, {
+    token,
+    body: {
+      ...prodBody,
+      name: '自测商品-改',
+      specs: [
+        prodBody.specs[0],
+        {
+          id: specId2,
+          spec: 'SM-2A',
+          warnStock: 3,
+          units: [{ unit: '箱', rate: 1, isBase: true, purchasePrice: 31, salePrice: 52 }],
+        },
+      ],
+    },
+  })
+  ok('修改商品（规格改名 / 调整价格）', prodUpdate.json?.code === 0, JSON.stringify(prodUpdate.json))
+  const prodAfter = await request('GET', `/inv/products/${smokeProduct}`, { token })
+  const afterSpecs = prodAfter.json?.data?.specs || []
+  ok(
+    '规格改名后沿用原 ID（不产生僵尸规格）',
+    afterSpecs.length === 2 && afterSpecs[1].id === specId2 && afterSpecs[1].spec === 'SM-2A',
+    JSON.stringify(afterSpecs.map((s) => ({ id: s.id, spec: s.spec }))),
+  )
+
+  const prodByCat = await request('GET', `/inv/products?categoryId=${catId}`, { token })
+  ok(
+    '商品列表按分类筛选生效',
+    prodByCat.json?.code === 0 && prodByCat.json.data.list.some((x) => x.id === smokeProduct),
+    JSON.stringify(prodByCat.json?.data?.list?.map((x) => x.id)),
+  )
+
+  // 单位 ID 必须稳定：saveUnits 是「比对后增删改」而不是全删重建。
+  // 全删重建的后果很具体 ——「昨天下的单，今天改了一次商品档案」，
+  // 那张单再打开保存就被 resolveSpecUnits 以「规格下不存在所选计量单位」打回，
+  // 而且用户完全无从理解为什么昨天能存今天不能。
+  const uSpec = afterSpecs[0]
+  const uBase = uSpec.units.find((u) => u.isBase)
+  const stabOrder = await request('POST', '/inv/orders', {
+    token,
+    body: {
+      bizType: 'sales',
+      partyId: custId,
+      orderDate: '2025-06-01',
+      items: [{ productId: smokeProduct, specId: uSpec.id, unitId: uBase.id, qty: 2, price: 0 }],
+    },
+  })
+  ok('建单用于验证单位 ID 稳定性', stabOrder.json?.code === 0, JSON.stringify(stabOrder.json))
+  const stabOrderId = stabOrder.json?.data?.id
+
+  const resizeProduct = await request('PUT', `/inv/products/${smokeProduct}`, {
+    token,
+    body: {
+      code: prodCode,
+      name: '自测商品-改',
+      categoryId: catId,
+      status: 1,
+      remark: '重存档案',
+      specs: [
+        {
+          id: afterSpecs[0].id,
+          spec: 'SM-1',
+          warnStock: 2,
+          units: [
+            { unit: '根', rate: 1, isBase: true, purchasePrice: 4, salePrice: 6 },
+            { unit: '米', rate: 0.25, isBase: false, purchasePrice: 1, salePrice: 2 },
+          ],
+        },
+        {
+          id: specId2,
+          spec: 'SM-2A',
+          warnStock: 3,
+          units: [{ unit: '箱', rate: 1, isBase: true, purchasePrice: 31, salePrice: 52 }],
+        },
+      ],
+    },
+  })
+  ok('再次保存商品档案（只调价不动结构）', resizeProduct.json?.code === 0, JSON.stringify(resizeProduct.json))
+
+  const afterResave = await request('GET', `/inv/products/${smokeProduct}`, { token })
+  const uSpecAfter = afterResave.json?.data?.specs?.find((s) => s.id === afterSpecs[0].id)
+  const uBaseAfter = uSpecAfter?.units?.find((u) => u.isBase)
+  ok(
+    '重存商品档案后单位 ID 不变（历史单据仍可编辑）',
+    uBaseAfter?.id === uBase.id && uBaseAfter?.purchasePrice === 4,
+    `before=${uBase.id} after=${uBaseAfter?.id} price=${uBaseAfter?.purchasePrice}`,
+  )
+  const reSaveOrder = await request('PUT', `/inv/orders/${stabOrderId}`, {
+    token,
+    body: {
+      bizType: 'sales',
+      partyId: custId,
+      orderDate: '2025-06-01',
+      items: [{ productId: smokeProduct, specId: uSpec.id, unitId: uBase.id, qty: 2, price: 0 }],
+    },
+  })
+  ok('改过商品档案后原单据仍可保存', reSaveOrder.json?.code === 0, JSON.stringify(reSaveOrder.json))
+  ok(
+    '清理用于验证单位 ID 稳定的单据',
+    (await request('DELETE', `/inv/orders/${stabOrderId}`, { token })).json?.code === 0,
+  )
+
+  // 录入查重：同名不同规格是合法场景，所以只提示不拦截
+  const prodDupFound = await request('GET', `/inv/products/duplicates?name=${encodeURIComponent('自测商品')}`, { token })
+  ok(
+    '同名查重能命中自测商品并给出规格摘要',
+    prodDupFound.json?.code === 0 &&
+      prodDupFound.json.data.some((x) => x.id === smokeProduct) &&
+      typeof prodDupFound.json.data[0].specSummary === 'string',
+    JSON.stringify(prodDupFound.json?.data),
+  )
+
+  // 商品编码是历史单据与报表对账的依据：有引用就 409，不允许删
+  const prodDelUsed = await request('DELETE', `/inv/products/${productId}`, { token })
+  ok('删除被单据引用的商品被拒(40900)', prodDelUsed.json?.code === 40900, JSON.stringify(prodDelUsed.json))
+
+  // ---------------- 计量单位换算 ----------------
+  // 用示例档案里的 SP002「不锈钢管」：304 φ32 规格下同时挂着「米」（基本单位）与
+  // 「根」（1 根 = 6 米），是典型的「采购按根、库存按米」。
+  // 这里刻意不复用自测商品：出入库明细会引用商品，而作废并不会清掉明细行，
+  // 拿自测商品做换算会让最后的「删除自测商品」被引用校验挡住。
+  const convPick = await request('GET', '/inv/products/pick?keyword=SP002', { token })
+  const convProd = convPick.json?.data?.items?.[0]
+  const convSpec =
+    convProd?.specs?.find((s) => s.units.some((u) => !u.isBase)) ?? convProd?.specs?.[0]
+  const convBase = convSpec?.units?.find((u) => u.isBase)
+  const convSub = convSpec?.units?.find((u) => !u.isBase)
+  ok(
+    '示例档案含多计量单位（1 根 = 6 米）',
+    convProd?.code === 'SP002' && convSub?.rate === 6 && convBase?.rate === 1,
+    JSON.stringify(convSpec?.units?.map((u) => ({ unit: u.unit, rate: u.rate, isBase: u.isBase }))),
+  )
+
+  const otherSpecId = convProd?.specs?.find((s) => s.id !== convSpec?.id)?.id
+  const stockOfSpec = async (specId) => {
+    const d = await request('GET', `/inv/products/${convProd.id}`, { token })
+    return d.json?.data?.specs?.find((s) => s.id === specId)?.stock
+  }
+  const stockBefore = await stockOfSpec(convSpec.id)
+  const otherBefore = await stockOfSpec(otherSpecId)
+
+  const convIn = await request('POST', '/inv/stock-orders', {
+    token,
+    body: {
+      direction: 'in',
+      sourceType: 'manual',
+      orderDate: '2025-06-01',
+      remark: '换算自测-入',
+      items: [{ productId: convProd.id, specId: convSpec.id, unitId: convSub.id, qty: 2 }],
+    },
+  })
+  ok('按非基本单位入库', convIn.json?.code === 0, JSON.stringify(convIn.json))
+  const stockAfterIn = await stockOfSpec(convSpec.id)
+  ok(
+    '非基本单位按换算率折算入账（2 根 = 12 米）',
+    Math.abs(stockAfterIn - (stockBefore + 12)) < 0.001,
+    `before=${stockBefore} after=${stockAfterIn}`,
+  )
+  ok(
+    '同一商品的其他规格库存不受影响',
+    (await stockOfSpec(otherSpecId)) === otherBefore,
+    `other=${await stockOfSpec(otherSpecId)}`,
+  )
+
+  // 单位必须属于所选的规格：串了就会把库存记到一个不属于它的规格上，
+  // 账面上完全看不出来，要等盘点才发现某个规格莫名其妙多了一批货
+  const crossUnit = await request('POST', '/inv/stock-orders', {
+    token,
+    body: {
+      direction: 'in',
+      sourceType: 'manual',
+      orderDate: '2025-06-01',
+      items: [{ productId: convProd.id, specId: otherSpecId, unitId: convSub.id, qty: 1 }],
+    },
+  })
+  ok('单位不属于所选规格被拒(40000)', crossUnit.json?.code === 40000, JSON.stringify(crossUnit.json))
+
+  const convOut = await request('POST', '/inv/stock-orders', {
+    token,
+    body: {
+      direction: 'out',
+      sourceType: 'manual',
+      orderDate: '2025-06-01',
+      remark: '换算自测-出',
+      items: [{ productId: convProd.id, specId: convSpec.id, unitId: convSub.id, qty: 1 }],
+    },
+  })
+  ok('出库同样按换算率折算（1 根 = 6 米）', convOut.json?.code === 0, JSON.stringify(convOut.json))
+  ok(
+    '出库后库存 = 入库后 - 6',
+    Math.abs((await stockOfSpec(convSpec.id)) - (stockAfterIn - 6)) < 0.001,
+    `stock=${await stockOfSpec(convSpec.id)}`,
+  )
+
+  // 清理：两张换算自测出入库单作废掉，库存回到自测前的值，
+  // 否则每跑一次冒烟示例档案的库存就往上漂一截
+  const voidConvIn = await request('DELETE', `/inv/stock-orders/${convIn.json.data.id}`, { token })
+  const voidConvOut = await request('DELETE', `/inv/stock-orders/${convOut.json.data.id}`, { token })
+  ok(
+    '作废换算自测单据并回滚库存',
+    voidConvIn.json?.code === 0 &&
+      voidConvOut.json?.code === 0 &&
+      Math.abs((await stockOfSpec(convSpec.id)) - stockBefore) < 0.001,
+    `stock=${await stockOfSpec(convSpec.id)}`,
+  )
+
+  const stockOrders = await request('GET', '/inv/stock-orders?page=1&pageSize=5', { token })
+  ok('出入库单据列表', stockOrders.json?.code === 0 && Array.isArray(stockOrders.json.data.list))
+  // 出入库单只记数量，不带成本 —— 有 inv:stock:list 不等于能看到金额
+  const stockRow = stockOrders.json?.data?.list?.[0] || {}
+  ok(
+    '出入库单行不含金额字段',
+    !('totalAmount' in stockRow) && !('amount' in stockRow) && typeof stockRow.totalQty === 'number',
+    JSON.stringify(stockRow),
+  )
+
+  section('进销存：单据流转')
+  const orderCreate = await request('POST', '/inv/orders', {
+    token,
+    body: {
+      bizType: 'sales',
+      partyId: custId,
+      orderDate: '2025-06-01',
+      dueDate: '2025-06-30',
+      remark: '接口自测',
+      items: [line({ qty: 2, price: 0 })],
+    },
+  })
+  ok('新增销售单据（待处理）', orderCreate.json?.code === 0, JSON.stringify(orderCreate.json))
+  const orderId = orderCreate.json?.data?.id
+
+  const orderDetail = await request('GET', `/inv/orders/${orderId}`, { token })
+  ok(
+    '单据详情含明细，单价缺省时取商品销售价',
+    orderDetail.json?.data?.items?.length === 1 && orderDetail.json?.data?.totalAmount > 0,
+    JSON.stringify(orderDetail.json?.data),
+  )
+  ok(
+    '待处理单据结算状态为未结',
+    orderDetail.json?.data?.settleStatus === 'unpaid',
+    orderDetail.json?.data?.settleStatus,
+  )
+  // 采购 / 销售单打印详情：明细要带商品编码与制单人（纸面打印所需）
+  ok(
+    '采购/销售单打印详情（编码/制单人）',
+    orderDetail.json?.code === 0 &&
+      typeof orderDetail.json.data.items?.[0]?.productCode === 'string' &&
+      typeof orderDetail.json.data.operator === 'string',
+    JSON.stringify(orderDetail.json?.data ?? {}).slice(0, 160),
+  )
+
+  // 到期日是选填字段：不填要落 NULL，填了要能改回 NULL。
+  // 用非指针 time.Time 承载时，「没填」只能写成 Go 零值 0001-01-01，
+  // 之后既分不清它是「没填」还是「过期两千年」，也没法把它改回空。
+  const orderNoDue = await request('POST', '/inv/orders', {
+    token,
+    body: { bizType: 'sales', partyId: custId, orderDate: '2025-06-01', items: [line({ qty: 1, price: 0 })] },
+  })
+  const orderNoDueId = orderNoDue.json?.data?.id
+  const noDueDetail = await request('GET', `/inv/orders/${orderNoDueId}`, { token })
+  ok('不填到期日时落库为 null', noDueDetail.json?.data?.dueDate === null, JSON.stringify(noDueDetail.json?.data?.dueDate))
+
+  const setDue = await request('PUT', `/inv/orders/${orderNoDueId}`, {
+    token,
+    body: {
+      bizType: 'sales',
+      partyId: custId,
+      orderDate: '2025-06-01',
+      dueDate: '2025-06-30',
+      items: [line({ qty: 1, price: 0 })],
+    },
+  })
+  const setDueDetail = await request('GET', `/inv/orders/${orderNoDueId}`, { token })
+  ok(
+    '到期日可填写',
+    setDue.json?.code === 0 && (setDueDetail.json?.data?.dueDate || '').startsWith('2025-06-30'),
+    JSON.stringify(setDueDetail.json?.data?.dueDate),
+  )
+
+  const clearDue = await request('PUT', `/inv/orders/${orderNoDueId}`, {
+    token,
+    body: { bizType: 'sales', partyId: custId, orderDate: '2025-06-01', dueDate: '', items: [line({ qty: 1, price: 0 })] },
+  })
+  const clearDueDetail = await request('GET', `/inv/orders/${orderNoDueId}`, { token })
+  ok(
+    '到期日可清空回 null',
+    clearDue.json?.code === 0 && clearDueDetail.json?.data?.dueDate === null,
+    JSON.stringify(clearDueDetail.json?.data?.dueDate),
+  )
+  ok('删除自测单据（到期日用例）', (await request('DELETE', `/inv/orders/${orderNoDueId}`, { token })).json?.code === 0)
+
+  // 业务线权限必须按实体二次判定：只写 RequirePerm 的话，换个 bizType 参数就能读另一条线
+  const badBiz = await request('GET', '/inv/orders?bizType=other', { token })
+  ok('非法 bizType 返回 40000', badBiz.json?.code === 40000, JSON.stringify(badBiz.json))
+  const badStatus = await request('GET', '/inv/orders?bizType=sales&status=9', { token })
+  ok('非法单据状态返回 40000 而非静默忽略', badStatus.json?.code === 40000, JSON.stringify(badStatus.json))
+
+  const cancelOrder = await request('PUT', `/inv/orders/${orderId}/status`, {
+    token,
+    body: { status: 3 },
+  })
+  ok('单据取消（不产生库存变动）', cancelOrder.json?.code === 0, JSON.stringify(cancelOrder.json))
+  const delOrder = await request('DELETE', `/inv/orders/${orderId}`, { token })
+  ok('删除未完成单据', delOrder.json?.code === 0, JSON.stringify(delOrder.json))
+
+  // 手动出入库会即时过账，且出库必须挡住负库存
+  const stockIn = await request('POST', '/inv/stock-orders', {
+    token,
+    body: { direction: 'in', sourceType: 'manual', orderDate: '2025-06-01', items: [line({ qty: 1 })] },
+  })
+  ok('手工入库并过账', stockIn.json?.code === 0, JSON.stringify(stockIn.json))
+  const stockInId = stockIn.json?.data?.id
+  const stockVoid = await request('DELETE', `/inv/stock-orders/${stockInId}`, { token })
+  ok('作废出入库单并回滚库存', stockVoid.json?.code === 0, JSON.stringify(stockVoid.json))
+  const overOut = await request('POST', '/inv/stock-orders', {
+    token,
+    body: { direction: 'out', sourceType: 'manual', orderDate: '2025-06-01', items: [line({ qty: 999999 })] },
+  })
+  ok('出库超过库存被拒(40900)', overOut.json?.code === 40900, JSON.stringify(overOut.json))
+
+  // 打印详情：明细要带商品编码 / 规格 / 制单人；已作废单据不可打印
+  const liveStock = await request('GET', '/inv/stock-orders?page=1&pageSize=1', { token })
+  const liveStockId = liveStock.json?.data?.list?.[0]?.id
+  const stockDetail = await request('GET', `/inv/stock-orders/${liveStockId}`, { token })
+  ok(
+    '出入库单打印详情（编码/规格/制单人）',
+    stockDetail.json?.code === 0 &&
+      stockDetail.json.data.items?.length > 0 &&
+      typeof stockDetail.json.data.items[0].productCode === 'string' &&
+      typeof stockDetail.json.data.operator === 'string',
+    JSON.stringify(stockDetail.json?.data).slice(0, 160),
+  )
+  const voidPrint = await request('GET', `/inv/stock-orders/${stockInId}`, { token })
+  ok('已作废单据不可打印(40900)', voidPrint.json?.code === 40900, JSON.stringify(voidPrint.json))
+
+  section('进销存：应收应付与报表')
+  const recv = await request('GET', '/inv/finance/receivables?page=1&pageSize=5', { token })
+  ok(
+    '应收列表随行返回汇总',
+    recv.json?.code === 0 && typeof recv.json.data.summary?.outstanding === 'number',
+    JSON.stringify(recv.json?.data?.summary),
+  )
+  const pay = await request('GET', '/inv/finance/payables?page=1&pageSize=5', { token })
+  ok(
+    '应付列表随行返回汇总',
+    pay.json?.code === 0 && typeof pay.json.data.summary?.total === 'number',
+    JSON.stringify(pay.json?.data?.summary),
+  )
+  const overdue = await request('GET', '/inv/finance/receivables?settle=overdue&page=1&pageSize=5', { token })
+  ok('逾期筛选可用', overdue.json?.code === 0, JSON.stringify(overdue.json).slice(0, 160))
+
+  // 到期日口径（本轮修复）：选填字段空值落库 NULL，且
+  // 「未填到期日」不算逾期 —— 汇总与明细必须用同一个口径。
+  // 历史缺陷是空串被解析成 Go 零值 0001-01-01 后原样落库：
+  // 汇总 SQL 没有排除零值、行级判逾期有 IsZero 守卫，于是同一页上
+  // 「逾期金额」比逐行逾期之和大一截，用户看到自相矛盾的两个数。
+  const recvAll = await request('GET', '/inv/finance/receivables?page=1&pageSize=200', { token })
+  const payAll = await request('GET', '/inv/finance/payables?page=1&pageSize=200', { token })
+  const rowsOf = (r) => r.json?.data?.list || []
+  const overdueSum = (rows) => rows.filter((x) => x.overdue).reduce((s, x) => s + x.outstanding, 0)
+  const allFinanceRows = [...rowsOf(recvAll), ...rowsOf(payAll)]
+  ok(
+    '到期日不含零值时间(0001-01-01)',
+    allFinanceRows.every((x) => x.dueDate === null || !x.dueDate.startsWith('0001-')),
+    JSON.stringify(allFinanceRows.filter((x) => x.dueDate && x.dueDate.startsWith('0001-')))
+  )
+  ok(
+    '未填到期日的单据不判逾期',
+    allFinanceRows.every((x) => x.dueDate !== null || x.overdue === false),
+    JSON.stringify(allFinanceRows.filter((x) => x.dueDate === null && x.overdue))
+  )
+  ok(
+    '逾期汇总 == 明细逾期之和（应收）',
+    Math.abs((recvAll.json?.data?.summary?.overdue ?? -1) - overdueSum(rowsOf(recvAll))) < 0.01,
+    `summary=${recvAll.json?.data?.summary?.overdue} rows=${overdueSum(rowsOf(recvAll))}`
+  )
+  ok(
+    '逾期汇总 == 明细逾期之和（应付）',
+    Math.abs((payAll.json?.data?.summary?.overdue ?? -1) - overdueSum(rowsOf(payAll))) < 0.01,
+    `summary=${payAll.json?.data?.summary?.overdue} rows=${overdueSum(rowsOf(payAll))}`
+  )
+
+  const overSettle = await request('POST', '/inv/finance/settlements', {
+    token,
+    body: { orderId: orderId, amount: 1 },
+  })
+  ok('对不存在的单据登记收付款被拒', overSettle.json?.code !== 0, JSON.stringify(overSettle.json))
+
+  const invOverview = await request('GET', '/inv/overview', { token })
+  ok(
+    '数据概览返回十项指标',
+    invOverview.json?.code === 0 && typeof invOverview.json.data.productCount === 'number' && typeof invOverview.json.data.receivableTotal === 'number',
+    JSON.stringify(invOverview.json?.data),
+  )
+  const reportCases = [
+    ['/inv/report/summary?range=month', '汇总'],
+    ['/inv/report/trend?days=30', '趋势'],
+    ['/inv/report/ranking?range=month&limit=5', '排行'],
+    ['/inv/report/category?range=month', '品类占比'],
+  ]
+  for (const [uri, label] of reportCases) {
+    const r = await request('GET', uri, { token })
+    ok(`报表${label}`, r.json?.code === 0, JSON.stringify(r.json).slice(0, 160))
+  }
+  const invTrend = await request('GET', '/inv/report/trend?days=7', { token })
+  ok('趋势按天补齐 7 个点', (invTrend.json?.data || []).length === 7, `len=${invTrend.json?.data?.length}`)
+  const report = await request('GET', '/inv/report/summary?range=month', { token })
+  ok(
+    '汇总里毛利 = 收入 - 成本',
+    Math.abs((report.json?.data?.salesAmount ?? 0) - (report.json?.data?.costAmount ?? 0) - (report.json?.data?.grossProfit ?? 0)) < 0.01,
+    JSON.stringify(report.json?.data),
+  )
+
+  section('进销存：打印模板')
+  const tplList = await request('GET', '/inv/print-templates?page=1&pageSize=100', { token })
+  ok('打印模板列表', tplList.json?.code === 0 && tplList.json.data.total >= 8, `total=${tplList.json?.data?.total}`)
+  const tplCreate = await request('POST', '/inv/print-templates', {
+    token,
+    body: { code: smokeCode, name: '自测模板', docType: '自测单据', paper: 'A5' },
+  })
+  ok('新增打印模板', tplCreate.json?.code === 0, JSON.stringify(tplCreate.json))
+  const tplId = tplCreate.json?.data?.id
+  const tplBadPaper = await request('POST', '/inv/print-templates', {
+    token,
+    body: { code: `${smokeCode}X`, name: '非法纸张', paper: 'A3' },
+  })
+  ok('非法纸张规格返回 40000', tplBadPaper.json?.code === 40000, JSON.stringify(tplBadPaper.json))
+  const tplContent = JSON.stringify({ title: '出入库单', showCode: true, showSpec: false, fontSize: 12, footer: '示例页脚' })
+  const tplUpdate = await request('PUT', `/inv/print-templates/${tplId}`, {
+    token,
+    body: { code: smokeCode, name: '自测模板-改', paper: 'A4', status: 0, content: tplContent },
+  })
+  ok('修改打印模板（含版式配置）', tplUpdate.json?.code === 0, JSON.stringify(tplUpdate.json))
+  const tplAfter = await request('GET', '/inv/print-templates?page=1&pageSize=100', { token })
+  const savedTpl = (tplAfter.json?.data?.list || []).find((x) => x.id === tplId)
+  ok('版式配置随列表返回', savedTpl?.content === tplContent, JSON.stringify(savedTpl))
+  const tplDelete = await request('DELETE', `/inv/print-templates/${tplId}`, { token })
+  ok('删除自测模板', tplDelete.json?.code === 0, JSON.stringify(tplDelete.json))
+
+  section('进销存：只读账号权限隔离')
+  ok(
+    '只读账号新增客户被拒(403)',
+    (await request('POST', '/inv/customers', { token: demoToken, body: { code: 'HACK001', name: '越权' } })).status === 403,
+  )
+  ok(
+    '只读账号新增单据被拒(403)',
+    (
+      await request('POST', '/inv/orders', {
+        token: demoToken,
+        body: { bizType: 'sales', partyId: custId, orderDate: '2025-06-01', items: [line({ qty: 1 })] },
+      })
+    ).status === 403,
+  )
+  ok(
+    '只读账号登记收付款被拒(403)',
+    (await request('POST', '/inv/finance/settlements', { token: demoToken, body: { orderId: 1, amount: 1 } })).status === 403,
+  )
+  ok(
+    '只读账号新增打印模板被拒(403)',
+    (
+      await request('POST', '/inv/print-templates', {
+        token: demoToken,
+        body: { code: 'HACK002', name: '越权模板' },
+      })
+    ).status === 403,
+  )
+  ok(
+    '只读账号新增商品被拒(403)',
+    (
+      await request('POST', '/inv/products', {
+        token: demoToken,
+        body: {
+          code: 'HACK003',
+          name: '越权商品',
+          specs: [{ spec: 'x', units: [{ unit: '件', rate: 1, isBase: true }] }],
+        },
+      })
+    ).status === 403,
+  )
+  ok(
+    '只读账号删除商品被拒(403)',
+    (await request('DELETE', `/inv/products/${productId}`, { token: demoToken })).status === 403,
+  )
+  ok(
+    '只读账号新增分类被拒(403)',
+    (
+      await request('POST', '/inv/categories', {
+        token: demoToken,
+        body: { name: '越权分类' },
+      })
+    ).status === 403,
+  )
+  ok(
+    '只读账号修改分类被拒(403)',
+    (await request('PUT', '/inv/categories/1', { token: demoToken, body: { name: '越权' } })).status === 403,
+  )
+  ok(
+    '只读账号删除分类被拒(403)',
+    (await request('DELETE', '/inv/categories/1', { token: demoToken })).status === 403,
+  )
+  const demoInvRead = await request('GET', '/inv/customers?page=1&pageSize=5', { token: demoToken })
+  ok('只读账号仍可读取客户列表', demoInvRead.json?.code === 0, JSON.stringify(demoInvRead.json).slice(0, 160))
+  const demoProductRead = await request('GET', '/inv/products?page=1&pageSize=5', { token: demoToken })
+  ok('只读账号仍可读取商品列表', demoProductRead.json?.code === 0, JSON.stringify(demoProductRead.json).slice(0, 160))
+  // 商品列表的权限是「任一即可」：只读账号有 inv:product:list，
+  // 分类下拉与库存视图都依赖它，不能因为缺 inv:category:list 就整个 403
+  const demoCatRead = await request('GET', '/inv/categories/options', { token: demoToken })
+  ok('只读账号可读分类下拉（借 product:list）', demoCatRead.json?.code === 0, JSON.stringify(demoCatRead.json).slice(0, 160))
+  const demoInventory = await request('GET', '/inv/inventory?page=1&pageSize=5', { token: demoToken })
+  ok('只读账号可读库存', demoInventory.json?.code === 0, JSON.stringify(demoInventory.json).slice(0, 160))
+
+  // ---- 跨业务线越权：路由的 RequirePerm 是「采购或销售任一」，
+  // 只校验业务线的话，「采购只读 + 销售审核」的账号就能审核采购单。
+  // 这一组断言钉住「写路径必须精确到动作」这条不变量（AGENTS §5.74）。
+  section('进销存：跨业务线越权')
+  const menuTree = await request('GET', '/system/menus?page=1&pageSize=500', { token })
+  const crossPerms = ['inv:purchase:list', 'inv:sales:list', 'inv:sales:finish']
+  const crossIds = []
+  ;(function walk(ns) {
+    for (const n of ns || []) {
+      if (crossPerms.includes(n.permission)) crossIds.push(n.id)
+      walk(n.children)
+    }
+  })(menuTree.json?.data)
+  ok('三个跨业务线权限点都能定位', crossIds.length === crossPerms.length, `ids=${JSON.stringify(crossIds)}`)
+  const crossRole = await request('POST', '/system/roles', {
+    token,
+    body: { name: '跨线自测角色', code: 'smoke_cross', dataScope: 1, status: 1, menuIds: crossIds },
+  })
+  const crossRoleId = crossRole.json?.data?.id
+  ok('创建跨线自测角色', crossRole.json?.code === 0 && crossRoleId > 0, JSON.stringify(crossRole.json))
+  const crossUser = await request('POST', '/system/users', {
+    token,
+    body: {
+      username: 'smoke_cross',
+      password: 'cross123456',
+      nickname: '跨线自测',
+      deptId: 2,
+      roleIds: [crossRoleId],
+      status: 1,
+    },
+  })
+  const crossUserId = crossUser.json?.data?.id
+  ok('创建跨线自测账号', crossUser.json?.code === 0 && crossUserId > 0, JSON.stringify(crossUser.json))
+  const crossLogin = await request('POST', '/auth/login', {
+    body: { username: 'smoke_cross', password: 'cross123456' },
+  })
+  const crossToken = crossLogin.json?.data?.accessToken
+  ok('跨线账号登录成功', Boolean(crossToken), JSON.stringify(crossLogin.json).slice(0, 160))
+
+  const pendingPurchase = await request('GET', '/inv/orders?bizType=purchase&status=1&page=1&pageSize=1', { token })
+  const pOrderId = pendingPurchase.json?.data?.list?.[0]?.id
+  ok('存在待处理采购单', pOrderId > 0, JSON.stringify(pendingPurchase.json).slice(0, 160))
+  if (pOrderId && crossToken) {
+    const readOk = await request('GET', `/inv/orders/${pOrderId}`, { token: crossToken })
+    ok('跨线账号可读采购单（有 purchase:list）', readOk.json?.code === 0, `code=${readOk.json?.code}`)
+    const finish = await request('PUT', `/inv/orders/${pOrderId}/status`, { token: crossToken, body: { status: 2 } })
+    ok(
+      '跨线账号审核采购单被拒(403)——只有 sales:finish',
+      finish.status === 403,
+      `status=${finish.status} body=${JSON.stringify(finish.json)}`,
+    )
+    const del = await request('DELETE', `/inv/orders/${pOrderId}`, { token: crossToken })
+    ok('跨线账号删除采购单被拒(403)', del.status === 403, `status=${del.status}`)
+  }
+  if (crossUserId) {
+    await request('DELETE', `/system/users/${crossUserId}`, { token })
+  }
+  if (crossRoleId) {
+    await request('DELETE', `/system/roles/${crossRoleId}`, { token })
+  }
+  ok('清理跨线自测数据', true)
+
+  const custDelete = await request('DELETE', `/inv/customers/${custId}`, { token })
+  ok('删除自测客户', custDelete.json?.code === 0, JSON.stringify(custDelete.json))
+
+  const prodDelete = await request('DELETE', `/inv/products/${smokeProduct}`, { token })
+  ok('删除自测商品', prodDelete.json?.code === 0, JSON.stringify(prodDelete.json))
+
+  // 商品删掉之后分类才没有引用，这时才能删；顺序反过来会被 409 挡住
+  const catDelete = await request('DELETE', `/inv/categories/${catId}`, { token })
+  ok('删除自测分类（商品已移除后）', catDelete.json?.code === 0, JSON.stringify(catDelete.json))
+
   section('菜单与部门')
   const menus = await request('GET', '/system/menus', { token })
   ok('菜单树非空', Array.isArray(menus.json?.data) && menus.json.data.length >= 2, `len=${menus.json?.data?.length}`)
-  const menuDetail = await request('GET', '/system/menus/11', { token })
+  const userMenuId = await menuId(token, 'system:user:list')
+  const menuDetail = await request('GET', `/system/menus/${userMenuId}`, { token })
   ok('菜单详情', menuDetail.json?.data?.permission === 'system:user:list', JSON.stringify(menuDetail.json?.data))
-  const delHasChild = await request('DELETE', '/system/menus/10', { token })
+  const dirId = await menuId(token, 'Inv')
+  const delHasChild = await request('DELETE', `/system/menus/${dirId}`, { token })
   ok('含子菜单不可删除', delHasChild.json?.code === 40900, JSON.stringify(delHasChild.json))
 
   const depts = await request('GET', '/system/depts', { token })
