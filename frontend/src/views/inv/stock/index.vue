@@ -1,0 +1,632 @@
+<script setup lang="ts">
+/**
+ * 库存管理页：出入库单据 + 库存查询两个视图。
+ *
+ * 两个视图的粒度不同，这是刻意的：
+ *  - 出入库单据记的是「一次收发的动作」，明细要到**规格 + 计量单位**（2 箱、12 米）；
+ *  - 库存查询的行是**规格**，数量按基本单位计。
+ * 库存只有一个数（记在规格上的基本单位数量），单据上的折算是入口的换算，
+ * 两者不是两套账，而是「输入」与「结果」。
+ */
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { invApi } from '@/api'
+import type {
+  InvInventoryRow,
+  InvPickSpec,
+  InvPickUnit,
+  InvProductPick,
+  InvStockOrderPayload,
+  InvStockOrderRow,
+  InvStockDirection,
+} from '@/types/api'
+import AppIcon from '@/components/AppIcon.vue'
+import Pagination from '@/components/Pagination.vue'
+import { formatDay, formatMoney, formatQty } from '@/utils/format'
+import { useTableQuery } from '@/composables/useTableQuery'
+import StockPrintDialog from '../components/StockPrintDialog.vue'
+
+defineOptions({ name: 'InvStock' })
+
+const activeTab = ref('orders')
+const printRef = ref<InstanceType<typeof StockPrintDialog> | null>(null)
+
+// ---------------- 出入库单据 ----------------
+interface StockQuery {
+  page?: number
+  pageSize?: number
+  keyword?: string
+  direction?: InvStockDirection
+}
+
+const {
+  query,
+  loading,
+  rows,
+  total,
+  load,
+  search,
+  reset,
+} = useTableQuery<StockQuery, InvStockOrderRow>(
+  { keyword: '', direction: undefined },
+  (params) =>
+    invApi.stockOrders({
+      page: params.page,
+      pageSize: params.pageSize,
+      keyword: params.keyword || undefined,
+      direction: params.direction ?? undefined,
+    }),
+)
+
+// ---------------- 库存查询 ----------------
+const inventory = ref<InvInventoryRow[]>([])
+const inventoryLoading = ref(false)
+const inventoryKeyword = ref('')
+
+async function loadInventory(): Promise<void> {
+  inventoryLoading.value = true
+  try {
+    const res = await invApi.inventory({
+      pageSize: 200,
+      keyword: inventoryKeyword.value || undefined,
+    })
+    inventory.value = res.list
+  } finally {
+    inventoryLoading.value = false
+  }
+}
+
+const warnCount = computed(() => inventory.value.filter((it) => it.warn).length)
+const inventoryTotal = computed(() =>
+  inventory.value.reduce((sum, it) => sum + it.stock * it.purchasePrice, 0),
+)
+
+// ---------------- 新增出入库单 ----------------
+/** 商品 → 规格 → 单位 级联选项（与采购 / 销售单同一份数据源） */
+const picks = ref<InvProductPick[]>([])
+/** 商品数超过单次上限：下拉里只是一部分，必须提示用关键字搜 */
+const picksTruncated = ref(false)
+/** 远程搜索进行中 */
+const picking = ref(false)
+const formRef = ref<FormInstance>()
+const dialogVisible = ref(false)
+const submitting = ref(false)
+
+interface StockFormItem {
+  productId: number | undefined
+  specId: number | undefined
+  unitId: number | undefined
+  qty: number
+}
+
+const form = reactive<{
+  direction: InvStockDirection
+  orderDate: string
+  remark: string
+  items: StockFormItem[]
+}>({
+  direction: 'in',
+  orderDate: '',
+  remark: '',
+  items: [],
+})
+
+const rules: FormRules = {
+  orderDate: [{ required: true, message: '请选择单据日期', trigger: 'change' }],
+}
+
+function today(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+function openCreate(): void {
+  Object.assign(form, {
+    direction: 'in',
+    orderDate: today(),
+    remark: '',
+    items: [blankItem()],
+  })
+  dialogVisible.value = true
+}
+
+function blankItem(): StockFormItem {
+  return { productId: undefined, specId: undefined, unitId: undefined, qty: 1 }
+}
+
+function addItem(): void {
+  form.items.push(blankItem())
+}
+
+function removeItem(index: number): void {
+  form.items.splice(index, 1)
+}
+
+// ---------------- 三级联动 ----------------
+function specOptions(item: StockFormItem): InvPickSpec[] {
+  if (!item.productId) return []
+  return picks.value.find((p) => p.id === item.productId)?.specs ?? []
+}
+
+function unitOptions(item: StockFormItem): InvPickUnit[] {
+  return specOptions(item).find((s) => s.id === item.specId)?.units ?? []
+}
+
+function unitOf(item: StockFormItem): InvPickUnit | undefined {
+  return unitOptions(item).find((u) => u.id === item.unitId)
+}
+
+/** 折算成基本单位的数量：入库时仓管按「箱」点货，账上按基本单位记 */
+function qtyBase(item: StockFormItem): number {
+  return (Number(item.qty) || 0) * (unitOf(item)?.rate ?? 1)
+}
+
+function onProductChange(item: StockFormItem): void {
+  item.specId = undefined
+  item.unitId = undefined
+  const specs = specOptions(item)
+  if (!specs.length) return
+  item.specId = specs[0].id
+  syncUnit(item)
+}
+
+function onSpecChange(item: StockFormItem): void {
+  syncUnit(item)
+}
+
+/** 规格一变，单位回到该规格的基本单位 */
+function syncUnit(item: StockFormItem): void {
+  const units = unitOptions(item)
+  item.unitId = (units.find((u) => u.isBase) ?? units[0])?.id
+}
+
+async function submitForm(): Promise<void> {
+  const valid = formRef.value ? await formRef.value.validate().catch(() => false) : false
+  if (!valid) return
+  const items = form.items.filter((it) => it.productId && it.specId && it.unitId)
+  if (items.length === 0) {
+    ElMessage.warning('请至少添加一条明细')
+    return
+  }
+  if (items.length !== form.items.length) {
+    ElMessage.warning('有明细行还没选完规格与单位，请补全后再提交')
+    return
+  }
+  const payload: InvStockOrderPayload = {
+    direction: form.direction,
+    sourceType: 'manual',
+    orderDate: form.orderDate,
+    remark: form.remark,
+    items: items.map((it) => ({
+      productId: it.productId as number,
+      specId: it.specId as number,
+      unitId: it.unitId as number,
+      qty: Number(it.qty),
+    })),
+  }
+  submitting.value = true
+  try {
+    await invApi.createStockOrder(payload)
+    ElMessage.success('已过账，库存已更新')
+    dialogVisible.value = false
+    load()
+    loadInventory()
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function voidRow(row: InvStockOrderRow): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `确定作废单据「${row.orderNo}」吗？系统会按反方向回滚库存。`,
+      '作废确认',
+      { type: 'warning', confirmButtonText: '作废' },
+    )
+  } catch {
+    return
+  }
+  await invApi.voidStockOrder(row.id)
+  ElMessage.success('已作废')
+  load()
+  loadInventory()
+}
+
+async function loadPicks(): Promise<void> {
+  const res = await invApi.productPick()
+  picks.value = res.items
+  picksTruncated.value = res.truncated
+}
+
+/**
+ * 远程搜索商品并**合并**进可选项（不替换）。
+ * 替换会让已选好商品的那几行找不到自己的 specId、显示成空白 ——
+ * 搜一次把别人的行弄坏，这种缺陷最难复现。合并只增不减。
+ */
+async function remoteSearchProducts(keyword: string): Promise<void> {
+  const kw = keyword.trim()
+  if (!kw) return
+  picking.value = true
+  try {
+    const res = await invApi.productPick({ keyword: kw })
+    const seen = new Set(picks.value.map((p) => p.id))
+    for (const p of res.items) {
+      if (!seen.has(p.id)) picks.value.push(p)
+    }
+  } finally {
+    picking.value = false
+  }
+}
+
+/** 商品下拉文案：名称 + 编码 + 规格数（具体规格在下一级选） */
+function productLabel(p: InvProductPick): string {
+  return `${p.name}（${p.code}）· ${p.specs.length} 个规格`
+}
+
+function onTabChange(name: string | number): void {
+  if (name === 'inventory') loadInventory()
+}
+
+onMounted(() => {
+  load()
+  loadInventory()
+  loadPicks()
+})
+</script>
+
+<template>
+  <div class="stock-page">
+    <div class="page-card">
+      <el-tabs v-model="activeTab" @tab-change="onTabChange">
+        <!-- 出入库单据 -->
+        <el-tab-pane label="出入库单据" name="orders">
+          <div class="toolbar">
+            <div class="toolbar__title">
+              <el-input
+                v-model="query.keyword"
+                placeholder="单号"
+                clearable
+                style="width: 200px"
+                @keyup.enter="search"
+              />
+              <el-select v-model="query.direction" placeholder="全部方向" clearable style="width: 150px">
+                <el-option label="入库" value="in" />
+                <el-option label="出库" value="out" />
+              </el-select>
+              <el-button type="primary" @click="search">
+                <AppIcon name="Search" />
+                <span>查询</span>
+              </el-button>
+              <el-button @click="reset">重置</el-button>
+            </div>
+            <div class="toolbar__actions">
+              <el-button v-perm="'inv:stock:create'" type="primary" @click="openCreate">
+                <AppIcon name="Plus" />
+                <span>新增出入库单</span>
+              </el-button>
+              <el-button @click="load">
+                <AppIcon name="Refresh" />
+              </el-button>
+            </div>
+          </div>
+
+          <el-table v-loading="loading" :data="rows" stripe>
+            <el-table-column prop="orderNo" label="单号" width="160" />
+            <el-table-column label="方向" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.direction === 'in' ? 'success' : 'warning'" size="small" effect="light">
+                  {{ row.direction === 'in' ? '入库' : '出库' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="来源" width="110">
+              <template #default="{ row }">
+                {{ { purchase: '采购', sales: '销售', manual: '手工' }[row.sourceType as string] || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="orderDate" label="单据日期" width="130">
+              <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
+            </el-table-column>
+            <el-table-column label="明细" width="80" align="center">
+              <template #default="{ row }">{{ row.itemCount }} 行</template>
+            </el-table-column>
+            <el-table-column label="总数量" width="110" align="right">
+              <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
+            </el-table-column>
+            <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.remark || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="130" fixed="right" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="printRef?.open(row as InvStockOrderRow)">
+                  打印
+                </el-button>
+                <el-button
+                  v-perm="'inv:stock:delete'"
+                  link
+                  type="danger"
+                  @click="voidRow(row as InvStockOrderRow)"
+                >
+                  作废
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <div class="table-pager">
+            <Pagination
+              v-model:page="query.page"
+              v-model:page-size="query.pageSize"
+              :total="total"
+              @change="load"
+            />
+          </div>
+        </el-tab-pane>
+
+        <!-- 库存查询 -->
+        <el-tab-pane label="库存查询" name="inventory">
+          <div class="toolbar">
+            <div class="toolbar__title">
+              <el-input
+                v-model="inventoryKeyword"
+                placeholder="商品编码 / 名称"
+                clearable
+                style="width: 220px"
+                @keyup.enter="loadInventory"
+              />
+              <el-button type="primary" @click="loadInventory">
+                <AppIcon name="Search" />
+                <span>查询</span>
+              </el-button>
+              <span class="text-muted">
+                共 {{ inventory.length }} 条规格 · 预警 {{ warnCount }} 项
+              </span>
+            </div>
+            <div class="toolbar__actions">
+              <span class="text-secondary">库存总值 {{ formatMoney(inventoryTotal) }}</span>
+            </div>
+          </div>
+
+          <el-table v-loading="inventoryLoading" :data="inventory" stripe>
+            <el-table-column prop="productCode" label="编码" width="100" />
+            <el-table-column
+              prop="productName"
+              label="商品"
+              min-width="140"
+              show-overflow-tooltip
+            />
+            <el-table-column prop="spec" label="规格" width="130" />
+            <!-- 单位单列出来：它是库存的**计数单位**（基本单位），
+                 决定「12」是 12 张还是 12 吨；塞在库存数字后面会被当成数量的一部分读过去 -->
+            <el-table-column prop="unit" label="基本单位" width="100" align="center">
+              <template #default="{ row }">{{ row.unit || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="categoryName" label="分类" width="110">
+              <template #default="{ row }">{{ row.categoryName || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="库存" width="120" align="right">
+              <template #default="{ row }">
+                <span :class="row.warn ? 'stock-warn' : ''">{{ formatQty(row.stock) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="预警下限" width="110" align="right">
+              <template #default="{ row }">{{ formatQty(row.warnStock) }}</template>
+            </el-table-column>
+            <el-table-column label="库存成本" width="130" align="right">
+              <template #default="{ row }">
+                {{ formatMoney(row.stock * row.purchasePrice) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="row.warn" type="danger" size="small" effect="light">库存预警</el-tag>
+                <el-tag v-else type="success" size="small" effect="light">正常</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+    </div>
+
+    <!-- 新增出入库单 -->
+    <el-dialog
+      v-model="dialogVisible"
+      title="新增出入库单"
+      width="760px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item label="方向">
+              <el-radio-group v-model="form.direction">
+                <el-radio-button value="in">入库</el-radio-button>
+                <el-radio-button value="out">出库</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="单据日期" prop="orderDate">
+              <el-date-picker
+                v-model="form.orderDate"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="选择日期"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="备注">
+              <el-input v-model="form.remark" placeholder="选填" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-form-item label="明细">
+          <div v-if="picksTruncated" class="pick-hint">
+            商品较多，下拉只加载了一部分 —— 找不到想要的那个请直接输入编码或名称搜索
+          </div>
+          <div class="item-editor">
+            <div class="item-editor__head">
+              <span class="col-product">商品</span>
+              <span class="col-spec">规格</span>
+              <span class="col-unit">单位</span>
+              <span class="col-num">数量</span>
+              <span class="col-base">折算</span>
+              <span class="col-act" />
+            </div>
+            <div v-for="(item, index) in form.items" :key="index" class="item-editor__row">
+              <el-select
+                v-model="item.productId"
+                class="col-product"
+                filterable
+                remote
+                reserve-keyword
+                :remote-method="remoteSearchProducts"
+                :loading="picking"
+                placeholder="选择商品（可输入编码 / 名称搜索）"
+                @change="onProductChange(item)"
+              >
+                <el-option v-for="p in picks" :key="p.id" :label="productLabel(p)" :value="p.id" />
+              </el-select>
+              <el-select
+                v-model="item.specId"
+                class="col-spec"
+                placeholder="规格"
+                :disabled="!item.productId"
+                @change="onSpecChange(item)"
+              >
+                <el-option
+                  v-for="s in specOptions(item)"
+                  :key="s.id"
+                  :label="`${s.spec}（库存 ${formatQty(s.stock)}）`"
+                  :value="s.id"
+                />
+              </el-select>
+              <el-select
+                v-model="item.unitId"
+                class="col-unit"
+                placeholder="单位"
+                :disabled="!item.specId"
+              >
+                <el-option
+                  v-for="u in unitOptions(item)"
+                  :key="u.id"
+                  :label="u.unit"
+                  :value="u.id"
+                />
+              </el-select>
+              <el-input-number v-model="item.qty" class="col-num" :min="0.01" :controls="false" />
+              <span class="col-base">
+                {{ formatQty(qtyBase(item)) }}
+                {{ unitOptions(item).find((u) => u.isBase)?.unit || '' }}
+              </span>
+              <el-button class="col-act" link type="danger" @click="removeItem(index)">删除</el-button>
+            </div>
+            <div class="item-editor__foot">
+              <el-button link type="primary" @click="addItem">
+                <AppIcon name="Plus" />
+                <span>添加明细</span>
+              </el-button>
+            </div>
+          </div>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <StockPrintDialog ref="printRef" />
+  </div>
+</template>
+
+<style scoped lang="scss">
+.table-pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.stock-warn {
+  color: var(--tone-red);
+  font-weight: 600;
+}
+
+.pick-hint {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--app-text-muted);
+  background: var(--app-fill-lighter);
+  border-radius: var(--radius-sm);
+}
+
+.item-editor {
+  width: 100%;
+  border: 1px solid var(--app-border-light);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+
+  &__head,
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__head {
+    font-size: 12px;
+    color: var(--app-text-muted);
+    padding-bottom: 6px;
+  }
+
+  &__row {
+    margin-bottom: 8px;
+  }
+
+  &__foot {
+    margin-top: 4px;
+  }
+
+  .col-product {
+    flex: 1.2;
+    min-width: 0;
+  }
+
+  .col-spec {
+    width: 160px;
+    flex: none;
+  }
+
+  .col-unit {
+    width: 100px;
+    flex: none;
+  }
+
+  .col-num {
+    width: 110px;
+    flex: none;
+  }
+
+  // 折算列是计算结果而非输入，用居中 + 次要色与可编辑列区分开
+  .col-base {
+    width: 120px;
+    flex: none;
+    text-align: center;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  .col-act {
+    width: 56px;
+    flex: none;
+  }
+}
+</style>

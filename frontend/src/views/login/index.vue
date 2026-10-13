@@ -110,7 +110,7 @@ function focusFirstInvalidField(): void {
     <section class="login__brand">
       <div class="login__brand-inner">
         <div class="login__logo">N</div>
-        <h1 class="login__title">Nova Admin</h1>
+        <h1 class="login__title">Nova ERP</h1>
         <p class="login__slogan">面向业务的现代化后台管理系统</p>
 
         <ul class="login__features">

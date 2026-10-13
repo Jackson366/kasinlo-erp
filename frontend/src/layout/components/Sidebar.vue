@@ -18,7 +18,7 @@ const activePath = computed<string>(() => (route.meta?.activeMenu as string) || 
   <div class="sidebar">
     <div class="sidebar__brand">
       <div class="sidebar__logo">N</div>
-      <span v-show="!appStore.sidebarCollapsed" class="sidebar__name">Nova Admin</span>
+      <span v-show="!appStore.sidebarCollapsed" class="sidebar__name">Nova ERP</span>
     </div>
 
     <el-scrollbar class="sidebar__scroll">

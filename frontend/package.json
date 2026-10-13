@@ -1,8 +1,8 @@
 {
-  "name": "nova-admin-web",
+  "name": "nova-erp-web",
   "version": "1.0.0",
   "private": true,
-  "description": "Nova Admin 后台管理系统前端",
+  "description": "Nova ERP 后台管理系统前端",
   "type": "module",
   "scripts": {
     "dev": "vite",

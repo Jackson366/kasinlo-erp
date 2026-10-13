@@ -180,7 +180,7 @@ const permNs = ref('')
 const permRes = ref('')
 const permAction = ref('')
 
-/** 三段拼回权限码。空段直接丢弃，于是 dashboard + '' + view 还原为 dashboard:view */
+/** 三段拼回权限码。空段直接丢弃，于是 inv + '' + customer:create 还原为 inv:customer:create */
 function syncPermission(): void {
   form.permission = [permNs.value, permRes.value, permAction.value]
     .map((part) => part.trim())
@@ -189,7 +189,7 @@ function syncPermission(): void {
 }
 watch([permNs, permRes, permAction], syncPermission)
 
-/** 反向解析已有的权限码。两段式（如 dashboard:view）按「模块 + 动作」还原 */
+/** 反向解析已有的权限码。两段式（如 inv:overview:view）按「模块 + 动作」还原 */
 function parsePermission(permission: string): void {
   const parts = permission.split(':').filter(Boolean)
   if (parts.length >= 3) {

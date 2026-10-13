@@ -7,7 +7,7 @@ import { WHITE_LIST } from '@/router'
 
 NProgress.configure({ showSpinner: false, trickleSpeed: 120 })
 
-const APP_TITLE = import.meta.env.VITE_APP_TITLE || 'Nova Admin'
+const APP_TITLE = import.meta.env.VITE_APP_TITLE || 'Nova ERP'
 
 /** 安装路由守卫：登录校验 + 动态路由注入 */
 export function setupRouterGuard(router: Router): void {
