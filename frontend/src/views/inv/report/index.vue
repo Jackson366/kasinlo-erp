@@ -3,6 +3,7 @@
  * 报表中心：按时间范围汇总经营指标，并提供趋势、品类占比与销售排行。
  */
 import { computed, onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import type { EChartsCoreOption } from 'echarts/core'
 import { invApi } from '@/api'
 import type { InvReportCategoryRow, InvReportRankRow, InvReportSummary, InvReportTrendPoint } from '@/types/api'
@@ -32,6 +33,13 @@ const ranges = [
 ]
 const activeRange = ref('month')
 
+/**
+ * 趋势图的天数。自定义区间时由区间跨度推导（见 filterParams），
+ * 用预设范围时固定 30 天 —— 趋势图本身不随 range 变，这是刻意的：
+ * 「本月」的汇总配 30 天趋势才看得出走势，配 1 天的趋势没有意义。
+ */
+const trendDays = ref(30)
+
 const loading = ref(true)
 const summary = ref<InvReportSummary | null>(null)
 const trend = ref<InvReportTrendPoint[]>([])
@@ -51,11 +59,12 @@ const kpis = computed(() => {
 async function load(): Promise<void> {
   loading.value = true
   try {
+    const p = filterParams()
     const [sm, tr, rk, ct] = await Promise.all([
-      invApi.reportSummary({ range: activeRange.value }),
-      invApi.reportTrend({ days: 30 }),
-      invApi.reportRanking({ range: activeRange.value, limit: 5 }),
-      invApi.reportCategory({ range: activeRange.value }),
+      invApi.reportSummary(p),
+      invApi.reportTrend({ ...p, days: trendDays.value }),
+      invApi.reportRanking({ ...p, limit: 5 }),
+      invApi.reportCategory(p),
     ])
     summary.value = sm
     trend.value = tr
@@ -174,10 +183,76 @@ const categoryOption = computed<EChartsCoreOption>(() => {
 
 function changeRange(value: string): void {
   activeRange.value = value
+  // 切预设时间就清掉自定义区间：两个都留着会让用户分不清当前生效的是哪个
+  customFrom.value = ''
+  customTo.value = ''
   load()
 }
 
-onMounted(load)
+/** 当前生效的查询参数。自定义 from/to 优先于 range 预设 */
+function filterParams(): Record<string, string | number> {
+  const p: Record<string, string | number> = {}
+  if (customFrom.value) {
+    p.from = customFrom.value
+    if (customTo.value) p.to = customTo.value
+    // 趋势天数跟着自定义区间走，不然图还是 30 天、与汇总对不上
+    trendDays.value = customTo.value ? daysBetween(customFrom.value, customTo.value) : 30
+  } else {
+    p.range = activeRange.value
+    if (customTo.value) p.to = customTo.value
+    trendDays.value = 30
+  }
+  if (activeCat.value) p.categoryId = activeCat.value
+  return p
+}
+
+/** 两个日期的间隔天数，夹在 1~90（后端上限） */
+function daysBetween(from: string, to: string): number {
+  const a = new Date(from).getTime()
+  const b = new Date(to).getTime()
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 30
+  return Math.min(Math.max(Math.round((b - a) / 86400000) + 1, 1), 90)
+}
+
+/** 品类筛选：命中自身 + 全部子孙分类，所以下拉用树 */
+const catOptions = ref<Array<{ id: number; name: string }>>([])
+const activeCat = ref(0)
+
+async function loadCatOptions(): Promise<void> {
+  const list = await invApi.categoryOptions()
+  catOptions.value = list.map((c) => ({ id: c.id, name: c.name }))
+}
+
+/** 自定义区间：起始 / 结束日期 */
+const customFrom = ref('')
+const customTo = ref('')
+
+function applyCustomRange(): void {
+  if (!customFrom.value && !customTo.value) {
+    ElMessage.warning('请先选择起始或结束日期')
+    return
+  }
+  activeRange.value = ''
+  load()
+}
+
+/** 当前生效范围的文字描述，显示在 KPI 旁边，避免用户不知道自己在看哪段时间 */
+const rangeLabel = computed(() => {
+  if (customFrom.value || customTo.value) {
+    return `${customFrom.value || '不限'} ~ ${customTo.value || '不限'}`
+  }
+  return ranges.find((r) => r.value === activeRange.value)?.label ?? ''
+})
+
+const catLabel = computed(() => {
+  if (!activeCat.value) return ''
+  return catOptions.value.find((c) => c.id === activeCat.value)?.name ?? ''
+})
+
+onMounted(() => {
+  load()
+  loadCatOptions()
+})
 </script>
 
 <template>
@@ -193,6 +268,35 @@ onMounted(load)
         >
           {{ item.label }}
         </button>
+      </div>
+
+      <!-- 自定义时间与品类筛选。from/to 优先于上面的预设 tab，
+           所以选了自定义之后 tab 会全部取消高亮 —— 当前生效的是哪个一眼看得出 -->
+      <div class="range-extra">
+        <el-date-picker
+          v-model="customFrom"
+          type="date"
+          value-format="YYYY-MM-DD"
+          placeholder="起始日期"
+          style="width: 150px"
+        />
+        <span class="range-extra__sep">至</span>
+        <el-date-picker
+          v-model="customTo"
+          type="date"
+          value-format="YYYY-MM-DD"
+          placeholder="结束日期"
+          style="width: 150px"
+        />
+        <el-button type="primary" @click="applyCustomRange">查询</el-button>
+        <el-button v-if="customFrom || customTo" @click="changeRange('month')">重置</el-button>
+        <el-select v-model="activeCat" placeholder="全部品类" clearable style="width: 180px" @change="load">
+          <el-option v-for="c in catOptions" :key="c.id" :label="c.name" :value="c.id" />
+        </el-select>
+      </div>
+      <div class="range-hint">
+        当前范围：<b>{{ rangeLabel }}</b>
+        <template v-if="catLabel"> · 品类：<b>{{ catLabel }}</b>（含子分类）</template>
       </div>
       <div class="range-bar__actions">
         <el-button @click="printRef?.open()">
@@ -275,8 +379,31 @@ onMounted(load)
 
 .range-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
+}
+
+// 自定义时间 + 品类筛选：与预设 tab 同一行，但允许换行（窄屏不挤成一团）
+.range-extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+
+  &__sep {
+    color: var(--app-text-muted);
+    font-size: 13px;
+  }
+}
+
+// 当前生效范围：自定义区间与预设 tab 并存时必须说清「现在看的是哪段」，
+// 否则用户改了日期却以为还在看本月
+.range-hint {
+  width: 100%;
+  font-size: 12px;
+  color: var(--app-text-muted);
 }
 
 .range-bar__actions {

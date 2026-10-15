@@ -363,26 +363,33 @@ export interface InvPartyPayload {
 /** 商品分类列表行 */
 export interface InvCategoryRow {
   id: number
+  /** 上级分类，0 = 根 */
+  parentId: number
   name: string
   sort: number
   status: Status
   remark: string
   /** 引用该分类的商品数；>0 时不允许删除 */
   productCount: number
+  /** 直接子分类数；>0 时不允许删除（否则子分类会集体变成根） */
+  childCount: number
   createdAt: string
 }
 
 /** 商品分类载荷 */
 export interface InvCategoryPayload {
+  /** 上级分类，0 = 根 */
+  parentId: number
   name: string
   sort?: number
   status?: Status
   remark?: string
 }
 
-/** 商品分类下拉项 */
+/** 商品分类下拉项。parentId 让前端能渲染成树形下拉 */
 export interface InvCategoryOption {
   id: number
+  parentId: number
   name: string
 }
 

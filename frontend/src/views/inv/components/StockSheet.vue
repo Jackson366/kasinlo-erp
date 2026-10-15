@@ -6,11 +6,14 @@
  *
  * 注意：纸面颜色刻意用固定黑白灰而不是主题令牌——打印纸永远是白底黑字，
  * 不能跟随暗色主题；暗色下预览也是「纸上观感」，正好所见即所得。
+ *
+ * 版式完全由模板配置驱动（明细列 / 公司信息 / 页边距行高 / 底部区域），
+ * 组件本身不写死任何一列。
  */
 import { computed } from 'vue'
 import type { InvStockOrderDetail } from '@/types/api'
 import { formatDay } from '@/utils/format'
-import type { PrintContentConfig } from './printConfig'
+import { visibleCols, type PrintContentConfig } from './printConfig'
 
 const props = defineProps<{
   detail: InvStockOrderDetail
@@ -23,8 +26,6 @@ const props = defineProps<{
 /** 预览宽度按 96dpi 近似：A4 210mm≈794px、A5 148mm≈559px，打印时由 @media print 接管 */
 const sheetWidth = computed(() => (props.paper === 'A5' ? '560px' : '794px'))
 
-const directionText = computed(() => (props.detail.direction === 'in' ? '入库' : '出库'))
-
 const sourceLabel = computed(() =>
   props.detail.sourceType === 'purchase' ? '采购单号' : props.detail.sourceType === 'sales' ? '销售单号' : '来源单号',
 )
@@ -35,27 +36,57 @@ const metaItems = computed(() => {
     { label: '单据编号', value: d.orderNo },
     { label: '单据日期', value: formatDay(d.orderDate) },
   ]
-  if (props.cfg.showSource && d.sourceOrderNo) {
+  if (d.sourceOrderNo) {
     rows.push({ label: sourceLabel.value, value: d.sourceOrderNo })
   }
-  if (props.cfg.showOperator && d.operator) {
+  if (d.operator) {
     rows.push({ label: '制单人', value: d.operator })
-  }
-  if (props.cfg.showPrintTime) {
-    rows.push({ label: '打印时间', value: new Date().toLocaleString('zh-CN', { hour12: false }) })
   }
   return rows
 })
+
+const cols = computed(() => visibleCols(props.cfg))
+const colspan = computed(() => Math.max(cols.value.length - 1, 1))
+
+function cell(it: InvStockOrderDetail['items'][number], key: string): string {
+  switch (key) {
+    case 'code':
+      return it.productCode || '-'
+    case 'name':
+      return it.productName
+    case 'spec':
+      return it.spec || '-'
+    case 'unit':
+      return it.unit || '-'
+    case 'qty':
+      return String(it.qty)
+    default:
+      return '-'
+  }
+}
 </script>
 
 <template>
   <div
     class="sheet"
     :class="`sheet--${paper}`"
-    :style="{ width: sheetWidth, fontSize: `${cfg.fontSize}pt` }"
+    :style="{
+      width: sheetWidth,
+      fontSize: `${cfg.page.fontSize}pt`,
+      padding: `${cfg.page.margin}px`,
+      '--row-h': `${cfg.page.rowHeight}px`,
+      '--th-bg': cfg.page.headerBg || 'transparent',
+    }"
   >
-    <h1 class="sheet__title">{{ title }}</h1>
-    <div class="sheet__direction">{{ directionText }}单</div>
+    <img v-if="cfg.header.logoUrl" class="sheet__logo" :src="cfg.header.logoUrl" alt="logo" />
+    <h1 v-if="cfg.header.showTitle" class="sheet__title" :style="{ fontSize: `${cfg.page.titleFontSize}pt` }">
+      {{ title }}
+    </h1>
+    <div v-if="cfg.header.companyName" class="sheet__company">{{ cfg.header.companyName }}</div>
+    <div v-if="cfg.header.address || cfg.header.phone" class="sheet__company-sub">
+      {{ cfg.header.address }}{{ cfg.header.address && cfg.header.phone ? ' · ' : '' }}{{ cfg.header.phone }}
+    </div>
+    <div v-if="cfg.header.bank" class="sheet__bank">{{ cfg.header.bank }}</div>
 
     <div class="sheet__meta">
       <span v-for="m in metaItems" :key="m.label" class="sheet__meta-item">
@@ -67,55 +98,54 @@ const metaItems = computed(() => {
       <thead>
         <tr>
           <th class="col-index">#</th>
-          <th v-if="cfg.showCode" class="col-code">商品编码</th>
-          <th>商品名称</th>
-          <th v-if="cfg.showSpec">规格</th>
-          <th v-if="cfg.showUnit" class="col-unit">单位</th>
-          <th class="col-qty">数量</th>
+          <th v-for="c in cols" :key="c.key" :class="`col-${c.key}`" :style="{ textAlign: c.align }">
+            {{ c.label }}
+          </th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="(it, i) in detail.items" :key="i">
           <td class="col-index">{{ i + 1 }}</td>
-          <td v-if="cfg.showCode" class="col-code">{{ it.productCode || '-' }}</td>
-          <td>{{ it.productName }}</td>
-          <td v-if="cfg.showSpec">{{ it.spec || '-' }}</td>
-          <td v-if="cfg.showUnit" class="col-unit">{{ it.unit || '-' }}</td>
-          <td class="col-qty">
-            {{ it.qty }}
-            <!-- 非基本单位时把折算值写出来：仓管照着「2 箱」点货，
-                 但账上是 20 个，两个数都在纸面上才对得上 -->
-            <span v-if="it.rate !== 1" class="qty-sub">= {{ it.qtyBase }} {{ it.unitBase }}</span>
+          <td v-for="c in cols" :key="c.key" :class="`col-${c.key}`" :style="{ textAlign: c.align }">
+            <template v-if="c.key === 'qty'">
+              {{ it.qty }}
+              <!-- 非基本单位时把折算值写出来：仓管照着「2 箱」点货，
+                   但账上是 20 个，两个数都在纸面上才对得上 -->
+              <span v-if="it.rate !== 1" class="qty-sub">= {{ it.qtyBase }} {{ it.unitBase }}</span>
+            </template>
+            <template v-else>{{ cell(it, c.key) }}</template>
           </td>
         </tr>
         <tr v-if="detail.items.length === 0">
-          <td :colspan="6" class="sheet__empty">无明细</td>
+          <td :colspan="colspan + 1" class="sheet__empty">无明细</td>
         </tr>
       </tbody>
       <tfoot>
         <tr>
-          <td :colspan="5" class="col-qty-label">合计数量</td>
+          <td :colspan="colspan" class="col-qty-label">合计数量</td>
           <td class="col-qty">{{ detail.totalQty }}</td>
         </tr>
       </tfoot>
     </table>
 
-    <div v-if="detail.remark" class="sheet__remark"><b>备注：</b>{{ detail.remark }}</div>
+    <div v-if="cfg.footer.showRemark && detail.remark" class="sheet__remark">
+      <b>备注：</b>{{ detail.remark }}
+    </div>
+    <div v-if="cfg.footer.customText" class="sheet__remark sheet__custom">{{ cfg.footer.customText }}</div>
 
-    <div class="sheet__sign">
+    <div v-if="cfg.footer.showSign" class="sheet__sign">
       <span>制单：____________</span>
       <span>仓管：____________</span>
       <span>审核：____________</span>
     </div>
 
-    <div class="sheet__footer">{{ cfg.footer }}</div>
+    <div class="sheet__footer">{{ cfg.footer.text }}</div>
   </div>
 </template>
 
 <style scoped lang="scss">
 .sheet {
   margin: 0 auto;
-  padding: 24px 28px;
   background: #fff;
   color: #1a1a1a;
   font-family: 'SimSun', 'Songti SC', serif;
@@ -123,19 +153,30 @@ const metaItems = computed(() => {
   box-shadow: 0 2px 12px rgb(0 0 0 / 18%);
   box-sizing: border-box;
 
+  &__logo {
+    display: block;
+    max-height: 56px;
+    margin: 0 auto 8px;
+  }
+
   &__title {
     margin: 0;
-    font-size: 1.6em;
     text-align: center;
     letter-spacing: 0.35em;
     text-indent: 0.35em; // 抵消最后一个字的字距，让标题真正居中
   }
 
-  &__direction {
+  &__company {
     text-align: center;
-    font-size: 0.9em;
-    color: #666;
-    margin-bottom: 14px;
+    font-size: 1.05em;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+
+  &__company-sub {
+    text-align: center;
+    font-size: 0.82em;
+    color: #555;
   }
 
   &__meta {
@@ -145,6 +186,7 @@ const metaItems = computed(() => {
     border-top: 2px solid #1a1a1a;
     border-bottom: 1px solid #999;
     padding: 8px 2px;
+    margin-top: 10px;
     font-size: 0.92em;
 
     b {
@@ -167,14 +209,20 @@ const metaItems = computed(() => {
     }
 
     th {
-      background: #f2f2f2;
+      background: var(--th-bg);
       font-weight: 600;
       white-space: nowrap;
+    }
+
+    // 行高可调：紧凑适合条目多的单据，宽松适合手写补录
+    tbody td {
+      height: var(--row-h, 30px);
     }
 
     tfoot td {
       border-top: 2px solid #1a1a1a;
       font-weight: 600;
+      height: auto;
     }
   }
 
@@ -194,7 +242,6 @@ const metaItems = computed(() => {
 
   .col-qty {
     width: 84px;
-    text-align: right;
     white-space: nowrap;
   }
 
