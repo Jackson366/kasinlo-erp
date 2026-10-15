@@ -516,19 +516,31 @@
 `rate` 的口径固定为「**1 个该单位 = rate 个基本单位**」，基本单位自身 `rate` 恒为 1。
 单据按 `qtyBase = qty × rate` 折算扣减库存。
 
-#### 商品分类（字典表）
+#### 商品分类（多级字典表）
 
 | 方法 | 路径 | 权限码 | 说明 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/inv/categories` | `inv:category:list` | 分类列表（含 `productCount` 引用商品数） |
-| GET | `/api/v1/inv/categories/options` | 同列表 | 启用分类的精简选项，供下拉 |
-| POST | `/api/v1/inv/categories` | `inv:category:create` | 新增分类（名称重复 40900） |
-| PUT | `/api/v1/inv/categories/{id}` | `inv:category:update` | 修改分类（名称 / 排序 / 状态 / 备注） |
-| DELETE | `/api/v1/inv/categories/{id}` | `inv:category:delete` | 删除分类（**仍被商品引用时 40900**，可改为停用） |
+| GET | `/api/v1/inv/categories` | `inv:category:list` | 分类**平表**（含 `parentId` / `productCount` / `childCount`），树由前端组装 |
+| GET | `/api/v1/inv/categories/options` | `inv:category:list` \| `inv:product:list` | 启用分类的精简选项（含 `parentId`），供树形下拉 |
+| POST | `/api/v1/inv/categories` | `inv:category:create` | 新增分类 |
+| PUT | `/api/v1/inv/categories/{id}` | `inv:category:update` | 修改分类（上级 / 名称 / 排序 / 状态 / 备注） |
+| DELETE | `/api/v1/inv/categories/{id}` | `inv:category:delete` | 删除分类 |
 
-分类从「商品表上的一列自由文本」升级为独立字典表，是为了让品类统计稳定 ——
-自由文本下「钢材」「钢材 」会各算一类，报表的品类占比会凭空多出一块。
-删除前必须校验引用：否则 `inv_products.category_id` 悬空，商品还在、分类没了。
+`GET /categories/options` 支持 `currentId` 参数：把当前编辑项的分类一并返回，
+否则编辑一个已停用分类下的商品时，那一项从下拉里消失、表单显示成「未分类」。
+
+分类支持**多级父子**（`parentId`，0 = 根）。写入约束：
+
+| 约束 | 错误码 | 原因 |
+| --- | --- | --- |
+| **同级**名称唯一 | 40900 | 不同父级下的「标准件」是两个合法分类，全局唯一会把多级树逼回一级 |
+| 上级不能是自己或自己的子孙 | 40000 | `parent_id` 一成环，前端按它组装树会无限递归、页面直接卡死 |
+| 有商品引用不可删 | 40900 | 否则 `inv_products.category_id` 悬空，报表品类占比凭空少一块 |
+| 有子分类不可删 | 40900 | 否则子分类会集体变成根节点，树形结构凭空塌一层 |
+
+分类与商品档案在同一个页面（左树右表），分类的按钮权限点因此挂在
+「商品管理」菜单下；原独立「商品分类」菜单在老库升级时会被软删，
+其按钮子节点移挂到商品菜单（`seed.mergeMenuNodes`，授权关系不变）。
 
 #### 商品
 
@@ -678,15 +690,25 @@ Go 侧用 `isOverdue()`，两处口径由冒烟脚本断言「汇总 == 逐行�
 
 ### 11.6 报表
 
+四个报表接口共用同一组筛选参数：
+
+| 参数 | 说明 |
+| --- | --- |
+| `range` | `today` / `week` / `month` / `quarter` / `year`，无法识别时回退本月 |
+| `from` / `to` | 自定义起止日期 `yyyy-MM-dd`。**`from` 非空时优先于 `range`**；`to` 可单独使用 |
+| `categoryId` | 品类筛选，**包含该分类的全部子孙分类**（螺纹钢归在钢材下，只算钢材自己会丢子类的销售额） |
+
 | 方法 | 路径 | 权限码 | 说明 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/inv/report/summary?range=month` | `inv:report:view` | 营业收入 / 销售成本 / 毛利 / 毛利率 |
+| GET | `/api/v1/inv/report/summary` | `inv:report:view` | 营业收入 / 销售成本 / 毛利 / 毛利率 |
 | GET | `/api/v1/inv/report/trend?days=30` | `inv:report:view` | 近 N 天销售与采购趋势（按天补齐，缺失日补 0） |
-| GET | `/api/v1/inv/report/ranking?range=month&limit=5` | `inv:report:view` | 客户销售排行 |
-| GET | `/api/v1/inv/report/category?range=month` | `inv:report:view` | 品类销售占比 |
+| GET | `/api/v1/inv/report/ranking?limit=5` | `inv:report:view` | 客户销售排行 |
+| GET | `/api/v1/inv/report/category` | `inv:report:view` | 品类销售占比 |
 
-`range` 取值 `today` / `week` / `month` / `quarter` / `year`，无法识别时回退本月。
-**销售成本用商品当前采购价 join 计算**，`毛利 = 营业收入 − 销售成本`。
+- `days` 上限 90；自定义区间时趋势点数由 `from` ~ `to` 推导（**不是**沿用 `days`），
+  只给 `from` 时算到今天。
+- 品类筛选会下探到明细：单据主表上没有品类，只有 `inv_order_items → 商品 → 分类` 这条链能关联。
+- **销售成本用商品当前采购价 join 计算**，`毛利 = 营业收入 − 销售成本`。
 
 ### 11.7 打印模板
 
@@ -699,9 +721,46 @@ Go 侧用 `isOverdue()`，两处口径由冒烟脚本断言「汇总 == 逐行�
 
 `paper` 只接受 `A4` / `A5`，其它值返回 40000。
 
-模板的 `content` 字段存**版式配置 JSON**（单据标题 / 明细列显隐 / 字号 / 页脚），
-由前端「打印模板 → 设计」编辑，后端只存取不解释。打印时前端按配置渲染
-纸面并调起系统打印；`content` 为空时按内置默认版式输出。
+模板的 `content` 字段存**版式配置 JSON**，由前端「打印模板 → 设计」编辑，后端只存取不解释。
+打印时前端按配置渲染纸面并调起系统打印；`content` 为空或解析失败时按内置默认版式输出
+（打印不能因为配置坏了而失败）。
+
+配置分四组：
+
+```jsonc
+{
+  "title": "采购单",
+  "columns": [                      // 明细列：可增删、可改名、可调顺序、可设对齐
+    { "key": "code",  "label": "物料编码", "visible": true, "align": "left" },
+    { "key": "name",  "label": "品名",     "visible": true, "align": "left" },
+    { "key": "spec",  "label": "规格",     "visible": true, "align": "center" },
+    { "key": "unit",  "label": "单位",     "visible": true, "align": "center" },
+    { "key": "qty",   "label": "数量",     "visible": true, "align": "right" },
+    { "key": "price", "label": "单价",     "visible": true, "align": "right" },
+    { "key": "amount","label": "金额",     "visible": true, "align": "right" }
+  ],
+  "header": {                       // 表头公司信息
+    "companyName": "", "logoUrl": "", "address": "",
+    "phone": "", "bank": "", "showTitle": true
+  },
+  "page": {                         // 页面设置
+    "margin": 20, "rowHeight": 30,
+    "fontSize": 12, "titleFontSize": 20, "headerBg": "#f2f2f2"
+  },
+  "footer": {                       // 底部区域
+    "text": "", "showSign": true, "showRemark": true,
+    "showAmountCn": false, "customText": ""
+  }
+}
+```
+
+- `columns` 的 `key` 固定为 `code` / `name` / `spec` / `unit` / `qty` / `price` / `amount`；
+  `name` 与 `qty` 是主体列，只能改为不显示、不能删除（否则纸面没有可读内容）。
+  出入库单没有 `price` / `amount`（成本不归仓管看），这两个键在库存模板下不可添加。
+- `headerBg` 留空为无底色（黑白打印友好）；`showAmountCn` 只对采购 / 销售单生效。
+- **旧配置兼容**：老模板的 `content` 是一堆 `showCode` / `showSpec` 顶层布尔 + `fontSize`。
+  前端 `parseContent()` 会把它翻译成默认列集合（不显示的列剔除），保存后才固化成新结构，
+  因此老模板打开设计器不会丢配置。
 
 ---
 

@@ -506,8 +506,9 @@ async function main() {
     应收应付: { hash: '#/inv/finance', cls: 'finance-page' },
     报表中心: { hash: '#/inv/report', cls: 'report-page' },
     打印模板: { hash: '#/inv/print', cls: 'print-page' },
+    // 商品分类已合并进商品档案页（左侧树），独立菜单与页面一并下线，
+    // 因此这里不再登记它 —— 留着会点进一个 404 的 hash
     商品管理: { hash: '#/inv/product', cls: 'product-page' },
-    商品分类: { hash: '#/inv/category', cls: 'category-page' },
     客户管理: { hash: '#/inv/customer', cls: 'party-page' },
     供应商管理: { hash: '#/inv/supplier', cls: 'party-page' },
     用户管理: { hash: '#/system/user', cls: 'user-page' },

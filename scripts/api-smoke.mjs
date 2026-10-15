@@ -1007,9 +1007,55 @@ async function main() {
   for (const [uri, label] of reportCases) {
     const r = await request('GET', uri, { token })
     ok(`报表${label}`, r.json?.code === 0, JSON.stringify(r.json).slice(0, 160))
-  }
-  const invTrend = await request('GET', '/inv/report/trend?days=7', { token })
+  }  const invTrend = await request('GET', '/inv/report/trend?days=7', { token })
   ok('趋势按天补齐 7 个点', (invTrend.json?.data || []).length === 7, `len=${invTrend.json?.data?.length}`)
+  // 自定义区间：from + to 必须严格按区间出点，不能沿用 days 参数 ——
+  // 少了这一步会画出未来日期的空点，且后端 90 天上限会把长区间静默截断
+  const customTrend = await request('GET', '/inv/report/trend?from=2026-09-01&to=2026-09-10', { token })
+  const ct = customTrend.json?.data || []
+  ok(
+    '自定义区间趋势按 from~to 收口',
+    ct.length === 10 && ct[0].date === '2026-09-01' && ct[9].date === '2026-09-10',
+    `len=${ct.length} first=${ct[0]?.date} last=${ct[ct.length - 1]?.date}`,
+  )
+
+  section('进销存：分类多级与报表品类筛选')
+  const catTree = await request('GET', '/inv/categories?page=1&pageSize=100', { token })
+  const rootCat = (catTree.json?.data?.list || []).find((c) => c.parentId === 0)
+  ok('分类列表带 parentId 与子分类数', typeof rootCat?.parentId === 'number' && typeof rootCat?.childCount === 'number',
+    JSON.stringify(rootCat))
+  // 名字先算好：创建与「重名测试」必须是同一个字符串，各生成一次就永远测不到重名
+  const childName = `自测子分类${Date.now()}`
+  const childCat = await request('POST', '/inv/categories', {
+    token,
+    body: { parentId: rootCat.id, name: childName, sort: 9 },
+  })
+  const childId = childCat.json?.data?.id
+  ok('新增子分类', childCat.json?.code === 0 && childId > 0, JSON.stringify(childCat.json))
+  ok(
+    '同级分类重名被拒(40900)',
+    (await request('POST', '/inv/categories', { token, body: { parentId: rootCat.id, name: childName } })).json?.code ===
+      40900,
+  )
+  // parent_id 一成环，前端按 parent_id 组装树会无限递归、页面卡死 —— 只能服务端拦
+  const cycle = await request('PUT', `/inv/categories/${rootCat.id}`, {
+    token,
+    body: { parentId: childId, name: rootCat.name, sort: rootCat.sort, status: rootCat.status },
+  })
+  ok('把分类挂到自己子孙下被拒(40000)', cycle.json?.code === 40000, JSON.stringify(cycle.json))
+  ok(
+    '删除有子分类的分类被拒(40900)',
+    (await request('DELETE', `/inv/categories/${rootCat.id}`, { token })).json?.code === 40900,
+  )
+  const catFilter = await request('GET', `/inv/report/category?categoryId=${rootCat.id}`, { token })
+  ok(
+    '报表按品类筛选（含子分类）',
+    catFilter.json?.code === 0 && Array.isArray(catFilter.json?.data),
+    JSON.stringify(catFilter.json).slice(0, 160),
+  )
+  await request('DELETE', `/inv/categories/${childId}`, { token })
+  ok('清理自测子分类', true)
+
   const report = await request('GET', '/inv/report/summary?range=month', { token })
   ok(
     '汇总里毛利 = 收入 - 成本',
