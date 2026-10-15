@@ -40,27 +40,33 @@ type PartyRow struct {
 
 // CategoryReq 商品分类新增 / 修改请求。
 type CategoryReq struct {
-	Name   string `json:"name" binding:"required,max=64" label:"分类名称"`
-	Sort   int    `json:"sort" label:"排序"`
-	Status *int16 `json:"status" binding:"omitempty,oneof=0 1" label:"状态"`
-	Remark string `json:"remark" binding:"omitempty,max=255" label:"备注"`
+	ParentID int64  `json:"parentId" label:"上级分类"` // 0 = 根分类
+	Name     string `json:"name" binding:"required,max=64" label:"分类名称"`
+	Sort     int    `json:"sort" label:"排序"`
+	Status   *int16 `json:"status" binding:"omitempty,oneof=0 1" label:"状态"`
+	Remark   string `json:"remark" binding:"omitempty,max=255" label:"备注"`
 }
 
 // CategoryRow 商品分类列表行。ProductCount 为引用该分类的商品数（删除校验要用）。
+// 列表返回**平表**（含 parentId），树由前端组装 —— 后端不猜前端要展开到第几层。
 type CategoryRow struct {
 	ID           int64     `json:"id"`
+	ParentID     int64     `json:"parentId"`
 	Name         string    `json:"name"`
 	Sort         int       `json:"sort"`
 	Status       int16     `json:"status"`
 	Remark       string    `json:"remark"`
 	ProductCount int64     `json:"productCount"`
+	ChildCount   int64     `json:"childCount"` // 子分类数，删除校验要用
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
-// CategoryOption 分类下拉项。
+// CategoryOption 分类下拉项。ParentID 让前端能渲染成树形下拉，
+// 也用来判断「这个选项是不是当前编辑项的后代」（不能挂到自己子孙下面）。
 type CategoryOption struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID       int64  `json:"id"`
+	ParentID int64  `json:"parentId"`
+	Name     string `json:"name"`
 }
 
 // ============================================================

@@ -200,15 +200,21 @@ func (h *Handler) CategoryList(c *gin.Context) {
 	response.OKPage(c, list, total, q.Page, q.PageSize)
 }
 
-// CategoryOptions 商品分类下拉项
+// CategoryOptions 商品分类下拉项（树形，含 parentId）
 // @Summary      商品分类下拉项（仅启用）
 // @Tags         进销存-商品分类
 // @Produce      json
 // @Security     BearerAuth
+// @Param        currentId  query  int  false  "当前编辑项的分类 ID（会一并返回，避免编辑停用分类时显示空白）"
 // @Success      200  {object}  response.Body{data=[]inv.CategoryOption}
 // @Router       /inv/categories/options [get]
 func (h *Handler) CategoryOptions(c *gin.Context) {
-	list, err := h.svc.CategoryOptions()
+	currentID, err := bind.IntQuery(c, "currentId")
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	list, err := h.svc.CategoryOptions(currentID)
 	if err != nil {
 		response.Fail(c, err)
 		return

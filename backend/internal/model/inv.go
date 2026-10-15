@@ -79,15 +79,21 @@ func (InvSupplier) TableName() string { return "inv_suppliers" }
 // 分类从「商品表上的一列自由文本」收成一张字典表：同一个分类被写成
 // 「钢材 / 钢材 」这样的变体时，报表的品类占比会把它拆成两条，而
 // 这一列又没有任何地方能改名、排序、停用。收表之后分类才是一个可维护的对象。
+//
+// 支持多级父子分类（ParentID，0 表示根）。现场的分类经常天然带层级
+// （钢材 → 螺纹钢 / 角钢），压成一级会让「螺纹钢」和「角钢」并列在同一个
+// 列表里，商品一多就找不到。树由前端按 parent_id 组装，后端只存父子关系。
 type InvCategory struct {
 	BaseModel
-	Name   string `gorm:"size:64;not null" json:"name"` // 分类名称
-	Sort   int    `gorm:"not null;default:0" json:"sort"`
-	Status int16  `gorm:"not null" json:"status"` // 1 启用 0 停用
-	Remark string `gorm:"size:255" json:"remark"`
+	ParentID int64  `gorm:"not null;default:0;index" json:"parentId"` // 上级分类，0 = 根
+	Name     string `gorm:"size:64;not null" json:"name"`             // 分类名称
+	Sort     int    `gorm:"not null;default:0" json:"sort"`
+	Status   int16  `gorm:"not null" json:"status"` // 1 启用 0 停用
+	Remark   string `gorm:"size:255" json:"remark"`
 }
 
-// TableName 指定表名。
+// 分类名称的唯一性是「同一父级下不重名」——不同父级下的「标准件」是两个分类，
+// 全局唯一会把多级树逼回一级。
 func (InvCategory) TableName() string { return "inv_categories" }
 
 // InvProduct 商品档案（主数据头）。

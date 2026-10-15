@@ -231,6 +231,25 @@ func (s *Service) categoryRefCounts() (map[int64]int64, error) {
 	return out, nil
 }
 
+// categoryChildCounts 统计每个分类的**直接子分类**数，删除校验要用。
+func (s *Service) categoryChildCounts() (map[int64]int64, error) {
+	type row struct {
+		ParentID int64
+		Cnt      int64
+	}
+	var rows []row
+	if err := s.db.Model(&model.InvCategory{}).
+		Select("parent_id, COUNT(*) AS cnt").
+		Where("parent_id > 0").Group("parent_id").Scan(&rows).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	out := make(map[int64]int64, len(rows))
+	for _, r := range rows {
+		out[r.ParentID] = r.Cnt
+	}
+	return out, nil
+}
+
 // categoryNames 取「分类 ID -> 名称」映射。分类表很小，取全量比按 ID 拼 IN 更简单。
 func (s *Service) categoryNames() (map[int64]string, error) {
 	var list []model.InvCategory
@@ -244,7 +263,8 @@ func (s *Service) categoryNames() (map[int64]string, error) {
 	return out, nil
 }
 
-// CategoryList 商品分类列表。
+// CategoryList 商品分类列表。返回**平表**（含 parent_id），树由前端组装 ——
+// 后端不猜前端默认展开到第几层，平表也方便筛选与分页。
 func (s *Service) CategoryList(q page.Query, status *int16) ([]CategoryRow, int64, error) {
 	tx := s.db.Model(&model.InvCategory{})
 	if q.Keyword != "" {
@@ -258,42 +278,52 @@ func (s *Service) CategoryList(q page.Query, status *int16) ([]CategoryRow, int6
 		return nil, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	var list []model.InvCategory
-	if err := q.Paginate(tx.Order("sort ASC, id ASC")).Find(&list).Error; err != nil {
+	if err := q.Paginate(tx.Order("parent_id ASC, sort ASC, id ASC")).Find(&list).Error; err != nil {
 		return nil, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	counts, err := s.categoryRefCounts()
 	if err != nil {
 		return nil, 0, err
 	}
+	children, err := s.categoryChildCounts()
+	if err != nil {
+		return nil, 0, err
+	}
 	rows := make([]CategoryRow, 0, len(list))
 	for _, it := range list {
 		rows = append(rows, CategoryRow{
-			ID: it.ID, Name: it.Name, Sort: it.Sort, Status: it.Status, Remark: it.Remark,
-			ProductCount: counts[it.ID], CreatedAt: it.CreatedAt,
+			ID: it.ID, ParentID: it.ParentID, Name: it.Name, Sort: it.Sort,
+			Status: it.Status, Remark: it.Remark,
+			ProductCount: counts[it.ID], ChildCount: children[it.ID], CreatedAt: it.CreatedAt,
 		})
 	}
 	return rows, total, nil
 }
 
 // CategoryOptions 启用中的分类，供商品表单的下拉使用。
-func (s *Service) CategoryOptions() ([]CategoryOption, error) {
+// 带 parent_id，前端可渲染成树形下拉；同时把 currentID 那一项也取回来 ——
+// 否则编辑一个已停用分类下的商品时，该分类从下拉里消失，表单显示成「未分类」。
+func (s *Service) CategoryOptions(currentID int64) ([]CategoryOption, error) {
 	var list []model.InvCategory
 	if err := s.db.Model(&model.InvCategory{}).
-		Where("status = ?", model.StatusEnabled).
-		Order("sort ASC, id ASC").Find(&list).Error; err != nil {
+		Where("status = ? OR id = ?", model.StatusEnabled, currentID).
+		Order("parent_id ASC, sort ASC, id ASC").Find(&list).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	out := make([]CategoryOption, 0, len(list))
 	for _, it := range list {
-		out = append(out, CategoryOption{ID: it.ID, Name: it.Name})
+		out = append(out, CategoryOption{ID: it.ID, ParentID: it.ParentID, Name: it.Name})
 	}
 	return out, nil
 }
 
-// categoryNameFree 校验分类名称唯一（存活数据内）。
-func (s *Service) categoryNameFree(name string, excludeID int64) error {
+// categoryNameFree 校验**同级**分类名称唯一（存活数据内）。
+//
+// 刻意不做全局唯一：不同父级下的「标准件」是两个合法分类
+// （五金下的标准件 vs 机电下的标准件），全局唯一会把多级树逼回一级。
+func (s *Service) categoryNameFree(name string, parentID, excludeID int64) error {
 	var cnt int64
-	tx := s.db.Model(&model.InvCategory{}).Where("name = ?", name)
+	tx := s.db.Model(&model.InvCategory{}).Where("name = ? AND parent_id = ?", name, parentID)
 	if excludeID > 0 {
 		tx = tx.Where("id <> ?", excludeID)
 	}
@@ -301,21 +331,71 @@ func (s *Service) categoryNameFree(name string, excludeID int64) error {
 		return errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	if cnt > 0 {
-		return errcode.Newf(errcode.ErrConflict, "分类「%s」已存在", name)
+		return errcode.Newf(errcode.ErrConflict, "同级分类「%s」已存在", name)
+	}
+	return nil
+}
+
+// categoryExists 校验分类存在（0 表示「未分类」，允许）。
+func (s *Service) categoryExists(id int64) error {
+	if id <= 0 {
+		return nil
+	}
+	var cnt int64
+	if err := s.db.Model(&model.InvCategory{}).Where("id = ?", id).Count(&cnt).Error; err != nil {
+		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if cnt == 0 {
+		return errcode.New(errcode.ErrBadRequest, "所选商品分类不存在")
+	}
+	return nil
+}
+
+// categoryCycleFree 校验不会把分类挂到自己或自己的子孙下面。
+//
+// 这一步不能省：parent_id 一旦成环，前端按 parent_id 组装树会无限递归，
+// 页面直接卡死。环只能在服务端拦 —— 在下拉里过滤掉自己不等于拦住了环
+// （绕过界面直接调接口一样能造出环来）。
+func (s *Service) categoryCycleFree(id, parentID int64) error {
+	if parentID == id && id != 0 {
+		return errcode.New(errcode.ErrBadRequest, "上级分类不能是自己")
+	}
+	if parentID <= 0 || id <= 0 {
+		return nil
+	}
+	// 从 parentID 沿父链往上走，走到根（0）之前若遇到 id，说明成环
+	cur := parentID
+	for i := 0; i < 100 && cur > 0; i++ {
+		var c model.InvCategory
+		if err := s.db.Select("id", "parent_id").First(&c, cur).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errcode.New(errcode.ErrBadRequest, "上级分类不存在")
+			}
+			return errcode.Wrap(errcode.ErrDatabase, err)
+		}
+		if c.ID == id {
+			return errcode.New(errcode.ErrBadRequest, "上级分类不能是自己的子分类")
+		}
+		cur = c.ParentID
 	}
 	return nil
 }
 
 // CategoryCreate 新增商品分类。
 func (s *Service) CategoryCreate(req CategoryReq) (int64, error) {
-	if err := s.categoryNameFree(req.Name, 0); err != nil {
+	if err := s.categoryNameFree(req.Name, req.ParentID, 0); err != nil {
+		return 0, err
+	}
+	if err := s.categoryExists(req.ParentID); err != nil {
 		return 0, err
 	}
 	status := model.StatusEnabled
 	if req.Status != nil {
 		status = *req.Status
 	}
-	it := model.InvCategory{Name: req.Name, Sort: req.Sort, Status: status, Remark: req.Remark}
+	it := model.InvCategory{
+		ParentID: req.ParentID, Name: req.Name, Sort: req.Sort, Status: status, Remark: req.Remark,
+	}
 	if err := s.db.Create(&it).Error; err != nil {
 		return 0, saveErr(err)
 	}
@@ -324,10 +404,18 @@ func (s *Service) CategoryCreate(req CategoryReq) (int64, error) {
 
 // CategoryUpdate 修改商品分类。
 func (s *Service) CategoryUpdate(id int64, req CategoryReq) error {
-	if err := s.categoryNameFree(req.Name, id); err != nil {
+	if err := s.categoryNameFree(req.Name, req.ParentID, id); err != nil {
 		return err
 	}
-	updates := map[string]any{"name": req.Name, "sort": req.Sort, "remark": req.Remark}
+	if err := s.categoryExists(req.ParentID); err != nil {
+		return err
+	}
+	if err := s.categoryCycleFree(id, req.ParentID); err != nil {
+		return err
+	}
+	updates := map[string]any{
+		"parent_id": req.ParentID, "name": req.Name, "sort": req.Sort, "remark": req.Remark,
+	}
 	if req.Status != nil {
 		updates["status"] = *req.Status
 	}
@@ -341,8 +429,9 @@ func (s *Service) CategoryUpdate(id int64, req CategoryReq) error {
 	return nil
 }
 
-// CategoryDelete 删除商品分类。仍被商品引用时禁止删除 —— 删掉之后那些商品的
-// 分类会变成一个悬空 ID，列表里显示为空，报表的品类占比则凭空少一块。
+// CategoryDelete 删除商品分类。仍被商品引用、或还有子分类时禁止删除 ——
+// 删掉之后那些商品的分类会变成一个悬空 ID，列表里显示为空、报表品类占比凭空少一块；
+// 有子分类时更糟：子分类会集体变成根节点，树形结构凭空塌一层。
 func (s *Service) CategoryDelete(id int64) error {
 	var cnt int64
 	if err := s.db.Model(&model.InvProduct{}).Where("category_id = ?", id).
@@ -351,6 +440,14 @@ func (s *Service) CategoryDelete(id int64) error {
 	}
 	if cnt > 0 {
 		return errcode.Newf(errcode.ErrConflict, "该分类下还有 %d 个商品，无法删除（可改为停用）", cnt)
+	}
+	var childCnt int64
+	if err := s.db.Model(&model.InvCategory{}).Where("parent_id = ?", id).
+		Count(&childCnt).Error; err != nil {
+		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if childCnt > 0 {
+		return errcode.Newf(errcode.ErrConflict, "该分类下还有 %d 个子分类，请先删除或移走子分类", childCnt)
 	}
 	res := s.db.Delete(&model.InvCategory{}, id)
 	if res.Error != nil {
@@ -421,9 +518,9 @@ func (s *Service) buildSpecVOs(specs []model.InvProductSpec) ([]ProductSpecVO, i
 			ID: sp.ID, Spec: sp.Spec, Stock: sp.Stock, WarnStock: sp.WarnStock,
 			// 停用的规格不算预警：它已经退出新单据，库存只会原地停留或清零，
 			// 把它标红只会误导「还欠这个规格的货」。与 Inventory / 概览口径一致。
-			Warn: sp.Status == model.StatusEnabled && sp.WarnStock > 0 && sp.Stock <= sp.WarnStock,
+			Warn:   sp.Status == model.StatusEnabled && sp.WarnStock > 0 && sp.Stock <= sp.WarnStock,
 			Status: sp.Status,
-			Units: make([]ProductUnitVO, 0, len(units[sp.ID])),
+			Units:  make([]ProductUnitVO, 0, len(units[sp.ID])),
 		}
 		if vo.Warn {
 			warn = true
@@ -1027,21 +1124,6 @@ func (s *Service) ProductUpdate(id int64, req ProductReq) error {
 		return s.saveSpecs(tx, id, req.Specs)
 	})
 	return saveErr(err)
-}
-
-// categoryExists 校验分类存在（0 表示「未分类」，允许）。
-func (s *Service) categoryExists(id int64) error {
-	if id <= 0 {
-		return nil
-	}
-	var cnt int64
-	if err := s.db.Model(&model.InvCategory{}).Where("id = ?", id).Count(&cnt).Error; err != nil {
-		return errcode.Wrap(errcode.ErrDatabase, err)
-	}
-	if cnt == 0 {
-		return errcode.New(errcode.ErrBadRequest, "所选商品分类不存在")
-	}
-	return nil
 }
 
 // ProductDelete 删除商品。已被单据引用时禁止删除。

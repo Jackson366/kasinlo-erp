@@ -76,22 +76,17 @@ func Module() module.Module {
 						// 商品与客户 / 供应商同属「基础资料」：单据要用的一切主数据都在这一簇里，
 						// 放在业务流程（采购→销售→库存→应收应付→报表→打印）之后，
 						// 语义上就是「先把档案备齐，再走业务」，与侧边栏从上到下的阅读顺序一致。
-						Name: "InvProduct", Title: "商品管理", Icon: "GoodsFilled",
+						//
+						// 分类不再是独立页面，而是这页左侧的树：维护分类时本来就要盯着
+						// 它下面的商品，分成两页等于为同一个动作开两个入口、来回切换。
+						// 分类的按钮权限点因此挂在本节点下（授权关系不变，只是少一个菜单）。
+						Name: "InvProduct", Title: "商品档案", Icon: "GoodsFilled",
 						Path: "/inv/product", Component: "inv/product/index",
 						Permission: "inv:product:list", KeepAlive: true,
 						Children: []module.MenuNode{
 							{Name: "InvProductCreate", Title: "新增商品", Type: module.TypeButton, Permission: "inv:product:create"},
 							{Name: "InvProductUpdate", Title: "修改商品", Type: module.TypeButton, Permission: "inv:product:update"},
 							{Name: "InvProductDelete", Title: "删除商品", Type: module.TypeButton, Permission: "inv:product:delete"},
-						},
-					},
-					{
-						// 分类字典紧挨着商品管理：商品录入时要在这里选分类，
-						// 放在一起才能一眼看出「分类不是商品上的一列自由文本，而是一份可维护的档案」。
-						Name: "InvCategory", Title: "商品分类", Icon: "CollectionTag",
-						Path: "/inv/category", Component: "inv/category/index",
-						Permission: "inv:category:list", KeepAlive: true,
-						Children: []module.MenuNode{
 							{Name: "InvCategoryCreate", Title: "新增分类", Type: module.TypeButton, Permission: "inv:category:create"},
 							{Name: "InvCategoryUpdate", Title: "修改分类", Type: module.TypeButton, Permission: "inv:category:update"},
 							{Name: "InvCategoryDelete", Title: "删除分类", Type: module.TypeButton, Permission: "inv:category:delete"},

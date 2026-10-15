@@ -109,6 +109,12 @@ func seedMenus(db *gorm.DB) error {
 	if err := retireModules(db); err != nil {
 		return err
 	}
+	// 合并迁移要放在 ensureNode 之后：新库里 InvProduct 已经带上了分类的按钮权限点，
+	// 老库里则靠这一步把旧 InvCategory 的子节点移挂过来再软删它。
+	// 顺序反了会在新库上找不到 InvCategory（本就不是问题），老库上却会漏移子节点。
+	if err := mergeMenuNodes(db); err != nil {
+		return err
+	}
 	return ensureLandingOrder(db)
 }
 
@@ -127,6 +133,62 @@ var retiredModules = []struct {
 	Names     []string // 无权限码的节点按路由名兜底（目录节点没有权限码）
 }{
 	{Namespace: "dashboard", Names: []string{"Dashboard"}},
+}
+
+// mergedMenuNodes 登记**被合并进别的菜单**的页面节点。
+//
+// 与 retiredModules 的区别：那个是「整个模块下线」，这个是「模块还在，
+// 只是其中一个页面被并进另一个页面」。商品分类页并进商品档案页（左侧树）就是这种。
+//
+// 只软删父节点会留下一个很难发现的问题：它的**按钮子节点还挂在被删节点下**，
+// 而 ensureNode 按幂等键「命中即沿用、不重建」，那些按钮于是永远挂在一条
+// 已软删的菜单底下 —— 角色授权列表里看不见，前端按菜单树渲染时也渲染不出来，
+// 权限等于白给。所以这里要把子节点**移挂**到新父节点，再软删旧父节点。
+var mergedMenuNodes = []struct {
+	Name   string // 被合并掉的页面节点（幂等键 = 路由名）
+	MoveTo string // 子节点移挂到的目标页面节点
+}{
+	{Name: "InvCategory", MoveTo: "InvProduct"},
+}
+
+// mergeMenuNodes 执行上面的合并迁移（幂等）。
+func mergeMenuNodes(db *gorm.DB) error {
+	for _, m := range mergedMenuNodes {
+		var old model.Menu
+		if err := db.Where("name = ?", m.Name).First(&old).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue // 新库 / 已迁过
+			}
+			return err
+		}
+		var target model.Menu
+		if err := db.Where("name = ?", m.MoveTo).First(&target).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("合并菜单失败：目标节点 %s 不存在", m.MoveTo)
+			}
+			return err
+		}
+		// 子节点移挂：授权按 menu_id 关联，换父节点不影响任何授权
+		var moved int64
+		if err := db.Model(&model.Menu{}).
+			Where("parent_id = ? AND type = ?", old.ID, model.MenuTypeButton).
+			Update("parent_id", target.ID).Error; err != nil {
+			return err
+		}
+		moved = db.RowsAffected
+		// 再软删旧父节点（先清它的授权，避免孤儿行破坏「超管授权数 == 存活菜单数」）
+		if err := db.Where("menu_id = ?", old.ID).Delete(&model.RoleMenu{}).Error; err != nil {
+			return err
+		}
+		if err := db.Delete(&model.Menu{}, old.ID).Error; err != nil {
+			return err
+		}
+		logger.Info("菜单已合并",
+			zap.String("merged", m.Name),
+			zap.String("into", m.MoveTo),
+			zap.Int64("childrenMoved", moved))
+	}
+	return nil
 }
 
 // retireModules 清理已下线模块的菜单与角色授权。

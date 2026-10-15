@@ -325,6 +325,14 @@ const docTemplate = `{
                     "进销存-商品分类"
                 ],
                 "summary": "商品分类下拉项（仅启用）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "当前编辑项的分类 ID（会一并返回，避免编辑停用分类时显示空白）",
+                        "name": "currentId",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1717,6 +1725,24 @@ const docTemplate = `{
                         "description": "时间范围",
                         "name": "range",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "自定义起始日 yyyy-MM-dd（优先于 range）",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "自定义结束日 yyyy-MM-dd",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "品类筛选（含子分类），0 = 全部",
+                        "name": "categoryId",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1763,6 +1789,24 @@ const docTemplate = `{
                         "type": "string",
                         "description": "时间范围",
                         "name": "range",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "自定义起始日 yyyy-MM-dd（优先于 range）",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "自定义结束日 yyyy-MM-dd",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "品类筛选（含子分类），0 = 全部",
+                        "name": "categoryId",
                         "in": "query"
                     },
                     {
@@ -1817,6 +1861,24 @@ const docTemplate = `{
                         "description": "today | week | month | quarter | year",
                         "name": "range",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "自定义起始日 yyyy-MM-dd（优先于 range）",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "自定义结束日 yyyy-MM-dd",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "品类筛选（含子分类），0 = 全部",
+                        "name": "categoryId",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1860,6 +1922,24 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "天数，默认 30",
                         "name": "days",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "自定义起始日 yyyy-MM-dd",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "自定义结束日 yyyy-MM-dd",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "品类筛选（含子分类），0 = 全部",
+                        "name": "categoryId",
                         "in": "query"
                     }
                 ],
@@ -4827,6 +4907,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "parentId": {
+                    "type": "integer"
                 }
             }
         },
@@ -4839,6 +4922,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "maxLength": 64
+                },
+                "parentId": {
+                    "description": "0 = 根分类",
+                    "type": "integer"
                 },
                 "remark": {
                     "type": "string",
@@ -4859,6 +4946,10 @@ const docTemplate = `{
         "inv.CategoryRow": {
             "type": "object",
             "properties": {
+                "childCount": {
+                    "description": "子分类数，删除校验要用",
+                    "type": "integer"
+                },
                 "createdAt": {
                     "type": "string"
                 },
@@ -4867,6 +4958,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "parentId": {
+                    "type": "integer"
                 },
                 "productCount": {
                     "type": "integer"

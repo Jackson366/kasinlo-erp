@@ -118,12 +118,17 @@ definitions:
         type: integer
       name:
         type: string
+      parentId:
+        type: integer
     type: object
   inv.CategoryReq:
     properties:
       name:
         maxLength: 64
         type: string
+      parentId:
+        description: 0 = 根分类
+        type: integer
       remark:
         maxLength: 255
         type: string
@@ -139,12 +144,17 @@ definitions:
     type: object
   inv.CategoryRow:
     properties:
+      childCount:
+        description: 子分类数，删除校验要用
+        type: integer
       createdAt:
         type: string
       id:
         type: integer
       name:
         type: string
+      parentId:
+        type: integer
       productCount:
         type: integer
       remark:
@@ -1731,6 +1741,11 @@ paths:
       - 进销存-商品分类
   /inv/categories/options:
     get:
+      parameters:
+      - description: 当前编辑项的分类 ID（会一并返回，避免编辑停用分类时显示空白）
+        in: query
+        name: currentId
+        type: integer
       produces:
       - application/json
       responses:
@@ -2483,6 +2498,18 @@ paths:
         in: query
         name: range
         type: string
+      - description: 自定义起始日 yyyy-MM-dd（优先于 range）
+        in: query
+        name: from
+        type: string
+      - description: 自定义结束日 yyyy-MM-dd
+        in: query
+        name: to
+        type: string
+      - description: 品类筛选（含子分类），0 = 全部
+        in: query
+        name: categoryId
+        type: integer
       produces:
       - application/json
       responses:
@@ -2509,6 +2536,18 @@ paths:
         in: query
         name: range
         type: string
+      - description: 自定义起始日 yyyy-MM-dd（优先于 range）
+        in: query
+        name: from
+        type: string
+      - description: 自定义结束日 yyyy-MM-dd
+        in: query
+        name: to
+        type: string
+      - description: 品类筛选（含子分类），0 = 全部
+        in: query
+        name: categoryId
+        type: integer
       - description: 条数，默认 5
         in: query
         name: limit
@@ -2539,6 +2578,18 @@ paths:
         in: query
         name: range
         type: string
+      - description: 自定义起始日 yyyy-MM-dd（优先于 range）
+        in: query
+        name: from
+        type: string
+      - description: 自定义结束日 yyyy-MM-dd
+        in: query
+        name: to
+        type: string
+      - description: 品类筛选（含子分类），0 = 全部
+        in: query
+        name: categoryId
+        type: integer
       produces:
       - application/json
       responses:
@@ -2562,6 +2613,18 @@ paths:
       - description: 天数，默认 30
         in: query
         name: days
+        type: integer
+      - description: 自定义起始日 yyyy-MM-dd
+        in: query
+        name: from
+        type: string
+      - description: 自定义结束日 yyyy-MM-dd
+        in: query
+        name: to
+        type: string
+      - description: 品类筛选（含子分类），0 = 全部
+        in: query
+        name: categoryId
         type: integer
       produces:
       - application/json
