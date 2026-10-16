@@ -618,6 +618,7 @@
 | PUT | `/api/v1/inv/orders/{id}` | `inv:sales:update` | 修改单据（仅待处理，整体覆盖明细） |
 | DELETE | `/api/v1/inv/orders/{id}` | `inv:sales:delete` | 删除单据（已审核不可删，返回 40900） |
 | PUT | `/api/v1/inv/orders/{id}/status` | `inv:sales:finish` | 流转状态；置 2 时同事务生成出入库单并按 `qtyBase` 调整库存 |
+| PUT | `/api/v1/inv/orders/{id}/reverse` | `inv:sales:finish` | **反审核**：作废审核时生成的出入库单 + 回滚库存 + 单据退回待处理（同一事务） |
 
 **业务线二次鉴权要精确到动作**：`/inv/orders` 一条路由服务两条业务线，
 路由上的 `RequirePerm` 只做粗筛（采购或销售任一）；handler 内还要按实体的 `bizType`
@@ -631,6 +632,16 @@
 
 - `bizType=purchase` → `inv_product_units.purchase_price`
 - `bizType=sales` → `inv_product_units.sale_price`
+
+**反审核**（`PUT /orders/{id}/reverse`）是审核的逆操作，与审核共用 `finish` 权限。
+它必须撤销审核的全部副作用，而不是只把状态改回去：
+
+1. 找到审核时生成的出入库单（`source_type` + `source_id`）并**反向过账**回滚库存；
+2. 把该出入库单置为「已作废」（不再出现在出入库列表里）；
+3. 单据退回「待处理」，条件更新挡住并发二次反审核。
+
+拦截条件（都返回 40900）：**已登记收付款**（`settled_amount > 0`，金额已落账）、
+出入库单已被手工作废（此时库存已回滚，只做第 3 步）、非「已审核」状态。
 
 价格记在单位上而非商品上，是因为「1 箱 100 元」与「1 个 10.5 元」本就不是同一个数；
 若只记商品一个价，按箱买与按个买就会有一个是错的。
@@ -705,6 +716,7 @@ Go 侧用 `isOverdue()`，两处口径由冒烟脚本断言「汇总 == 逐行�
 | GET | `/api/v1/inv/report/ranking` | `inv:report:view` | 排行（见下方 `dimension` / `biz` 参数） |
 | GET | `/api/v1/inv/report/category` | `inv:report:view` | 品类销售占比 |
 | GET | `/api/v1/inv/report/inventory` | `inv:report:view` | 库存分析（金额 / 规格数 / 预警数 / 品类分布 / 预警清单） |
+| GET | `/api/v1/inv/report/export` | `inv:report:view` | 导出 xlsx（`type` 选报表区，见下） |
 
 **排行**接口用两个参数组合出三种排行：
 
@@ -726,6 +738,17 @@ ProductName**聚合而不是联表取档案名——商品档案被删后联表�
 - **销售成本用商品当前采购价 join 计算**，`毛利 = 营业收入 − 销售成本`。
 - **库存分析是共享主数据**，不随时间 / 品类筛选变化、不按数据范围收窄；
   库存金额 = 规格库存 × 基本单位采购价；预警清单按「库存 − 预警下限」升序、前 20 条。
+
+**报表导出**（`/inv/report/export`）返回 xlsx 二进制流，筛选参数同上，另加：
+
+| 参数 | 说明 |
+| --- | --- |
+| `type` | `overview`（默认）/ `ranking` / `purchase` / `inventory`，对应报表中心四个面板 |
+| `dimension` / `biz` | 仅 `type=ranking` 时生效，含义同排行接口 |
+
+一个 `type` 产出一个**多工作表**工作簿（如 `overview` = 经营汇总 + 客户排行 + 品类占比），
+各表用同一套样式（加粗表头 / 文本格式 / 冻结首行）。导出的排行取满 50 条上限，
+而不是页面上的前 N 条 —— 导出要的是一份完整数据。
 
 ### 11.7 打印模板
 
