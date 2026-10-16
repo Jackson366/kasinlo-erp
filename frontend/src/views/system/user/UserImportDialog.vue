@@ -33,6 +33,22 @@ const importLoading = ref(false)
 const importSubmitting = ref(false)
 const onlyErrors = ref(false)
 
+/**
+ * 本次导入的幂等键，在选中文件时生成、导入成功或重置后作废。
+ * 关键点：它必须与「这次要导入的内容」绑定 —— 失败后重试、或用户连点两次「确认导入」
+ * 都会带同一个键，后端据此识别为同一次操作，不会重复建档。
+ */
+const importKey = ref('')
+
+function newIdempotencyKey(): string {
+  // crypto.randomUUID 只在安全上下文（https / localhost）可用；
+  // 内网用 http + IP 访问后台时它不存在，需要兜底，否则导入会直接报错。
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 /** 校验明细：默认展示全部行，可切换为仅看失败行 */
 const previewRows = computed(() => {
   const list = importPreview.value?.rows ?? []
@@ -43,6 +59,7 @@ function resetImport(): void {
   importFile.value = null
   importPreview.value = null
   importResult.value = null
+  importKey.value = ''
   onlyErrors.value = false
   uploadRef.value?.clearFiles()
 }
@@ -65,6 +82,9 @@ async function handleFileChange(file: UploadFile): Promise<void> {
   importFile.value = raw
   importPreview.value = null
   importResult.value = null
+  // 每选一次文件就是一次新的导入意图，重新生成幂等键；
+  // 之后的「确认导入」重试都复用它，形成同一次操作。
+  importKey.value = newIdempotencyKey()
   importLoading.value = true
   try {
     importPreview.value = await userApi.import(raw, true)
@@ -89,7 +109,7 @@ async function submitImport(): Promise<void> {
 
   importSubmitting.value = true
   try {
-    importResult.value = await userApi.import(file, false)
+    importResult.value = await userApi.import(file, false, importKey.value)
     ElMessage.success(`成功导入 ${importResult.value.created} 条用户`)
     emit('imported')
   } catch {

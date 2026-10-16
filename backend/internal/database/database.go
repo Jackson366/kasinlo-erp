@@ -97,6 +97,7 @@ func AutoMigrate() error {
 		&model.InvStockOrder{},
 		&model.InvStockItem{},
 		&model.InvPrintTemplate{},
+		&model.Idempotency{},
 	)
 }
 

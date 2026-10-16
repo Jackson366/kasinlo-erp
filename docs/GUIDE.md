@@ -387,7 +387,7 @@ src/
 
 ## 1.7 数据表
 
-20 张表，全部由 GORM `AutoMigrate` 自动创建。框架表 8 张（`sys_` 前缀）：
+21 张表，全部由 GORM `AutoMigrate` 自动创建。框架表 9 张（`sys_` 前缀）：
 
 | 表名 | 用途 | 软删除 |
 | --- | --- | --- |
@@ -399,6 +399,7 @@ src/
 | `sys_role_menus` | 角色-菜单关联（复合主键） | 否 |
 | `sys_operation_logs` | 操作日志 | 否 |
 | `sys_login_logs` | 登录日志 | 否 |
+| `sys_idempotencies` | 幂等键登记（写接口防重复提交与响应回放） | 否 |
 
 进销存业务表 12 张（`inv_` 前缀）：
 
@@ -2010,7 +2011,7 @@ bash scripts/gen-swagger.sh        # 内部就是 swag init --parseInternal
 | GET | `/system/users/options` | `system:user:list` \| `system:role:list` \| `system:dept:list` | 下拉选项 |
 | GET | `/system/users/export` | `system:user:export` | 导出 |
 | GET | `/system/users/import-template` | `system:user:import` | 下载模板 |
-| POST | `/system/users/import` | `system:user:import` | 批量导入（`?dryRun=1` 仅校验） |
+| POST | `/system/users/import` | `system:user:import` | 批量导入（`?dryRun=1` 仅校验）；带 `Idempotency-Key` 头防重复提交 |
 | GET | `/system/users/:id` | `system:user:list` | 详情 |
 | POST | `/system/users` | `system:user:create` | 新增 |
 | PUT | `/system/users/:id` | `system:user:update` | 修改 |

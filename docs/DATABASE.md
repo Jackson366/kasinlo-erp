@@ -19,6 +19,7 @@
 | `sys_role_menus` | 角色-菜单关联 | 否 |
 | `sys_operation_logs` | 操作日志 | 否 |
 | `sys_login_logs` | 登录日志 | 否 |
+| `sys_idempotencies` | 幂等键登记（写接口防重复提交） | 否 |
 
 进销存业务表（前缀 `inv_`，共 12 张）：
 
@@ -336,6 +337,16 @@ sys_role_menus (role_id bigint PK, menu_id bigint PK)
 | `paper` | varchar(8) | `A4` / `A5`，缺省 A4 |
 | `status` | smallint, not null | 1 启用 / 0 停用 |
 | `remark` | varchar(255) | |
+### 幂等表
+
+`sys_idempotencies`（键本身即主键，不使用 `BaseModel`）：`key`(PK, 128)、`scope`、`status`、
+`status_code`、`response`(bytea)、`expires_at`(索引)、`created_at`、`updated_at`
+
+- `scope` = 「方法 + 路由模板」，防止同一个键被挪到别的接口上复用。
+- `status`：`1` 处理中、`2` 已完成。处理中的行用较短租期（2 分钟），
+  已完成的行保留 24 小时，均由 `expires_at` 控制。
+- 过期记录不做主动清理：被复用的键会**原地覆盖**（`ON CONFLICT ... DO UPDATE ... WHERE expires_at < now()`），
+  因此行数上界是「历史上出现过的不同键数量」，不随运行时间无限增长。
 
 ---
 

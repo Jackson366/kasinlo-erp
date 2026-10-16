@@ -44,10 +44,14 @@ export const userApi = {
   downloadTemplate() {
     return downloadFile('/system/users/import-template', undefined, '用户导入模板.xlsx')
   },
-  /** 导入用户；dryRun 为 true 时仅校验不写库 */
-  import(file: File, dryRun = false) {
+  /**
+   * 导入用户；dryRun 为 true 时仅校验不写库。
+   * idempotencyKey 只在真正写库时携带：同一个键重复提交会回放首次结果，避免重复建档。
+   */
+  import(file: File, dryRun = false, idempotencyKey?: string) {
     return uploadFile<ImportResult>('/system/users/import', file, {
       params: dryRun ? { dryRun: 1 } : undefined,
+      idempotencyKey: dryRun ? undefined : idempotencyKey,
     })
   },
 }

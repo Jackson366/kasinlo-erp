@@ -70,7 +70,12 @@ export async function downloadFile(
 export async function uploadFile<T>(
   url: string,
   file: File,
-  options: { params?: Record<string, unknown>; config?: AxiosRequestConfig } = {},
+  options: {
+    params?: Record<string, unknown>
+    config?: AxiosRequestConfig
+    /** 幂等键：同一次操作的重复提交（超时重试、重复点击）应传入同一个值 */
+    idempotencyKey?: string
+  } = {},
 ): Promise<T> {
   const form = new FormData()
   form.append('file', file)
@@ -82,7 +87,10 @@ export async function uploadFile<T>(
     params: options.params,
     // 必须让 axios 用 multipart 而不是实例默认的 application/json；
     // boundary 由浏览器自动补充，不能手动写死。
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      ...(options.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}),
+    },
     ...options.config,
   })
 
