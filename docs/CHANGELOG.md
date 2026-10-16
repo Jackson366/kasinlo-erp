@@ -223,8 +223,9 @@
 
 #### Changed
 
-- `origin` 指向新仓库 `git@gitee.com:xy_qcdz/nove-erp.git`（旧的 `nova-admin` 已移除）。
-  注意仓库名拼写是 `nove-` 而非 `nova-`（`xy_qcdz/nova-erp.git` 实测 404）。
+- `origin` 指向 `git@gitee.com:xy_qcdz/nova-erp.git`。
+  中途曾短暂用过 `nove-erp.git` 这个名字（当时的探测结果是 `nova-erp.git` 还没建），
+  仓库建好后已改回正名，完整历史（26 个提交）已推送。
 
 #### 测试与文档
 
