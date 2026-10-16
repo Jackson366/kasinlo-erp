@@ -55,15 +55,16 @@ Nova ERP 是一套**简洁够用的后台管理系统骨架**：Go + Vue 3 + Pos
 
 | 组件 | 版本 | 用途 |
 | --- | --- | --- |
-| Vue | ^3.5.13 | 框架（组合式 API + `<script setup>`） |
-| Vite | ^6.1.0 | 构建与开发服务器 |
+| Vue | ^3.5.44 | 框架（组合式 API + `<script setup>`） |
+| Vite | ^6.4.4 | 构建与开发服务器 |
 | TypeScript | ^5.7.3 | 类型（`vue-tsc` 严格检查） |
-| Element Plus | ^2.9.5 | UI 组件库 |
+| Element Plus | ^2.14.7 | UI 组件库（**按需导入**，见 §3.8.4） |
+| unplugin-vue-components | ^32.1.0 | 按需导入 `el-*` 组件与样式 |
 | Pinia | ^3.0.1 | 状态管理（组合式 setup store） |
 | vue-router | ^4.5.0 | 路由（**hash 模式**） |
 | axios | ^1.7.9 | HTTP |
-| ECharts | ^5.6.0 | 概览与报表图表 |
-| sass | ^1.85.0 | 样式预处理 |
+| ECharts | ^6.1.0 | 概览与报表图表（6.x 修了 XSS） |
+| sass | ^1.105.2 | 样式预处理 |
 
 ### 基础设施
 
@@ -993,7 +994,7 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产
 | 编译期 | `gofmt -l .` / `go vet ./...` / `npm run typecheck` | 语法、类型、常见误用 | — |
 | 进程内 E2E | `go test ./test/... -count=1` | 行为契约（进程内 `httptest` 驱动完整路由） | **68 个测试 / 139 条用例** |
 | 接口冒烟 | `node scripts/api-smoke.mjs` | 协议层（真实 HTTP、二进制响应、文件上传下载） | **214 项断言** |
-| 浏览器运行时 | `node scripts/browser-verify.mjs` | 真实渲染（白屏、主题、控制台报错） | **78 项断言 / 15 个页面** |
+| 浏览器运行时 | `node scripts/browser-verify.mjs` | 真实渲染（白屏、主题、控制台报错） | **80 项断言 / 15 个页面** |
 
 ### 为什么必须有浏览器验证
 
@@ -1837,6 +1838,52 @@ await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'le
 > 把第一个单位提为基本单位、把基本单位换算率钉成 1），而不是把它转嫁成
 > 用户面前的四个必填提示。**留下的硬约束只有「不能重名」** ——
 > 那是真的会算错账（两行「φ20」把库存劈成两半）。
+
+## 3.8.4 Element Plus 按需导入
+
+`element-plus` 的**根入口**顶层会执行 `makeInstaller([...全部组件])`，
+这个副作用调用让 rollup 无法摇树 —— 只要有一处 `import ... from 'element-plus'`，
+整个组件库（约 950KB）就全进包。官方 `ElementPlusResolver` 生成的正是根入口导入，
+所以这里自己写了 `ElementPlusDirectResolver`（`vite.config.ts`），
+按**子路径**导入：
+
+```ts
+// 生成：import { ElSelect } from 'element-plus/es/components/select/index'
+//       + sideEffects 注入 element-plus/es/components/select/style/css
+```
+
+效果：element chunk **961 → 609 kB**（gzip 308 → 195 kB）。
+剩下的 609KB 是用到的组件本身（date-picker 含 dayjs、table、tree、upload 等），
+不是没摇干净 —— 判据是「未使用的组件名是否出现在产物里」。
+
+三条约束，新增页面时照着做：
+
+1. **模板里的 `el-*` 会被自动解析**，不用手工 import，也不用 `app.use(ElementPlus)`。
+2. **`ElMessage` / `ElMessageBox` / `v-loading` 不走模板**，要显式导入 ——
+   且必须走子路径，类型可以留在根入口（`import type` 编译期擦除，不产生运行时导入）：
+   ```ts
+   import { ElMessage } from 'element-plus/es/components/message/index'
+   import { ElMessageBox } from 'element-plus/es/components/message-box/index'
+   import type { FormInstance, FormRules } from 'element-plus'
+   ```
+   它们的样式也要在 `main.ts` 手工引（见那里的三行注释）。
+3. **用到新的子组件时，先确认它有没有独立目录**。
+   像 `el-table-column` / `el-form-item` / `el-option` / `el-descriptions-item`
+   在 `node_modules/element-plus/es/components/` 下**没有**自己的目录，
+   要映射到父组件的 barrel（`EP_PARENT`），否则解析到一个不存在的模块、
+   **构建直接失败**：
+   ```bash
+   ls node_modules/element-plus/es/components/ | grep descriptions   # 只有 descriptions
+   ```
+   `el-descriptions-item` 就是这样补进 `EP_PARENT` 的 —— 上游没踩到是因为
+   它的仪表盘不用 descriptions，而进销存的单据详情用了。
+
+> **dev server 的一个环境坑**：Vite 重新优化依赖时会把缓存目录
+> （`node_modules/.vite/deps`，上百个文件）整体删除重建。若运行环境对
+> 「单次批量删除超过 N 个文件」有安全拦截，dev server 会在启动阶段被拦下
+> （`vite build` / `vite preview` 不受影响，它们不碰这个目录）。
+> 症状是控制台一句 `error when starting dev server` 加一条删除守卫的报错，
+> **与项目代码无关**。在普通终端里 `npm run dev` 不会有这个问题。
 
 ---
 

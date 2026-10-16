@@ -2116,6 +2116,62 @@ DOM 里一条都不少；而「用 v-for 重建列表」的**自定义过滤**�
 - 浏览器脚本断言**最大两档弹窗的实际宽度**（1280 / 1100）——
   尺寸跑偏靠肉眼发现不了。
 
+### 5.88 按需导入的解析器，必须覆盖「没有独立目录」的子组件
+
+**诱因**：element-plus 改为按需导入后，`vite.config.ts` 里用自定义解析器把
+`el-*` 映射到 `element-plus/es/components/<name>/index`。
+
+**后果**：一大批子组件**没有自己的目录** —— `el-table-column` 在 `table/` 下、
+`el-form-item` 在 `form/` 下、`el-option` 在 `select/` 下，
+`el-descriptions-item` 在 `descriptions/` 下（`ls` 可见只有 `descriptions`）。
+没有映射时解析器会去找 `components/descriptions-item/index`，
+**构建直接失败**，报错是「无法解析的导入路径」—— 完全指不到「少了一条映射」。
+
+**做法**：
+
+- 维护 `EP_PARENT` 映射表；新增页面用到没见过的子组件时，**先查目录**：
+  ```bash
+  ls node_modules/element-plus/es/components/ | grep <名字>
+  ```
+- 映射之后还要确认**父 barrel 真的导出**这个名字（解析器取的是具名导出）：
+  ```bash
+  grep -c "\bElDescriptionsItem\b" node_modules/element-plus/es/components/descriptions/index.mjs
+  ```
+- 更省事的判据：**枚举项目里所有 `el-*` 用法**，逐个核对
+  ```bash
+  grep -rhoE "<el-[a-z][a-z-]*" src/ | sed 's/<//' | sort -u
+  ```
+  这是加新组件时的例行检查，比等到构建失败再查快得多。
+
+> 同一类问题也适用于 `ElMessage` / `ElMessageBox` / `v-loading`：
+> 它们**不走模板解析**，必须显式导入，且必须是子路径
+> （`element-plus/es/components/message/index`），否则一处根入口导入
+> 就把整个组件库拉回包里。类型导入可以留根入口 —— `import type` 编译期擦除。
+
+### 5.89 按需注册的图表库「漏注册」是静默的，验证要查像素不是查报错
+
+**诱因**：echarts 5.6 → 6.1 大版本升级后要确认图表没坏，
+第一反应是「看控制台有没有报错」。
+
+**后果**：`EChart.vue` 走的是按需注册（`echarts/core` + `echarts.use([...])`）。
+**未注册的图表类型 echarts 不抛错、只打印一条 warning 并把整个 series 丢掉** ——
+页面不白屏、组件不报错，那块图就是不出来。只查「有没有报错」会漏掉它；
+而这个项目的控制台检查恰好要求「0 条 warning」，一旦有过 warning 反而被当成噪音忽略。
+
+**做法**：
+
+- 验证**实际渲染结果**：查 canvas 的像素尺寸
+  ```js
+  const sized = Array.from(document.querySelectorAll('.page-card canvas'))
+    .filter((c) => c.width > 0 && c.height > 0)
+  ```
+- **断言数按实际来**。本次一开始写「报表页 >= 4 张图」，实际只有 2 张
+  （趋势 + 品类占比，排行是表格、KPI 是数字卡片）——
+  凭印象写的数字会变成一条永远失败的假失败。
+- 大版本升级第三方库时，**先找它的「静默失败模式」**：
+  图表库漏注册丢 series、ORM 漏 where 全表更新、正则漏转义当通配符 ——
+  这类问题的共同点是「不报错」，只能靠断言结果来发现。
+
 ### 6.1 交互缺陷另跑 `interaction-verify.mjs`
 
 
