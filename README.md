@@ -12,7 +12,7 @@
 - 商品模型：`商品 → 规格 → 计量单位` 三层。**库存只记在规格上（按基本单位计），单价记在单位上** —— 「`φ20` 剩 30 根 = 180 米」永远只有一个数，「1 箱 100 元 vs 1 个 10.5 元」也不会混。单据明细选到「规格 + 单位」后按 `qty × rate` 折算扣减
 - 商品分类：多级父子字典表（`parent_id`），与商品档案同页（左侧树）；同级名称唯一、禁止挂到自己子孙下（成环会让前端组装树时无限递归）
 - 主题：内置**亮色 / 暗色**双主题，跟随系统偏好 + 手动切换 + 本地记忆，首屏无闪烁
-- 权限：JWT 双令牌 + RBAC（用户-角色-菜单）+ 按钮级权限指令（不摘 DOM、运行期权限变化可重新判定）+ **数据范围**（全部 / 本部门 / 本部门及以下 / 仅本人，读写同时生效，用户 / 部门 / 仪表盘统一收口）
+- 权限：JWT 双令牌 + RBAC（用户-角色-菜单）+ 按钮级权限指令（不摘 DOM、运行期权限变化可重新判定）+ **数据范围**（全部 / 本部门 / 本部门及以下 / 仅本人，读写同时生效，统一收口用户 / 部门 / 日志 / **进销存单据**；商品 / 客户是共享主数据，不按范围隔离）
 - 账号安全：连续失败锁定、JWT 锁死 HS256 且校验 issuer、限流记账原子且 key 数有硬上界、改密码即吊销旧令牌（`token_epoch`）、审计 IP 不可被 `X-Forwarded-For` 伪造、清空登录日志不解除账号锁定
 - 健壮性：客户端可控整数（页码）统一收敛、聚合查询错误一律上报而非静默返回空、审计日志组件未初始化会显式报错
 - 导入导出：用户 / 角色 / 操作日志 / 登录日志四类 Excel 导出，用户**两阶段批量导入**（先校验预览、再确认写库）
@@ -74,20 +74,20 @@ go run ./cmd/server -config config.yaml -seed    # 强制重跑种子数据（�
 
 启动后：
 
-- 服务地址：`http://127.0.0.1:8080`
+- 服务地址：`http://127.0.0.1:6802`
 - 接口前缀：`/api/v1`
-- 健康检查：`GET http://127.0.0.1:8080/health`
+- 健康检查：`GET http://127.0.0.1:6802/health`
 
 ### 4. 启动前端
 
 ```bash
 cd frontend
 npm install
-npm run dev            # http://localhost:5173
+npm run dev            # http://localhost:6801
 ```
 
-Vite 已把 `/api` 与 `/swagger` 代理到 `http://127.0.0.1:8080`，无需处理跨域；
-在线接口文档在开发时可直接访问 `http://localhost:5173/swagger/index.html`。
+Vite 已把 `/api` 与 `/swagger` 代理到 `http://127.0.0.1:6802`，无需处理跨域；
+在线接口文档在开发时可直接访问 `http://localhost:6801/swagger/index.html`。
 
 ### 5. 切换主题
 
@@ -194,7 +194,7 @@ nova-erp/
 │       ├── utils/                      # auth / request / download / format / theme
 │       └── views/                      # 页面：system / inv（进销存）/ dashboard
 ├── scripts/
-│   ├── api-smoke.mjs                   # 零依赖接口冒烟脚本（214 项）
+│   ├── api-smoke.mjs                   # 零依赖接口冒烟脚本（219 项）
 │   ├── browser-verify.mjs              # 零依赖浏览器运行时验证（80 项 / 15 个页面，含双主题）
 │   ├── interaction-verify.mjs          # 零依赖受控组件交互验证（9 项）
 │   ├── gen-swagger.sh                  # swag init 封装：重新生成 OpenAPI 文档
@@ -226,11 +226,11 @@ cp test/testdata/config.example.yaml test/testdata/config.yaml
 ### 后端：对运行实例的接口冒烟
 
 ```bash
-node scripts/api-smoke.mjs                      # 默认 http://127.0.0.1:8080
+node scripts/api-smoke.mjs                      # 默认 http://127.0.0.1:6802
 node scripts/api-smoke.mjs http://host:port     # 指定实例
 ```
 
-共 90 项断言，覆盖登录/令牌刷新/CRUD/权限隔离/参数校验/日志/导入导出/数据范围/令牌吊销。
+共 219 项断言，覆盖登录/令牌刷新/CRUD/权限隔离/参数校验/日志/导入导出/数据范围/令牌吊销。
 
 ### 前端：类型检查与构建
 

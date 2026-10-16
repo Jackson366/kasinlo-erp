@@ -151,9 +151,19 @@ scope := authz.ResolveScope(actor)
 
 scope.ApplyUser(tx)          // 叠在 sys_users 查询上：WHERE dept_id IN (...)
 scope.ApplyLog(tx)           // 叠在带 user_id 的日志表上
+scope.CreatorCond("")        // 叠在带 created_by 的进销存单据上（含别名形式）
+scope.CreatorVisible(uid)    // 写操作前判断单据创建人是否可见（越界按 404）
 scope.AllowsDept(deptID)     // 纯判定
 scope.EnsureDeptWritable(id) // 写操作前的闸门
 ```
+
+**进销存的数据范围只作用于「单据」**（采购 / 销售 / 出入库 / 结算）及其派生的
+概览与报表，按 `created_by`（创建人）关联到部门收窄：
+
+- 「仅本人」→ 只看自己开的单；「本部门（及以下）」→ 只看本部门的人开的单。
+- **商品 / 分类 / 客户 / 供应商是共享主数据**，不套范围 —— 它们没有「创建人」
+  语义，隔离了会导致开单时选不到别人维护的商品与客户，业务直接断掉。
+  这些主数据仍由权限码控制谁能改，只是不看数据范围。
 
 `user` / `dept` 两个模块共用它。新增涉及「人」的读接口时，
 **唯一需要做的就是拿到 `middleware.CurrentIdentity(c)` 并调 `ApplyUser` / `ApplyLog`**——
@@ -508,7 +518,7 @@ database:
   password: CHANGE_ME      # ← 改成你本机的口令
   dbname: nova_inv_v5
 app:
-  port: 8080
+  port: 6802
 ```
 
 > `config.yaml` 含口令，**已在 `.gitignore` 中，不会进版本库**。
@@ -528,13 +538,13 @@ go run ./cmd/server -config config.yaml
 
 ```
 数据库连接成功    {"database": "nova_inv_v5"}
-HTTP 服务已启动   {"addr": "0.0.0.0:8080", "basePath": "/api/v1"}
+HTTP 服务已启动   {"addr": "0.0.0.0:6802", "basePath": "/api/v1"}
 ```
 
 验证：
 
 ```bash
-curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:6802/health
 # {"app":"nova-erp","status":"ok","version":"v1"}
 ```
 
@@ -546,7 +556,7 @@ npm install
 npm run dev
 ```
 
-打开 `http://localhost:5173`。Vite 已把 `/api` 代理到 `http://127.0.0.1:8080`，无需处理跨域。
+打开 `http://localhost:6801`。Vite 已把 `/api` 代理到 `http://127.0.0.1:6802`，无需处理跨域。
 
 ### 第 4 步：准备测试配置（跑测试前必做）
 
@@ -880,7 +890,7 @@ app:
   name: nova-erp          # 应用名
   mode: debug               # debug | release
   host: 0.0.0.0
-  port: 8080
+  port: 6802
   prefix: /api              # 路由统一前缀
   version: v1               # API 版本段，最终拼接为 /api/v1
   swagger: true             # 是否挂载 /swagger 在线文档；不写则跟随 mode（debug 开、release 关）
@@ -973,13 +983,13 @@ go test ./test/... -count=1                  # 全部测试
 
 # ── 前端 ──────────────────────────────────
 cd frontend
-npm run dev          # 开发服务器 http://localhost:5173
+npm run dev          # 开发服务器 http://localhost:6801
 npm run typecheck    # vue-tsc --noEmit
 npm run build        # 类型检查 + 产出 dist/
 npm run preview      # 预览生产产物（已配置 /api 代理）
 
 # ── 端到端（需要服务已在运行）──────────────
-node scripts/api-smoke.mjs                    # 默认 http://127.0.0.1:8080
+node scripts/api-smoke.mjs                    # 默认 http://127.0.0.1:6802
 node scripts/api-smoke.mjs http://host:port   # 指定实例
 node scripts/browser-verify.mjs               # 需后端 + 前端都启动
 APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产物
@@ -993,7 +1003,7 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产
 | --- | --- | --- | --- |
 | 编译期 | `gofmt -l .` / `go vet ./...` / `npm run typecheck` | 语法、类型、常见误用 | — |
 | 进程内 E2E | `go test ./test/... -count=1` | 行为契约（进程内 `httptest` 驱动完整路由） | **68 个测试 / 139 条用例** |
-| 接口冒烟 | `node scripts/api-smoke.mjs` | 协议层（真实 HTTP、二进制响应、文件上传下载） | **214 项断言** |
+| 接口冒烟 | `node scripts/api-smoke.mjs` | 协议层（真实 HTTP、二进制响应、文件上传下载） | **219 项断言** |
 | 浏览器运行时 | `node scripts/browser-verify.mjs` | 真实渲染（白屏、主题、控制台报错） | **80 项断言 / 15 个页面** |
 
 ### 为什么必须有浏览器验证
@@ -1019,8 +1029,8 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产
 | --- | --- | --- |
 | `连接 PostgreSQL 失败` | 口令 / 端口 / 服务未启动 | 核对 `config.yaml` 的 `database` 段；`psql -U postgres -c 'select 1'` |
 | 启动报 `自动迁移表结构失败` | 老库缺列 / 权限不足 | 见 §3.3；`23502` 类错误是「新增 NOT NULL 列没带默认值」 |
-| 端口被占用 | 有旧进程还在跑 | `netstat -ano \| grep :8080` 找 PID 后 `taskkill //PID <pid> //F` |
-| 前端 404 / 接口报跨域 | 后端没起来或代理目标不对 | 确认 8080 在监听；检查 `.env.development` 的 `VITE_PROXY_TARGET` |
+| 端口被占用 | 有旧进程还在跑 | `netstat -ano \| grep :6802` 找 PID 后 `taskkill //PID <pid> //F` |
+| 前端 404 / 接口报跨域 | 后端没起来或代理目标不对 | 确认 6802 在监听；检查 `.env.development` 的 `VITE_PROXY_TARGET` |
 | 登录后被立刻弹回登录页 | 令牌没读到 | 令牌必须走 `utils/auth.ts`，不要在 `computed` 里直接读 `localStorage` |
 | 刷新页面落 404 | 动态路由注入被 redirect 抢先 | 检查静态路由里是否出现了 `redirect` |
 | 页面切换后状态没保留 | `keep-alive` 未命中 | 页面 `defineOptions({ name })` 必须与菜单 `name` 完全一致 |
