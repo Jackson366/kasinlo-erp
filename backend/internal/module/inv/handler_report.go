@@ -76,8 +76,11 @@ func (s *Service) categoryScope(categoryID int64, col string) (string, []any, er
 		Where("id = ?", categoryID).Pluck("id", &ids).Error; err != nil {
 		return "", nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
-	// 沿子孙下钻：分类表很小，逐层展开比写递归 CTE 直白得多
-	for round := 0; round < 10; round++ {
+	// 沿子孙下钻：分类表很小，逐层展开比写递归 CTE 直白得多。
+	// 上限用 categoryMaxDepth（与 categoryCycleFree 的防环口径一致），
+	// 而不是各写一个魔法数 —— 两处不一致的话，其中一处会在异常深的
+	// 合法分类上静默截断，且没有任何报错。
+	for round := 0; round < categoryMaxDepth; round++ {
 		var next []int64
 		if err := s.db.Model(&model.InvCategory{}).
 			Where("parent_id IN ?", ids).Pluck("id", &next).Error; err != nil {

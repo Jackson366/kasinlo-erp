@@ -351,6 +351,15 @@ func (s *Service) categoryExists(id int64) error {
 	return nil
 }
 
+// categoryMaxDepth 分类树的防环/下钻深度上限，两处共用：
+//   - categoryCycleFree（写路径）：改 parent_id 时沿父链上走，遇到自己即 40000；
+//   - categoryScope（读路径）：报表品类筛选沿子孙下钻。
+//
+// 取 100 而不是 10：正常业务分类只有 2~3 层，100 早已远超实际；这个上限的
+// 真正用途是给「脏数据成环」一个终止条件。写成 10 的话，一旦出现异常深的
+// 合法分类，报表下钻会**静默截断**第 10 层以下 —— 数据少了却没有任何报错。
+const categoryMaxDepth = 100
+
 // categoryCycleFree 校验不会把分类挂到自己或自己的子孙下面。
 //
 // 这一步不能省：parent_id 一旦成环，前端按 parent_id 组装树会无限递归，
@@ -365,7 +374,7 @@ func (s *Service) categoryCycleFree(id, parentID int64) error {
 	}
 	// 从 parentID 沿父链往上走，走到根（0）之前若遇到 id，说明成环
 	cur := parentID
-	for i := 0; i < 100 && cur > 0; i++ {
+	for i := 0; i < categoryMaxDepth && cur > 0; i++ {
 		var c model.InvCategory
 		if err := s.db.Select("id", "parent_id").First(&c, cur).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
