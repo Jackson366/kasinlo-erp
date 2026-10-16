@@ -690,7 +690,7 @@ Go 侧用 `isOverdue()`，两处口径由冒烟脚本断言「汇总 == 逐行�
 
 ### 11.6 报表
 
-四个报表接口共用同一组筛选参数：
+报表接口共用同一组筛选参数：
 
 | 参数 | 说明 |
 | --- | --- |
@@ -700,15 +700,32 @@ Go 侧用 `isOverdue()`，两处口径由冒烟脚本断言「汇总 == 逐行�
 
 | 方法 | 路径 | 权限码 | 说明 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/inv/report/summary` | `inv:report:view` | 营业收入 / 销售成本 / 毛利 / 毛利率 |
+| GET | `/api/v1/inv/report/summary` | `inv:report:view` | 营业收入 / 成本 / 毛利 / 毛利率 / 销售单数 / 采购单数 / 采购额 |
 | GET | `/api/v1/inv/report/trend?days=30` | `inv:report:view` | 近 N 天销售与采购趋势（按天补齐，缺失日补 0） |
-| GET | `/api/v1/inv/report/ranking?limit=5` | `inv:report:view` | 客户销售排行 |
+| GET | `/api/v1/inv/report/ranking` | `inv:report:view` | 排行（见下方 `dimension` / `biz` 参数） |
 | GET | `/api/v1/inv/report/category` | `inv:report:view` | 品类销售占比 |
+| GET | `/api/v1/inv/report/inventory` | `inv:report:view` | 库存分析（金额 / 规格数 / 预警数 / 品类分布 / 预警清单） |
+
+**排行**接口用两个参数组合出三种排行：
+
+| 参数 | 取值 | 说明 |
+| --- | --- | --- |
+| `dimension` | `customer`（默认）/ `product` | 按交易对手还是按商品明细聚合 |
+| `biz` | `sales`（默认）/ `purchase` | 销售还是采购（`purchase` + `customer` 即供应商排行） |
+| `limit` | 1~50，默认 5 | 返回条数 |
+
+排行行是通用结构 `{ rank, name, id, amount, orderCount, quantity, ratio }`：
+客户 / 供应商维度的 `name` 是往来单位名、`quantity` 恒为 0；产品维度的 `name`
+是商品名、`quantity` 是按基本单位折算的销量合计。产品排行按**明细快照的
+ProductName**聚合而不是联表取档案名——商品档案被删后联表过滤会让那部分销售
+从排行里消失、金额对不上；品类筛选时才联表。
 
 - `days` 上限 90；自定义区间时趋势点数由 `from` ~ `to` 推导（**不是**沿用 `days`），
   只给 `from` 时算到今天。
 - 品类筛选会下探到明细：单据主表上没有品类，只有 `inv_order_items → 商品 → 分类` 这条链能关联。
 - **销售成本用商品当前采购价 join 计算**，`毛利 = 营业收入 − 销售成本`。
+- **库存分析是共享主数据**，不随时间 / 品类筛选变化、不按数据范围收窄；
+  库存金额 = 规格库存 × 基本单位采购价；预警清单按「库存 − 预警下限」升序、前 20 条。
 
 ### 11.7 打印模板
 
