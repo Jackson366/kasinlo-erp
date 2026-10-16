@@ -22,8 +22,8 @@ import (
 type Service struct {
 	db  *gorm.DB
 	sec config.SecurityConfig
-	// ipFails 按 IP 统计登录失败次数，拦截「同一来源撞库大量账号」。
-	// 只统计失败，成功即清零，因此不会牵连 NAT 后的正常用户。
+	// ipFails 按 IP 统计登录尝试次数，拦截「同一来源撞库大量账号」。
+	// 每次尝试在入口原子占用一格，成功登录即清零，因此不会牵连 NAT 后的正常用户。
 	ipFails *limiter.FailLimiter
 }
 
@@ -40,7 +40,10 @@ func NewService(sec config.SecurityConfig) *Service {
 func (s *Service) Login(req LoginReq, ip, ua string) (*LoginResp, error) {
 	// 单来源失败限流放在最前面，连「账号不存在」的探测也一并计入 ——
 	// 否则撞库者可以用一个不存在的用户名无限试探而不触发任何限制。
-	if !s.ipFails.Allow(ip) {
+	// 用原子的 AllowAndConsume 而不是 Allow + Fail 两步：两步之间有时间窗，
+	// 并发爆破时 N 个请求能同时挤过检查、把阈值突破 N 倍。这里每次尝试占一格，
+	// 登录成功再 Reset 清零，净语义与原来一致（见 limiter 包内同名方法的注释）。
+	if !s.ipFails.AllowAndConsume(ip) {
 		logger.Warn("登录请求被来源限流", zap.String("ip", ip))
 		return nil, errcode.New(errcode.ErrTooManyReq, "")
 	}
@@ -49,7 +52,7 @@ func (s *Service) Login(req LoginReq, ip, ua string) (*LoginResp, error) {
 	err := s.db.Where("username = ?", req.Username).First(&user).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			s.ipFails.Fail(ip)
+			// 额度已在入口 AllowAndConsume 占用，无需再 Fail
 			s.writeLoginLog(0, req.Username, ip, ua, false, "用户不存在")
 			return nil, errcode.New(errcode.ErrInvalidCredential, "")
 		}
@@ -69,7 +72,6 @@ func (s *Service) Login(req LoginReq, ip, ua string) (*LoginResp, error) {
 	}
 
 	if !hash.Verify(user.Password, req.Password) {
-		s.ipFails.Fail(ip)
 		s.writeLoginLog(user.ID, user.Username, ip, ua, false, "密码错误")
 		return nil, errcode.New(errcode.ErrInvalidCredential, "")
 	}
@@ -147,8 +149,18 @@ func (s *Service) Refresh(refreshToken string) (*LoginResp, error) {
 	}, nil
 }
 
-// Logout 退出登录。JWT 无状态，这里仅清理服务端缓存并记录日志。
+// Logout 退出登录。
+//
+// 除了清身份缓存，还要把 token_epoch +1：无状态 JWT 没有服务端会话可销毁，
+// 若只清缓存，已签发的令牌（尤其长寿命的刷新令牌）会一直有效到自然过期——
+// 令牌一旦被复制走（公共电脑、抓包），「退出登录」就是个毫无约束力的假动作。
+// 代价是登出同时作废该用户在其他设备上的会话；这与改密/禁用是同款机制，
+// 对后台系统而言「登出即全部失效」是更安全的选择。
 func (s *Service) Logout(userID int64) error {
+	if err := s.db.Model(&model.User{}).Where("id = ?", userID).
+		Update("token_epoch", gorm.Expr("token_epoch + 1")).Error; err != nil {
+		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
 	authz.Invalidate(userID)
 	return nil
 }

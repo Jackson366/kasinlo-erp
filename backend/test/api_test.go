@@ -106,6 +106,12 @@ func TestAuth(t *testing.T) {
 	t.Run("退出登录", func(t *testing.T) {
 		res := call(t, http.MethodPost, "/api/v1/auth/logout", token, nil)
 		assertCode(t, res, 0, "退出登录")
+
+		// 登出把 token_epoch +1：旧令牌（含其他设备上的）必须立即失效。
+		// 否则「退出登录」对已被复制走的令牌毫无约束力，只能等它自然过期。
+		after := call(t, http.MethodGet, "/api/v1/system/users", token, nil)
+		assertStatus(t, after, http.StatusUnauthorized, "登出后旧令牌")
+		assertCode(t, after, 40105, "登出后旧令牌应判无效")
 	})
 }
 

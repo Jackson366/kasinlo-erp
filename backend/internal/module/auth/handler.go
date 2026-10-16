@@ -74,7 +74,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 
 // Logout 退出登录
 // @Summary      退出登录
-// @Description  JWT 无状态，服务端仅清理身份缓存并记录审计日志；客户端应同时丢弃本地令牌。
+// @Description  服务端把该用户的令牌版本号（token_epoch）加一并清理身份缓存，已签发的访问/刷新令牌立即失效（会同时结束该用户其他设备的会话）；客户端应同时丢弃本地令牌。
 // @Tags         认证
 // @Produce      json
 // @Security     BearerAuth

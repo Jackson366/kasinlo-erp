@@ -173,8 +173,12 @@ instance.interceptors.response.use(
     const message = body?.message || `请求失败（HTTP ${response.status}）`
     const traceId = body?.traceId
 
-    // 令牌失效：尝试静默刷新并重放请求
-    if (AUTH_ERROR_CODES.includes(code) && !isAuthEndpoint(error.config?.url)) {
+    // 令牌失效：尝试静默刷新并重放请求。
+    // 裸 HTTP 401（无业务响应体，如被网关/代理直接拦截）也按会话失效处理：
+    // 此时 code 回退为 response.status，不在业务码清单里，若落进通用 toast，
+    // 用户会卡在注定失败的页面上反复看到「请求失败（HTTP 401）」却回不到登录页。
+    const authFailed = AUTH_ERROR_CODES.includes(code) || response.status === 401
+    if (authFailed && !isAuthEndpoint(error.config?.url)) {
       const original = error.config as AxiosRequestConfig & { _retry?: boolean }
       if (!original._retry && getRefreshToken()) {
         original._retry = true

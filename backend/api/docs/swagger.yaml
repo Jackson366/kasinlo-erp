@@ -1617,7 +1617,7 @@ paths:
       - 认证
   /auth/logout:
     post:
-      description: JWT 无状态，服务端仅清理身份缓存并记录审计日志；客户端应同时丢弃本地令牌。
+      description: 服务端把该用户的令牌版本号（token_epoch）加一并清理身份缓存，已签发的访问/刷新令牌立即失效（会同时结束该用户其他设备的会话）；客户端应同时丢弃本地令牌。
       produces:
       - application/json
       responses:
