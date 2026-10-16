@@ -4,7 +4,9 @@
  * 差异只有「走哪条业务线」「往来单位是什么」——收敛成一个组件，两个薄壳页面传 bizType。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index'
+import type { FormInstance, FormRules } from 'element-plus'
 import { invApi } from '@/api'
 import type {
   InvOrderItem,

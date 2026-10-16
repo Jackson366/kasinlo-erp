@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import type { FormInstance, FormRules } from 'element-plus'
 import { profileApi } from '@/api'
 import type { ProfileInfo } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
@@ -122,7 +123,10 @@ const permissionGroups = computed(() => {
   return Array.from(groups.entries()).map(([module, codes]) => ({ module, codes: codes.sort() }))
 })
 
-onMounted(loadProfile)
+onMounted(() => {
+  // 失败提示由请求层统一弹出；吞掉 rejection，避免产生未捕获告警
+  void loadProfile().catch(() => {})
+})
 </script>
 
 <template>

@@ -63,18 +63,6 @@ func (n MenuNode) TypeOf() string {
 	return n.Type
 }
 
-// Key 返回该节点的幂等键，供 seed 判断「这条内置菜单是否已经写过」。
-//
-// 有权限码就用权限码：权限码在业务上天然唯一，且是真正被授权引用的东西；
-// 没有权限码的目录节点退回用路由名。两者都不再依赖手工分配的菜单 ID ——
-// 这正是原来 menuDefs() 里 101~149 那一串数字消失的原因。
-func (n MenuNode) Key() string {
-	if n.Permission != "" {
-		return "perm:" + n.Permission
-	}
-	return "name:" + n.Name
-}
-
 // Module 是一个模块的自描述清单。
 type Module struct {
 	// Namespace 是该模块的权限命名空间，如 system / inv / crm。

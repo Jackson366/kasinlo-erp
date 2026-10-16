@@ -547,6 +547,26 @@ func TestLogs(t *testing.T) {
 		}
 	})
 
+	// 回归：超管不传 before 清空全部 = 无条件 DELETE，曾被 GORM 的
+	// ErrMissingWhereClause 拦下，接口报「数据库错误」且清不掉。
+	// 上面 516 行那条 before=2100 的用例带 WHERE，覆盖不到这条线上路径。
+	t.Run("操作日志不传before清空全部", func(t *testing.T) {
+		res := call(t, http.MethodDelete, "/api/v1/system/logs/operations", token, nil)
+		assertCode(t, res, 0, "不传 before 清空操作日志")
+		if num(res.obj(t), "deleted") < 1 {
+			t.Fatalf("应至少清掉一条日志: %v", res.Data)
+		}
+		// 清空请求自身会再产生一条审计日志，缓冲落库后列表应恰好回到 1 条
+		if err := oplog.Flush(5 * time.Second); err != nil {
+			t.Fatalf("刷新日志缓冲失败: %v", err)
+		}
+		after := call(t, http.MethodGet, "/api/v1/system/logs/operations?page=1&pageSize=5", token, nil)
+		assertCode(t, after, 0, "清空后查询")
+		if total := num(after.obj(t), "total"); total != 1 {
+			t.Fatalf("清空全部后应只剩本次审计日志 1 条，实际 %d", total)
+		}
+	})
+
 	t.Run("请求体中的敏感字段被脱敏", func(t *testing.T) {
 		res := call(t, http.MethodGet, "/api/v1/system/logs/operations?page=1&pageSize=20&module=auth", token, nil)
 		assertCode(t, res, 0, "按模块筛选日志")

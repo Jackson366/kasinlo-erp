@@ -124,7 +124,14 @@ func (h *Handler) ClearOperations(c *gin.Context) {
 		req = ClearReq{}
 	}
 	c.Set("opAction", "清空操作日志")
-	n, err := h.svc.ClearOperations(parseTime(req.Before), middleware.CurrentIdentity(c))
+	// 必须用 parseTimeStrict：parseTime 解析失败会静默返回 nil，
+	// 「按时间清空」会被放大成「清空范围内全部」
+	before, err := parseTimeStrict(req.Before)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	n, err := h.svc.ClearOperations(before, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -149,7 +156,13 @@ func (h *Handler) ClearLogins(c *gin.Context) {
 		req = ClearReq{}
 	}
 	c.Set("opAction", "清空登录日志")
-	n, err := h.svc.ClearLogins(parseTime(req.Before), middleware.CurrentIdentity(c))
+	// 同 ClearOperations：before 传错值必须报错，不能静默放大成清空全部
+	before, err := parseTimeStrict(req.Before)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	n, err := h.svc.ClearLogins(before, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return

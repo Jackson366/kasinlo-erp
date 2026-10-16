@@ -871,6 +871,38 @@ async function main() {
   await sleep(600)
   report.phases.productCategorySelect = { treeNodes, catAll, catFiltered }
 
+  // ── 阶段 4.3：图表在 echarts 6 下确实渲染 ─────────────
+  // echarts 5.6 → 6.1 是大版本升级，而 EChart.vue 走的是按需注册
+  // （echarts/core + echarts.use([...])）。**未注册的图表类型 echarts 不报错**，
+  // 只是静默丢掉整个 series —— 页面不白屏、控制台可能也干净，但那块图不出来。
+  // 所以这里不查「有没有报错」，直接查 canvas 的**实际像素尺寸**。
+  console.log('[4.3] 图表渲染（echarts 6 大版本升级）')
+  await coldStart(`${APP}/#/inv/report`, 3000)
+  const charts = await evaluate(`(() => {
+    const cs = Array.from(document.querySelectorAll('.page-card canvas'));
+    const sized = cs.filter((c) => c.width > 0 && c.height > 0);
+    return { total: cs.length, sized: sized.length, sample: sized.slice(0, 3).map((c) => c.width + 'x' + c.height) };
+  })()`)
+  // 报表页只有两张图：趋势（主）+ 品类占比（侧）；排行是表格、KPI 是数字卡片。
+  // 断言数按实际来 —— 写大了会得到一条永远失败的假失败。
+  check(
+    '报表页图表全部渲染出有尺寸的 canvas',
+    charts.total >= 2 && charts.sized === charts.total,
+    `canvas=${charts.total} sized=${charts.sized} 尺寸=${JSON.stringify(charts.sample)}`,
+  )
+  // 概览页同样有图，且它是登录落地页 —— 升级后第一眼看到的就是它
+  await coldStart(`${APP}/#/inv/overview`, 3000)
+  const overviewCharts = await evaluate(`(() => {
+    const cs = Array.from(document.querySelectorAll('.page-card canvas'));
+    return { total: cs.length, sized: cs.filter((c) => c.width > 0 && c.height > 0).length };
+  })()`)
+  check(
+    '数据概览页图表渲染正常',
+    overviewCharts.total >= 1 && overviewCharts.sized === overviewCharts.total,
+    `canvas=${overviewCharts.total} sized=${overviewCharts.sized}`,
+  )
+  report.phases.charts = { report: charts, overview: overviewCharts }
+
   // ── 阶段 5：低权限账号 ──────────────────────────────
   console.log('[5] 低权限账号：按钮级权限与接口鉴权')
   consoleLogs = []

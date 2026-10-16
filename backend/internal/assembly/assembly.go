@@ -56,11 +56,3 @@ func Modules(cfg *config.Config) []module.Module {
 		),
 	}
 }
-
-// Build 登记并校验全部模块。
-//
-// main 与端到端测试共用同一个入口，避免两边各维护一份清单然后慢慢漂移
-// （测试里少装一个模块，问题只会在某条用例莫名其妙 404 时才暴露）。
-func Build(cfg *config.Config) error {
-	return module.Build(Modules(cfg)...)
-}

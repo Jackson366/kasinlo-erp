@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { logApi, type LoginLogQuery, type OperationLogQuery } from '@/api/log'
 import type { LoginLogItem, OperationLogItem } from '@/types/api'

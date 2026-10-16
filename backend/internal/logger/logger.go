@@ -2,10 +2,10 @@ package logger
 
 import (
 	"os"
-	"path/filepath"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"nova-erp/internal/config"
 )
@@ -35,21 +35,23 @@ func Init(cfg config.LogConfig, debug bool) error {
 		zapcore.NewCore(encoder, zapcore.AddSync(os.Stdout), level),
 	}
 
-	// 同时落盘，便于排查线上问题
+	// 同时落盘，便于排查线上问题。
+	// lumberjack 负责轮转（单文件超限切分、保留 N 个、过期清理、旧档压缩），
+	// 否则 O_APPEND 直写的单文件会随运行时间无限增长，最终吃满磁盘。
 	if cfg.Dir != "" {
-		if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
-			return err
-		}
 		file := cfg.File
 		if file == "" {
 			file = "app.log"
 		}
-		f, err := os.OpenFile(filepath.Join(cfg.Dir, file), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-		if err != nil {
-			return err
+		rotate := &lumberjack.Logger{
+			Filename:   cfg.Dir + string(os.PathSeparator) + file,
+			MaxSize:    orDefault(cfg.MaxSizeMB, 100),
+			MaxBackups: orDefault(cfg.MaxBackups, 7),
+			MaxAge:     orDefault(cfg.MaxAgeDays, 30),
+			Compress:   true,
 		}
 		fileEnc := zapcore.NewConsoleEncoder(encCfg)
-		cores = append(cores, zapcore.NewCore(fileEnc, zapcore.AddSync(f), level))
+		cores = append(cores, zapcore.NewCore(fileEnc, zapcore.AddSync(rotate), level))
 	}
 
 	opts := []zap.Option{zap.AddCaller()}
@@ -58,6 +60,14 @@ func Init(cfg config.LogConfig, debug bool) error {
 	}
 	log = zap.New(zapcore.NewTee(cores...), opts...)
 	return nil
+}
+
+// orDefault 返回 v；v 未配置（<=0）时用 def。
+func orDefault(v, def int) int {
+	if v <= 0 {
+		return def
+	}
+	return v
 }
 
 // L 返回全局日志器，未初始化时返回 no-op 实例。

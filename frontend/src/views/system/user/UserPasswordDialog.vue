@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, reactive, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus/es/components/message/index'
 import { userApi } from '@/api'
 import type { UserItem } from '@/types/api'
 
@@ -33,15 +33,24 @@ watch(
   },
 )
 
+const submitting = ref(false)
+
 async function submitResetPassword(): Promise<void> {
-  if (!props.target) return
+  if (!props.target || submitting.value) return
   if (pwdForm.password.length < 6) {
     ElMessage.warning('密码长度不能少于 6 位')
     return
   }
-  await userApi.resetPassword(props.target.id, pwdForm.password)
-  ElMessage.success('密码已重置')
-  visible.value = false
+  submitting.value = true
+  try {
+    await userApi.resetPassword(props.target.id, pwdForm.password)
+    ElMessage.success('密码已重置')
+    visible.value = false
+  } catch {
+    // 具体错误提示已由请求层统一处理；不加 catch 的话失败会产生未捕获 rejection
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 
@@ -62,7 +71,7 @@ async function submitResetPassword(): Promise<void> {
     />
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" @click="submitResetPassword">确定</el-button>
+      <el-button type="primary" :loading="submitting" @click="submitResetPassword">确定</el-button>
     </template>
   </el-dialog>
 </template>

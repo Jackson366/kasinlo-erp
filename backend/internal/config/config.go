@@ -113,6 +113,10 @@ type LogConfig struct {
 	Format string `yaml:"format"`
 	Dir    string `yaml:"dir"`
 	File   string `yaml:"file"`
+	// 落盘轮转参数，0 走默认值（单文件 100MB / 保留 7 个 / 30 天）。
+	MaxSizeMB  int `yaml:"max_size_mb"`
+	MaxBackups int `yaml:"max_backups"`
+	MaxAgeDays int `yaml:"max_age_days"`
 }
 
 type CORSConfig struct {

@@ -3,7 +3,7 @@
  * 报表中心：按时间范围汇总经营指标，并提供趋势、品类占比与销售排行。
  */
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
 import type { EChartsCoreOption } from 'echarts/core'
 import { invApi } from '@/api'
 import type { InvReportCategoryRow, InvReportRankRow, InvReportSummary, InvReportTrendPoint } from '@/types/api'

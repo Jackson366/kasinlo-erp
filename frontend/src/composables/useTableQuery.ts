@@ -61,7 +61,9 @@ export function useTableQuery<F extends PageQuery, R>(
   }
 
   function reset(): void {
-    Object.assign(query, initial, { page: 1 })
+    // pageSize 也要回初始值：用户把每页调成 50 后点「重置」，
+    // 期望的是回到初始查询状态，而不只是回到第一页
+    Object.assign(query, initial, { page: 1, pageSize: 10 })
     load()
   }
 

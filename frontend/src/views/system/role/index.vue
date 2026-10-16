@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, type Ref } from 'vue'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index'
+import type { FormInstance, FormRules } from 'element-plus'
 import type { ElTree } from 'element-plus'
 import { menuApi, roleApi } from '@/api'
 import { useTableQuery } from '@/composables/useTableQuery'
@@ -212,9 +214,11 @@ async function removeRole(row: RoleItem): Promise<void> {
   loadList()
 }
 
-onMounted(async () => {
-  await loadMenuTree()
-  await loadList()
+onMounted(() => {
+  // 失败提示由请求层统一弹出；吞掉 rejection，避免未捕获告警
+  void loadMenuTree()
+    .then(() => loadList())
+    .catch(() => {})
 })
 </script>
 

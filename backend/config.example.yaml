@@ -44,8 +44,13 @@ jwt:
 log:
   level: info               # debug | info | warn | error
   format: console           # console | json
-  dir: ./logs
+  dir: ./logs               # 留空则不落盘，只输出到 stdout
   file: app.log
+  # 落盘轮转：单文件超限切分，保留 N 个备份，超龄清理。三项都可不写（走默认 100 / 7 / 30）。
+  # 不配轮转的话，长时间运行的单个日志文件会一直增长直到吃满磁盘。
+  max_size_mb: 100          # 单个日志文件大小上限（MB）
+  max_backups: 7            # 最多保留的历史文件个数
+  max_age_days: 30          # 历史文件保留天数
 
 cors:
   # 生产环境请改成具体域名，`*` 仅适合本地开发

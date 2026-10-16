@@ -1,5 +1,7 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios'
-import { ElMessage, ElMessageBox } from 'element-plus'
+// 值一律从子路径导入：element-plus 根入口引用全部组件，会禁用 tree-shaking
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { ApiResult, LoginResult } from '@/types/api'
 import { API_PREFIX } from '@/utils/api'
 import { clearTokens, getAccessToken, getRefreshToken, setTokens } from '@/utils/auth'

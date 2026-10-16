@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import type { FormInstance, FormRules } from 'element-plus'
 import { usePermissionStore, useUserStore, useAppStore } from '@/store'
 import AppIcon from '@/components/AppIcon.vue'
 import type { LoginParams } from '@/types/api'
@@ -55,6 +56,10 @@ async function handleLogin(): Promise<void> {
     await userStore.login({ ...form })
     // 登录后权限缓存需要重新生成
     permissionStore.reset()
+    // 标签栏属于「上一个登录人」的浏览现场：换账号登录时若不清理，
+    // 新账号会看到（甚至能点回）旧账号访问过的页面。登出路径有同样的
+    // 三件套清理，但登录这条路径绕过了它，这里必须补上。
+    appStore.clearTags()
     ElMessage.success(`欢迎回来，${userStore.displayName}`)
     const redirect = (route.query.redirect as string) || '/'
     await router.replace(redirect)

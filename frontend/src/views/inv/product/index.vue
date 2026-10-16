@@ -21,7 +21,9 @@
  * 硬拦会挡住正常录入，所以只把可疑行摆出来，确认不是同一个仍可保存。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index'
+import type { FormInstance, FormRules } from 'element-plus'
 import { invApi } from '@/api'
 import type {
   InvCategoryOption,

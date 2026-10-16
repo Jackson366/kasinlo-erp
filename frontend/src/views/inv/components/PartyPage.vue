@@ -4,7 +4,9 @@
  * 「调哪个接口」「余额口径」「文案」——收敛成一个组件，由两个薄壳页面传入 bizType。
  */
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index'
+import type { FormInstance, FormRules } from 'element-plus'
 import { invApi } from '@/api'
 import type { InvPartyPayload, InvPartyRow, Status } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'

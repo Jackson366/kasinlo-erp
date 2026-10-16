@@ -232,9 +232,14 @@ func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 	if err := s.ensureInScope(actor, id); err != nil {
 		return err
 	}
-	// 把用户挪到自己管不到的部门同样是越界
-	if err := s.checkDeptInScope(actor, req.DeptID); err != nil {
-		return err
+	// 把用户挪到自己管不到的部门同样是越界。
+	// 但 DeptID 为 nil 表示「不调整部门」（见下方 updates 的注释），
+	// 此时不能走 checkDeptInScope：它对 nil 一律报「请选择部门」，
+	// 受限管理员只改昵称也会被误拒。
+	if req.DeptID != nil {
+		if err := s.checkDeptInScope(actor, req.DeptID); err != nil {
+			return err
+		}
 	}
 	var u model.User
 	if err := s.db.First(&u, id).Error; err != nil {
@@ -267,6 +272,11 @@ func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 	if req.Status != nil {
 		if id == AdminUserID && *req.Status != model.StatusEnabled {
 			return errcode.New(errcode.ErrBadRequest, "内置管理员不允许禁用")
+		}
+		// 与 UpdateStatus 同口径：全量更新路径也不能禁用自己，
+		// 否则 token_epoch +1 会让当前会话立即失效
+		if actor != nil && id == actor.UserID && *req.Status != model.StatusEnabled {
+			return errcode.New(errcode.ErrBadRequest, "不能禁用当前登录用户")
 		}
 		updates["status"] = *req.Status
 		if *req.Status != model.StatusEnabled {

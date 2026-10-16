@@ -46,7 +46,13 @@ function permValueKey(value: string | string[] | undefined): string {
 /** 同步单个元素的可见性（打标记 + CSS 隐藏，不动 DOM 结构） */
 function apply(el: HTMLElement, binding: DirectiveBinding<string | string[]>): void {
   const codes = normalize(binding.value)
-  if (codes.length === 0) return
+  // 空权限码视为「不设限」，但必须清掉上一次判定留下的 denied 状态：
+  // 否则 binding.value 从有值改成空时，元素会一直挂着隐藏标记
+  if (codes.length === 0) {
+    el.removeAttribute(PERM_ATTR)
+    el.classList.remove(DENIED_CLASS)
+    return
+  }
 
   const allowed = useUserStore().hasAnyPerm(codes)
   if (allowed) {
@@ -67,7 +73,10 @@ function startWatch(el: PermEl, binding: DirectiveBinding<string | string[]>): v
     // 这条 watch 是权限变化的唯一驱动，不要改成在 updated 钩子里判定——
     // 钩子里读 store 建立不了依赖，权限变化时根本不会被调用。
     watch(
-      () => useUserStore().permissions.join(','),
+      // 依赖必须同时含 isSuper：超管的判定结果由 isSuper 决定（hasAnyPerm 直接放行），
+      // profile 晚于指令挂载加载完成时，permissions 没变但 isSuper 翻了，
+      // 不监听它的话超管看到的按钮会一直停在隐藏状态。
+      () => [useUserStore().permissions.join(','), useUserStore().isSuper],
       () => apply(el, binding),
     )
   })

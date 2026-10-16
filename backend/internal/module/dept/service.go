@@ -35,7 +35,15 @@ func (s *Service) List(keyword string, status *int16, actor *authz.Identity) ([]
 	}
 	// 非超管只能看到范围内的部门；裁剪后原父节点可能不在集合内，
 	// buildTree 会把这些节点当作根处理，页面不会出现悬空层级。
-	if cond, args, ok := scope.DeptIn(""); ok {
+	if scope.SelfOnly {
+		// 「仅本人」没有可枚举的部门集合（DeptIn 对它返回 ok=false），
+		// 不过滤的话会看到全量部门树。这里收窄到本人所在部门；
+		// 连部门都没有的人（ResolveScope 的退化分支）看不到任何部门。
+		if actor.DeptID == nil {
+			return []*Node{}, nil
+		}
+		tx = tx.Where("id = ?", *actor.DeptID)
+	} else if cond, args, ok := scope.DeptIn(""); ok {
 		tx = tx.Where(cond, args...)
 	}
 	var depts []model.Dept
@@ -186,7 +194,7 @@ func (s *Service) userCounts(scope *authz.Scope) (map[int64]int64, error) {
 		Total  int64
 	}
 	var rows []row
-	if err := scope.ApplyUser(s.db.Model(&model.User{}).Select("dept_id")).
+	if err := scope.ApplyUser(s.db.Model(&model.User{}).Select("dept_id, COUNT(*) AS total")).
 		Where("dept_id IS NOT NULL").
 		Group("dept_id").Scan(&rows).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)

@@ -4,7 +4,8 @@
  * 汇总数据随列表接口一并返回，避免多打一次请求。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import type { FormInstance, FormRules } from 'element-plus'
 import { invApi } from '@/api'
 import type { InvFinanceRow, InvFinanceSummary, InvSettlePayload } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'

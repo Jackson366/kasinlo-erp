@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -361,5 +362,58 @@ func gormLogger(level string) gormlogger.Interface {
 	default:
 		lvl = gormlogger.Warn
 	}
-	return gormlogger.Default.LogMode(lvl)
+	return gormZap{level: lvl, slow: 200 * time.Millisecond}
+}
+
+// gormZap 把 GORM 日志桥接到全局结构化日志器。
+// gormlogger.Default 会绕过统一配置直接往 stdout 写裸文本，
+// 桥接后 SQL 错误/慢查询与业务日志同一格式、同一输出、同一级别。
+type gormZap struct {
+	level gormlogger.LogLevel
+	slow  time.Duration
+}
+
+func (g gormZap) LogMode(lvl gormlogger.LogLevel) gormlogger.Interface {
+	g.level = lvl
+	return g
+}
+
+func (g gormZap) Info(_ context.Context, msg string, args ...any) {
+	if g.level >= gormlogger.Info {
+		logger.L().Info(fmt.Sprintf(msg, args...))
+	}
+}
+
+func (g gormZap) Warn(_ context.Context, msg string, args ...any) {
+	if g.level >= gormlogger.Warn {
+		logger.L().Warn(fmt.Sprintf(msg, args...))
+	}
+}
+
+func (g gormZap) Error(_ context.Context, msg string, args ...any) {
+	if g.level >= gormlogger.Error {
+		logger.L().Error(fmt.Sprintf(msg, args...))
+	}
+}
+
+func (g gormZap) Trace(_ context.Context, begin time.Time, fc func() (string, int64), err error) {
+	if g.level <= gormlogger.Silent {
+		return
+	}
+	elapsed := time.Since(begin)
+	sqlText, rows := fc()
+	fields := []zap.Field{
+		zap.Duration("elapsed", elapsed),
+		zap.Int64("rows", rows),
+		zap.String("sql", sqlText),
+	}
+	switch {
+	// ErrRecordNotFound 是查询的正常结果，不是错误
+	case err != nil && !errors.Is(err, gorm.ErrRecordNotFound) && g.level >= gormlogger.Error:
+		logger.L().Error("SQL 执行失败", append(fields, zap.Error(err))...)
+	case elapsed > g.slow && g.level >= gormlogger.Warn:
+		logger.L().Warn("SQL 慢查询", fields...)
+	case g.level >= gormlogger.Info:
+		logger.L().Info("SQL", fields...)
+	}
 }

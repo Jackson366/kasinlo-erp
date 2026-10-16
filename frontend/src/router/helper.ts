@@ -78,7 +78,8 @@ export function firstLeafPath(records: RouteRecord[]): string {
       if (found) return found
       continue
     }
-    if (!record.meta?.hidden && record.path) return record.path
+    // 外链没有注册对应的内部路由（见 buildRoutes），不能作为落地页
+    if (!record.meta?.hidden && !record.meta?.isExternal && record.path) return record.path
   }
   return ''
 }

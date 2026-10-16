@@ -28,12 +28,12 @@ const (
 
 // Run 执行全部种子数据初始化。
 //
-// 前置条件是模块清单已登记（由 assembly.Build 在启动流程里完成）。
+// 前置条件是模块清单已登记（由 bootstrap.Init 里的 module.Build 完成）。
 // 登记表为空时直接报错而不是静默跳过：静默跳过只会写出一张空菜单表，
 // 而服务照样能起来，问题要等到「侧边栏什么都没有」时才被发现。
 func Run() error {
 	if len(module.All()) == 0 {
-		return fmt.Errorf("模块登记表为空：请先经 bootstrap.Init（会调用 assembly.Build）再播种")
+		return fmt.Errorf("模块登记表为空：请先经 bootstrap.Init（会调用 module.Build）再播种")
 	}
 	db := database.DB()
 	steps := []struct {

@@ -19,7 +19,7 @@
  * 模板的单据类型指向采购 / 销售单时，预览自动切换到带单价金额的对应版式。
  */
 import { computed, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
 import { invApi } from '@/api'
 import type { InvOrderDetail, InvPrintTemplateRow, InvStockOrderDetail } from '@/types/api'
 import {

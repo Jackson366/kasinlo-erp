@@ -53,44 +53,42 @@ type LoginQuery struct {
 	EndAt    string `form:"endAt" label:"结束时间"`
 }
 
-// parseTime 兼容多种时间字符串格式。
-func parseTime(s string) *time.Time {
+// timeLayouts 是列表筛选与清空接口共同接受的时间格式。
+var timeLayouts = []string{
+	time.RFC3339,
+	"2006-01-02 15:04:05",
+	"2006-01-02T15:04:05",
+	"2006-01-02",
+}
+
+// parseFlexible 按 timeLayouts 依次尝试解析；ok=false 表示格式无法识别。
+func parseFlexible(s string) (t *time.Time, ok bool) {
 	if s == "" {
-		return nil
+		return nil, true
 	}
-	layouts := []string{
-		time.RFC3339,
-		"2006-01-02 15:04:05",
-		"2006-01-02T15:04:05",
-		"2006-01-02",
-	}
-	for _, l := range layouts {
-		if t, err := time.ParseInLocation(l, s, time.Local); err == nil {
-			return &t
+	for _, l := range timeLayouts {
+		if parsed, err := time.ParseInLocation(l, s, time.Local); err == nil {
+			return &parsed, true
 		}
 	}
-	return nil
+	return nil, false
+}
+
+// parseTime 解析失败静默返回 nil：只用于列表筛选，错值等价于「不筛」。
+func parseTime(s string) *time.Time {
+	t, _ := parseFlexible(s)
+	return t
 }
 
 // parseTimeStrict 与 parseTime 的区别：解析失败返回错误。
 // 清空接口必须用它——「before 传错值」若静默返回 nil，语义会从
 // 「按时间清空」放大成「清空范围内全部」，仅剩锁定窗口兜底。
 func parseTimeStrict(s string) (*time.Time, error) {
-	if s == "" {
-		return nil, nil
+	t, ok := parseFlexible(s)
+	if !ok {
+		return nil, errcode.Newf(errcode.ErrBadRequest, "时间格式无法解析：%s", s)
 	}
-	layouts := []string{
-		time.RFC3339,
-		"2006-01-02 15:04:05",
-		"2006-01-02T15:04:05",
-		"2006-01-02",
-	}
-	for _, l := range layouts {
-		if t, err := time.ParseInLocation(l, s, time.Local); err == nil {
-			return &t, nil
-		}
-	}
-	return nil, errcode.Newf(errcode.ErrBadRequest, "时间格式无法解析：%s", s)
+	return t, nil
 }
 
 // Operations 分页查询操作日志。
@@ -208,13 +206,17 @@ func (s *Service) Modules(actor *authz.Identity) ([]string, error) {
 // 与 ApplyLog 的读口径完全一致）。「清空全部」按钮对范围管理员而言
 // 语义上是「清空我范围内能看到的全部」，前端提示无需区分。
 func (s *Service) ClearOperations(before *time.Time, actor *authz.Identity) (int64, error) {
-	// s.db 是共享句柄，GORM 链式调用即克隆（Open 返回 clone=1），
-	// 不需要 Where("1 = 1") 占位——那样反而让 WHERE 恒真一眼看不出真假。
 	tx := authz.ResolveScope(actor).ApplyLog(s.db)
 	if before != nil {
 		tx = tx.Where("created_at < ?", *before)
 	}
-	res := tx.Delete(&model.OperationLog{})
+	// AllowGlobalUpdate 放行「无条件删除」：超管不传 before 时这里就是
+	// 一条不带 WHERE 的全表清空——是产品语义上的明确意图，但 GORM 默认
+	// 拒绝（ErrMissingWhereClause 防误删），线上表现为「提示数据库错误，
+	// 清除不掉」。该选项只对没有条件的删除生效：非超管经 ApplyLog 必带
+	// 范围条件，before 传了值走上面的 WHERE，行为均不受影响。
+	// （GORM 的链式克隆只隔离条件传递，防的全是这种「无意中的全表删」，不能靠克隆绕过。）
+	res := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.OperationLog{})
 	if res.Error != nil {
 		return 0, errcode.Wrap(errcode.ErrDatabase, res.Error)
 	}

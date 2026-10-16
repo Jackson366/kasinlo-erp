@@ -1,12 +1,9 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import type { TableInstance } from 'element-plus'
-import {
-  ElMessage,
-  ElMessageBox,
-  type FormInstance,
-  type FormRules,
-} from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index'
+import type { FormInstance, FormRules } from 'element-plus'
 import { deptApi, roleApi, userApi } from '@/api'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useCrudDialog } from '@/composables/useCrudDialog'
@@ -108,6 +105,7 @@ const rules: FormRules<UserPayload> = {
   ],
   nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
   password: [
+    { required: true, message: '请输入初始密码', trigger: 'blur' },
     { min: 6, max: 64, message: '密码长度为 6 ~ 64 个字符', trigger: 'blur' },
   ],
   email: [{ type: 'email', message: '邮箱格式不正确', trigger: 'blur' }],
@@ -304,9 +302,10 @@ function openImport(): void {
   importVisible.value = true
 }
 
-onMounted(async () => {
-  // 两个请求互不依赖，串行会白等一个 RTT
-  await Promise.all([loadOptions(), loadList()])
+onMounted(() => {
+  // 两个请求互不依赖，串行会白等一个 RTT；
+  // 失败提示由请求层统一弹出，吞掉 rejection 避免未捕获告警
+  void Promise.all([loadOptions(), loadList()]).catch(() => {})
 })
 </script>
 
@@ -498,7 +497,10 @@ onMounted(async () => {
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item v-if="dialogMode === 'create'" label="初始密码" required>
+            <!-- required 星号由 rules.password 驱动；之前的裸 required 没有 prop
+                 只是装饰，空密码能直接通过前端校验。编辑模式不渲染此项，
+                 el-form 只校验已注册的 form-item，编辑不受影响。 -->
+            <el-form-item v-if="dialogMode === 'create'" label="初始密码" prop="password">
               <el-input v-model="form.password" type="password" show-password placeholder="至少 6 位" />
             </el-form-item>
             <el-form-item v-else label="昵称" prop="nickname">

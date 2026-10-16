@@ -304,6 +304,13 @@ export interface DashboardOverview {
   activeUserWeek: number
 }
 
+/** 仪表盘异常信号 */
+export interface DashboardAlert {
+  level: 'warning' | 'danger'
+  signal: string
+  message: string
+}
+
 export interface TrendPoint {
   date: string
   logins: number

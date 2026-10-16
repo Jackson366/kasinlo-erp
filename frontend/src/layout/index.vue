@@ -30,6 +30,14 @@ const cachedViews = computed(() =>
     .map((item) => item.name as string),
 )
 
+// 刷新时不能把 include 清空成 []：那会把**所有**页面的 keep-alive 缓存一并丢弃，
+// 其他页面未保存的表单、滚动位置全部丢失。只把当前页从名单里摘掉一帧，其余保留。
+const aliveIncludes = computed(() =>
+  refreshing.value && route.name
+    ? cachedViews.value.filter((name) => name !== route.name)
+    : cachedViews.value,
+)
+
 // key 只用 path：稳定标识，keep-alive 才能正确复用与回收。
 // 刷新靠上面的 refreshing 开关实现，不污染 key。
 const viewKey = computed(() => route.path)
@@ -47,7 +55,7 @@ const viewKey = computed(() => route.path)
       <main class="layout__content">
         <router-view v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
-            <keep-alive :include="refreshing ? [] : cachedViews">
+            <keep-alive :include="aliveIncludes">
               <component :is="Component" :key="viewKey" />
             </keep-alive>
           </transition>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ElMessage, type UploadFile, type UploadInstance } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import type { UploadFile, UploadInstance } from 'element-plus'
 import { userApi } from '@/api'
 import type { ImportResult } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'

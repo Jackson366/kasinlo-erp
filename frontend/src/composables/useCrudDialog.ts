@@ -1,5 +1,6 @@
 import { computed, ref, type Ref } from 'vue'
-import { ElMessage, type FormInstance } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import type { FormInstance } from 'element-plus'
 
 export type CrudMode = 'create' | 'edit'
 

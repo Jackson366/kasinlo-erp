@@ -1,7 +1,8 @@
 import type { Router } from 'vue-router'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
-import { ElMessage } from 'element-plus'
+// 从子路径导入：根入口会构建完整安装器、引用全部组件，禁用 tree-shaking
+import { ElMessage } from 'element-plus/es/components/message/index'
 import { usePermissionStore, useUserStore } from '@/store'
 import { WHITE_LIST } from '@/router'
 
