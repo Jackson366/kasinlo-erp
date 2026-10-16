@@ -385,6 +385,29 @@ async function removeRow(row: InvOrderRow): Promise<void> {
   load()
 }
 
+/**
+ * 反审核：撤销审核 —— 作废审核时生成的出入库单并回滚库存，单据退回待处理。
+ * 副作用不在这一层，前端只负责说清后果再确认。
+ */
+async function reverseOrder(row: InvOrderRow): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `确认反审核单据「${row.orderNo}」？将作废生成的出入库单并回滚库存，单据退回「待处理」。`,
+      '反审核确认',
+      { type: 'warning', confirmButtonText: '反审核' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await invApi.reverseOrder(row.id)
+    ElMessage.success('已反审核')
+    load()
+  } catch {
+    // 失败提示（如「已登记收付款，不能反审核」）由响应拦截器统一处理
+  }
+}
+
 async function openDetail(row: InvOrderRow): Promise<void> {
   const data = await invApi.orderDetail(row.id)
   detail.value = { row: data, items: data.items }
@@ -482,7 +505,9 @@ onMounted(() => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="272" fixed="right" align="center">
+        <!-- 宽度按最多按钮的状态算（待处理单：详情/打印/编辑/审核/取消/删除 6 个），
+             写小了按钮会折成两行，"删除"被挤到第二行 -->
+        <el-table-column label="操作" width="330" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row as InvOrderRow)">详情</el-button>
             <el-button link type="primary" @click="printRef?.open(row as InvOrderRow)">打印</el-button>
@@ -512,6 +537,15 @@ onMounted(() => {
               @click="changeStatus(row as InvOrderRow, 3)"
             >
               取消
+            </el-button>
+            <el-button
+              v-if="row.status === 2"
+              v-perm="`inv:${bizType}:finish`"
+              link
+              type="warning"
+              @click="reverseOrder(row as InvOrderRow)"
+            >
+              反审核
             </el-button>
             <el-button
               v-if="row.status !== 2"
@@ -671,9 +705,10 @@ onMounted(() => {
     </el-dialog>
 
     <!-- 详情 -->
-    <el-dialog v-model="detailVisible" title="单据详情" width="800px" top="6vh">
+    <!-- 详情：与新增 / 编辑同宽同档（同一份数据的三种看法，宽度不该跳） -->
+    <el-dialog v-model="detailVisible" title="单据详情" width="1280px" top="6vh">
       <template v-if="detail">
-        <el-descriptions :column="2" border size="small">
+        <el-descriptions :column="3" border size="small">
           <el-descriptions-item label="单号">{{ detail.row.orderNo }}</el-descriptions-item>
           <el-descriptions-item :label="partyLabel">{{ detail.row.partyName }}</el-descriptions-item>
           <el-descriptions-item label="单据日期">{{ formatDay(detail.row.orderDate) }}</el-descriptions-item>
@@ -682,7 +717,7 @@ onMounted(() => {
             {{ settleMeta[detail.row.settleStatus]?.text }}
           </el-descriptions-item>
           <el-descriptions-item label="单据状态">{{ statusMeta[detail.row.status]?.text }}</el-descriptions-item>
-          <el-descriptions-item label="备注" :span="2">{{ detail.row.remark || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="备注" :span="3">{{ detail.row.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
         <el-table :data="detail.items" size="small" class="mt-16">
           <el-table-column prop="productName" label="商品" min-width="130" />

@@ -54,6 +54,7 @@ func Register(rg *gin.RouterGroup) {
 		g.PUT("/orders/:id", middleware.RequirePerm("inv:purchase:update", "inv:sales:update"), h.OrderUpdate)
 		g.DELETE("/orders/:id", middleware.RequirePerm("inv:purchase:delete", "inv:sales:delete"), h.OrderDelete)
 		g.PUT("/orders/:id/status", middleware.RequirePerm("inv:purchase:finish", "inv:sales:finish"), h.OrderChangeStatus)
+		g.PUT("/orders/:id/reverse", middleware.RequirePerm("inv:purchase:finish", "inv:sales:finish"), h.OrderReverse)
 
 		// 库存：出入库单据与库存查询
 		g.GET("/stock-orders", middleware.RequirePerm("inv:stock:list"), h.StockOrderList)
@@ -73,6 +74,7 @@ func Register(rg *gin.RouterGroup) {
 		g.GET("/report/ranking", middleware.RequirePerm("inv:report:view"), h.ReportRanking)
 		g.GET("/report/category", middleware.RequirePerm("inv:report:view"), h.ReportCategory)
 		g.GET("/report/inventory", middleware.RequirePerm("inv:report:view"), h.ReportInventory)
+		g.GET("/report/export", middleware.RequirePerm("inv:report:view"), h.ReportExport)
 
 		// 打印模板
 		g.GET("/print-templates", middleware.RequirePerm("inv:print:list"), h.PrintTemplateList)

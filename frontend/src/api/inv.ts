@@ -1,4 +1,5 @@
 import { http } from '@/utils/request'
+import { downloadFile } from '@/utils/download'
 import type {
   InvCategoryOption,
   InvCategoryPayload,
@@ -55,6 +56,9 @@ export const invApi = {
   },
   reportInventory() {
     return http.get<InvReportInventory>('/inv/report/inventory')
+  },
+  reportExport(params?: Params, fallbackName = '报表.xlsx') {
+    return downloadFile('/inv/report/export', params as Record<string, unknown>, fallbackName)
   },
 
   // ---------------- 客户 ----------------
@@ -150,6 +154,9 @@ export const invApi = {
   },
   changeOrderStatus(id: number, status: InvOrderStatus) {
     return http.put<string>(`/inv/orders/${id}/status`, { status })
+  },
+  reverseOrder(id: number) {
+    return http.put<string>(`/inv/orders/${id}/reverse`)
   },
 
   // ---------------- 出入库 ----------------

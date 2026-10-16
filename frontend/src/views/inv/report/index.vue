@@ -370,7 +370,9 @@ function daysBetween(from: string, to: string): number {
 
 /** 品类筛选：命中自身 + 全部子孙分类，所以下拉用树 */
 const catOptions = ref<Array<{ id: number; name: string }>>([])
-const activeCat = ref(0)
+// 用 undefined 而不是 0 表示「全部品类」：0 不在选项里，el-select 会把 0 当成
+// 已选值直接显示出来（下拉框里出现一个孤零零的「0」）
+const activeCat = ref<number | undefined>(undefined)
 
 async function loadCatOptions(): Promise<void> {
   const list = await invApi.categoryOptions()
@@ -405,6 +407,23 @@ const catLabel = computed(() => {
 
 function openPrint(): void {
   printRef.value?.open()
+}
+
+/** 导出当前报表区的数据为 xlsx（导出的是当前筛选范围的全量，不是屏幕上的前 N 条） */
+const exporting = ref(false)
+
+async function exportReport(): Promise<void> {
+  exporting.value = true
+  try {
+    const params: Record<string, unknown> = { ...filterParams(), type: activeTab.value }
+    if (activeTab.value === 'ranking') params.dimension = rankDimension.value
+    await invApi.reportExport(params)
+    ElMessage.success('导出成功')
+  } catch {
+    // 失败提示由响应拦截器统一处理
+  } finally {
+    exporting.value = false
+  }
 }
 
 onMounted(() => {
@@ -456,6 +475,10 @@ onMounted(() => {
         <el-button v-if="activeTab === 'overview'" @click="openPrint">
           <AppIcon name="Printer" />
           <span>打印</span>
+        </el-button>
+        <el-button :loading="exporting" @click="exportReport">
+          <AppIcon name="Download" />
+          <span>导出</span>
         </el-button>
         <el-button @click="loadTab">
           <AppIcon name="Refresh" />

@@ -2192,6 +2192,26 @@ paths:
       summary: 修改单据
       tags:
       - 进销存-单据
+  /inv/orders/{id}/reverse:
+    put:
+      parameters:
+      - description: 单据 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 反审核（作废生成的出入库单并回滚库存，单据退回待处理）
+      tags:
+      - 进销存-单据
   /inv/orders/{id}/status:
     put:
       consumes:
@@ -2580,6 +2600,50 @@ paths:
       security:
       - BearerAuth: []
       summary: 品类销售占比
+      tags:
+      - 进销存-报表
+  /inv/report/export:
+    get:
+      description: 返回 xlsx 二进制流，筛选参数与报表接口一致。
+      parameters:
+      - description: 报表区：overview（默认）/ ranking / purchase / inventory
+        in: query
+        name: type
+        type: string
+      - description: 排行维度：customer（默认）/ product
+        in: query
+        name: dimension
+        type: string
+      - description: 业务方向：sales（默认）/ purchase
+        in: query
+        name: biz
+        type: string
+      - description: 时间范围
+        in: query
+        name: range
+        type: string
+      - description: 自定义起始日 yyyy-MM-dd
+        in: query
+        name: from
+        type: string
+      - description: 自定义结束日 yyyy-MM-dd
+        in: query
+        name: to
+        type: string
+      - description: 品类筛选（含子分类），0 = 全部
+        in: query
+        name: categoryId
+        type: integer
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: xlsx 文件流
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: 按筛选条件导出报表（xlsx）
       tags:
       - 进销存-报表
   /inv/report/inventory:

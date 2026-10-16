@@ -1093,6 +1093,39 @@ const docTemplate = `{
                 }
             }
         },
+        "/inv/orders/{id}/reverse": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-单据"
+                ],
+                "summary": "反审核（作废生成的出入库单并回滚库存，单据退回待处理）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "单据 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/inv/orders/{id}/status": {
             "put": {
                 "security": [
@@ -1765,6 +1798,75 @@ const docTemplate = `{
                                     }
                                 }
                             ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/report/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回 xlsx 二进制流，筛选参数与报表接口一致。",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "进销存-报表"
+                ],
+                "summary": "按筛选条件导出报表（xlsx）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "报表区：overview（默认）/ ranking / purchase / inventory",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排行维度：customer（默认）/ product",
+                        "name": "dimension",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "业务方向：sales（默认）/ purchase",
+                        "name": "biz",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "时间范围",
+                        "name": "range",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "自定义起始日 yyyy-MM-dd",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "自定义结束日 yyyy-MM-dd",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "品类筛选（含子分类），0 = 全部",
+                        "name": "categoryId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "xlsx 文件流",
+                        "schema": {
+                            "type": "file"
                         }
                     }
                 }

@@ -12,6 +12,7 @@ import (
 	"nova-erp/internal/pkg/errcode"
 	"nova-erp/internal/pkg/page"
 	"nova-erp/internal/pkg/response"
+	"nova-erp/internal/pkg/sheet"
 )
 
 // ReportFilter 报表的查询条件：时间范围 + 品类。
@@ -232,4 +233,37 @@ func (h *Handler) ReportInventory(c *gin.Context) {
 		return
 	}
 	response.OK(c, data)
+}
+
+// ReportExport 导出报表
+// @Summary      按筛选条件导出报表（xlsx）
+// @Description  返回 xlsx 二进制流，筛选参数与报表接口一致。
+// @Tags         进销存-报表
+// @Produce      application/octet-stream
+// @Security     BearerAuth
+// @Param        type       query  string  false  "报表区：overview（默认）/ ranking / purchase / inventory"
+// @Param        dimension  query  string  false  "排行维度：customer（默认）/ product"
+// @Param        biz        query  string  false  "业务方向：sales（默认）/ purchase"
+// @Param        range      query  string  false  "时间范围"
+// @Param        from       query  string  false  "自定义起始日 yyyy-MM-dd"
+// @Param        to         query  string  false  "自定义结束日 yyyy-MM-dd"
+// @Param        categoryId query  int     false  "品类筛选（含子分类），0 = 全部"
+// @Success      200  {file}    binary  "xlsx 文件流"
+// @Router       /inv/report/export [get]
+func (h *Handler) ReportExport(c *gin.Context) {
+	f, err := reportFilterFrom(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	c.Set("opAction", "导出报表")
+	data, filename, err := h.svc.ReportExport(
+		f, c.DefaultQuery("type", "overview"),
+		c.DefaultQuery("dimension", "customer"), c.DefaultQuery("biz", "sales"),
+		middleware.CurrentIdentity(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	sheet.Download(c, filename, data)
 }

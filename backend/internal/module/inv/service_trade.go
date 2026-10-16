@@ -374,6 +374,92 @@ func (s *Service) OrderChangeStatus(id int64, status int16, actor *authz.Identit
 	}))
 }
 
+// OrderReverse 反审核：把「已审核」单据退回「待处理」，并撤销审核的全部副作用。
+//
+// 为什么不是简单地把 status 改回 1：审核做了两件事 —— 生成出入库单、调整库存。
+// 只改状态会把这两处永久留在库里：库存被扣了，对应单据却查不到，用户只能去改数据库。
+//
+// 撤销步骤（同一事务）：
+//  1. 找到审核时生成的出入库单（source_type + source_id），反向过账回滚库存；
+//  2. 把该出入库单置为「已作废」，避免它继续出现在出入库列表里；
+//  3. 单据状态退回「待处理」，条件更新挡住并发二次反审核。
+//
+// 已被手工作废的出入库单不再反向过账（库存早已回滚），只做第 3 步。
+func (s *Service) OrderReverse(id int64, actor *authz.Identity) error {
+	var o model.InvOrder
+	if err := s.db.First(&o, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.New(errcode.ErrNotFound, "单据不存在")
+		}
+		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if err := s.ensureCreatorVisible(o.CreatedBy, actor); err != nil {
+		return err
+	}
+	if o.Status == model.InvStatusCanceled {
+		return errcode.New(errcode.ErrBadRequest, "已取消单据不可反审核")
+	}
+	if o.Status != model.InvStatusDone {
+		return errcode.New(errcode.ErrBadRequest, "只有已审核单据可以反审核")
+	}
+	// 已登记收付款：钱已落账，反审核会让「已结算 > 单据金额」。
+	// 要求先撤销收付款记录，而不是在这里静默把金额带着走。
+	if o.SettledAmount > 0 {
+		return errcode.New(errcode.ErrConflict, "已登记收付款，不能反审核（请先撤销收付款记录）")
+	}
+
+	sourceType := model.InvSourcePurchase
+	if o.BizType == model.InvBizSales {
+		sourceType = model.InvSourceSales
+	}
+
+	return saveErr(s.db.Transaction(func(tx *gorm.DB) error {
+		var so model.InvStockOrder
+		err := tx.Where("source_type = ? AND source_id = ? AND status = 1", sourceType, o.ID).
+			First(&so).Error
+		switch {
+		case err == nil:
+			var items []model.InvStockItem
+			if err := tx.Where("stock_order_id = ?", so.ID).Find(&items).Error; err != nil {
+				return err
+			}
+			// 回滚方向与原方向相反
+			reverse := model.InvStockOut
+			if so.Direction == model.InvStockOut {
+				reverse = model.InvStockIn
+			}
+			if err := s.applyStock(tx, reverse, items); err != nil {
+				return err
+			}
+			res := tx.Model(&model.InvStockOrder{}).
+				Where("id = ? AND status = 1", so.ID).Update("status", 2)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return errcode.New(errcode.ErrConflict, "出入库单状态已变化，请刷新后重试")
+			}
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			// 出入库单已被手工作废：库存早已回滚，这里只把单据退回待处理
+		default:
+			return errcode.Wrap(errcode.ErrDatabase, err)
+		}
+
+		// 状态推进带条件且放最后：并发点两次反审核都读到「已审核」时，
+		// 第二次会被这一句挡在数据库层（影响 0 行即回滚整个事务）。
+		res := tx.Model(&model.InvOrder{}).
+			Where("id = ? AND status = ?", o.ID, model.InvStatusDone).
+			Update("status", model.InvStatusPending)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errcode.New(errcode.ErrConflict, "单据状态已变化，请刷新后重试")
+		}
+		return nil
+	}))
+}
+
 // applyStock 在事务内按方向增减**规格**库存（基数为基本单位）。
 //
 // 库存记在规格上而不是商品上：同一个商品的不同规格是各自独立的库存，

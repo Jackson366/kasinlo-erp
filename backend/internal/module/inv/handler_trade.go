@@ -163,6 +163,38 @@ func (h *Handler) OrderDelete(c *gin.Context) {
 	response.OKMsg(c, "删除成功")
 }
 
+// OrderReverse 反审核单据
+// @Summary      反审核（作废生成的出入库单并回滚库存，单据退回待处理）
+// @Tags         进销存-单据
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  int  true  "单据 ID"
+// @Success      200  {object}  response.Body
+// @Router       /inv/orders/{id}/reverse [put]
+func (h *Handler) OrderReverse(c *gin.Context) {
+	id, err := bind.PathID(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	detail, err := h.svc.OrderDetail(id, middleware.CurrentIdentity(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	// 反审核与审核同权：能审核的人才有资格撤销审核
+	if err := ensureBizPermAction(c, detail.BizType, "finish"); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	c.Set("opAction", "反审核单据")
+	if err := h.svc.OrderReverse(id, middleware.CurrentIdentity(c)); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OKMsg(c, "已反审核")
+}
+
 // OrderChangeStatus 流转单据状态
 // @Summary      审核单据（审核通过时自动生成出入库单并调整库存）
 // @Tags         进销存-单据

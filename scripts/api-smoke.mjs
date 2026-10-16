@@ -1104,6 +1104,74 @@ async function main() {
       Array.isArray(invReport.json.data.warnList),
     JSON.stringify(invReport.json?.data),
   )
+
+  // 报表导出：四类面板都要产出有效的 xlsx（xlsx 是 zip，头两字节 PK）
+  for (const [type, label] of [
+    ['overview', '经营总览'],
+    ['ranking', '销售排行'],
+    ['purchase', '采购分析'],
+    ['inventory', '库存分析'],
+  ]) {
+    const extra = type === 'ranking' ? '&dimension=product' : ''
+    const r = await request('GET', `/inv/report/export?type=${type}&range=year${extra}`, { token })
+    ok(
+      `报表导出 xlsx（${label}）`,
+      r.status === 200 && typeof r.text === 'string' && r.text.startsWith('PK'),
+      `status=${r.status} head=${(r.text || '').slice(0, 2)}`,
+    )
+  }
+
+  section('进销存：反审核')
+  // 审核 → 反审核 必须把副作用一起撤销：状态回到待处理、库存回到审核前、
+  // 生成的出入库单作废。只改状态的话库存会永久少掉，且查不到对应单据。
+  // （上面那个 stockOfSpec 绑定的是换算用例的商品，这里要查的是单据用的规格）
+  const rvStock = async () => {
+    const d = await request('GET', `/inv/products/${productId}`, { token })
+    return d.json?.data?.specs?.find((s) => s.id === specId)?.stock
+  }
+  const stockBeforeAudit = await rvStock()
+
+  const rvCreate = await request('POST', '/inv/orders', {
+    token,
+    body: { bizType: 'sales', partyId: custId, orderDate: '2025-06-02', items: [line({ qty: 1, price: 0 })] },
+  })
+  const rvId = rvCreate.json?.data?.id
+  ok('反审核用例：建单', rvCreate.json?.code === 0 && rvId > 0, JSON.stringify(rvCreate.json))
+
+  const rvAudit = await request('PUT', `/inv/orders/${rvId}/status`, { token, body: { status: 2 } })
+  ok('反审核用例：审核通过', rvAudit.json?.code === 0, JSON.stringify(rvAudit.json))
+  const stockAfterAudit = await rvStock()
+  ok(
+    '审核后库存已扣减',
+    stockAfterAudit === stockBeforeAudit - 1,
+    `before=${stockBeforeAudit} after=${stockAfterAudit}`,
+  )
+
+  const rvReverse = await request('PUT', `/inv/orders/${rvId}/reverse`, { token })
+  ok('反审核成功', rvReverse.json?.code === 0, JSON.stringify(rvReverse.json))
+
+  const afterReverse = await request('GET', `/inv/orders/${rvId}`, { token })
+  ok('反审核后单据回到待处理', afterReverse.json?.data?.status === 1, `status=${afterReverse.json?.data?.status}`)
+
+  const stockAfterReverse = await rvStock()
+  ok(
+    '反审核后库存回到审核前',
+    stockAfterReverse === stockBeforeAudit,
+    `before=${stockBeforeAudit} after=${stockAfterReverse}`,
+  )
+
+  const rvTwice = await request('PUT', `/inv/orders/${rvId}/reverse`, { token })
+  ok('待处理单据反审核被拒(40000)', rvTwice.json?.code === 40000, JSON.stringify(rvTwice.json))
+
+  const stockListAfter = await request('GET', '/inv/stock-orders?page=1&pageSize=100', { token })
+  const linkedStock = (stockListAfter.json?.data?.list || []).filter(
+    (s) => s.sourceType === 'sales' && s.sourceId === rvId,
+  )
+  ok('反审核后关联出入库单已作废', linkedStock.length === 0, `linked=${linkedStock.length}`)
+
+  const rvDel = await request('DELETE', `/inv/orders/${rvId}`, { token })
+  ok('反审核用例：清理单据', rvDel.json?.code === 0, JSON.stringify(rvDel.json))
+
   const invTrend = await request('GET', '/inv/report/trend?days=7', { token })
   ok('趋势按天补齐 7 个点', (invTrend.json?.data || []).length === 7, `len=${invTrend.json?.data?.length}`)
   // 自定义区间：from + to 必须严格按区间出点，不能沿用 days 参数 ——

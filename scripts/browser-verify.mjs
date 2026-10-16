@@ -748,15 +748,48 @@ async function main() {
     specLayout.ok && specLayout.cards === 1 && specLayout.rows === 1 && specLayout.baseChecked,
     `cards=${specLayout.cards} rows=${specLayout.rows} baseChecked=${specLayout.baseChecked}`,
   )
+  // 价格列默认收起：简单商品录「编码 + 名称 + 规格」就够，一上来摆五列表格太重。
+  // 先断言默认只有三列核心字段，再打开「价格设置」确认价格列会出现。
   check(
-    '单位行表头齐全（计量单位 / 换算率 / 基本单位 / 采购价 / 销售价）且不横向溢出',
-    ['计量单位', '换算率（1 该单位 = ? 基本单位）', '基本单位', '采购价', '销售价'].every((h) =>
-      specLayout.heads.includes(h),
-    ) &&
-      !specLayout.overflow &&
-      specLayout.cols === 6,
-    `heads=${JSON.stringify(specLayout.heads)} cols=${specLayout.cols} overflow=${specLayout.overflow}`,
+    '规格单位默认只露核心列（计量单位 / 换算率 / 基本单位），价格收起',
+    ['计量单位', '换算率', '基本单位'].every((h) => specLayout.heads.includes(h)) &&
+      !specLayout.heads.includes('采购价') &&
+      !specLayout.heads.includes('销售价') &&
+      !specLayout.overflow,
+    `heads=${JSON.stringify(specLayout.heads)} overflow=${specLayout.overflow}`,
   )
+
+  // 打开「价格设置」→ 价格两列出现且不横向溢出
+  await evaluate(`(() => {
+    const dlg = document.querySelector('.el-dialog');
+    const sw = dlg.querySelector('.spec-head .el-switch');
+    if (sw) sw.click();
+    return true;
+  })()`)
+  await sleep(500)
+  const priceHeads = await evaluate(`(() => {
+    const dlg = document.querySelector('.el-dialog');
+    const heads = Array.from(dlg.querySelectorAll('.unit-table__row--head .unit-col'))
+      .map(e => e.textContent.trim()).filter(Boolean);
+    const cards = dlg.querySelectorAll('.spec-card');
+    return {
+      heads,
+      overflow: Array.from(cards).some(c => c.scrollWidth > c.clientWidth + 2),
+    };
+  })()`)
+  check(
+    '打开「价格设置」后采购价 / 销售价出现且不横向溢出',
+    priceHeads.heads.includes('采购价') && priceHeads.heads.includes('销售价') && !priceHeads.overflow,
+    `heads=${JSON.stringify(priceHeads.heads)} overflow=${priceHeads.overflow}`,
+  )
+  // 收起，避免影响后续步骤
+  await evaluate(`(() => {
+    const dlg = document.querySelector('.el-dialog');
+    const sw = dlg.querySelector('.spec-head .el-switch');
+    if (sw) sw.click();
+    return true;
+  })()`)
+  await sleep(300)
 
   await evaluate(`(() => {
     const dlg = document.querySelector('.el-dialog');
@@ -961,6 +994,33 @@ async function main() {
     invState.kpis.length === 3 && invState.sizedCanvas >= 1,
     JSON.stringify(invState),
   )
+  // 报表导出入口（导出当前筛选范围）
+  const exportEntry = await evaluate(
+    `(() => Array.from(document.querySelectorAll('.report-page button')).some((b) => (b.textContent || '').includes('导出')))()`,
+  )
+  check('报表页提供导出入口', exportEntry === true, `found=${exportEntry}`)
+
+  // 单据反审核入口：已审核的行操作列要有「反审核」
+  await coldStart(`${APP}/#/inv/sales`, 3000)
+  const reverseEntry = await evaluate(`(() => {
+    const rows = Array.from(document.querySelectorAll('.el-table__body tr'));
+    for (const r of rows) {
+      const t = r.textContent || '';
+      if (t.includes('已审核') && t.includes('反审核')) return true;
+    }
+    return false;
+  })()`)
+  check('已审核单据提供「反审核」入口', reverseEntry === true, `found=${reverseEntry}`)
+  // 反审核入口不应出现在待处理单据上（撤销未审核的单据没有意义）
+  const reverseOnPending = await evaluate(`(() => {
+    const rows = Array.from(document.querySelectorAll('.el-table__body tr'));
+    for (const r of rows) {
+      const t = r.textContent || '';
+      if (t.includes('待处理') && t.includes('反审核')) return true;
+    }
+    return false;
+  })()`)
+  check('待处理单据不显示「反审核」', reverseOnPending === false, `found=${reverseOnPending}`)
 
   // ── 阶段 5：低权限账号 ──────────────────────────────
   console.log('[5] 低权限账号：按钮级权限与接口鉴权')

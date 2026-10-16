@@ -121,6 +121,15 @@ const form = reactive<InvProductPayload>({
   specs: [blankSpec()],
 })
 
+/**
+ * 是否显示采购价 / 销售价两列。
+ *
+ * 默认关：绝大多数商品录的是「编码 + 名称 + 规格」，价格可以以后再补 ——
+ * 一上来就摆五列表格会让简单商品看起来很重。价格列展开后仍可逐单位填写，
+ * 数据一直是同一个 form.specs，折叠只影响「显不显示」。
+ */
+const showPrice = ref(false)
+
 // ---------------- 录入查重 ----------------
 // 名称失焦（或停止输入 400ms）后拉一次同名商品，只提示不拦截。
 const duplicates = ref<InvProductDupRow[]>([])
@@ -927,9 +936,11 @@ onMounted(() => {
           <el-input v-model="form.remark" placeholder="选填" />
         </el-form-item>
 
-        <el-divider content-position="left">
+        <div class="spec-head">
           <span class="divider-title">规格与计量单位（可留空）</span>
-        </el-divider>
+          <!-- 价格默认收起：简单商品录「编码 + 名称 + 规格」就够，五列表格太重 -->
+          <el-switch v-model="showPrice" size="small" active-text="价格设置" />
+        </div>
         <p class="spec-tip">
           简单商品<strong>留空即可</strong>，保存时自动按「默认 / 个」处理。
           需要区分时才填：一个商品可维护多个规格，每个规格下可维护多个计量单位；
@@ -985,10 +996,10 @@ onMounted(() => {
             <div class="unit-table">
               <div class="unit-table__row unit-table__row--head">
                 <span class="unit-col unit-col--unit">计量单位</span>
-                <span class="unit-col unit-col--rate">换算率（1 该单位 = ? 基本单位）</span>
+                <span class="unit-col unit-col--rate">换算率</span>
                 <span class="unit-col unit-col--base">基本单位</span>
-                <span class="unit-col unit-col--price">采购价</span>
-                <span class="unit-col unit-col--price">销售价</span>
+                <span v-if="showPrice" class="unit-col unit-col--price">采购价</span>
+                <span v-if="showPrice" class="unit-col unit-col--price">销售价</span>
                 <span class="unit-col unit-col--op"></span>
               </div>
               <div v-for="(u, ui) in spec.units" :key="ui" class="unit-table__row">
@@ -997,7 +1008,7 @@ onMounted(() => {
                     :prop="`specs.${si}.units.${ui}.unit`"
                     class="unit-form-item"
                   >
-                    <el-input v-model="u.unit" placeholder="选填，如 根 / 箱（留空按「个」）" />
+                    <el-input v-model="u.unit" placeholder="选填，如 根 / 箱" />
                   </el-form-item>
                 </div>
                 <div class="unit-col unit-col--rate">
@@ -1023,7 +1034,7 @@ onMounted(() => {
                     <el-radio :value="ui" />
                   </el-radio-group>
                 </div>
-                <div class="unit-col unit-col--price">
+                <div v-if="showPrice" class="unit-col unit-col--price">
                   <el-form-item class="unit-form-item">
                     <el-input-number
                       v-model="u.purchasePrice"
@@ -1034,7 +1045,7 @@ onMounted(() => {
                     />
                   </el-form-item>
                 </div>
-                <div class="unit-col unit-col--price">
+                <div v-if="showPrice" class="unit-col unit-col--price">
                   <el-form-item class="unit-form-item">
                     <el-input-number
                       v-model="u.salePrice"
@@ -1233,6 +1244,22 @@ onMounted(() => {
   font-weight: 600;
 }
 
+// 规格区分隔头：标题 + 右侧「价格设置」开关（替代原来的 el-divider，
+// 好把开关放在同一行右端）
+.spec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--app-border-light);
+
+  .divider-title {
+    font-size: 14px;
+  }
+}
+
 .divider-title {
   font-weight: 600;
   color: var(--app-text);
@@ -1315,14 +1342,16 @@ onMounted(() => {
   border-bottom: 1px solid var(--app-border);
 }
 
+// 「计量单位 / 换算率」按比例弹性：价格列收起时由这两列填满整行，
+// 展开价格后它们自动让位 —— 不用弹性占位子，列多列少都不会留大片空白
 .unit-col--unit {
-  width: 150px;
-  flex: none;
+  flex: 1.2;
+  min-width: 170px;
 }
 
 .unit-col--rate {
   flex: 1;
-  min-width: 0;
+  min-width: 170px;
 }
 
 .unit-col--base {
