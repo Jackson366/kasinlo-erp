@@ -61,10 +61,10 @@ function ElementPlusDirectResolver() {
 // Vite 配置：开发环境通过代理转发 /api 到后端，避免跨域问题
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
-  const proxyTarget = env.VITE_PROXY_TARGET || 'http://127.0.0.1:8080'
+  const proxyTarget = env.VITE_PROXY_TARGET || 'http://127.0.0.1:6802'
   // 开发与本地预览（npm run preview）共用同一份代理配置，
   // 方便直接用生产产物做一次端到端冒烟验证。
-  // /swagger 一并转发：Swagger UI 挂在后端端口上，转发后 5173 也能直接打开在线文档。
+  // /swagger 一并转发：Swagger UI 挂在后端端口上，转发后 6801 也能直接打开在线文档。
   const proxy = {
     '/api': {
       target: proxyTarget,
@@ -94,7 +94,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: '0.0.0.0',
-      port: Number(env.VITE_PORT || 5173),
+      port: Number(env.VITE_PORT || 6801),
       open: false,
       proxy,
     },

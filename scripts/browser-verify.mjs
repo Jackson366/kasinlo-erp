@@ -38,7 +38,7 @@ if (!CHROME) {
   process.exit(1)
 }
 
-const APP = process.env.APP_URL || 'http://localhost:5173'
+const APP = process.env.APP_URL || 'http://localhost:6801'
 const PORT = Number(process.env.CDP_PORT || 9341)
 const ADMIN = { user: 'admin', secret: 'admin123456' }
 const VIEWER = { user: 'demo', secret: 'demo123456' }
