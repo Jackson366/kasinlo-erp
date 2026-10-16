@@ -78,8 +78,17 @@ export function firstLeafPath(records: RouteRecord[]): string {
       if (found) return found
       continue
     }
-    // 外链没有注册对应的内部路由（见 buildRoutes），不能作为落地页
-    if (!record.meta?.hidden && !record.meta?.isExternal && record.path) return record.path
+    // 外链没有注册对应的内部路由（见 buildRoutes），不能作为落地页；
+    // 组件解析不出来的节点同样不会被注册成路由 —— 落到这种路径上只会得到一个 404，
+    // 所以这里必须与 buildRoutes 用同一个判定，否则「落地页」会指向一个不存在的路由。
+    if (
+      !record.meta?.hidden &&
+      !record.meta?.isExternal &&
+      record.path &&
+      resolveComponent(record.component)
+    ) {
+      return record.path
+    }
   }
   return ''
 }
