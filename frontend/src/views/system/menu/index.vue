@@ -479,7 +479,8 @@ onMounted(loadTree)
     <el-dialog
       v-model="dialogVisible"
       :title="dialogMode === 'create' ? '新增菜单' : '编辑菜单'"
-      width="640px"
+      width="800px"
+      top="6vh"
       :close-on-click-modal="false"
       destroy-on-close
     >

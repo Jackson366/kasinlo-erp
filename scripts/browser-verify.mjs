@@ -697,6 +697,20 @@ async function main() {
     productColWidth >= 260,
     `width=${productColWidth}px`,
   )
+  // 弹窗尺寸按四档统一（sm 640 / md 800 / lg 1100 / xl 1280）。
+  // 此前 19 个弹窗用了 19 个不同宽度，同一系统里点开不同弹窗宽度乱跳。
+  // 这条只是把「最大的那一档」钉住 —— 尺寸靠肉眼是发现不了「跑偏了一点」的。
+  const orderDialogWidth = await evaluate(`(() => {
+    const dlgs = Array.from(document.querySelectorAll('.el-dialog'))
+      .filter((d) => getComputedStyle(d).display !== 'none');
+    const dlg = dlgs[dlgs.length - 1];
+    return dlg ? Math.round(dlg.getBoundingClientRect().width) : -1;
+  })()`)
+  check(
+    '开单弹窗宽度归到 xl 档（1280px）',
+    orderDialogWidth === 1280,
+    `width=${orderDialogWidth}px`,
+  )
   await evaluate(
     `(() => { const b = Array.from(document.querySelectorAll('.el-dialog button')).find((e) => e.textContent.trim() === '取消'); if (b) b.click(); return true })()`,
   )
@@ -820,6 +834,18 @@ async function main() {
     '商品表单的分类下拉列出全部分类（含子分类），与左栏树节点数一致',
     openedProduct && catSelOpened === 'ok' && catAll.count > 0 && catAll.count === treeNodes,
     `树节点=${treeNodes} 下拉选项=${catAll.count} 示例=${JSON.stringify(catAll.sample)}`,
+  )
+  // lg 档：商品档案表单里是 6 列网格（规格卡片 + 单位行），比常规表单宽一档
+  const productDialogWidth = await evaluate(`(() => {
+    const dlgs = Array.from(document.querySelectorAll('.el-dialog'))
+      .filter((d) => getComputedStyle(d).display !== 'none');
+    const dlg = dlgs[dlgs.length - 1];
+    return dlg ? Math.round(dlg.getBoundingClientRect().width) : -1;
+  })()`)
+  check(
+    '商品档案弹窗宽度归到 lg 档（1100px）',
+    productDialogWidth === 1100,
+    `width=${productDialogWidth}px`,
   )
 
   await evaluate(typeIntoSelect(CAT_SELECT, '钢'))

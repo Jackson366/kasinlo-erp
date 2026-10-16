@@ -178,7 +178,7 @@ defineExpose({ open })
   <el-dialog
     v-model="visible"
     :title="`设计版式 — ${row?.name || ''}`"
-    width="1180px"
+    width="1280px"
     top="4vh"
     :close-on-click-modal="false"
     destroy-on-close

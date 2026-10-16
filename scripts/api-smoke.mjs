@@ -462,10 +462,86 @@ async function main() {
   const prodDup = await request('POST', '/inv/products', { token, body: prodBody })
   ok('商品编码重复返回 40900', prodDup.json?.code === 40900, JSON.stringify(prodDup.json))
 
-  // 下面四条都是「结构自洽」的硬约束：放过去的结果是库存的数没有意义
-  const prodBadCases = [
-    ['商品没有规格', { code: `${smokeCode}Q1`, name: '缺规格', specs: [] }],
-    ['规格下没有计量单位', { code: `${smokeCode}Q2`, name: '缺单位', specs: [{ spec: 'A', units: [] }] }],
+  // 规格 / 单位是**可选项**：缺什么由服务端 normalizeSpecs 补成自洽的默认值
+  // （「默认」规格 + 「个」基本单位），不报错。这不是把约束删掉 ——
+  // 真的允许空的话，商品会因为「没有规格」而进不了开单的商品下拉
+  // （ProductPick 只给有规格的商品），等于建了个查不到、开不了单的僵尸档案。
+  // 所以断言的是「被兜底成什么」，而不是「返回 40000」。
+  const fillCases = [
+    {
+      label: '不填规格与单位',
+      code: `${smokeCode}Q1`,
+      name: '不填规格',
+      specs: [],
+      want: { spec: '默认', unit: '个', rate: 1, isBase: true },
+    },
+    {
+      label: '规格下不填单位',
+      code: `${smokeCode}Q2`,
+      name: '不填单位',
+      specs: [{ spec: 'A', units: [] }],
+      want: { spec: 'A', unit: '个', rate: 1, isBase: true },
+    },
+    {
+      label: '不指定基本单位',
+      code: `${smokeCode}Q4`,
+      name: '缺基本单位',
+      specs: [{ spec: 'A', units: [{ unit: '个', rate: 2, isBase: false }] }],
+      want: { spec: 'A', unit: '个', rate: 1, isBase: true },
+    },
+    {
+      label: '基本单位换算率不为 1（被钉成 1）',
+      code: `${smokeCode}Q6`,
+      name: '基本单位换算率错',
+      specs: [{ spec: 'A', units: [{ unit: '个', rate: 3, isBase: true }] }],
+      want: { spec: 'A', unit: '个', rate: 1, isBase: true },
+    },
+  ]
+  const fillIds = []
+  for (const c of fillCases) {
+    const r = await request('POST', '/inv/products', {
+      token,
+      body: { code: c.code, name: c.name, specs: c.specs },
+    })
+    const newId = r.json?.data?.id
+    if (newId) fillIds.push(newId)
+    const detail = newId ? await request('GET', `/inv/products/${newId}`, { token }) : null
+    const sp = detail?.json?.data?.specs?.[0]
+    const u = sp?.units?.[0]
+    ok(
+      `${c.label} → 自动补成「${c.want.spec} / ${c.want.unit}」且为基本单位`,
+      r.json?.code === 0 &&
+        sp?.spec === c.want.spec &&
+        u?.unit === c.want.unit &&
+        Math.abs((u?.rate ?? 0) - c.want.rate) < 1e-9 &&
+        u?.isBase === c.want.isBase,
+      `code=${r.json?.code} spec=${sp?.spec} unit=${u?.unit} rate=${u?.rate} base=${u?.isBase}`,
+    )
+  }
+  // 多个基本单位只留第一个（基本单位必须唯一，否则库存没有计数基准）
+  const multiBase = await request('POST', '/inv/products', {
+    token,
+    body: {
+      code: `${smokeCode}Q5`,
+      name: '两个基本单位',
+      specs: [{ spec: 'A', units: [{ unit: '个', rate: 1, isBase: true }, { unit: '箱', rate: 12, isBase: true }] }],
+    },
+  })
+  const multiBaseId = multiBase.json?.data?.id
+  if (multiBaseId) fillIds.push(multiBaseId)
+  const mbDetail = multiBaseId ? await request('GET', `/inv/products/${multiBaseId}`, { token }) : null
+  const mbUnits = mbDetail?.json?.data?.specs?.[0]?.units || []
+  ok(
+    '多个基本单位只保留第一个',
+    multiBase.json?.code === 0 && mbUnits.filter((u) => u.isBase).length === 1 && mbUnits[0]?.isBase === true,
+    JSON.stringify(mbUnits.map((u) => ({ unit: u.unit, isBase: u.isBase }))),
+  )
+  for (const id of fillIds) {
+    await request('DELETE', `/inv/products/${id}`, { token })
+  }
+
+  // 重名仍然是硬错误：两行「φ20」会把库存劈成两半、各自都不预警
+  const prodDupCases = [
     [
       '同名规格',
       {
@@ -478,22 +554,6 @@ async function main() {
       },
     ],
     [
-      '规格没有基本单位',
-      { code: `${smokeCode}Q4`, name: '缺基本单位', specs: [{ spec: 'A', units: [{ unit: '个', rate: 2, isBase: false }] }] },
-    ],
-    [
-      '规格有两个基本单位',
-      {
-        code: `${smokeCode}Q5`,
-        name: '两个基本单位',
-        specs: [{ spec: 'A', units: [{ unit: '个', rate: 1, isBase: true }, { unit: '箱', rate: 1, isBase: true }] }],
-      },
-    ],
-    [
-      '基本单位换算率不为 1',
-      { code: `${smokeCode}Q6`, name: '基本单位换算率错', specs: [{ spec: 'A', units: [{ unit: '个', rate: 3, isBase: true }] }] },
-    ],
-    [
       '同一规格下单位重名',
       {
         code: `${smokeCode}Q7`,
@@ -501,8 +561,16 @@ async function main() {
         specs: [{ spec: 'A', units: [{ unit: '个', rate: 1, isBase: true }, { unit: '个', rate: 2, isBase: false }] }],
       },
     ],
+    [
+      '两个都不填规格名（都会补成「默认」，同属重名）',
+      {
+        code: `${smokeCode}Q8`,
+        name: '两行空规格',
+        specs: [{ spec: '', units: [] }, { spec: '', units: [] }],
+      },
+    ],
   ]
-  for (const [label, body] of prodBadCases) {
+  for (const [label, body] of prodDupCases) {
     const r = await request('POST', '/inv/products', { token, body })
     ok(`${label}返回 40000`, r.json?.code === 40000, JSON.stringify(r.json))
   }

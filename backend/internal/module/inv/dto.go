@@ -76,9 +76,13 @@ type CategoryOption struct {
 // ProductUnitReq 规格下的一个计量单位。
 //
 // Rate 是「1 个该单位 = Rate 个基本单位」，基本单位自身填 1。
+// ProductUnitReq 一个计量单位。
+//
+// Unit / Rate 都是**可选项**：没填由 normalizeSpecs 兜底成「个」与 1。
+// 硬约束只剩长度与符号范围 —— 让用户不必为了录一个简单商品先想清楚计量单位。
 type ProductUnitReq struct {
-	Unit          string  `json:"unit" binding:"required,max=16" label:"单位"`
-	Rate          float64 `json:"rate" binding:"required,gt=0" label:"换算率"`
+	Unit          string  `json:"unit" binding:"max=16" label:"单位"`
+	Rate          float64 `json:"rate" binding:"gte=0" label:"换算率"`
 	IsBase        bool    `json:"isBase" label:"基本单位"`
 	PurchasePrice float64 `json:"purchasePrice" binding:"gte=0" label:"采购价"`
 	SalePrice     float64 `json:"salePrice" binding:"gte=0" label:"销售价"`
@@ -95,20 +99,24 @@ type ProductUnitReq struct {
 // 否则「档案上的库存」与「单据算出来的库存」会变成两套账。
 type ProductSpecReq struct {
 	ID        int64            `json:"id" label:"规格 ID"`
-	Spec      string           `json:"spec" binding:"required,max=64" label:"规格"`
+	Spec      string           `json:"spec" binding:"max=64" label:"规格"`
 	WarnStock float64          `json:"warnStock" binding:"gte=0" label:"预警下限"`
 	Status    *int16           `json:"status" binding:"omitempty,oneof=0 1" label:"状态"`
-	Units     []ProductUnitReq `json:"units" binding:"required,min=1,dive" label:"计量单位"`
+	Units     []ProductUnitReq `json:"units" binding:"dive" label:"计量单位"`
 }
 
 // ProductReq 商品新增 / 修改请求。
+//
+// Specs 可留空：规格与单位都是**可选项**，缺的由 normalizeSpecs 补成
+// 「默认 / 个」—— 真正的约束（库存要有归属、单据要能折算）由服务端守住，
+// 不转嫁成用户面前的必填项。
 type ProductReq struct {
 	Code       string           `json:"code" binding:"required,max=32" label:"商品编码"`
 	Name       string           `json:"name" binding:"required,max=128" label:"商品名称"`
 	CategoryID int64            `json:"categoryId" label:"商品分类"`
 	Status     *int16           `json:"status" binding:"omitempty,oneof=0 1" label:"状态"`
 	Remark     string           `json:"remark" binding:"omitempty,max=255" label:"备注"`
-	Specs      []ProductSpecReq `json:"specs" binding:"required,min=1,dive" label:"规格"`
+	Specs      []ProductSpecReq `json:"specs" binding:"dive" label:"规格"`
 }
 
 // ProductUnitVO 计量单位（响应）。

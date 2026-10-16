@@ -163,6 +163,8 @@ html.dark {
   --el-dialog-border-radius: var(--radius-lg);
   --el-dialog-bg-color: var(--app-surface);
   overflow: hidden;
+  // 弹窗宽度统一按四档给（640 / 800 / 1100 / 1280），窄屏上不许溢出视口
+  max-width: calc(100vw - 32px);
 
   .el-dialog__header {
     margin-right: 0;
@@ -178,6 +180,12 @@ html.dark {
 
   .el-dialog__body {
     padding: 22px;
+    // 统一的最大高度 + 内部滚动：长表单在小屏上会把底部按钮顶出视口，
+    // 用户只能去缩浏览器窗口。收到这里滚，按钮永远够得着。
+    // 各弹窗不再各写各的 max-height（此前只有打印预览写了，别的都靠运气）。
+    // 240px 是「top(6vh) + header + footer + 上下留白」的保守估算。
+    max-height: calc(100vh - 240px);
+    overflow-y: auto;
   }
 
   .el-dialog__footer {

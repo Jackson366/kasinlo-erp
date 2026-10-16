@@ -456,7 +456,8 @@ onMounted(() => {
     <el-dialog
       v-model="dialogVisible"
       title="新增出入库单"
-      width="1000px"
+      width="1280px"
+      top="6vh"
       :close-on-click-modal="false"
       destroy-on-close
     >

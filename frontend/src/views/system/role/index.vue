@@ -337,7 +337,8 @@ onMounted(async () => {
     <el-dialog
       v-model="dialogVisible"
       :title="dialogMode === 'create' ? '新增角色' : '编辑角色'"
-      width="680px"
+      width="800px"
+      top="6vh"
       :close-on-click-modal="false"
       destroy-on-close
     >
@@ -412,7 +413,7 @@ onMounted(async () => {
     </el-dialog>
 
     <!-- 分配权限 -->
-    <el-dialog v-model="assignVisible" title="分配菜单权限" width="560px" destroy-on-close>
+    <el-dialog v-model="assignVisible" title="分配菜单权限" width="640px" top="6vh" destroy-on-close>
       <el-alert
         v-if="assignTarget"
         :title="`角色：${assignTarget.name}`"

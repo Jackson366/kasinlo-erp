@@ -5574,8 +5574,7 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "code",
-                "name",
-                "specs"
+                "name"
             ],
             "properties": {
                 "categoryId": {
@@ -5595,7 +5594,6 @@ const docTemplate = `{
                 },
                 "specs": {
                     "type": "array",
-                    "minItems": 1,
                     "items": {
                         "$ref": "#/definitions/inv.ProductSpecReq"
                     }
@@ -5658,10 +5656,6 @@ const docTemplate = `{
         },
         "inv.ProductSpecReq": {
             "type": "object",
-            "required": [
-                "spec",
-                "units"
-            ],
             "properties": {
                 "id": {
                     "type": "integer"
@@ -5679,7 +5673,6 @@ const docTemplate = `{
                 },
                 "units": {
                     "type": "array",
-                    "minItems": 1,
                     "items": {
                         "$ref": "#/definitions/inv.ProductUnitReq"
                     }
@@ -5721,10 +5714,6 @@ const docTemplate = `{
         },
         "inv.ProductUnitReq": {
             "type": "object",
-            "required": [
-                "rate",
-                "unit"
-            ],
             "properties": {
                 "isBase": {
                     "type": "boolean"
@@ -5734,7 +5723,8 @@ const docTemplate = `{
                     "minimum": 0
                 },
                 "rate": {
-                    "type": "number"
+                    "type": "number",
+                    "minimum": 0
                 },
                 "salePrice": {
                     "type": "number",

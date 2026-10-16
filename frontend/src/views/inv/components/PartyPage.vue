@@ -243,7 +243,8 @@ onMounted(load)
     <el-dialog
       v-model="dialogVisible"
       :title="dialogMode === 'create' ? createText : '编辑资料'"
-      width="600px"
+      width="800px"
+      top="6vh"
       :close-on-click-modal="false"
       destroy-on-close
       @open="onDialogOpen"

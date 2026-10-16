@@ -232,7 +232,8 @@ onMounted(load)
     <el-dialog
       v-model="dialogVisible"
       :title="activeTab === 'receivable' ? '登记收款' : '登记付款'"
-      width="520px"
+      width="640px"
+      top="6vh"
       :close-on-click-modal="false"
       destroy-on-close
     >

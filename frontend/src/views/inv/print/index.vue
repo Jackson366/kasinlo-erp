@@ -188,7 +188,8 @@ onMounted(load)
     <el-dialog
       v-model="dialogVisible"
       :title="isEdit ? '编辑打印模板' : '新增打印模板'"
-      width="520px"
+      width="640px"
+      top="6vh"
       :close-on-click-modal="false"
       destroy-on-close
     >

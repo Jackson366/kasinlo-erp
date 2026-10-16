@@ -581,7 +581,6 @@ definitions:
       specs:
         items:
           $ref: '#/definitions/inv.ProductSpecReq'
-        minItems: 1
         type: array
       status:
         enum:
@@ -591,7 +590,6 @@ definitions:
     required:
     - code
     - name
-    - specs
     type: object
   inv.ProductRow:
     properties:
@@ -639,14 +637,10 @@ definitions:
       units:
         items:
           $ref: '#/definitions/inv.ProductUnitReq'
-        minItems: 1
         type: array
       warnStock:
         minimum: 0
         type: number
-    required:
-    - spec
-    - units
     type: object
   inv.ProductSpecVO:
     properties:
@@ -675,6 +669,7 @@ definitions:
         minimum: 0
         type: number
       rate:
+        minimum: 0
         type: number
       salePrice:
         minimum: 0
@@ -687,9 +682,6 @@ definitions:
       unit:
         maxLength: 16
         type: string
-    required:
-    - rate
-    - unit
     type: object
   inv.ProductUnitVO:
     properties:

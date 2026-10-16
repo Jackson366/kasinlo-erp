@@ -485,7 +485,8 @@ onMounted(async () => {
     <el-dialog
       v-model="dialogVisible"
       :title="dialogMode === 'create' ? '新增用户' : '编辑用户'"
-      width="620px"
+      width="800px"
+      top="6vh"
       :close-on-click-modal="false"
       destroy-on-close
     >

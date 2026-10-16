@@ -46,7 +46,7 @@ async function submitResetPassword(): Promise<void> {
 </script>
 
 <template>
-  <el-dialog v-model="visible" title="重置密码" width="420px" destroy-on-close>
+  <el-dialog v-model="visible" title="重置密码" width="640px" top="6vh" destroy-on-close>
     <el-alert
       v-if="target"
       :title="`正在为用户「${target.username}」重置密码`"

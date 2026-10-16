@@ -111,7 +111,8 @@ async function downloadTemplate(): Promise<void> {
   <el-dialog
     v-model="visible"
     title="导入用户"
-    width="860px"
+    width="1280px"
+    top="6vh"
     :close-on-click-modal="false"
     destroy-on-close
     @closed="resetImport"

@@ -238,7 +238,8 @@ onMounted(loadTree)
     <el-dialog
       v-model="dialogVisible"
       :title="dialogMode === 'create' ? '新增部门' : '编辑部门'"
-      width="560px"
+      width="640px"
+      top="6vh"
       :close-on-click-modal="false"
       destroy-on-close
     >

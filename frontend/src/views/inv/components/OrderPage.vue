@@ -538,8 +538,8 @@ onMounted(() => {
     <el-dialog
       v-model="dialogVisible"
       :title="dialogMode === 'create' ? createText : '编辑单据'"
-      width="1180px"
-      top="5vh"
+      width="1280px"
+      top="6vh"
       :close-on-click-modal="false"
       destroy-on-close
     >
@@ -669,7 +669,7 @@ onMounted(() => {
     </el-dialog>
 
     <!-- 详情 -->
-    <el-dialog v-model="detailVisible" title="单据详情" width="720px">
+    <el-dialog v-model="detailVisible" title="单据详情" width="800px" top="6vh">
       <template v-if="detail">
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="单号">{{ detail.row.orderNo }}</el-descriptions-item>

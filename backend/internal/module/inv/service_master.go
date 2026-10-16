@@ -857,12 +857,98 @@ func (s *Service) productCodeFree(code string, excludeID int64) error {
 	return nil
 }
 
-// validateSpecs 校验商品的规格与单位结构，并归一化状态与排序。
+// 规格与单位没填时的兜底值。
 //
-// 两条硬约束：
-//  1. 规格名在同一商品下不能重复 —— 两行「φ20」会把库存劈成两半，各自都不预警；
-//  2. 每个规格必须有且只有一个基本单位，且基本单位的换算率是 1 ——
-//     「按哪个单位记账」必须唯一且自洽，否则库存的数没有意义。
+// 为什么是「自动补」而不是「允许为空」：规格在业务上是库存的归属层、
+// 单位是单据折算的基准 —— 真的允许空，商品会因为「没有规格」而进不了
+// 开单的商品下拉（ProductPick 只给有规格的商品），等于建了个查不到、
+// 开不了单的僵尸档案。所以做法是**用户不用想，系统自己填**。
+const (
+	defaultSpecName = "默认"
+	defaultUnitName = "个"
+)
+
+func defaultUnitReq() ProductUnitReq {
+	return ProductUnitReq{Unit: defaultUnitName, Rate: 1, IsBase: true}
+}
+
+// normalizeSpecs 把用户没填的部分补成结构自洽的默认值。
+//
+// 这个函数让「规格 / 单位」从必填项降级为可选项：录一个「办公用品-签字笔」时
+// 不必先想清楚规格和计量单位，系统会补上「默认 / 个」。
+// 归一化之后 validateSpecs 只需面对干净数据、只管真正的错误（重名）。
+//
+// 四类兜底：
+//  1. 完全没有规格 → 补一条「默认」规格 + 基本单位「个」；
+//  2. 规格名为空 → 「默认」；
+//  3. 规格下没有单位 / 单位为空白 / 换算率 <= 0 → 补「个」、rate 取 1；
+//  4. 基本单位不是「恰一个」→ 没指定就把第一个提为基本单位，
+//     指定了多个只留第一个（基本单位必须唯一，否则库存没有计数基准）。
+func normalizeSpecs(reqs []ProductSpecReq) []ProductSpecReq {
+	if len(reqs) == 0 {
+		return []ProductSpecReq{{
+			Spec:  defaultSpecName,
+			Units: []ProductUnitReq{defaultUnitReq()},
+		}}
+	}
+	out := make([]ProductSpecReq, 0, len(reqs))
+	for _, sp := range reqs {
+		name := strings.TrimSpace(sp.Spec)
+		if name == "" {
+			name = defaultSpecName
+		}
+		units := sp.Units
+		if len(units) == 0 {
+			units = []ProductUnitReq{defaultUnitReq()}
+		}
+		fixed := make([]ProductUnitReq, 0, len(units))
+		for _, u := range units {
+			un := strings.TrimSpace(u.Unit)
+			if un == "" {
+				un = defaultUnitName
+			}
+			rate := u.Rate
+			if rate <= 0 {
+				rate = 1
+			}
+			fixed = append(fixed, ProductUnitReq{
+				Unit: un, Rate: rate, IsBase: u.IsBase,
+				PurchasePrice: u.PurchasePrice, SalePrice: u.SalePrice, Status: u.Status,
+			})
+		}
+		baseIdx := -1
+		for i := range fixed {
+			if fixed[i].IsBase {
+				baseIdx = i
+				break
+			}
+		}
+		if baseIdx < 0 {
+			baseIdx = 0
+		}
+		for i := range fixed {
+			fixed[i].IsBase = i == baseIdx
+			// 基本单位的换算率恒为 1（「1 个 = 1 个」），顺手钉死，
+			// 免得留下「基本单位 rate = 3」这种自相矛盾的数据
+			if i == baseIdx {
+				fixed[i].Rate = 1
+			}
+		}
+		out = append(out, ProductSpecReq{
+			ID: sp.ID, Spec: name, WarnStock: sp.WarnStock, Status: sp.Status, Units: fixed,
+		})
+	}
+	return out
+}
+
+// validateSpecs 校验归一化之后的规格与单位，只负责**真正的错误**。
+//
+// 唯一的硬约束是「不能重名」：
+//   - 两行「φ20」会把库存劈成两半，各自都不预警；
+//   - 同一规格下两个「箱」会让单据选单位时不知道看哪一行的价格。
+//
+// 缺规格、缺单位、缺基本单位、基本单位换算率不是 1 —— 这些都由
+// normalizeSpecs 兜底，不在这里报错（它们不是用户的错，是系统该补的）。
 func validateSpecs(reqs []ProductSpecReq) error {
 	seenSpec := map[string]bool{}
 	for _, sp := range reqs {
@@ -872,7 +958,6 @@ func validateSpecs(reqs []ProductSpecReq) error {
 		}
 		seenSpec[spec] = true
 
-		baseCount := 0
 		seenUnit := map[string]bool{}
 		for _, u := range sp.Units {
 			unit := strings.TrimSpace(u.Unit)
@@ -880,17 +965,6 @@ func validateSpecs(reqs []ProductSpecReq) error {
 				return errcode.Newf(errcode.ErrBadRequest, "规格「%s」下的单位「%s」重复", spec, unit)
 			}
 			seenUnit[unit] = true
-			if u.IsBase {
-				baseCount++
-				if u.Rate != 1 {
-					return errcode.Newf(errcode.ErrBadRequest,
-						"基本单位「%s」的换算率必须为 1（当前 %g）", unit, u.Rate)
-				}
-			}
-		}
-		if baseCount != 1 {
-			return errcode.Newf(errcode.ErrBadRequest,
-				"规格「%s」必须指定且只指定一个基本单位（当前 %d 个）", spec, baseCount)
 		}
 	}
 	return nil
@@ -1068,6 +1142,9 @@ func (s *Service) specInUse(tx *gorm.DB, specID int64) (bool, error) {
 // 它由出入库单据驱动，建档时一律从 0 起，避免「档案上的库存」与
 // 「单据算出来的库存」两套账。
 func (s *Service) ProductCreate(req ProductReq) (int64, error) {
+	// 先归一化再校验：规格 / 单位是**可选项**，缺的由 normalizeSpecs 补齐，
+	// validateSpecs 只处理补完之后仍然存在的真错误（重名）
+	req.Specs = normalizeSpecs(req.Specs)
 	if err := validateSpecs(req.Specs); err != nil {
 		return 0, err
 	}
@@ -1099,6 +1176,7 @@ func (s *Service) ProductCreate(req ProductReq) (int64, error) {
 
 // ProductUpdate 修改商品。规格与单位整体覆盖，库存字段不受影响。
 func (s *Service) ProductUpdate(id int64, req ProductReq) error {
+	req.Specs = normalizeSpecs(req.Specs)
 	if err := validateSpecs(req.Specs); err != nil {
 		return err
 	}

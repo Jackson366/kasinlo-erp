@@ -95,7 +95,12 @@ const dialog = useCrudDialog<InvProductPayload>({
 })
 const { visible: dialogVisible, mode: dialogMode, submitting, editingId } = dialog
 
-/** 新建一个空规格：默认带一条基本单位，「一个规格至少一个单位」是硬约束 */
+/**
+ * 新建一个空规格：默认带一条基本单位。
+ *
+ * 规格名与单位名都可以**留空** —— 保存时由后端补成「默认 / 个」。
+ * 表单里预置一行是为了让想填的人有地方填，而不是因为它是必填项。
+ */
 function blankSpec(): InvProductSpecPayload {
   return {
     spec: '',
@@ -148,7 +153,7 @@ function addSpec(): void {
 
 function removeSpec(index: number): void {
   if (form.specs.length <= 1) {
-    ElMessage.warning('至少保留一个规格')
+    ElMessage.warning('至少留一个规格（留空不填也可以，系统会按「默认」处理）')
     return
   }
   const spec = form.specs[index]
@@ -172,7 +177,7 @@ function addUnit(spec: InvProductSpecPayload): void {
 
 function removeUnit(spec: InvProductSpecPayload, index: number): void {
   if (spec.units.length <= 1) {
-    ElMessage.warning('每个规格至少保留一个计量单位')
+    ElMessage.warning('至少留一个计量单位（留空不填也可以，系统会按「个」处理）')
     return
   }
   const removed = spec.units[index]
@@ -213,45 +218,32 @@ function rateHint(spec: InvProductSpecPayload, index: number): string {
 
 // ---------------- 提交校验 ----------------
 // 逐字段必填交给 el-form-item 的嵌套 prop（错误信息贴着控件显示）；
-// 这里只管**跨行约束**：唯一基本单位、规格名/单位名不重复、基本单位换算率恒为 1。
-// 空值刻意不在这里报 —— 否则同一处会同时出现「第 1 个规格：请填写规格名称」
-// 与「请填写规格名称」两条，看着像重复提交了。
+// 这里只管**真正的错误**：规格重名、同一规格下单位重名。
+//
+// 规格名 / 单位名 / 换算率 / 基本单位都**不再是必填**：留空由后端
+// normalizeSpecs 兜底成「默认」「个」「1」，并把第一个单位提为基本单位。
+// 理由是这些约束对录一个「办公用品-签字笔」的人来说纯属负担 ——
+// 真正的约束（库存要有归属、单据要能折算）由服务端守住，
+// 不应该转嫁成用户面前的必填项。
+//
+// 唯一不能让步的是重名：两行「φ20」会把库存劈成两半、各自都不预警；
+// 同一规格下两个「箱」会让单据选单位时不知道看哪一行的价格。
 function validateSpecs(_rule: unknown, _value: unknown, callback: (e?: Error) => void): void {
   const errs: string[] = []
-  if (!form.specs.length) errs.push('至少需要一个规格')
 
   const seenSpec = new Set<string>()
   form.specs.forEach((s, si) => {
     const label = `第 ${si + 1} 个规格`
-    const specName = s.spec.trim()
-    if (specName) {
-      if (seenSpec.has(specName)) errs.push(`规格「${specName}」重复了`)
-      else seenSpec.add(specName)
-    }
-
-    if (!s.units.length) {
-      errs.push(`${label}：至少需要一个计量单位`)
-      return
-    }
-    const baseCount = s.units.filter((u) => u.isBase).length
-    if (baseCount === 0) errs.push(`${label}：请指定一个基本单位`)
-    else if (baseCount > 1) errs.push(`${label}：只能有一个基本单位`)
+    // 按「补完之后的名字」判重：两个都留空的规格，后端都会补成「默认」，同属重名
+    const specName = s.spec.trim() || '默认'
+    if (seenSpec.has(specName)) errs.push(`规格「${specName}」重复了`)
+    else seenSpec.add(specName)
 
     const seenUnit = new Set<string>()
     s.units.forEach((u) => {
-      const name = u.unit.trim()
-      if (name) {
-        if (seenUnit.has(name)) errs.push(`${label}：单位「${name}」重复了`)
-        else seenUnit.add(name)
-      }
-      if (!u.rate || u.rate <= 0) {
-        errs.push(`${label}：单位「${name || '?'}」的换算率必须大于 0`)
-      }
-      // 基本单位的换算率由 setBaseUnit 钉成 1，走不到这里；
-      // 留着是为了兜住「手工改过 rate 又没重新点基本单位」的情况
-      if (u.isBase && Math.abs(u.rate - 1) > 1e-6) {
-        errs.push(`${label}：基本单位「${name}」的换算率必须是 1`)
-      }
+      const name = u.unit.trim() || '个'
+      if (seenUnit.has(name)) errs.push(`${label}：单位「${name}」重复了`)
+      else seenUnit.add(name)
     })
   })
 
@@ -820,7 +812,8 @@ onMounted(() => {
     <el-dialog
       v-model="catDialogVisible"
       :title="catEditingId ? '编辑分类' : '新增分类'"
-      width="480px"
+      width="640px"
+      top="6vh"
       :close-on-click-modal="false"
       destroy-on-close
     >
@@ -857,8 +850,8 @@ onMounted(() => {
     <el-dialog
       v-model="dialogVisible"
       :title="dialogMode === 'create' ? '新增商品' : '编辑商品'"
-      width="960px"
-      top="5vh"
+      width="1100px"
+      top="6vh"
       :close-on-click-modal="false"
       destroy-on-close
       @open="onDialogOpen"
@@ -933,33 +926,31 @@ onMounted(() => {
         </el-form-item>
 
         <el-divider content-position="left">
-          <span class="divider-title">规格与计量单位</span>
+          <span class="divider-title">规格与计量单位（可留空）</span>
         </el-divider>
         <p class="spec-tip">
-          同一商品可维护多个规格，每个规格下可维护多个计量单位；库存按<strong>基本单位</strong>计数，
-          出入库时按所选单位的换算率折算。
+          简单商品<strong>留空即可</strong>，保存时自动按「默认 / 个」处理。
+          需要区分时才填：一个商品可维护多个规格，每个规格下可维护多个计量单位；
+          库存按<strong>基本单位</strong>计数，出入库时按所选单位的换算率折算。
         </p>
 
-        <!-- 跨行约束（唯一基本单位、规格名/单位名不重复、基本单位换算率恒为 1）
-             由 validateSpecs 一次判完。它挂在 specs 这个「整数组」上，必须有一个
-             绑到 prop="specs" 的 form-item 才会被 form.validate() 调到 ——
-             否则 rules.specs 就是一段死配置，空规格能直接提交出去。
-             逐字段必填仍贴着各自的控件显示，这里只承载「整组」的结论。 -->
+        <!-- 跨行约束只剩「重名」一项，由 validateSpecs 判完。它挂在 specs 这个
+             「整数组」上，必须有一个绑到 prop="specs" 的 form-item 才会被
+             form.validate() 调到 —— 否则 rules.specs 就是一段死配置。 -->
         <el-form-item prop="specs" class="spec-errors" label-width="0" />
 
-        <!-- 规格列表：跨行约束（唯一基本单位、名称不重复）由 validateSpecs 一次判完，
-             这里只按嵌套 prop 做逐字段必填，错误信息贴着控件显示 -->
+        <!-- 规格列表：规格名 / 单位名 / 换算率都不再是必填，
+             错误信息只在「重名」时从整组校验里给出 -->
         <div class="spec-list">
           <div v-for="(spec, si) in form.specs" :key="si" class="spec-card">
             <div class="spec-card__head">
               <span class="spec-card__index">规格 {{ si + 1 }}</span>
               <el-form-item
                 :prop="`specs.${si}.spec`"
-                :rules="[{ required: true, message: '请填写规格名称', trigger: 'blur' }]"
                 label="规格"
                 class="spec-card__field"
               >
-                <el-input v-model="spec.spec" placeholder="如 φ20 / Q235B 6mm / 500ml" />
+                <el-input v-model="spec.spec" placeholder="选填，如 φ20 / 500ml（留空按「默认」）" />
               </el-form-item>
               <el-form-item
                 :prop="`specs.${si}.warnStock`"
@@ -1002,10 +993,9 @@ onMounted(() => {
                 <div class="unit-col unit-col--unit">
                   <el-form-item
                     :prop="`specs.${si}.units.${ui}.unit`"
-                    :rules="[{ required: true, message: '请填写单位', trigger: 'blur' }]"
                     class="unit-form-item"
                   >
-                    <el-input v-model="u.unit" placeholder="根 / 米 / 箱" />
+                    <el-input v-model="u.unit" placeholder="选填，如 根 / 箱（留空按「个」）" />
                   </el-form-item>
                 </div>
                 <div class="unit-col unit-col--rate">

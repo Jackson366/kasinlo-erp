@@ -72,7 +72,7 @@ defineExpose({ open })
   <el-dialog
     v-model="visible"
     title="打印出入库单"
-    width="900px"
+    width="1280px"
     top="4vh"
     :close-on-click-modal="false"
     destroy-on-close
