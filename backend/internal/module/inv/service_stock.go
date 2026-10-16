@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"nova-erp/internal/authz"
 	"nova-erp/internal/model"
 	"nova-erp/internal/pkg/errcode"
 	"nova-erp/internal/pkg/page"
@@ -37,8 +38,9 @@ func (s *Service) stockStats(ids []int64) (map[int64][2]float64, error) {
 }
 
 // StockOrderList 出入库单据列表。direction 为空表示全部。
-func (s *Service) StockOrderList(q page.Query, direction string) ([]StockOrderRow, int64, error) {
+func (s *Service) StockOrderList(q page.Query, direction string, actor *authz.Identity) ([]StockOrderRow, int64, error) {
 	tx := s.db.Model(&model.InvStockOrder{}).Where("status = 1")
+	tx = s.applyCreator(tx, actor)
 	if direction == model.InvStockIn || direction == model.InvStockOut {
 		tx = tx.Where("direction = ?", direction)
 	}
@@ -74,7 +76,7 @@ func (s *Service) StockOrderList(q page.Query, direction string) ([]StockOrderRo
 }
 
 // StockOrderCreate 新增出入库单据并即时过账（调整库存）。
-func (s *Service) StockOrderCreate(req StockOrderReq, actorID int64) (int64, error) {
+func (s *Service) StockOrderCreate(req StockOrderReq, actor *authz.Identity) (int64, error) {
 	orderDate, err := parseDate(req.OrderDate)
 	if err != nil {
 		return 0, err
@@ -103,7 +105,7 @@ func (s *Service) StockOrderCreate(req StockOrderReq, actorID int64) (int64, err
 	}
 	order := model.InvStockOrder{
 		OrderNo: no, Direction: req.Direction, SourceType: sourceType,
-		OrderDate: orderDate, Status: 1, Remark: req.Remark, CreatedBy: actorID,
+		OrderDate: orderDate, Status: 1, Remark: req.Remark, CreatedBy: actorUID(actor),
 	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&order).Error; err != nil {
@@ -124,13 +126,16 @@ func (s *Service) StockOrderCreate(req StockOrderReq, actorID int64) (int64, err
 }
 
 // StockOrderVoid 作废出入库单据并回滚库存。
-func (s *Service) StockOrderVoid(id int64) error {
+func (s *Service) StockOrderVoid(id int64, actor *authz.Identity) error {
 	var o model.InvStockOrder
 	if err := s.db.First(&o, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errcode.New(errcode.ErrNotFound, "单据不存在")
 		}
 		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if err := s.ensureCreatorVisible(o.CreatedBy, actor); err != nil {
+		return err
 	}
 	if o.Status != 1 {
 		return errcode.New(errcode.ErrConflict, "单据已作废")
@@ -175,9 +180,9 @@ func stockRefs(items []StockItemReq) []specUnitRef {
 
 // StockOrderDetail 出入库单打印详情。
 // 已作废单据不可打印——单据已回滚库存，再打出来就是一张与实物对不上的凭证。
-func (s *Service) StockOrderDetail(id int64) (*StockOrderDetail, error) {
+func (s *Service) StockOrderDetail(id int64, actor *authz.Identity) (*StockOrderDetail, error) {
 	var o model.InvStockOrder
-	if err := s.db.First(&o, id).Error; err != nil {
+	if err := s.applyCreator(s.db.Where("id = ?", id), actor).First(&o).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errcode.New(errcode.ErrNotFound, "出入库单不存在")
 		}

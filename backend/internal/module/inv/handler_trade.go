@@ -3,6 +3,7 @@ package inv
 import (
 	"github.com/gin-gonic/gin"
 
+	"nova-erp/internal/middleware"
 	"nova-erp/internal/pkg/bind"
 	"nova-erp/internal/pkg/page"
 	"nova-erp/internal/pkg/response"
@@ -34,7 +35,7 @@ func (h *Handler) OrderList(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	list, total, err := h.svc.OrderList(bizType, q, status)
+	list, total, err := h.svc.OrderList(bizType, q, status, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -56,7 +57,7 @@ func (h *Handler) OrderDetail(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	detail, err := h.svc.OrderDetail(id)
+	detail, err := h.svc.OrderDetail(id, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -90,7 +91,7 @@ func (h *Handler) OrderCreate(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "新增单据")
-	id, err := h.svc.OrderCreate(req, actorID(c))
+	id, err := h.svc.OrderCreate(req, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -124,7 +125,7 @@ func (h *Handler) OrderUpdate(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "修改单据")
-	if err := h.svc.OrderUpdate(id, req); err != nil {
+	if err := h.svc.OrderUpdate(id, req, middleware.CurrentIdentity(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -145,7 +146,7 @@ func (h *Handler) OrderDelete(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	detail, err := h.svc.OrderDetail(id)
+	detail, err := h.svc.OrderDetail(id, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -155,7 +156,7 @@ func (h *Handler) OrderDelete(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "删除单据")
-	if err := h.svc.OrderDelete(id); err != nil {
+	if err := h.svc.OrderDelete(id, middleware.CurrentIdentity(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -183,7 +184,7 @@ func (h *Handler) OrderChangeStatus(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	detail, err := h.svc.OrderDetail(id)
+	detail, err := h.svc.OrderDetail(id, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -193,7 +194,7 @@ func (h *Handler) OrderChangeStatus(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "流转单据状态")
-	if err := h.svc.OrderChangeStatus(id, req.Status, actorID(c)); err != nil {
+	if err := h.svc.OrderChangeStatus(id, req.Status, middleware.CurrentIdentity(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}

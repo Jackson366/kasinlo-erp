@@ -129,6 +129,52 @@ func (s *Scope) LogUserCond() (string, []any, bool) {
 	return "user_id IN (SELECT id FROM sys_users WHERE dept_id IN ?)", []any{s.DeptIDs}, true
 }
 
+// CreatorCond 返回作用于「带 created_by 列的表」（进销存单据）的范围片段。
+//
+// 与 LogUserCond 同构，只是列名是 created_by。进销存单据按「谁创建」收窄：
+// 本部门 = 创建人所在部门，仅本人 = 创建人就是自己。
+//
+// 注意：只对**单据**（采购/销售/出入库/结算）套这个条件。商品 / 分类 / 客户 /
+// 供应商是**共享主数据**，没有「创建人」语义 —— 隔离了会导致开单时选不到
+// 别人维护的商品与客户，业务直接断掉。它们仍由权限码控制谁能改，只是不看数据范围。
+func (s *Scope) CreatorCond(alias string) (string, []any, bool) {
+	if s.Unrestricted {
+		return "", nil, false
+	}
+	col := "created_by"
+	if alias != "" {
+		col = alias + ".created_by"
+	}
+	if s.SelfOnly {
+		return col + " = ?", []any{s.UserID}, true
+	}
+	return col + " IN (SELECT id FROM sys_users WHERE dept_id IN ?)", []any{s.DeptIDs}, true
+}
+
+// CreatorVisible 校验某条单据的创建人是否落在数据范围内。
+//
+// 用于**写路径**（改/删/审核/作废/结算）与需要精确判断的单条读：越界按
+// 「不存在」处理（404），避免用返回信息探测其他部门有哪些单据。
+func (s *Scope) CreatorVisible(creatorID int64) (bool, error) {
+	if s.Unrestricted {
+		return true, nil
+	}
+	if s.SelfOnly {
+		return creatorID == s.UserID, nil
+	}
+	var deptID int64
+	if err := database.DB().Table("sys_users").
+		Select("dept_id").Where("id = ?", creatorID).Scan(&deptID).Error; err != nil {
+		return false, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	for _, d := range s.DeptIDs {
+		if d == deptID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // ApplyUser 把范围条件叠在 sys_users 查询上。
 func (s *Scope) ApplyUser(tx *gorm.DB) *gorm.DB {
 	cond, args, ok := s.UserCond("")

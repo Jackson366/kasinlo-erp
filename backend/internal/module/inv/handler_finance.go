@@ -3,6 +3,7 @@ package inv
 import (
 	"github.com/gin-gonic/gin"
 
+	"nova-erp/internal/middleware"
 	"nova-erp/internal/pkg/bind"
 	"nova-erp/internal/pkg/page"
 	"nova-erp/internal/pkg/response"
@@ -37,9 +38,9 @@ func (h *Handler) financeList(c *gin.Context, receivable bool) {
 		err     error
 	)
 	if receivable {
-		rows, summary, total, err = h.svc.Receivables(q, settle)
+		rows, summary, total, err = h.svc.Receivables(q, settle, middleware.CurrentIdentity(c))
 	} else {
-		rows, summary, total, err = h.svc.Payables(q, settle)
+		rows, summary, total, err = h.svc.Payables(q, settle, middleware.CurrentIdentity(c))
 	}
 	if err != nil {
 		response.Fail(c, err)
@@ -71,7 +72,7 @@ func (h *Handler) Settle(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "登记收付款")
-	if err := h.svc.Settle(req, actorID(c)); err != nil {
+	if err := h.svc.Settle(req, middleware.CurrentIdentity(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}

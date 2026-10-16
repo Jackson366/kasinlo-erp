@@ -2,7 +2,7 @@
  * Nova Admin 后端接口自测脚本（零依赖，Node 18+ 内置 fetch）
  * 用法：node scripts/api-smoke.mjs [baseUrl]
  */
-const BASE = process.argv[2] || 'http://127.0.0.1:8080'
+const BASE = process.argv[2] || 'http://127.0.0.1:6802'
 const API = `${BASE}/api/v1`
 
 // 同步落盘，便于在进程被外部终止时仍能查到执行进度
@@ -1421,6 +1421,68 @@ async function main() {
   )
   const scopeOn = await request('PUT', '/system/roles/3', { token, body: { ...scopePayload, dataScope: 1 } })
   ok('数据范围可还原为「全部」', scopeOff.json?.code === 0 && scopeOn.json?.code === 0, JSON.stringify(scopeOn.json))
+
+  section('进销存数据范围隔离')
+  // 进销存单据按「谁创建」收窄：仅本人的用户看不到别人开的单，
+  // 概览 / 报表 / 应收应付同样只统计范围内的单据。
+  // 商品 / 客户是共享主数据，不套范围（隔离了会开不了单）。
+  const invScopeTs = Date.now()
+  const invScopeRole = await request('POST', '/system/roles', {
+    token,
+    body: {
+      name: '单据范围自测', code: `scope_inv_${invScopeTs}`, sort: 9, dataScope: 4,
+      menuIds: [
+        await menuId(token, 'inv:overview:view'),
+        await menuId(token, 'inv:sales:list'),
+        await menuId(token, 'inv:report:view'),
+      ],
+    },
+  })
+  const invScopeRoleId = invScopeRole.json?.data?.id
+  const invScopeUser = await request('POST', '/system/users', {
+    token,
+    body: {
+      username: `scope_inv_u_${invScopeTs}`, password: 'scope123456', nickname: '单据范围自测',
+      deptId: 2, roleIds: [invScopeRoleId],
+    },
+  })
+  const invScopeUserId = invScopeUser.json?.data?.id
+  const invScopeLogin = await request('POST', '/auth/login', {
+    body: { username: `scope_inv_u_${invScopeTs}`, password: 'scope123456' },
+  })
+  const invScopeToken = invScopeLogin.json?.data?.accessToken
+
+  const adminOrders = await request('GET', '/inv/orders?bizType=sales&page=1&pageSize=10', { token })
+  const scopeOrders = await request('GET', '/inv/orders?bizType=sales&page=1&pageSize=10', { token: invScopeToken })
+  ok(
+    '「仅本人」用户看不到别人的销售单',
+    (adminOrders.json?.data?.total ?? 0) > 0 && (scopeOrders.json?.data?.total ?? 0) === 0,
+    `admin=${adminOrders.json?.data?.total} scope=${scopeOrders.json?.data?.total}`,
+  )
+  const invScopeOv = await request('GET', '/inv/overview', { token: invScopeToken })
+  ok(
+    '概览按数据范围收窄（待处理单 = 0）',
+    invScopeOv.json?.data?.pendingOrders === 0,
+    `pending=${invScopeOv.json?.data?.pendingOrders} receivable=${invScopeOv.json?.data?.receivableTotal}`,
+  )
+  const invScopeSummary = await request('GET', '/inv/report/summary?range=year', { token: invScopeToken })
+  ok(
+    '报表汇总按数据范围收窄（收入 = 0）',
+    invScopeSummary.json?.data?.salesAmount === 0,
+    `sales=${invScopeSummary.json?.data?.salesAmount}`,
+  )
+  const adminFirstOrder = adminOrders.json?.data?.list?.[0]
+  if (adminFirstOrder) {
+    const invScopeDetail = await request('GET', `/inv/orders/${adminFirstOrder.id}`, { token: invScopeToken })
+    ok(
+      '越界查看单据详情按「不存在」处理(404)',
+      invScopeDetail.status === 404 && invScopeDetail.json?.code === 40400,
+      `status=${invScopeDetail.status}`,
+    )
+  }
+  await request('DELETE', `/system/users/${invScopeUserId}`, { token })
+  await request('DELETE', `/system/roles/${invScopeRoleId}`, { token })
+  ok('清理单据范围自测数据', true)
 
   section('令牌吊销（本轮加固）')
   // 无状态 JWT 靠 token_epoch 实现吊销：改密码后旧令牌（含刷新令牌）必须立即失效

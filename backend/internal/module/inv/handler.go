@@ -19,9 +19,6 @@ type Handler struct {
 // NewHandler 创建进销存处理器。
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
-// actorID 当前操作人 ID，用于单据落库留痕。
-func actorID(c *gin.Context) int64 { return middleware.CurrentUserID(c) }
-
 // bizTypeOf 解析并校验单据类型参数。
 //
 // 采购与销售共用 /inv/orders，仅凭 URL 无法判断业务归属。若不在入口把它钉死成

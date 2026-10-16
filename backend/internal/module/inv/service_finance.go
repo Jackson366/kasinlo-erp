@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"nova-erp/internal/authz"
 	"nova-erp/internal/database"
 	"nova-erp/internal/model"
 	"nova-erp/internal/pkg/errcode"
@@ -37,7 +38,7 @@ func isOverdue(outstanding float64, due *time.Time, today time.Time) bool {
 
 // financeList 应收 / 应付明细。bizType 取 sales（应收）或 purchase（应付）。
 // 口径：只有「已审核」的单据才形成应收应付（货物已交付 / 已入库）。
-func (s *Service) financeList(bizType string, q page.Query, settle string) ([]FinanceRow, FinanceSummary, int64, error) {
+func (s *Service) financeList(bizType string, q page.Query, settle string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
 	now := time.Now().In(database.Location())
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, database.Location())
 
@@ -47,7 +48,7 @@ func (s *Service) financeList(bizType string, q page.Query, settle string) ([]Fi
 		Settled float64
 	}
 	var sr sumRow
-	if err := s.db.Model(&model.InvOrder{}).
+	if err := s.applyCreator(s.db.Model(&model.InvOrder{}), actor).
 		Select("COALESCE(SUM(total_amount),0) AS total, COALESCE(SUM(settled_amount),0) AS settled").
 		Where("biz_type = ? AND status = ?", bizType, model.InvStatusDone).Scan(&sr).Error; err != nil {
 		return nil, summary, 0, errcode.Wrap(errcode.ErrDatabase, err)
@@ -56,7 +57,7 @@ func (s *Service) financeList(bizType string, q page.Query, settle string) ([]Fi
 	summary.Settled = round2(sr.Settled)
 	summary.Outstanding = round2(sr.Total - sr.Settled)
 
-	if err := s.db.Model(&model.InvOrder{}).
+	if err := s.applyCreator(s.db.Model(&model.InvOrder{}), actor).
 		Select("COALESCE(SUM(total_amount - settled_amount),0)").
 		Where("biz_type = ? AND status = ? AND total_amount - settled_amount > 0 AND "+dueDateOverdueCond+" AND due_date < ?",
 			bizType, model.InvStatusDone, today).Scan(&summary.Overdue).Error; err != nil {
@@ -66,6 +67,7 @@ func (s *Service) financeList(bizType string, q page.Query, settle string) ([]Fi
 
 	tx := s.db.Model(&model.InvOrder{}).
 		Where("biz_type = ? AND status = ?", bizType, model.InvStatusDone)
+	tx = s.applyCreator(tx, actor)
 	if q.Keyword != "" {
 		kw := likeKW(q.Keyword)
 		tx = tx.Where(likeExpr("order_no")+" OR "+likeExpr("party_name"), kw, kw)
@@ -103,23 +105,26 @@ func (s *Service) financeList(bizType string, q page.Query, settle string) ([]Fi
 }
 
 // Receivables 应收明细。
-func (s *Service) Receivables(q page.Query, settle string) ([]FinanceRow, FinanceSummary, int64, error) {
-	return s.financeList(model.InvBizSales, q, settle)
+func (s *Service) Receivables(q page.Query, settle string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
+	return s.financeList(model.InvBizSales, q, settle, actor)
 }
 
 // Payables 应付明细。
-func (s *Service) Payables(q page.Query, settle string) ([]FinanceRow, FinanceSummary, int64, error) {
-	return s.financeList(model.InvBizPurchase, q, settle)
+func (s *Service) Payables(q page.Query, settle string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
+	return s.financeList(model.InvBizPurchase, q, settle, actor)
 }
 
 // Settle 登记收付款：写入结算记录并累加单据已结算金额（同一事务）。
-func (s *Service) Settle(req SettleReq, actorID int64) error {
+func (s *Service) Settle(req SettleReq, actor *authz.Identity) error {
 	var o model.InvOrder
 	if err := s.db.First(&o, req.OrderID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errcode.New(errcode.ErrNotFound, "单据不存在")
 		}
 		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if err := s.ensureCreatorVisible(o.CreatedBy, actor); err != nil {
+		return err
 	}
 	if o.Status != model.InvStatusDone {
 		return errcode.New(errcode.ErrConflict, "仅已审核单据可登记收付款")
@@ -150,7 +155,7 @@ func (s *Service) Settle(req SettleReq, actorID int64) error {
 		rec := model.InvSettlement{
 			OrderID: o.ID, BizType: o.BizType, PartyID: o.PartyID,
 			Amount: amount, Method: method, SettledAt: settledAt,
-			Remark: req.Remark, CreatedBy: actorID,
+			Remark: req.Remark, CreatedBy: actorUID(actor),
 		}
 		if err := tx.Create(&rec).Error; err != nil {
 			return err

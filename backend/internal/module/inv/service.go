@@ -10,6 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"nova-erp/internal/authz"
 	"nova-erp/internal/database"
 	"nova-erp/internal/model"
 	"nova-erp/internal/pkg/dberr"
@@ -23,6 +24,51 @@ type Service struct {
 
 // NewService 创建进销存服务。
 func NewService() *Service { return &Service{db: database.DB()} }
+
+// ---------------- 数据范围 ----------------
+//
+// 进销存数据范围只作用于**单据**（采购/销售/出入库/结算）及其派生的报表、
+// 概览。商品 / 分类 / 客户 / 供应商是**共享主数据**，不套范围 ——
+// 它们没有「创建人」语义，隔离了会导致开单时选不到别人维护的商品与客户。
+//
+// 口径沿用 authz.Scope：全部 / 本部门（及以下）/ 仅本人，
+// 越界一律按「不存在」处理（404），避免用返回信息探测别人的数据。
+
+// applyCreator 把数据范围条件叠在进销存单据查询上（读列表 / 详情）。
+// actor 为 nil 时不过滤 —— 调用方应始终传入当前身份，nil 只在测试里出现。
+func (s *Service) applyCreator(tx *gorm.DB, actor *authz.Identity) *gorm.DB {
+	return s.applyCreatorAs(tx, actor, "")
+}
+
+// applyCreatorAs 同上，但作用于带表别名（如 inv_orders AS o）的 join 查询。
+func (s *Service) applyCreatorAs(tx *gorm.DB, actor *authz.Identity, alias string) *gorm.DB {
+	cond, args, ok := authz.ResolveScope(actor).CreatorCond(alias)
+	if !ok {
+		return tx
+	}
+	return tx.Where(cond, args...)
+}
+
+// ensureCreatorVisible 校验某条单据的创建人是否在数据范围内；越界按不存在（404）。
+// 用于写路径（改/删/审核/作废/结算）与需要精确判断的单条读。
+func (s *Service) ensureCreatorVisible(creatorID int64, actor *authz.Identity) error {
+	ok, err := authz.ResolveScope(actor).CreatorVisible(creatorID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errcode.New(errcode.ErrNotFound, "单据不存在")
+	}
+	return nil
+}
+
+// actorUID 从身份里取落库留痕用的用户 ID；身份为空时退 0（不落制单人）。
+func actorUID(actor *authz.Identity) int64 {
+	if actor == nil {
+		return 0
+	}
+	return actor.UserID
+}
 
 // saveErr 保留写入路径上抛出的业务错误码，其余归一到数据库错误。
 //

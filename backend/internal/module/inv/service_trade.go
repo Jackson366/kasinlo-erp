@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"nova-erp/internal/authz"
 	"nova-erp/internal/model"
 	"nova-erp/internal/pkg/errcode"
 	"nova-erp/internal/pkg/page"
@@ -42,8 +43,9 @@ func (s *Service) itemCounts(orderIDs []int64) (map[int64]int64, error) {
 }
 
 // OrderList 单据列表。bizType 为 purchase / sales；status 为空表示不过滤。
-func (s *Service) OrderList(bizType string, q page.Query, status *int16) ([]OrderRow, int64, error) {
+func (s *Service) OrderList(bizType string, q page.Query, status *int16, actor *authz.Identity) ([]OrderRow, int64, error) {
 	tx := s.db.Model(&model.InvOrder{}).Where("biz_type = ?", bizType)
+	tx = s.applyCreator(tx, actor)
 	if q.Keyword != "" {
 		kw := likeKW(q.Keyword)
 		tx = tx.Where(likeExpr("order_no")+" OR "+likeExpr("party_name"), kw, kw)
@@ -85,9 +87,9 @@ func toOrderRow(o model.InvOrder, itemCount int64) OrderRow {
 }
 
 // OrderDetail 单据详情。
-func (s *Service) OrderDetail(id int64) (*OrderDetail, error) {
+func (s *Service) OrderDetail(id int64, actor *authz.Identity) (*OrderDetail, error) {
 	var o model.InvOrder
-	if err := s.db.First(&o, id).Error; err != nil {
+	if err := s.applyCreator(s.db.Where("id = ?", id), actor).First(&o).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errcode.New(errcode.ErrNotFound, "单据不存在")
 		}
@@ -172,7 +174,7 @@ func (s *Service) buildItems(bizType string, req []OrderItemReq) ([]model.InvOrd
 }
 
 // OrderCreate 新增单据。
-func (s *Service) OrderCreate(req OrderReq, actorID int64) (int64, error) {
+func (s *Service) OrderCreate(req OrderReq, actor *authz.Identity) (int64, error) {
 	partyName, err := s.findParty(req.BizType, req.PartyID)
 	if err != nil {
 		return 0, err
@@ -196,7 +198,7 @@ func (s *Service) OrderCreate(req OrderReq, actorID int64) (int64, error) {
 	order := model.InvOrder{
 		OrderNo: no, BizType: req.BizType, PartyID: req.PartyID, PartyName: partyName,
 		OrderDate: orderDate, DueDate: dueDate, Status: model.InvStatusPending,
-		TotalAmount: total, Remark: req.Remark, CreatedBy: actorID,
+		TotalAmount: total, Remark: req.Remark, CreatedBy: actorUID(actor),
 	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&order).Error; err != nil {
@@ -214,13 +216,16 @@ func (s *Service) OrderCreate(req OrderReq, actorID int64) (int64, error) {
 }
 
 // OrderUpdate 修改单据。仅「待处理」状态可改，且整体覆盖明细。
-func (s *Service) OrderUpdate(id int64, req OrderReq) error {
+func (s *Service) OrderUpdate(id int64, req OrderReq, actor *authz.Identity) error {
 	var o model.InvOrder
 	if err := s.db.First(&o, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errcode.New(errcode.ErrNotFound, "单据不存在")
 		}
 		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if err := s.ensureCreatorVisible(o.CreatedBy, actor); err != nil {
+		return err
 	}
 	if o.Status != model.InvStatusPending {
 		return errcode.New(errcode.ErrConflict, "仅待处理单据可修改")
@@ -263,13 +268,16 @@ func (s *Service) OrderUpdate(id int64, req OrderReq) error {
 }
 
 // OrderDelete 删除单据。已审核（已产生出入库）的单据不允许删除。
-func (s *Service) OrderDelete(id int64) error {
+func (s *Service) OrderDelete(id int64, actor *authz.Identity) error {
 	var o model.InvOrder
 	if err := s.db.First(&o, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errcode.New(errcode.ErrNotFound, "单据不存在")
 		}
 		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if err := s.ensureCreatorVisible(o.CreatedBy, actor); err != nil {
+		return err
 	}
 	if o.Status == model.InvStatusDone {
 		return errcode.New(errcode.ErrConflict, "已审核单据不可删除，请先作废对应的出入库单")
@@ -284,13 +292,16 @@ func (s *Service) OrderDelete(id int64) error {
 
 // OrderChangeStatus 流转单据状态：1 待处理 / 2 审核通过 / 3 取消。
 // 置为「审核通过」时会自动生成出入库单并同步商品库存（同一事务）。
-func (s *Service) OrderChangeStatus(id int64, status int16, actorID int64) error {
+func (s *Service) OrderChangeStatus(id int64, status int16, actor *authz.Identity) error {
 	var o model.InvOrder
 	if err := s.db.First(&o, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errcode.New(errcode.ErrNotFound, "单据不存在")
 		}
 		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if err := s.ensureCreatorVisible(o.CreatedBy, actor); err != nil {
+		return err
 	}
 	if o.Status == model.InvStatusDone {
 		return errcode.New(errcode.ErrConflict, "已审核单据不可再流转状态")
@@ -332,7 +343,7 @@ func (s *Service) OrderChangeStatus(id int64, status int16, actorID int64) error
 	return saveErr(s.db.Transaction(func(tx *gorm.DB) error {
 		so := model.InvStockOrder{
 			OrderNo: stockNo, Direction: direction, SourceType: sourceType, SourceID: o.ID,
-			OrderDate: o.OrderDate, Status: 1, CreatedBy: actorID,
+			OrderDate: o.OrderDate, Status: 1, CreatedBy: actorUID(actor),
 		}
 		if err := tx.Create(&so).Error; err != nil {
 			return err

@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"nova-erp/internal/database"
+	"nova-erp/internal/middleware"
 	"nova-erp/internal/model"
 	"nova-erp/internal/pkg/bind"
 	"nova-erp/internal/pkg/errcode"
@@ -102,7 +103,7 @@ func (s *Service) categoryScope(categoryID int64, col string) (string, []any, er
 // @Success      200  {object}  response.Body{data=inv.OverviewVO}
 // @Router       /inv/overview [get]
 func (h *Handler) Overview(c *gin.Context) {
-	data, err := h.svc.Overview()
+	data, err := h.svc.Overview(middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -127,7 +128,7 @@ func (h *Handler) ReportSummary(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	data, err := h.svc.ReportSummary(f)
+	data, err := h.svc.ReportSummary(f, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -153,7 +154,7 @@ func (h *Handler) ReportTrend(c *gin.Context) {
 		return
 	}
 	days := page.AtoiOr(c.Query("days"), 30)
-	data, err := h.svc.ReportTrend(days, f)
+	data, err := h.svc.ReportTrend(days, f, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -180,7 +181,7 @@ func (h *Handler) ReportRanking(c *gin.Context) {
 		return
 	}
 	limit := page.AtoiOr(c.Query("limit"), 5)
-	data, err := h.svc.ReportRanking(f, limit)
+	data, err := h.svc.ReportRanking(f, limit, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -205,7 +206,7 @@ func (h *Handler) ReportCategory(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	data, err := h.svc.ReportCategory(f)
+	data, err := h.svc.ReportCategory(f, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return

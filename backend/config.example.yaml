@@ -13,7 +13,7 @@ app:
   name: nova-erp        # 应用名
   mode: debug             # debug | release
   host: 0.0.0.0
-  port: 8080
+  port: 6802
   prefix: /api            # 路由统一前缀
   version: v1             # API 版本段，最终前缀为 /api/v1
   # 是否挂载在线接口文档（/swagger/index.html）。

@@ -3,6 +3,7 @@ package inv
 import (
 	"github.com/gin-gonic/gin"
 
+	"nova-erp/internal/middleware"
 	"nova-erp/internal/model"
 	"nova-erp/internal/pkg/bind"
 	"nova-erp/internal/pkg/errcode"
@@ -26,7 +27,7 @@ func (h *Handler) StockOrderList(c *gin.Context) {
 		response.Fail(c, errcode.Newf(errcode.ErrBadRequest, "参数 direction 非法：%s", direction))
 		return
 	}
-	list, total, err := h.svc.StockOrderList(q, direction)
+	list, total, err := h.svc.StockOrderList(q, direction, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -50,7 +51,7 @@ func (h *Handler) StockOrderCreate(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "新增出入库单据")
-	id, err := h.svc.StockOrderCreate(req, actorID(c))
+	id, err := h.svc.StockOrderCreate(req, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -73,7 +74,7 @@ func (h *Handler) StockOrderVoid(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "作废出入库单据")
-	if err := h.svc.StockOrderVoid(id); err != nil {
+	if err := h.svc.StockOrderVoid(id, middleware.CurrentIdentity(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}
@@ -114,7 +115,7 @@ func (h *Handler) StockOrderDetail(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	detail, err := h.svc.StockOrderDetail(id)
+	detail, err := h.svc.StockOrderDetail(id, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return

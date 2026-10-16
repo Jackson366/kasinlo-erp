@@ -3,6 +3,7 @@ package inv
 import (
 	"time"
 
+	"nova-erp/internal/authz"
 	"nova-erp/internal/database"
 	"nova-erp/internal/model"
 	"nova-erp/internal/pkg/errcode"
@@ -12,7 +13,11 @@ import (
 const doneCond = "status = 2"
 
 // Overview 数据概览：概览页与报表页共用的核心指标。
-func (s *Service) Overview() (*OverviewVO, error) {
+//
+// 口径刻意分成两类：客户数 / 商品数 / 预警数是**共享主数据**的统计（保持全局，
+// 与列表一致）；待处理单数 / 活跃客户 / 应收应付 / 月度销售采购是**单据派生**，
+// 按数据范围收窄 —— 概览只反映当前身份能看到的那部分经营数据。
+func (s *Service) Overview(actor *authz.Identity) (*OverviewVO, error) {
 	var out OverviewVO
 	now := time.Now().In(database.Location())
 	monthFrom := monthStart()
@@ -23,10 +28,11 @@ func (s *Service) Overview() (*OverviewVO, error) {
 		model any
 		where string
 		args  []any
+		scope bool // true 表示按数据范围收窄（单据统计）
 	}{
-		{&out.CustomerCount, &model.InvCustomer{}, "status = ?", []any{model.StatusEnabled}},
-		{&out.MonthNewCustomer, &model.InvCustomer{}, "created_at >= ?", []any{monthFrom}},
-		{&out.ProductCount, &model.InvProduct{}, "status = ?", []any{model.StatusEnabled}},
+		{&out.CustomerCount, &model.InvCustomer{}, "status = ?", []any{model.StatusEnabled}, false},
+		{&out.MonthNewCustomer, &model.InvCustomer{}, "created_at >= ?", []any{monthFrom}, false},
+		{&out.ProductCount, &model.InvProduct{}, "status = ?", []any{model.StatusEnabled}, false},
 		// 预警按**规格**统计：库存记在规格上，同一个商品下的 φ20 缺货、
 		// φ25 充足是常态，按商品维度统计只会得出「这个商品有库存」的错误结论。
 		// 还要排除「商品已停用」的规格：商品停用后规格仍可能留在启用态，
@@ -34,20 +40,23 @@ func (s *Service) Overview() (*OverviewVO, error) {
 		{&out.WarnProductCount, &model.InvProductSpec{},
 			"status = ? AND warn_stock > 0 AND stock <= warn_stock AND product_id IN (?)",
 			[]any{model.StatusEnabled,
-				s.db.Model(&model.InvProduct{}).Select("id").Where("status = ?", model.StatusEnabled)}},
-		{&out.PendingOrders, &model.InvOrder{}, "status = ?", []any{model.InvStatusPending}},
+				s.db.Model(&model.InvProduct{}).Select("id").Where("status = ?", model.StatusEnabled)}, false},
+		{&out.PendingOrders, &model.InvOrder{}, "status = ?", []any{model.InvStatusPending}, true},
 	}
 	for _, c := range counts {
 		tx := s.db.Model(c.model)
 		if c.where != "" {
 			tx = tx.Where(c.where, c.args...)
 		}
+		if c.scope {
+			tx = s.applyCreator(tx, actor)
+		}
 		if err := tx.Count(c.dest).Error; err != nil {
 			return nil, errcode.Wrap(errcode.ErrDatabase, err)
 		}
 	}
 
-	if err := s.db.Model(&model.InvOrder{}).
+	if err := s.applyCreator(s.db.Model(&model.InvOrder{}), actor).
 		Where("biz_type = ? AND status = ? AND order_date >= ?", model.InvBizSales, model.InvStatusDone, activeFrom).
 		Distinct("party_id").Count(&out.ActiveCustomer).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
@@ -68,6 +77,7 @@ func (s *Service) Overview() (*OverviewVO, error) {
 		tx := s.db.Model(&model.InvOrder{}).
 			Select("COALESCE(SUM("+q.extra+"),0)").
 			Where("biz_type = ? AND status = ?", q.biz, model.InvStatusDone)
+		tx = s.applyCreator(tx, actor)
 		if len(q.args) > 0 {
 			tx = tx.Where("order_date >= ?", q.args...)
 		}
@@ -81,7 +91,7 @@ func (s *Service) Overview() (*OverviewVO, error) {
 
 // ReportSummary 报表汇总：营业收入 / 销售成本 / 毛利 / 毛利率。
 // f 携带时间范围与品类筛选；品类命中自身 + 全部子孙分类。
-func (s *Service) ReportSummary(f ReportFilter) (*ReportSummary, error) {
+func (s *Service) ReportSummary(f ReportFilter, actor *authz.Identity) (*ReportSummary, error) {
 	start, label, err := f.start()
 	if err != nil {
 		return nil, err
@@ -99,6 +109,8 @@ func (s *Service) ReportSummary(f ReportFilter) (*ReportSummary, error) {
 		Where("biz_type = ? AND "+doneCond+" AND order_date >= ?", model.InvBizSales, start)
 	purchTx := s.db.Model(&model.InvOrder{}).
 		Where("biz_type = ? AND "+doneCond+" AND order_date >= ?", model.InvBizPurchase, start)
+	salesTx = s.applyCreator(salesTx, actor)
+	purchTx = s.applyCreator(purchTx, actor)
 	if end != nil {
 		salesTx = salesTx.Where("order_date <= ?", *end)
 		purchTx = purchTx.Where("order_date <= ?", *end)
@@ -135,6 +147,7 @@ func (s *Service) ReportSummary(f ReportFilter) (*ReportSummary, error) {
 		Joins("JOIN inv_products AS p ON p.id = i.product_id AND p.deleted_at IS NULL").
 		Where("i.deleted_at IS NULL AND o.biz_type = ? AND o.status = ? AND o.order_date >= ?",
 			model.InvBizSales, model.InvStatusDone, start)
+	costTx = s.applyCreatorAs(costTx, actor, "o")
 	if end != nil {
 		costTx = costTx.Where("o.order_date <= ?", *end)
 	}
@@ -160,7 +173,7 @@ func (s *Service) ReportSummary(f ReportFilter) (*ReportSummary, error) {
 }
 
 // ReportTrend 近 days 天的销售 / 采购趋势（按单据日期分桶）。
-func (s *Service) ReportTrend(days int, f ReportFilter) ([]ReportTrendPoint, error) {
+func (s *Service) ReportTrend(days int, f ReportFilter, actor *authz.Identity) ([]ReportTrendPoint, error) {
 	if days <= 0 || days > 90 {
 		days = 30
 	}
@@ -212,6 +225,7 @@ func (s *Service) ReportTrend(days int, f ReportFilter) ([]ReportTrendPoint, err
 		tx := s.db.Model(&model.InvOrder{}).
 			Select("TO_CHAR(order_date, 'YYYY-MM-DD') AS day, COALESCE(SUM(total_amount),0) AS amt").
 			Where("biz_type = ? AND "+doneCond+" AND order_date >= ?", biz, startDate)
+		tx = s.applyCreator(tx, actor)
 		if endPtr != nil {
 			tx = tx.Where("order_date <= ?", *endPtr)
 		}
@@ -252,7 +266,7 @@ func (s *Service) ReportTrend(days int, f ReportFilter) ([]ReportTrendPoint, err
 }
 
 // ReportRanking 销售排行：按客户统计区间内销售额。
-func (s *Service) ReportRanking(f ReportFilter, limit int) ([]ReportRankRow, error) {
+func (s *Service) ReportRanking(f ReportFilter, limit int, actor *authz.Identity) ([]ReportRankRow, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 5
 	}
@@ -274,6 +288,7 @@ func (s *Service) ReportRanking(f ReportFilter, limit int) ([]ReportRankRow, err
 	tx := s.db.Model(&model.InvOrder{}).
 		Select("party_id, party_name, COALESCE(SUM(total_amount),0) AS amount, COUNT(*) AS cnt").
 		Where("biz_type = ? AND "+doneCond+" AND order_date >= ?", model.InvBizSales, start)
+	tx = s.applyCreator(tx, actor)
 	if end != nil {
 		tx = tx.Where("order_date <= ?", *end)
 	}
@@ -309,7 +324,7 @@ func (s *Service) ReportRanking(f ReportFilter, limit int) ([]ReportRankRow, err
 }
 
 // ReportCategory 品类销售占比。
-func (s *Service) ReportCategory(f ReportFilter) ([]ReportCategoryRow, error) {
+func (s *Service) ReportCategory(f ReportFilter, actor *authz.Identity) ([]ReportCategoryRow, error) {
 	start, _, err := f.start()
 	if err != nil {
 		return nil, err
@@ -329,6 +344,7 @@ func (s *Service) ReportCategory(f ReportFilter) ([]ReportCategoryRow, error) {
 		Joins("LEFT JOIN inv_categories AS c ON c.id = p.category_id AND c.deleted_at IS NULL").
 		Where("i.deleted_at IS NULL AND o.biz_type = ? AND o.status = ? AND o.order_date >= ?",
 			model.InvBizSales, model.InvStatusDone, start)
+	tx = s.applyCreatorAs(tx, actor, "o")
 	if end != nil {
 		tx = tx.Where("o.order_date <= ?", *end)
 	}
