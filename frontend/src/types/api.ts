@@ -691,6 +691,7 @@ export interface InvReportSummary {
   grossProfit: number
   grossRate: number
   salesOrders: number
+  purchaseOrders: number
   purchases: number
 }
 
@@ -701,13 +702,14 @@ export interface InvReportTrendPoint {
   purchaseAmount: number
 }
 
-/** 销售排行行 */
+/** 排行行（客户 / 供应商 / 商品通用） */
 export interface InvReportRankRow {
   rank: number
-  partyId: number
-  partyName: string
+  name: string
+  id: number
   amount: number
   orderCount: number
+  quantity: number
   ratio: number
 }
 
@@ -716,6 +718,34 @@ export interface InvReportCategoryRow {
   category: string
   amount: number
   ratio: number
+}
+
+/** 品类库存金额分布行 */
+export interface InvCategoryValueRow {
+  category: string
+  value: number
+  ratio: number
+}
+
+/** 低库存预警行 */
+export interface InvWarnStockRow {
+  productId: number
+  productCode: string
+  productName: string
+  specId: number
+  spec: string
+  unit: string
+  stock: number
+  warnStock: number
+}
+
+/** 库存分析汇总 */
+export interface InvReportInventory {
+  totalValue: number
+  specCount: number
+  warnCount: number
+  categoryValue: InvCategoryValueRow[]
+  warnList: InvWarnStockRow[]
 }
 
 /** 打印模板列表行 */

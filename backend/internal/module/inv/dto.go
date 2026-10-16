@@ -415,13 +415,14 @@ type OverviewVO struct {
 
 // ReportSummary 报表汇总。
 type ReportSummary struct {
-	Range       string  `json:"range"`
-	SalesAmount float64 `json:"salesAmount"`
-	CostAmount  float64 `json:"costAmount"`
-	GrossProfit float64 `json:"grossProfit"`
-	GrossRate   float64 `json:"grossRate"`
-	SalesOrders int64   `json:"salesOrders"`
-	Purchases   float64 `json:"purchases"`
+	Range          string  `json:"range"`
+	SalesAmount    float64 `json:"salesAmount"`
+	CostAmount     float64 `json:"costAmount"`
+	GrossProfit    float64 `json:"grossProfit"`
+	GrossRate      float64 `json:"grossRate"`
+	SalesOrders    int64   `json:"salesOrders"`
+	PurchaseOrders int64   `json:"purchaseOrders"`
+	Purchases      float64 `json:"purchases"`
 }
 
 // ReportTrendPoint 报表趋势点。
@@ -431,13 +432,17 @@ type ReportTrendPoint struct {
 	PurchaseAmount float64 `json:"purchaseAmount"`
 }
 
-// ReportRankRow 销售排行行。
+// ReportRankRow 排行行（客户 / 供应商 / 商品三个维度通用）。
+//
+// 客户与供应商维度按单据主表的 party 聚合，商品维度按明细行的 product 聚合；
+// 两者返回同一结构，前端排行表按维度切换列。
 type ReportRankRow struct {
 	Rank       int     `json:"rank"`
-	PartyID    int64   `json:"partyId"`
-	PartyName  string  `json:"partyName"`
-	Amount     float64 `json:"amount"`
-	OrderCount int64   `json:"orderCount"`
+	Name       string  `json:"name"`       // 客户名 / 供应商名 / 商品名
+	ID         int64   `json:"id"`         // 对应档案 ID（party_id / product_id）
+	Amount     float64 `json:"amount"`     // 销售 / 采购金额
+	OrderCount int64   `json:"orderCount"` // 单据数（客户/供应商）或涉及订单数（商品）
+	Quantity   float64 `json:"quantity"`   // 商品维度：总销量（基本单位）；客户维度为 0
 	Ratio      float64 `json:"ratio"`
 }
 
@@ -446,6 +451,35 @@ type ReportCategoryRow struct {
 	Category string  `json:"category"`
 	Amount   float64 `json:"amount"`
 	Ratio    float64 `json:"ratio"`
+}
+
+// InvCategoryValueRow 品类库存金额分布行。
+type InvCategoryValueRow struct {
+	Category string  `json:"category"`
+	Value    float64 `json:"value"` // 库存金额（按基本单位采购价计价）
+	Ratio    float64 `json:"ratio"`
+}
+
+// InvWarnStockRow 低库存预警行。缺货程度按「当前库存 − 预警下限」升序，
+// 最缺的排最前。
+type InvWarnStockRow struct {
+	ProductID   int64   `json:"productId"`
+	ProductCode string  `json:"productCode"`
+	ProductName string  `json:"productName"`
+	SpecID      int64   `json:"specId"`
+	Spec        string  `json:"spec"`
+	Unit        string  `json:"unit"` // 基本单位（库存的计数单位）
+	Stock       float64 `json:"stock"`
+	WarnStock   float64 `json:"warnStock"`
+}
+
+// ReportInventory 库存分析汇总。
+type ReportInventory struct {
+	TotalValue    float64               `json:"totalValue"`    // 库存总金额（成本价）
+	SpecCount     int64                 `json:"specCount"`     // 启用规格数
+	WarnCount     int64                 `json:"warnCount"`     // 低库存预警规格数
+	CategoryValue []InvCategoryValueRow `json:"categoryValue"` // 品类库存金额分布
+	WarnList      []InvWarnStockRow     `json:"warnList"`      // 低库存预警清单（前 20）
 }
 
 // ============================================================

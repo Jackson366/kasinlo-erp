@@ -1767,6 +1767,42 @@
                 }
             }
         },
+        "/inv/report/inventory": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-报表"
+                ],
+                "summary": "库存分析（总金额 / 品类分布 / 低库存预警）",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.ReportInventory"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/inv/report/ranking": {
             "get": {
                 "security": [
@@ -1780,7 +1816,7 @@
                 "tags": [
                     "进销存-报表"
                 ],
-                "summary": "销售排行（按客户）",
+                "summary": "销售 / 采购排行（按客户、供应商或商品）",
                 "parameters": [
                     {
                         "type": "string",
@@ -1804,6 +1840,18 @@
                         "type": "integer",
                         "description": "品类筛选（含子分类），0 = 全部",
                         "name": "categoryId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排行维度：customer（交易对手，默认）| product（商品）",
+                        "name": "dimension",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "业务方向：sales（销售，默认）| purchase（采购）",
+                        "name": "biz",
                         "in": "query"
                     },
                     {
@@ -5012,6 +5060,51 @@
                 }
             }
         },
+        "inv.InvCategoryValueRow": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "ratio": {
+                    "type": "number"
+                },
+                "value": {
+                    "description": "库存金额（按基本单位采购价计价）",
+                    "type": "number"
+                }
+            }
+        },
+        "inv.InvWarnStockRow": {
+            "type": "object",
+            "properties": {
+                "productCode": {
+                    "type": "string"
+                },
+                "productId": {
+                    "type": "integer"
+                },
+                "productName": {
+                    "type": "string"
+                },
+                "spec": {
+                    "type": "string"
+                },
+                "specId": {
+                    "type": "integer"
+                },
+                "stock": {
+                    "type": "number"
+                },
+                "unit": {
+                    "description": "基本单位（库存的计数单位）",
+                    "type": "string"
+                },
+                "warnStock": {
+                    "type": "number"
+                }
+            }
+        },
         "inv.InventoryRow": {
             "type": "object",
             "properties": {
@@ -5780,20 +5873,59 @@
                 }
             }
         },
+        "inv.ReportInventory": {
+            "type": "object",
+            "properties": {
+                "categoryValue": {
+                    "description": "品类库存金额分布",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.InvCategoryValueRow"
+                    }
+                },
+                "specCount": {
+                    "description": "启用规格数",
+                    "type": "integer"
+                },
+                "totalValue": {
+                    "description": "库存总金额（成本价）",
+                    "type": "number"
+                },
+                "warnCount": {
+                    "description": "低库存预警规格数",
+                    "type": "integer"
+                },
+                "warnList": {
+                    "description": "低库存预警清单（前 20）",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.InvWarnStockRow"
+                    }
+                }
+            }
+        },
         "inv.ReportRankRow": {
             "type": "object",
             "properties": {
                 "amount": {
+                    "description": "销售 / 采购金额",
                     "type": "number"
                 },
-                "orderCount": {
+                "id": {
+                    "description": "对应档案 ID（party_id / product_id）",
                     "type": "integer"
                 },
-                "partyId": {
-                    "type": "integer"
-                },
-                "partyName": {
+                "name": {
+                    "description": "客户名 / 供应商名 / 商品名",
                     "type": "string"
+                },
+                "orderCount": {
+                    "description": "单据数（客户/供应商）或涉及订单数（商品）",
+                    "type": "integer"
+                },
+                "quantity": {
+                    "description": "商品维度：总销量（基本单位）；客户维度为 0",
+                    "type": "number"
                 },
                 "rank": {
                     "type": "integer"
@@ -5814,6 +5946,9 @@
                 },
                 "grossRate": {
                     "type": "number"
+                },
+                "purchaseOrders": {
+                    "type": "integer"
                 },
                 "purchases": {
                     "type": "number"

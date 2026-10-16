@@ -162,8 +162,8 @@ func (h *Handler) ReportTrend(c *gin.Context) {
 	response.OK(c, data)
 }
 
-// ReportRanking 销售排行
-// @Summary      销售排行（按客户）
+// ReportRanking 排行（客户 / 供应商 / 商品）
+// @Summary      销售 / 采购排行（按客户、供应商或商品）
 // @Tags         进销存-报表
 // @Produce      json
 // @Security     BearerAuth
@@ -171,6 +171,8 @@ func (h *Handler) ReportTrend(c *gin.Context) {
 // @Param        from        query  string  false  "自定义起始日 yyyy-MM-dd（优先于 range）"
 // @Param        to          query  string  false  "自定义结束日 yyyy-MM-dd"
 // @Param        categoryId  query  int     false  "品类筛选（含子分类），0 = 全部"
+// @Param        dimension   query  string  false  "排行维度：customer（交易对手，默认）| product（商品）"
+// @Param        biz         query  string  false  "业务方向：sales（销售，默认）| purchase（采购）"
 // @Param        limit       query  int     false  "条数，默认 5"
 // @Success      200  {object}  response.Body{data=[]inv.ReportRankRow}
 // @Router       /inv/report/ranking [get]
@@ -181,7 +183,9 @@ func (h *Handler) ReportRanking(c *gin.Context) {
 		return
 	}
 	limit := page.AtoiOr(c.Query("limit"), 5)
-	data, err := h.svc.ReportRanking(f, limit, middleware.CurrentIdentity(c))
+	dimension := c.DefaultQuery("dimension", "customer")
+	biz := c.DefaultQuery("biz", "sales")
+	data, err := h.svc.ReportRanking(f, dimension, biz, limit, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -207,6 +211,22 @@ func (h *Handler) ReportCategory(c *gin.Context) {
 		return
 	}
 	data, err := h.svc.ReportCategory(f, middleware.CurrentIdentity(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, data)
+}
+
+// ReportInventory 库存分析
+// @Summary      库存分析（总金额 / 品类分布 / 低库存预警）
+// @Tags         进销存-报表
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  response.Body{data=inv.ReportInventory}
+// @Router       /inv/report/inventory [get]
+func (h *Handler) ReportInventory(c *gin.Context) {
+	data, err := h.svc.ReportInventory()
 	if err != nil {
 		response.Fail(c, err)
 		return

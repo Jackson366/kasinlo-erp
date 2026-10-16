@@ -19,6 +19,7 @@ import type {
   InvProductPickResult,
   InvProductRow,
   InvReportCategoryRow,
+  InvReportInventory,
   InvReportRankRow,
   InvReportSummary,
   InvReportTrendPoint,
@@ -51,6 +52,9 @@ export const invApi = {
   },
   reportCategory(params?: Params) {
     return http.get<InvReportCategoryRow[]>('/inv/report/category', params)
+  },
+  reportInventory() {
+    return http.get<InvReportInventory>('/inv/report/inventory')
   },
 
   // ---------------- 客户 ----------------

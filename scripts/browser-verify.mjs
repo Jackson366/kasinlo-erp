@@ -903,6 +903,65 @@ async function main() {
   )
   report.phases.charts = { report: charts, overview: overviewCharts }
 
+  // ── 阶段 4.4：报表中心重设计（tab 分栏 + 排行维度 + 库存分析）────────
+  // 重设计后报表中心从单页堆叠改为四区 tab，排行加「客户 / 产品」维度，
+  // 新增采购分析（供应商排行）与库存分析（库存金额分布 + 低库存预警清单）。
+  console.log('[4.4] 报表中心 tab 分栏与排行维度')
+  await coldStart(`${APP}/#/inv/report`, 3000)
+  const tabState = await evaluate(`(() => {
+    const tabs = Array.from(document.querySelectorAll('.report-tab'));
+    return { count: tabs.length, labels: tabs.map((t) => (t.textContent || '').trim()) };
+  })()`)
+  check(
+    '报表中心有四个报表区导航',
+    tabState.count === 4 && tabState.labels.join(',') === '经营总览,销售排行,采购分析,库存分析',
+    JSON.stringify(tabState),
+  )
+  // 切到销售排行，切产品维度，验证「销量」列出现
+  await evaluate(`(() => {
+    const tabs = Array.from(document.querySelectorAll('.report-tab'));
+    const t = tabs.find((e) => (e.textContent || '').trim() === '销售排行');
+    if (t) t.click();
+    return true;
+  })()`)
+  await sleep(1200)
+  await evaluate(`(() => {
+    const btns = Array.from(document.querySelectorAll('.dim-btn'));
+    const p = btns.find((e) => (e.textContent || '').trim() === '按产品');
+    if (p) p.click();
+    return true;
+  })()`)
+  await sleep(1200)
+  const productRank = await evaluate(`(() => {
+    const headers = Array.from(document.querySelectorAll('.report-page .el-table th')).map((e) => (e.textContent || '').trim());
+    const rows = document.querySelectorAll('.report-page .el-table__body tr').length;
+    return { hasSalesQty: headers.some((h) => h.includes('销量')), headers, rows };
+  })()`)
+  check(
+    '销售排行按产品维度显示销量列',
+    productRank.hasSalesQty && productRank.rows > 0,
+    JSON.stringify(productRank),
+  )
+  // 切到库存分析，验证 KPI + 预警清单 + 库存分布图
+  await evaluate(`(() => {
+    const tabs = Array.from(document.querySelectorAll('.report-tab'));
+    const t = tabs.find((e) => (e.textContent || '').trim() === '库存分析');
+    if (t) t.click();
+    return true;
+  })()`)
+  await sleep(1500)
+  const invState = await evaluate(`(() => {
+    const kpis = Array.from(document.querySelectorAll('.kpi-card__label')).map((e) => (e.textContent || '').trim());
+    const warnItems = document.querySelectorAll('.warn-item').length;
+    const cs = Array.from(document.querySelectorAll('.page-card canvas')).filter((c) => c.width > 0 && c.height > 0);
+    return { kpis, warnItems, sizedCanvas: cs.length };
+  })()`)
+  check(
+    '库存分析渲染 KPI、预警清单与分布图',
+    invState.kpis.length === 3 && invState.sizedCanvas >= 1,
+    JSON.stringify(invState),
+  )
+
   // ── 阶段 5：低权限账号 ──────────────────────────────
   console.log('[5] 低权限账号：按钮级权限与接口鉴权')
   consoleLogs = []

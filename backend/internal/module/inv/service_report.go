@@ -3,6 +3,8 @@ package inv
 import (
 	"time"
 
+	"gorm.io/gorm"
+
 	"nova-erp/internal/authz"
 	"nova-erp/internal/database"
 	"nova-erp/internal/model"
@@ -132,6 +134,9 @@ func (s *Service) ReportSummary(f ReportFilter, actor *authz.Identity) (*ReportS
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	if err := salesTx.Count(&out.SalesOrders).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if err := purchTx.Count(&out.PurchaseOrders).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	if err := purchTx.Select("COALESCE(SUM(total_amount),0)").Scan(&out.Purchases).Error; err != nil {
@@ -265,10 +270,16 @@ func (s *Service) ReportTrend(days int, f ReportFilter, actor *authz.Identity) (
 	return out, nil
 }
 
-// ReportRanking 销售排行：按客户统计区间内销售额。
-func (s *Service) ReportRanking(f ReportFilter, limit int, actor *authz.Identity) ([]ReportRankRow, error) {
+// ReportRanking 排行：按客户 / 供应商 / 商品统计区间内的销售（或采购）额。
+//
+// dimension 取 customer（按交易对手）或 product（按商品明细）；
+// biz 取 sales（销售排行）或 purchase（采购排行，交易对手即供应商）。
+func (s *Service) ReportRanking(f ReportFilter, dimension, biz string, limit int, actor *authz.Identity) ([]ReportRankRow, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 5
+	}
+	if biz != model.InvBizSales && biz != model.InvBizPurchase {
+		biz = model.InvBizSales
 	}
 	start, _, err := f.start()
 	if err != nil {
@@ -278,6 +289,14 @@ func (s *Service) ReportRanking(f ReportFilter, limit int, actor *authz.Identity
 	if err != nil {
 		return nil, err
 	}
+	if dimension == "product" {
+		return s.reportProductRanking(f, biz, start, end, limit, actor)
+	}
+	return s.reportPartyRanking(f, biz, start, end, limit, actor)
+}
+
+// reportPartyRanking 按交易对手（客户 / 供应商）聚合排行。
+func (s *Service) reportPartyRanking(f ReportFilter, biz string, start time.Time, end *time.Time, limit int, actor *authz.Identity) ([]ReportRankRow, error) {
 	type row struct {
 		PartyID   int64
 		PartyName string
@@ -287,7 +306,7 @@ func (s *Service) ReportRanking(f ReportFilter, limit int, actor *authz.Identity
 	var rows []row
 	tx := s.db.Model(&model.InvOrder{}).
 		Select("party_id, party_name, COALESCE(SUM(total_amount),0) AS amount, COUNT(*) AS cnt").
-		Where("biz_type = ? AND "+doneCond+" AND order_date >= ?", model.InvBizSales, start)
+		Where("biz_type = ? AND "+doneCond+" AND order_date >= ?", biz, start)
 	tx = s.applyCreator(tx, actor)
 	if end != nil {
 		tx = tx.Where("order_date <= ?", *end)
@@ -316,8 +335,62 @@ func (s *Service) ReportRanking(f ReportFilter, limit int, actor *authz.Identity
 			ratio = round2(r.Amount / sum * 100)
 		}
 		out = append(out, ReportRankRow{
-			Rank: i + 1, PartyID: r.PartyID, PartyName: r.PartyName,
+			Rank: i + 1, Name: r.PartyName, ID: r.PartyID,
 			Amount: round2(r.Amount), OrderCount: r.Cnt, Ratio: ratio,
+		})
+	}
+	return out, nil
+}
+
+// reportProductRanking 按商品明细聚合排行。
+//
+// 名称用明细里的 ProductName 快照而不是联表取当前档案名：商品档案可能被删，
+// 联表过滤后那部分销售会从排行里凭空消失，金额对不上。品类筛选时才联表
+// （用户主动按品类筛，本就需要商品档案的 category_id，删了的商品归不进任何品类是合理的）。
+func (s *Service) reportProductRanking(f ReportFilter, biz string, start time.Time, end *time.Time, limit int, actor *authz.Identity) ([]ReportRankRow, error) {
+	type row struct {
+		ProductID   int64
+		ProductName string
+		Amount      float64
+		Cnt         int64
+		Qty         float64
+	}
+	var rows []row
+	tx := s.db.Table("inv_order_items AS i").
+		Joins("JOIN inv_orders AS o ON o.id = i.order_id AND o.deleted_at IS NULL").
+		Where("i.deleted_at IS NULL AND o.biz_type = ? AND o.status = ? AND o.order_date >= ?",
+			biz, model.InvStatusDone, start).
+		Select("i.product_id AS product_id, i.product_name AS product_name, " +
+			"COALESCE(SUM(i.amount),0) AS amount, COUNT(DISTINCT i.order_id) AS cnt, " +
+			"COALESCE(SUM(i.qty_base),0) AS qty")
+	tx = s.applyCreatorAs(tx, actor, "o")
+	if end != nil {
+		tx = tx.Where("o.order_date <= ?", *end)
+	}
+	if f.CategoryID > 0 {
+		cond, args, err := s.categoryScope(f.CategoryID, "p.category_id")
+		if err != nil {
+			return nil, err
+		}
+		tx = tx.Joins("JOIN inv_products AS p ON p.id = i.product_id AND p.deleted_at IS NULL").
+			Where(cond, args...)
+	}
+	if err := tx.Group("i.product_id, i.product_name").Order("amount DESC").Limit(limit).Scan(&rows).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	var sum float64
+	for _, r := range rows {
+		sum += r.Amount
+	}
+	out := make([]ReportRankRow, 0, len(rows))
+	for i, r := range rows {
+		ratio := 0.0
+		if sum > 0 {
+			ratio = round2(r.Amount / sum * 100)
+		}
+		out = append(out, ReportRankRow{
+			Rank: i + 1, Name: r.ProductName, ID: r.ProductID,
+			Amount: round2(r.Amount), OrderCount: r.Cnt, Quantity: round2(r.Qty), Ratio: ratio,
 		})
 	}
 	return out, nil
@@ -372,4 +445,96 @@ func (s *Service) ReportCategory(f ReportFilter, actor *authz.Identity) ([]Repor
 		out = append(out, ReportCategoryRow{Category: r.Category, Amount: round2(r.Amount), Ratio: ratio})
 	}
 	return out, nil
+}
+
+// ReportInventory 库存分析：库存总金额、规格数、低库存预警数，
+// 以及品类库存金额分布与低库存预警清单。
+//
+// 库存是**共享主数据**（记在规格上，没有「谁建的」语义），
+// 与商品 / 客户一致不按数据范围收窄 —— 全店共享一套库存。
+func (s *Service) ReportInventory() (*ReportInventory, error) {
+	var out ReportInventory
+
+	// 品类库存金额分布：库存成本 = 规格库存 × 基本单位采购价。
+	// 只算启用商品 + 启用规格，与 Inventory 列表口径一致。
+	type catRow struct {
+		Category string
+		Value    float64
+	}
+	var cats []catRow
+	if err := s.db.Table("inv_product_specs AS sp").
+		Joins("JOIN inv_products AS p ON p.id = sp.product_id AND p.deleted_at IS NULL").
+		Joins("LEFT JOIN inv_categories AS c ON c.id = p.category_id AND c.deleted_at IS NULL").
+		Joins("LEFT JOIN inv_product_units AS u ON u.spec_id = sp.id AND u.is_base AND u.deleted_at IS NULL").
+		Where("sp.deleted_at IS NULL AND p.status = ? AND sp.status = ?",
+			model.StatusEnabled, model.StatusEnabled).
+		Select("COALESCE(NULLIF(c.name, ''), '未分类') AS category, " +
+			"COALESCE(SUM(sp.stock * COALESCE(u.purchase_price, 0)), 0) AS value").
+		Group("category").Order("value DESC").Scan(&cats).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	var sum float64
+	for _, c := range cats {
+		sum += c.Value
+	}
+	out.CategoryValue = make([]InvCategoryValueRow, 0, len(cats))
+	for _, c := range cats {
+		ratio := 0.0
+		if sum > 0 {
+			ratio = round2(c.Value / sum * 100)
+		}
+		out.CategoryValue = append(out.CategoryValue, InvCategoryValueRow{
+			Category: c.Category, Value: round2(c.Value), Ratio: ratio,
+		})
+	}
+	out.TotalValue = round2(sum)
+
+	// 启用规格数。预警数的条件是「设了下限且当前库存已触及」，与概览的
+	// WarnProductCount 口径一致（下限没设的规格不参与预警）。
+	countBase := func() *gorm.DB {
+		return s.db.Table("inv_product_specs AS sp").
+			Joins("JOIN inv_products AS p ON p.id = sp.product_id AND p.deleted_at IS NULL").
+			Where("sp.deleted_at IS NULL AND p.status = ? AND sp.status = ?",
+				model.StatusEnabled, model.StatusEnabled)
+	}
+	if err := countBase().Count(&out.SpecCount).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if err := countBase().Where("sp.warn_stock > 0 AND sp.stock <= sp.warn_stock").
+		Count(&out.WarnCount).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+
+	// 低库存预警清单：按缺货程度升序（最缺的在前），取前 20。
+	type warnRow struct {
+		ProductID   int64
+		ProductCode string
+		ProductName string
+		SpecID      int64
+		Spec        string
+		Unit        string
+		Stock       float64
+		WarnStock   float64
+	}
+	var warns []warnRow
+	if err := s.db.Table("inv_product_specs AS sp").
+		Joins("JOIN inv_products AS p ON p.id = sp.product_id AND p.deleted_at IS NULL").
+		Joins("LEFT JOIN inv_product_units AS u ON u.spec_id = sp.id AND u.is_base AND u.deleted_at IS NULL").
+		Where("sp.deleted_at IS NULL AND p.status = ? AND sp.status = ? AND sp.warn_stock > 0 AND sp.stock <= sp.warn_stock",
+			model.StatusEnabled, model.StatusEnabled).
+		Select("p.id AS product_id, p.code AS product_code, p.name AS product_name, " +
+			"sp.id AS spec_id, sp.spec AS spec, COALESCE(u.unit, '') AS unit, " +
+			"sp.stock AS stock, sp.warn_stock AS warn_stock").
+		Order("(sp.stock - sp.warn_stock) ASC, sp.id ASC").Limit(20).Scan(&warns).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	out.WarnList = make([]InvWarnStockRow, 0, len(warns))
+	for _, w := range warns {
+		out.WarnList = append(out.WarnList, InvWarnStockRow{
+			ProductID: w.ProductID, ProductCode: w.ProductCode, ProductName: w.ProductName,
+			SpecID: w.SpecID, Spec: w.Spec, Unit: w.Unit,
+			Stock: w.Stock, WarnStock: w.WarnStock,
+		})
+	}
+	return &out, nil
 }

@@ -1075,7 +1075,36 @@ async function main() {
   for (const [uri, label] of reportCases) {
     const r = await request('GET', uri, { token })
     ok(`报表${label}`, r.json?.code === 0, JSON.stringify(r.json).slice(0, 160))
-  }  const invTrend = await request('GET', '/inv/report/trend?days=7', { token })
+  }
+  // 排行维度：客户 / 产品（销售），供应商（采购）
+  const rankCustomer = await request('GET', '/inv/report/ranking?range=year&dimension=customer&biz=sales&limit=10', { token })
+  ok(
+    '排行按客户维度（销售）',
+    rankCustomer.json?.code === 0 && Array.isArray(rankCustomer.json?.data) && rankCustomer.json.data.every((r) => typeof r.name === 'string'),
+    JSON.stringify(rankCustomer.json?.data?.slice(0, 2)),
+  )
+  const rankProduct = await request('GET', '/inv/report/ranking?range=year&dimension=product&biz=sales&limit=10', { token })
+  ok(
+    '排行按产品维度（销售，含销量）',
+    rankProduct.json?.code === 0 && rankProduct.json.data.every((r) => typeof r.quantity === 'number'),
+    JSON.stringify(rankProduct.json?.data?.slice(0, 2)),
+  )
+  const rankSupplier = await request('GET', '/inv/report/ranking?range=year&dimension=customer&biz=purchase&limit=10', { token })
+  ok(
+    '排行按供应商维度（采购）',
+    rankSupplier.json?.code === 0 && Array.isArray(rankSupplier.json?.data),
+    JSON.stringify(rankSupplier.json?.data?.slice(0, 2)),
+  )
+  const invReport = await request('GET', '/inv/report/inventory', { token })
+  ok(
+    '库存分析返回金额/规格/预警与分布',
+    invReport.json?.code === 0 &&
+      typeof invReport.json.data.totalValue === 'number' &&
+      Array.isArray(invReport.json.data.categoryValue) &&
+      Array.isArray(invReport.json.data.warnList),
+    JSON.stringify(invReport.json?.data),
+  )
+  const invTrend = await request('GET', '/inv/report/trend?days=7', { token })
   ok('趋势按天补齐 7 个点', (invTrend.json?.data || []).length === 7, `len=${invTrend.json?.data?.length}`)
   // 自定义区间：from + to 必须严格按区间出点，不能沿用 days 参数 ——
   // 少了这一步会画出未来日期的空点，且后端 90 天上限会把长区间静默截断

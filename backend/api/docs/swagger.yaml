@@ -190,6 +190,36 @@ definitions:
       totalAmount:
         type: number
     type: object
+  inv.InvCategoryValueRow:
+    properties:
+      category:
+        type: string
+      ratio:
+        type: number
+      value:
+        description: 库存金额（按基本单位采购价计价）
+        type: number
+    type: object
+  inv.InvWarnStockRow:
+    properties:
+      productCode:
+        type: string
+      productId:
+        type: integer
+      productName:
+        type: string
+      spec:
+        type: string
+      specId:
+        type: integer
+      stock:
+        type: number
+      unit:
+        description: 基本单位（库存的计数单位）
+        type: string
+      warnStock:
+        type: number
+    type: object
   inv.InventoryRow:
     properties:
       categoryName:
@@ -709,16 +739,45 @@ definitions:
       ratio:
         type: number
     type: object
+  inv.ReportInventory:
+    properties:
+      categoryValue:
+        description: 品类库存金额分布
+        items:
+          $ref: '#/definitions/inv.InvCategoryValueRow'
+        type: array
+      specCount:
+        description: 启用规格数
+        type: integer
+      totalValue:
+        description: 库存总金额（成本价）
+        type: number
+      warnCount:
+        description: 低库存预警规格数
+        type: integer
+      warnList:
+        description: 低库存预警清单（前 20）
+        items:
+          $ref: '#/definitions/inv.InvWarnStockRow'
+        type: array
+    type: object
   inv.ReportRankRow:
     properties:
       amount:
+        description: 销售 / 采购金额
         type: number
-      orderCount:
+      id:
+        description: 对应档案 ID（party_id / product_id）
         type: integer
-      partyId:
-        type: integer
-      partyName:
+      name:
+        description: 客户名 / 供应商名 / 商品名
         type: string
+      orderCount:
+        description: 单据数（客户/供应商）或涉及订单数（商品）
+        type: integer
+      quantity:
+        description: 商品维度：总销量（基本单位）；客户维度为 0
+        type: number
       rank:
         type: integer
       ratio:
@@ -732,6 +791,8 @@ definitions:
         type: number
       grossRate:
         type: number
+      purchaseOrders:
+        type: integer
       purchases:
         type: number
       range:
@@ -2521,6 +2582,25 @@ paths:
       summary: 品类销售占比
       tags:
       - 进销存-报表
+  /inv/report/inventory:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.ReportInventory'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 库存分析（总金额 / 品类分布 / 低库存预警）
+      tags:
+      - 进销存-报表
   /inv/report/ranking:
     get:
       parameters:
@@ -2540,6 +2620,14 @@ paths:
         in: query
         name: categoryId
         type: integer
+      - description: 排行维度：customer（交易对手，默认）| product（商品）
+        in: query
+        name: dimension
+        type: string
+      - description: 业务方向：sales（销售，默认）| purchase（采购）
+        in: query
+        name: biz
+        type: string
       - description: 条数，默认 5
         in: query
         name: limit
@@ -2560,7 +2648,7 @@ paths:
               type: object
       security:
       - BearerAuth: []
-      summary: 销售排行（按客户）
+      summary: 销售 / 采购排行（按客户、供应商或商品）
       tags:
       - 进销存-报表
   /inv/report/summary:

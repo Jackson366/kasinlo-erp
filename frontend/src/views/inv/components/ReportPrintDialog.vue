@@ -106,7 +106,7 @@ defineExpose({ open })
             <tbody>
               <tr v-for="r in ranking" :key="r.rank">
                 <td class="col-index">{{ r.rank }}</td>
-                <td>{{ r.partyName }}</td>
+                <td>{{ r.name }}</td>
                 <td class="col-value">{{ formatMoney(r.amount) }}</td>
                 <td class="col-index">{{ r.orderCount }}</td>
                 <td class="col-value">{{ r.ratio }}%</td>
