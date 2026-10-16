@@ -538,7 +538,7 @@ onMounted(() => {
     <el-dialog
       v-model="dialogVisible"
       :title="dialogMode === 'create' ? createText : '编辑单据'"
-      width="1040px"
+      width="1180px"
       top="5vh"
       :close-on-click-modal="false"
       destroy-on-close
@@ -767,30 +767,33 @@ onMounted(() => {
     color: var(--app-text-secondary);
   }
 
+  // 商品列要给足宽度：下拉里是「名称（编码）· N 个规格」，被压到一百多像素时
+  // 只能看到「热轧钢…」，用户根本分不清选的是哪一个。
+  // 其余列都压到「刚好放下内容」的量级，把省下的空间全给商品列。
   .col-product {
-    flex: 1.2;
-    min-width: 0;
+    flex: 1;
+    min-width: 260px;
   }
 
   .col-spec {
-    width: 150px;
+    width: 130px;
     flex: none;
   }
 
   .col-unit {
-    width: 96px;
+    width: 80px;
     flex: none;
   }
 
   .col-num {
-    width: 104px;
+    width: 94px;
     flex: none;
     text-align: right;
   }
 
   // 折算列是计算结果而非输入，用居中 + 次要色和可编辑列区分开
   .col-base {
-    width: 120px;
+    width: 100px;
     flex: none;
     text-align: center;
     font-size: 12px;
@@ -798,7 +801,7 @@ onMounted(() => {
   }
 
   .col-act {
-    width: 56px;
+    width: 52px;
     flex: none;
   }
 

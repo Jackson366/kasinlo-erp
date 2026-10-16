@@ -456,7 +456,7 @@ onMounted(() => {
     <el-dialog
       v-model="dialogVisible"
       title="新增出入库单"
-      width="760px"
+      width="1000px"
       :close-on-click-modal="false"
       destroy-on-close
     >
@@ -616,29 +616,31 @@ onMounted(() => {
     margin-top: 4px;
   }
 
+  // 商品列要给足宽度（下拉里是「名称（编码）· N 个规格」），
+  // 其余列压到「刚好放下内容」，把省下的空间全给商品列
   .col-product {
-    flex: 1.2;
-    min-width: 0;
+    flex: 1;
+    min-width: 260px;
   }
 
   .col-spec {
-    width: 160px;
+    width: 140px;
     flex: none;
   }
 
   .col-unit {
-    width: 100px;
+    width: 84px;
     flex: none;
   }
 
   .col-num {
-    width: 110px;
+    width: 96px;
     flex: none;
   }
 
   // 折算列是计算结果而非输入，用居中 + 次要色与可编辑列区分开
   .col-base {
-    width: 120px;
+    width: 104px;
     flex: none;
     text-align: center;
     font-size: 12px;
@@ -646,7 +648,7 @@ onMounted(() => {
   }
 
   .col-act {
-    width: 56px;
+    width: 52px;
     flex: none;
   }
 }

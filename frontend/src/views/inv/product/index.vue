@@ -366,30 +366,39 @@ function onDialogOpen(): void {
  * 而且「当前值补回」在树控件里要做额外展开定位，不值当。
  * 真正需要树的地方是左侧分类栏 —— 那里要的是「浏览 + 维护」，不是「选一个」。
  */
-const categoryTreeData = computed(() => buildTree(enabledOptions.value))
-
-function buildTree(list: InvCategoryOption[]): CatOptionTreeNode[] {
-  const byParent = new Map<number, InvCategoryOption[]>()
-  for (const c of list) {
-    const arr = byParent.get(c.parentId) || []
-    arr.push(c)
-    byParent.set(c.parentId, arr)
+/**
+ * 表单里「商品分类」下拉的选项：**扁平化 + 层级路径**。
+ *
+ * 两个必须扁平化的理由：
+ *  1. `el-option` 用 v-for 只遍历数组顶层 —— 直接喂树结构（带 children）
+ *     的结果是**只有根分类能被选到**，子分类全部消失。分类多级化之后，
+ *     这一条会让「钢材 / 螺纹钢」这类子分类彻底选不了。
+ *  2. 扁平化之后 label 是完整路径（`钢材 / 螺纹钢`），配合 `filterable`
+ *     默认按 label 匹配，输入「钢材」或「螺纹」都能命中 ——
+ *     与销售单里商品下拉的搜索体验一致。
+ *
+ * 刻意**不用 el-tree-select**：表单里选分类是一次性动作，下拉比树省空间。
+ * 真正需要树的地方是左侧分类栏 —— 那里要的是「浏览 + 维护」，不是「选一个」。
+ * 路径分隔符用 ` / ` 而不是树控件的缩进，避免在窄下拉里把文字挤没。
+ */
+const categoryFlatOptions = computed(() => {
+  const out: Array<{ id: number; path: string }> = []
+  const walk = (parentId: number, prefix: string) => {
+    for (const c of enabledOptions.value.filter((x) => x.parentId === parentId)) {
+      const path = prefix ? `${prefix} / ${c.name}` : c.name
+      out.push({ id: c.id, path })
+      walk(c.id, path)
+    }
   }
-  const build = (parentId: number): CatOptionTreeNode[] =>
-    (byParent.get(parentId) || []).map((c) => ({
-      id: c.id,
-      label: c.name,
-      children: build(c.id),
-    }))
-  return build(0)
-}
-
-/** 表单里分类下拉的树节点（只有 id / label，不带商品数） */
-interface CatOptionTreeNode {
-  id: number
-  label: string
-  children: CatOptionTreeNode[]
-}
+  walk(0, '')
+  // 当前编辑项的分类可能已停用（不在启用列表里），补回列表头部，
+  // 否则老商品打开编辑时分类显示成空白、看起来像「分类丢了」
+  const cur = editingCategory.value
+  if (cur && !out.some((o) => o.id === cur.id)) {
+    out.unshift({ id: cur.id, path: `${cur.name}（已停用）` })
+  }
+  return out
+})
 
 /** 列表行展开时规格摘要，例如「φ20 · φ25」 */
 function specSummary(row: InvProductRow): string {
@@ -897,13 +906,16 @@ onMounted(() => {
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="商品分类">
+              <!-- 可输入搜索，与销售单里选商品同一套交互：
+                   分类多了（尤其多级）靠翻列表是找不到的 -->
               <el-select
                 v-model="form.categoryId"
-                placeholder="未分类（可在「商品分类」页维护）"
+                filterable
                 clearable
+                placeholder="输入分类名搜索，如 钢材 / 螺纹钢"
                 style="width: 100%"
               >
-                <el-option v-for="c in categoryTreeData" :key="c.id" :label="c.label" :value="c.id" />
+                <el-option v-for="c in categoryFlatOptions" :key="c.id" :label="c.path" :value="c.id" />
               </el-select>
             </el-form-item>
           </el-col>

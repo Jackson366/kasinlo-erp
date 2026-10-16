@@ -133,6 +133,53 @@ async function evaluate(expression, awaitPromise = false) {
   return r.result.value
 }
 
+/**
+ * 取「当前打开的」下拉里**真正可见**的选项文本（没有可见 popper 时返回 null）。
+ *
+ * 两个必须处理的细节：
+ *  1. 页面上会同时挂多个未激活的 popper，只按 display 判断不够 ——
+ *     用项目里 probeTreeSelect 同一套判据（display / visibility / opacity）。
+ *  2. **每条选项本身也要判可见性**：Element Plus 的原生 `filterable` 过滤是用
+ *     `v-show` 隐藏不匹配项（DOM 里一条都不少），而「用 v-for 重建列表」的
+ *     自定义过滤是 DOM 里真的只剩匹配项。不判可见性的话，前者的过滤结果
+ *     会被数成「没过滤」—— 断言假失败，排查时还会怀疑是功能坏了。
+ * 刻意写成朴素 for 循环：这段要跨 CDP 求值，嵌套箭头函数 + 模板拼接
+ * 曾在真实浏览器里抛 `TypeError: Illegal invocation`，排查成本远高于收益。
+ */
+const PICK_TEXTS = `(function () {
+  var all = document.querySelectorAll('.el-popper');
+  var pop = null;
+  for (var i = 0; i < all.length; i++) {
+    var cs = getComputedStyle(all[i]);
+    if (cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.01) pop = all[i];
+  }
+  if (!pop) return null;
+  var items = pop.querySelectorAll('.el-select-dropdown__item');
+  var texts = [];
+  for (var j = 0; j < items.length; j++) {
+    var ics = getComputedStyle(items[j]);
+    if (ics.display === 'none' || ics.visibility === 'hidden') continue;
+    if (items[j].classList.contains('is-hidden')) continue;
+    texts.push(String(items[j].textContent).trim());
+  }
+  return texts;
+})()`
+
+/** 往 el-select 的搜索框里填值（模拟真实输入，触发 filterable 过滤） */
+function typeIntoSelect(selector, value) {
+  return (
+    '(() => {' +
+    `const sel = document.querySelector(${JSON.stringify(selector)});` +
+    'const inp = sel && sel.querySelector("input");' +
+    'if (!inp) return false;' +
+    'const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;' +
+    `set.call(inp, ${JSON.stringify(value)});` +
+    'inp.dispatchEvent(new Event("input", { bubbles: true }));' +
+    'return true;' +
+    '})()'
+  )
+}
+
 /** 导航。注意 hash 变化不会重新加载文档，需要「冷启动」时先跳 about:blank。 */
 async function navigate(url, wait = 1600) {
   await send('Page.navigate', { url })
@@ -614,40 +661,12 @@ async function main() {
     return true;
   })()`)
   await sleep(800)
-  /**
-   * 取「当前打开的」下拉里的选项文本。
-   * 页面上会同时挂多个未激活的 popper，只按 display 判断不够 ——
-   * 用项目里 probeTreeSelect 同一套判据（display / visibility / opacity）。
-   * 刻意写成朴素 for 循环：这段要跨 CDP 求值，嵌套箭头函数 + 模板拼接
-   * 曾在真实浏览器里抛 `TypeError: Illegal invocation`，排查成本远高于收益。
-   */
-  const PICK_TEXTS = `(function () {
-    var all = document.querySelectorAll('.el-popper');
-    var pop = null;
-    for (var i = 0; i < all.length; i++) {
-      var cs = getComputedStyle(all[i]);
-      if (cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.01) pop = all[i];
-    }
-    if (!pop) return null;
-    var items = pop.querySelectorAll('.el-select-dropdown__item');
-    var texts = [];
-    for (var j = 0; j < items.length; j++) texts.push(String(items[j].textContent).trim());
-    return texts;
-  })()`
   const pickAll = await evaluate(`(function () {
     var texts = ${PICK_TEXTS};
     if (!texts) return { count: -1, reason: 'no visible popper' };
     return { count: texts.length, sample: texts.slice(0, 3) };
   })()`)
-  await evaluate(`(() => {
-    const el = document.querySelector(${JSON.stringify(PICK_SELECT)});
-    const inp = el && el.querySelector('input');
-    if (!inp) return false;
-    const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    set.call(inp, '钢');
-    inp.dispatchEvent(new Event('input', { bubbles: true }));
-    return true;
-  })()`)
+  await evaluate(typeIntoSelect('.el-dialog .el-select.col-product', '钢'))
   await sleep(700)
   const pickFiltered = await evaluate(`(function () {
     var texts = ${PICK_TEXTS};
@@ -667,6 +686,16 @@ async function main() {
       pickFiltered.count < pickAll.count &&
       pickFiltered.allMatch,
     `建单弹窗=${pickOpened} 下拉打开=${pickOpenedSel} 全量=${pickAll.count} 过滤后=${pickFiltered.count} 全匹配=${pickFiltered.allMatch} 示例=${JSON.stringify(pickFiltered.sample)}`,
+  )
+  // 商品名称框太小的话，下拉里「名称（编码）· N 个规格」只能看到「热轧钢…」，
+  // 用户分不清选的是哪一个 —— 宽度是这页能不能用的硬指标，不能只靠肉眼
+  const productColWidth = await evaluate(
+    `(() => { const el = document.querySelector('.el-dialog .el-select.col-product'); return el ? Math.round(el.getBoundingClientRect().width) : -1 })()`,
+  )
+  check(
+    '开单明细的商品下拉宽度足够（≥ 260px）',
+    productColWidth >= 260,
+    `width=${productColWidth}px`,
   )
   await evaluate(
     `(() => { const b = Array.from(document.querySelectorAll('.el-dialog button')).find((e) => e.textContent.trim() === '取消'); if (b) b.click(); return true })()`,
@@ -757,6 +786,64 @@ async function main() {
   })()`)
   await sleep(600)
   report.phases.productDialog = { specLayout, grown, blocked }
+
+  // ── 阶段 4.2：商品表单的分类下拉必须包含全部层级 ─────
+  // 分类多级化之后，直接把树结构（带 children）喂给 el-option 只会渲染**根节点**，
+  // 子分类静默消失 —— 下拉看着完全正常，只是少了几个选项，肉眼极难发现，
+  // 后果是「钢材 / 螺纹钢」这类子分类在录商品时根本选不到。
+  // 这里用「左栏树的节点数 == 下拉选项数」钉住这个不变量：
+  // 树是按 parent_id 递归组装的（正确实现），两边数量对不上就是漏了层级。
+  console.log('[4.2] 商品表单分类下拉（扁平 + 可搜索 + 含全部层级）')
+  await coldStart(`${APP}/#/inv/product`, 2800)
+  const treeNodes = await evaluate(`document.querySelectorAll('.cat-pane__tree .el-tree-node').length`)
+  const openedProduct = await evaluate(
+    `(() => { const b = Array.from(document.querySelectorAll('button')).find(e => e.textContent.trim() === '新增商品'); if (b) b.click(); return !!b })()`,
+  )
+  await sleep(1200)
+  const catSelOpened = await evaluate(`(() => {
+    const dlgs = Array.from(document.querySelectorAll('.el-dialog')).filter(d => getComputedStyle(d).display !== 'none');
+    const dlg = dlgs[dlgs.length - 1];
+    if (!dlg) return 'no dialog';
+    const sel = dlg.querySelector('.el-select');
+    if (!sel) return 'no select';
+    (sel.querySelector('.el-select__wrapper') || sel).click();
+    return 'ok';
+  })()`)
+  await sleep(700)
+  const CAT_SELECT = '.el-dialog .el-select'
+  const catAll = await evaluate(`(function () {
+    var texts = ${PICK_TEXTS};
+    if (!texts) return { count: -1, reason: 'no visible popper' };
+    return { count: texts.length, sample: texts.slice(0, 5) };
+  })()`)
+  check(
+    '商品表单的分类下拉列出全部分类（含子分类），与左栏树节点数一致',
+    openedProduct && catSelOpened === 'ok' && catAll.count > 0 && catAll.count === treeNodes,
+    `树节点=${treeNodes} 下拉选项=${catAll.count} 示例=${JSON.stringify(catAll.sample)}`,
+  )
+
+  await evaluate(typeIntoSelect(CAT_SELECT, '钢'))
+  await sleep(700)
+  const catFiltered = await evaluate(`(function () {
+    var texts = ${PICK_TEXTS};
+    if (!texts) return { count: -1, reason: 'no visible popper' };
+    var allMatch = texts.length > 0;
+    for (var i = 0; i < texts.length; i++) {
+      if (texts[i].indexOf('钢') === -1) { allMatch = false; break; }
+    }
+    return { count: texts.length, allMatch: allMatch, sample: texts.slice(0, 3) };
+  })()`)
+  check(
+    '商品表单的分类下拉支持输入搜索（与销售单选商品同一套交互）',
+    catFiltered.count > 0 && catFiltered.count < catAll.count && catFiltered.allMatch,
+    `全量=${catAll.count} 过滤后=${catFiltered.count} 全匹配=${catFiltered.allMatch} 示例=${JSON.stringify(catFiltered.sample)}`,
+  )
+  await closePopper()
+  await evaluate(
+    `(() => { const b = Array.from(document.querySelectorAll('.el-dialog button')).find((e) => e.textContent.trim() === '取消'); if (b) b.click(); return true })()`,
+  )
+  await sleep(600)
+  report.phases.productCategorySelect = { treeNodes, catAll, catFiltered }
 
   // ── 阶段 5：低权限账号 ──────────────────────────────
   console.log('[5] 低权限账号：按钮级权限与接口鉴权')
