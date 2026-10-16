@@ -641,7 +641,11 @@ func (s *Service) ProductDetail(id int64) (*ProductRow, error) {
 //
 // 下拉不是列表页，不该把几千个商品灌进浏览器；但也不能因此静默截断 ——
 // 超出部分通过 ProductPickResult.Truncated 明确告知前端。
-const pickLimit = 500
+//
+// 定 1000 而不是 500：开单时明细行要靠**本地模糊匹配**（el-select 的
+// filterable）即时过滤，选项太少会把「搜不到」变成家常便饭。
+// 1000 个 option 的渲染在几十毫秒量级，换来的是不用每次按键都发请求。
+const pickLimit = 1000
 
 // ProductPick 商品 → 规格 → 单位 的级联选项，供单据明细的三级下拉使用。
 // 停用的商品 / 规格 / 单位一律不出现在可选项里。

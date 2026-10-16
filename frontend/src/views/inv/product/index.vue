@@ -1114,28 +1114,46 @@ onMounted(() => {
   min-width: 0; // 否则表格会把弹性盒撑破，出现横向滚动
 }
 
-// 树节点：名称占满，操作按钮 hover 才显形，避免一屏小图标
+// 分类节点：名称占满剩余宽度，操作按钮**常显**。
+//
+// 此前按钮做成 hover 才出，结果一个都看不到 —— el-tree 的 .el-tree-node__content
+// 是 flex 容器，节点内容前面还有展开箭头与层级缩进；这里再写 width: 100%
+// 会让内容区比容器还宽，三个按钮被推到可视区之外裁掉，hover 也够不到。
+// 常显 + flex: 1 + min-width: 0 才是可靠做法，顺带省掉了「要先把鼠标放上去」
+// 这层发现成本 —— 用户看不到按钮就会以为没有这个功能。
 .cat-node {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  padding-right: 4px;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  padding-right: 2px;
 
   &__label {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   &__ops {
-    display: none;
-    flex: none;
-  }
-
-  &:hover &__ops {
     display: inline-flex;
+    align-items: center;
+    flex: none;
+
+    :deep(.el-button) {
+      padding: 0 3px;
+      height: auto;
+      font-size: 13px;
+      line-height: 1;
+    }
+
+    // Element 默认给相邻按钮 12px 左间距，三个图标在 248px 的树里会占掉一大截
+    :deep(.el-button + .el-button) {
+      margin-left: 0;
+    }
   }
 
   // 停用分类压灰，但仍在树上：它下面的商品还在库里

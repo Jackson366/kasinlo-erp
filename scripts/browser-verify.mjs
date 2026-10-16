@@ -553,6 +553,127 @@ async function main() {
   }
   report.phases.treeSelect = treeResults
 
+  // ── 阶段 4.0：分类树操作按钮可见性 + 开单商品模糊查找 ─────
+  // 这两个都出过「代码写了、用户看不到」的形态：
+  //   1. 分类树的操作按钮做成 hover 才显形，但 el-tree 节点内容区宽度
+  //      被 width:100% 撑破容器，三个按钮被裁到可视区之外 —— 按钮存在、
+  //      却永远点不到，用户只会认为「没有删除功能」；
+  //   2. 商品下拉用 el-select 的 remote，而 remote 模式下 el-select
+  //      **不做本地过滤**，原样显示全部 options —— 输入关键字后列表没变化，
+  //      看起来就像搜索没生效。
+  console.log('[4.0] 分类树操作按钮 + 开单商品模糊查找')
+  await coldStart(`${APP}/#/inv/product`, 2800)
+  const catOps = await evaluate(`(() => {
+    const pane = document.querySelector('.cat-pane__tree');
+    const node = document.querySelector('.el-tree .cat-node');
+    if (!pane || !node) return { ok: false, reason: 'no pane/node' };
+    const ops = node.querySelector('.cat-node__ops');
+    if (!ops) return { ok: false, reason: 'no ops container' };
+    const btns = Array.from(ops.querySelectorAll('button'));
+    const vis = btns.filter((b) => {
+      const r = b.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && b.offsetParent !== null;
+    });
+    const del = btns.find((b) => (b.getAttribute('title') || '').includes('删除'));
+    const paneBox = pane.getBoundingClientRect();
+    const delBox = del ? del.getBoundingClientRect() : null;
+    const nodeBox = node.getBoundingClientRect();
+    return {
+      ok: true,
+      total: btns.length,
+      visible: vis.length,
+      titles: btns.map((b) => b.getAttribute('title')),
+      deleteVisible: !!delBox && delBox.width > 0 && !!del && del.offsetParent !== null,
+      deleteInsidePane: !!delBox && delBox.right <= paneBox.right + 1 && delBox.left >= paneBox.left - 1,
+      deleteInsideNode: !!delBox && delBox.right <= nodeBox.right + 1,
+    };
+  })()`)
+  check(
+    '分类树节点三个操作按钮（含删除）全部可见且在容器内',
+    catOps.ok && catOps.total === 3 && catOps.visible === 3 && catOps.deleteVisible && catOps.deleteInsidePane,
+    JSON.stringify(catOps),
+  )
+
+  await navigate(`${APP}/#/inv/sales`, 2400)
+  const pickOpened = await evaluate(`(() => {
+    const b = Array.from(document.querySelectorAll('.toolbar__actions button'))
+      .find((e) => e.textContent.includes('新增'));
+    if (b) b.click();
+    return !!b;
+  })()`)
+  await sleep(1400)
+  // 选择器必须精确到 el-select：明细表头里也有一个 <span class="col-product">商品</span>，
+  // 用 `.col-product` 会命中那个 span，取 input 得到 null，
+  // 报出来的却是 `TypeError: Illegal invocation`（setter 以 null 为 this），
+  // 完全指不到真正的原因。
+  const PICK_SELECT = '.el-dialog .el-select.col-product'
+  const pickOpenedSel = await evaluate(`(() => {
+    const el = document.querySelector(${JSON.stringify(PICK_SELECT)});
+    if (!el) return false;
+    (el.querySelector('.el-select__wrapper') || el).click();
+    return true;
+  })()`)
+  await sleep(800)
+  /**
+   * 取「当前打开的」下拉里的选项文本。
+   * 页面上会同时挂多个未激活的 popper，只按 display 判断不够 ——
+   * 用项目里 probeTreeSelect 同一套判据（display / visibility / opacity）。
+   * 刻意写成朴素 for 循环：这段要跨 CDP 求值，嵌套箭头函数 + 模板拼接
+   * 曾在真实浏览器里抛 `TypeError: Illegal invocation`，排查成本远高于收益。
+   */
+  const PICK_TEXTS = `(function () {
+    var all = document.querySelectorAll('.el-popper');
+    var pop = null;
+    for (var i = 0; i < all.length; i++) {
+      var cs = getComputedStyle(all[i]);
+      if (cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.01) pop = all[i];
+    }
+    if (!pop) return null;
+    var items = pop.querySelectorAll('.el-select-dropdown__item');
+    var texts = [];
+    for (var j = 0; j < items.length; j++) texts.push(String(items[j].textContent).trim());
+    return texts;
+  })()`
+  const pickAll = await evaluate(`(function () {
+    var texts = ${PICK_TEXTS};
+    if (!texts) return { count: -1, reason: 'no visible popper' };
+    return { count: texts.length, sample: texts.slice(0, 3) };
+  })()`)
+  await evaluate(`(() => {
+    const el = document.querySelector(${JSON.stringify(PICK_SELECT)});
+    const inp = el && el.querySelector('input');
+    if (!inp) return false;
+    const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    set.call(inp, '钢');
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`)
+  await sleep(700)
+  const pickFiltered = await evaluate(`(function () {
+    var texts = ${PICK_TEXTS};
+    if (!texts) return { count: -1, reason: 'no visible popper' };
+    var allMatch = texts.length > 0;
+    for (var i = 0; i < texts.length; i++) {
+      if (texts[i].indexOf('钢') === -1) { allMatch = false; break; }
+    }
+    return { count: texts.length, allMatch: allMatch, sample: texts.slice(0, 3) };
+  })()`)
+  check(
+    '开单选商品支持输入字符模糊查找（列表随输入收敛且命中全部匹配）',
+    pickOpened &&
+      pickOpenedSel &&
+      pickAll.count > 0 &&
+      pickFiltered.count > 0 &&
+      pickFiltered.count < pickAll.count &&
+      pickFiltered.allMatch,
+    `建单弹窗=${pickOpened} 下拉打开=${pickOpenedSel} 全量=${pickAll.count} 过滤后=${pickFiltered.count} 全匹配=${pickFiltered.allMatch} 示例=${JSON.stringify(pickFiltered.sample)}`,
+  )
+  await evaluate(
+    `(() => { const b = Array.from(document.querySelectorAll('.el-dialog button')).find((e) => e.textContent.trim() === '取消'); if (b) b.click(); return true })()`,
+  )
+  await sleep(600)
+  report.phases.pickFilter = { pickAll, pickFiltered, catOps }
+
   // ── 阶段 4.1：商品多规格编辑弹窗 ─────────────────────
   // 这个弹窗里是自绘的「规格卡片 + 单位行」网格，比普通表单更容易出两类问题：
   //   1. 网格横向溢出弹窗（列宽是写死的 px）；

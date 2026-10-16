@@ -84,10 +84,10 @@ const inventoryTotal = computed(() =>
 // ---------------- 新增出入库单 ----------------
 /** 商品 → 规格 → 单位 级联选项（与采购 / 销售单同一份数据源） */
 const picks = ref<InvProductPick[]>([])
-/** 商品数超过单次上限：下拉里只是一部分，必须提示用关键字搜 */
+/** 商品数超过单次上限：下拉里只是一部分，必须说清楚 */
 const picksTruncated = ref(false)
-/** 远程搜索进行中 */
-const picking = ref(false)
+/** 单次上限的实际数值，用于提示文案（后端 pickLimit） */
+const pickLimit = 1000
 const formRef = ref<FormInstance>()
 const dialogVisible = ref(false)
 const submitting = ref(false)
@@ -237,26 +237,49 @@ async function loadPicks(): Promise<void> {
   const res = await invApi.productPick()
   picks.value = res.items
   picksTruncated.value = res.truncated
+  applyPickFilter(pickQuery.value)
 }
 
+// ---------------- 商品下拉的模糊查找 ----------------
 /**
- * 远程搜索商品并**合并**进可选项（不替换）。
- * 替换会让已选好商品的那几行找不到自己的 specId、显示成空白 ——
- * 搜一次把别人的行弄坏，这种缺陷最难复现。合并只增不减。
+ * 下拉里当前显示的商品。
+ *
+ * 不用 el-select 的 `remote`：**remote 模式下 el-select 不做本地过滤**，
+ * 它原样显示你给的全部 options。之前把服务端搜索结果合并进选项后，下拉里
+ * 仍是全部商品（含不匹配的），用户看到的就像「搜索没生效」。
+ * 改用 `filterable` + `filter-method`，过滤结果自己维护。
  */
-async function remoteSearchProducts(keyword: string): Promise<void> {
-  const kw = keyword.trim()
-  if (!kw) return
-  picking.value = true
-  try {
-    const res = await invApi.productPick({ keyword: kw })
-    const seen = new Set(picks.value.map((p) => p.id))
-    for (const p of res.items) {
-      if (!seen.has(p.id)) picks.value.push(p)
-    }
-  } finally {
-    picking.value = false
-  }
+const filteredPicks = ref<InvProductPick[]>([])
+const pickQuery = ref('')
+
+/** 三字段模糊匹配，与后端 ProductList 口径一致（现场报「φ20」比编码更常见） */
+function matchProduct(p: InvProductPick, q: string): boolean {
+  if (p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)) return true
+  return p.specs.some((s) => s.spec.toLowerCase().includes(q))
+}
+
+function applyPickFilter(query: string): void {
+  pickQuery.value = query
+  const q = query.trim().toLowerCase()
+  const all = picks.value
+  const matched = q ? all.filter((p) => matchProduct(p, q)) : all
+  // 已选中的商品必须始终留在选项里，否则 el-select 反查不到 label、显示成数字
+  const picked = new Set(form.items.map((it) => it.productId).filter(Boolean) as number[])
+  const missing = all.filter((p) => picked.has(p.id) && !matched.some((m) => m.id === p.id))
+  filteredPicks.value = missing.length ? [...missing, ...matched] : matched
+}
+
+function filterProducts(query: string): void {
+  applyPickFilter(query)
+}
+
+function onProductPickChange(item: StockFormItem): void {
+  onProductChange(item)
+  applyPickFilter('')
+}
+
+function onPickVisible(open: boolean): void {
+  if (open) applyPickFilter('')
 }
 
 /** 商品下拉文案：名称 + 编码 + 规格数（具体规格在下一级选） */
@@ -467,7 +490,7 @@ onMounted(() => {
 
         <el-form-item label="明细">
           <div v-if="picksTruncated" class="pick-hint">
-            商品较多，下拉只加载了一部分 —— 找不到想要的那个请直接输入编码或名称搜索
+            商品超过 {{ pickLimit }} 个，下拉只加载了一部分 —— 可以先在「商品档案」里按关键字找到它
           </div>
           <div class="item-editor">
             <div class="item-editor__head">
@@ -483,14 +506,12 @@ onMounted(() => {
                 v-model="item.productId"
                 class="col-product"
                 filterable
-                remote
-                reserve-keyword
-                :remote-method="remoteSearchProducts"
-                :loading="picking"
-                placeholder="选择商品（可输入编码 / 名称搜索）"
-                @change="onProductChange(item)"
+                :filter-method="filterProducts"
+                placeholder="输入商品名称 / 编码 / 规格搜索"
+                @change="onProductPickChange(item)"
+                @visible-change="onPickVisible"
               >
-                <el-option v-for="p in picks" :key="p.id" :label="productLabel(p)" :value="p.id" />
+                <el-option v-for="p in filteredPicks" :key="p.id" :label="productLabel(p)" :value="p.id" />
               </el-select>
               <el-select
                 v-model="item.specId"
