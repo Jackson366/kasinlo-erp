@@ -33,6 +33,14 @@ type AppConfig struct {
 	// 默认跟随 mode：debug 打开，release 关闭 —— 接口文档会把全部路由与参数结构
 	// 暴露给任何能访问服务的人，生产环境不该默认开着。
 	Swagger *bool `yaml:"swagger"`
+	// Metrics 控制是否挂载 /metrics 监控端点。
+	//
+	// 默认**关闭**：该端点会暴露路由表、请求量与状态码分布等运行信息，
+	// 属于「内网都未必该公开」的东西，因此不像 swagger 那样按 mode 自动放开，
+	// 需要接入 Prometheus 时才显式打开，并建议同时配置 metrics_token。
+	Metrics *bool `yaml:"metrics"`
+	// MetricsToken 非空时，访问 /metrics 必须带 Authorization: Bearer <token>。
+	MetricsToken string `yaml:"metrics_token"`
 }
 
 // Addr 返回监听地址。
@@ -59,6 +67,11 @@ func (a AppConfig) SwaggerEnabled() bool {
 	return a.IsDebug()
 }
 
+// MetricsEnabled 返回是否挂载 /metrics 端点。默认关闭，需显式开启。
+func (a AppConfig) MetricsEnabled() bool {
+	return a.Metrics != nil && *a.Metrics
+}
+
 type DatabaseConfig struct {
 	Host            string `yaml:"host"`
 	Port            int    `yaml:"port"`
@@ -71,6 +84,12 @@ type DatabaseConfig struct {
 	MaxOpenConns    int    `yaml:"max_open_conns"`
 	ConnMaxLifetime int    `yaml:"conn_max_lifetime"`
 	LogLevel        string `yaml:"log_level"`
+	// StatementTimeout 是单条 SQL 在 PostgreSQL 侧的执行上限（毫秒），<=0 走默认值 30000。
+	//
+	// 必须放在数据库侧而不是应用侧：应用层的 context 超时只能让调用方不再等待，
+	// 那条查询在数据库里照样跑完，连接也照样被占着；只有服务端 statement_timeout
+	// 能真正把它掐断。默认 30s，略小于 HTTP 服务的 60s 写超时，保证请求先于连接超时结束。
+	StatementTimeout int `yaml:"statement_timeout"`
 }
 
 // DSN 返回 GORM 使用的 PostgreSQL 连接串。
@@ -88,10 +107,17 @@ type DatabaseConfig struct {
 // v4 的 `statement_cache_mode` 在 v5 会被当成未知启动参数透传给服务器，
 // 表现是连库时报「未认可的配置参数」(SQLSTATE 42704)。
 func (d DatabaseConfig) DSN() string {
-	return fmt.Sprintf(
+	dsn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=%s default_query_exec_mode=describe_exec",
 		d.Host, d.Port, d.User, d.Password, d.DBName, d.SSLMode, d.TimeZone,
 	)
+	// statement_timeout 以「运行时参数」形式下发：pgx 会把连接串里未识别的键
+	// 转成 RuntimeParams（TimeZone 走的就是同一条路），于是连接池里**每一条**新连接
+	// 都自带这个上限；若改用连接后执行一次 SET，则只对当时那一条连接生效。
+	if d.StatementTimeout > 0 {
+		dsn += fmt.Sprintf(" statement_timeout=%d", d.StatementTimeout)
+	}
+	return dsn
 }
 
 // AdminDSN 返回连接到 postgres 默认库的连接串，用于自动建库。
@@ -244,6 +270,9 @@ func applyDefaults(c *Config) {
 	if c.Database.MaxOpenConns == 0 {
 		c.Database.MaxOpenConns = 100
 	}
+	if c.Database.StatementTimeout <= 0 {
+		c.Database.StatementTimeout = 30000
+	}
 	if c.Log.Level == "" {
 		c.Log.Level = "info"
 	}
@@ -296,6 +325,12 @@ func applyEnvOverrides(c *Config) {
 			c.App.Swagger = &b
 		}
 	}
+	if v := os.Getenv("NOVA_APP_METRICS"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			c.App.Metrics = &b
+		}
+	}
+	str("NOVA_APP_METRICS_TOKEN", &c.App.MetricsToken)
 
 	str("NOVA_DATABASE_HOST", &c.Database.Host)
 	num("NOVA_DATABASE_PORT", &c.Database.Port)
@@ -306,6 +341,7 @@ func applyEnvOverrides(c *Config) {
 	str("NOVA_DATABASE_TIMEZONE", &c.Database.TimeZone)
 	num("NOVA_DATABASE_MAX_IDLE_CONNS", &c.Database.MaxIdleConns)
 	num("NOVA_DATABASE_MAX_OPEN_CONNS", &c.Database.MaxOpenConns)
+	num("NOVA_DATABASE_STATEMENT_TIMEOUT", &c.Database.StatementTimeout)
 	str("NOVA_DATABASE_LOG_LEVEL", &c.Database.LogLevel)
 
 	str("NOVA_JWT_SECRET", &c.JWT.Secret)

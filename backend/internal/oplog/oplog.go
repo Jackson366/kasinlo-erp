@@ -244,6 +244,16 @@ func recordDrop() {
 	}
 }
 
+// Dropped 返回因缓冲满而被丢弃的操作日志条数，供 /metrics 抓取。
+//
+// 走 dropMu 而不是直接读 int64：writeMu/recordDrop 会在并发下改它，
+// 无锁读取在 -race 下会被判为数据竞争。
+func Dropped() int64 {
+	dropMu.Lock()
+	defer dropMu.Unlock()
+	return dropped
+}
+
 // 各列的长度上限，必须与 model.OperationLog 的 gorm size 标签严格一致。
 //
 // 这些字段里有相当一部分直接来自客户端（Path / UserAgent / Request / ErrorMsg）。

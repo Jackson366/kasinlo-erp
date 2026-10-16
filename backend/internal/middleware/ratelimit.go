@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"nova-erp/internal/metrics"
 	"nova-erp/internal/pkg/errcode"
 	"nova-erp/internal/pkg/limiter"
 	"nova-erp/internal/pkg/response"
@@ -29,6 +30,7 @@ func RateLimit(max int, window time.Duration) gin.HandlerFunc {
 		// 用原子方法而不是 Allow + Fail 两步：后者在并发下会被同时通过的
 		// N 个请求一起突破阈值，限流器恰好在爆破场景下失效。
 		if !l.AllowAndConsume(key) {
+			metrics.IncCounter("nova_ratelimit_rejected_total", nil)
 			response.FailWith(c, errcode.ErrTooManyReq, "")
 			return
 		}

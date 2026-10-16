@@ -20,6 +20,13 @@ app:
   # 不写则跟随 mode：debug 打开、release 关闭 —— 接口文档会暴露全部路由与参数结构，
   # 生产环境默认不该对外可见。需要时可用 NOVA_APP_SWAGGER=true 覆盖。
   swagger: true
+  # 是否挂载 /metrics 监控端点（Prometheus 文本格式）。
+  # 默认**关闭**：该端点会暴露路由表、请求量与状态码分布，不该像 swagger 那样
+  # 随 mode 自动放开。接入 Prometheus 时才打开，并建议同时配置 metrics_token。
+  metrics: false
+  # 非空时，抓取 /metrics 必须带 Authorization: Bearer <token>。
+  # 也可以用 NOVA_APP_METRICS_TOKEN 注入，避免把令牌落到配置文件里。
+  metrics_token: ""
 
 database:
   host: 127.0.0.1
@@ -33,6 +40,10 @@ database:
   max_open_conns: 100
   conn_max_lifetime: 3600   # 秒
   log_level: warn           # silent | error | warn | info
+  # 单条 SQL 在 PostgreSQL 侧的执行上限（毫秒），默认 30000。
+  # 放在数据库侧才能真正掐断查询：应用层超时只能让调用方不再等待，
+  # 查询本身仍在数据库里继续跑、继续占连接。
+  statement_timeout: 30000
 
 jwt:
   # ← 上线前务必换成随机长字符串，否则任何人都能用这个公开值伪造令牌

@@ -914,6 +914,8 @@ app:
   prefix: /api              # 路由统一前缀
   version: v1               # API 版本段，最终拼接为 /api/v1
   swagger: true             # 是否挂载 /swagger 在线文档；不写则跟随 mode（debug 开、release 关）
+  metrics: false            # 是否挂载 /metrics（Prometheus 文本格式）；默认关闭
+  metrics_token: ""         # 非空时抓取 /metrics 需带 Authorization: Bearer <token>
 
 database:
   host: 127.0.0.1
@@ -927,6 +929,7 @@ database:
   max_open_conns: 100
   conn_max_lifetime: 3600   # 秒
   log_level: warn           # silent | error | warn | info
+  statement_timeout: 30000  # 单条 SQL 在 PG 侧的执行上限（毫秒），默认 30000
 
 jwt:
   secret: CHANGE_ME_USE_A_RANDOM_LONG_STRING   # 上线务必换成随机长串
@@ -1984,7 +1987,7 @@ bash scripts/gen-swagger.sh        # 内部就是 swag init --parseInternal
 ## A. 接口总表（47 个）
 
 前缀 `/api/v1`。「权限」列中 `|` 表示任一命中即可。
-另有 `/health`（健康检查）与 `/swagger/*`（在线文档）不在业务接口之列。
+另有 `/health`（健康检查）、`/metrics`（监控指标，默认关闭）与 `/swagger/*`（在线文档）不在业务接口之列。
 接口的入参/出参结构以在线文档（`/swagger/index.html`）为准，本表只做导航。
 
 ### 认证与个人中心

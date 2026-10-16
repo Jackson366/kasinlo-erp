@@ -322,6 +322,18 @@ func Health() error {
 	return sqlDB.Ping()
 }
 
+// Stats 返回连接池运行状态，供 /metrics 抓取。
+func Stats() (sql.DBStats, error) {
+	if db == nil {
+		return sql.DBStats{}, errors.New("数据库未初始化")
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return sql.DBStats{}, err
+	}
+	return sqlDB.Stats(), nil
+}
+
 // ensureDatabase 检查目标库是否存在，不存在则自动创建。
 func ensureDatabase(cfg config.DatabaseConfig) error {
 	admin, err := sql.Open("pgx", cfg.AdminDSN())
