@@ -632,6 +632,94 @@
                 }
             }
         },
+        "/inv/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回 xlsx 二进制流，筛选参数与对应列表接口一致。",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "进销存-通用"
+                ],
+                "summary": "导出进销存列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "product / customer / supplier / order / stock / inventory",
+                        "name": "entity",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "entity=order 时必填：purchase / sales",
+                        "name": "bizType",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键字",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "状态",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "商品分类",
+                        "name": "categoryId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "出入库方向：in / out",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结算状态：unpaid / partial / paid",
+                        "name": "settleStatus",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始日期 yyyy-MM-dd",
+                        "name": "startDate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束日期 yyyy-MM-dd",
+                        "name": "endDate",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "xlsx 文件流",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "参数非法或无可导出数据",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/inv/finance/payables": {
             "get": {
                 "security": [
@@ -2791,6 +2879,51 @@
                 }
             }
         },
+        "/system/depts/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回 xlsx 二进制流，筛选参数同列表接口。",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "部门管理"
+                ],
+                "summary": "导出部门",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "按部门名称模糊搜索",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "状态：1 启用，0 禁用",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "xlsx 文件流",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "无可导出数据",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/system/depts/{id}": {
             "get": {
                 "security": [
@@ -3577,6 +3710,51 @@
                     },
                     "409": {
                         "description": "路由名称已存在",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/menus/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回 xlsx 二进制流，筛选参数同列表接口。",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "菜单管理"
+                ],
+                "summary": "导出菜单",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "按标题 / 路由名 / 权限标识模糊搜索",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "状态：1 启用，0 禁用",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "xlsx 文件流",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "无可导出数据",
                         "schema": {
                             "$ref": "#/definitions/response.Body"
                         }
