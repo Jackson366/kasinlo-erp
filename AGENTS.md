@@ -2323,6 +2323,29 @@ DOM 里一条都不少；而「用 v-for 重建列表」的**自定义过滤**�
 配套：批量请求要能**静默**（`config.silent`），否则 10 条失败弹 10 次相同 toast，
 真正要看的信息被淹没。列表工具统一收在 `composables/useListTools.ts`。
 
+### 5.99 按需导入的子组件，样式可能要引两份
+
+**诱因**：Element Plus 2.x 把 `form-item`、`radio-button`、`option`、`table-column`
+这类子组件拆成了独立目录，但**目录里只有 `style/`，没有 `index`**：
+组件本体仍由父 barrel 导出，样式却是独立 css。
+
+**症状**：`label-width="76px"` 完全不生效 —— `.el-form-item` 退化成 `display:block`，
+标签变回行内元素、宽度等于文字长度，所有表单悄悄变成「标签在上方」。
+构建、类型检查、绝大部分肉眼检查都不会报错，只有量 DOM 才看得出来。
+
+**做法**：解析器里判断「子目录只有 style、没有 index」，是则 `sideEffects` 引两份：
+
+```ts
+const sideEffects = [`element-plus/es/components/${barrel}/style/css`]
+if (partial !== barrel && hasStyleOnly(partial)) {
+  sideEffects.push(`element-plus/es/components/${partial}/style/css`)
+}
+```
+
+**排查口诀**：怀疑某个 Element 组件「样式没生效但又能用」时，先 grep 构建产物里
+该组件的基础规则（比如 `.el-form-item{display:flex`）在不在。在 JS 里能跑、
+在 CSS 里找不到 —— 就是这条。
+
 ### 6.1 交互缺陷另跑 `interaction-verify.mjs`
 
 
