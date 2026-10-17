@@ -6,7 +6,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"nova-admin/internal/pkg/errcode"
+	"nova-erp/internal/pkg/errcode"
 )
 
 // buildTable 用与业务模块相同的方式构造一张表，保证测试与真实导出路径同源。

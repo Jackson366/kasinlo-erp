@@ -31,7 +31,7 @@ describe('availableViewPaths', () => {
   it('返回真实存在的页面组件路径（去掉 ../views/ 前缀与 .vue 后缀）', () => {
     const paths = availableViewPaths()
     expect(paths).toContain('system/user/index')
-    expect(paths).toContain('dashboard/index')
+    expect(paths).toContain('inv/overview/index')
     expect(paths.every((p) => !p.startsWith('../') && !p.endsWith('.vue'))).toBe(true)
   })
 })
@@ -54,9 +54,9 @@ describe('buildRoutes', () => {
 
   it('叶子节点补齐 meta 默认值', () => {
     const [route] = buildRoutes([
-      rec({ path: '/dashboard', name: 'Dashboard', component: 'dashboard/index' }),
+      rec({ path: '/overview', name: 'Overview', component: 'inv/overview/index' }),
     ])
-    expect(route.meta?.title).toBe('Dashboard')
+    expect(route.meta?.title).toBe('Overview')
     expect(route.meta?.icon).toBe('')
     expect(route.meta?.keepAlive).toBe(false)
     expect(route.meta?.hidden).toBe(false)
@@ -64,7 +64,7 @@ describe('buildRoutes', () => {
 
   it('外链节点不注册内部路由', () => {
     const routes = buildRoutes([
-      rec({ path: '/ext', component: 'dashboard/index', meta: { isExternal: true } }),
+      rec({ path: '/ext', component: 'inv/overview/index', meta: { isExternal: true } }),
     ])
     expect(routes).toEqual([])
   })
@@ -88,7 +88,7 @@ describe('firstLeafPath', () => {
         path: '/system',
         children: [rec({ path: '/system/user', component: 'system/user/index' })],
       }),
-      rec({ path: '/dashboard', component: 'dashboard/index' }),
+      rec({ path: '/overview', component: 'inv/overview/index' }),
     ]
     expect(firstLeafPath(records)).toBe('/system/user')
   })
@@ -96,7 +96,7 @@ describe('firstLeafPath', () => {
   it('隐藏节点不能作为落地页', () => {
     const records = [
       rec({ path: '/hidden', meta: { hidden: true } }),
-      rec({ path: '/visible', component: 'dashboard/index' }),
+      rec({ path: '/visible', component: 'inv/overview/index' }),
     ]
     expect(firstLeafPath(records)).toBe('/visible')
   })
@@ -104,14 +104,14 @@ describe('firstLeafPath', () => {
   it('外链节点不能作为落地页（它没有对应的内部路由）', () => {
     const records = [
       rec({ path: '/ext', meta: { isExternal: true } }),
-      rec({ path: '/visible', component: 'dashboard/index' }),
+      rec({ path: '/visible', component: 'inv/overview/index' }),
     ]
     expect(firstLeafPath(records)).toBe('/visible')
   })
 
   it('没有页面组件的节点不能作为落地页', () => {
     // 这类节点会被 buildRoutes 跳过，选它做落地页只会落到 404
-    const records = [rec({ path: '/no-component' }), rec({ path: '/visible', component: 'dashboard/index' })]
+    const records = [rec({ path: '/no-component' }), rec({ path: '/visible', component: 'inv/overview/index' })]
     expect(firstLeafPath(records)).toBe('/visible')
   })
 
@@ -119,7 +119,7 @@ describe('firstLeafPath', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const records = [
       rec({ path: '/typo', component: 'system/user/indx' }),
-      rec({ path: '/visible', component: 'dashboard/index' }),
+      rec({ path: '/visible', component: 'inv/overview/index' }),
     ]
     expect(firstLeafPath(records)).toBe('/visible')
   })
@@ -128,7 +128,7 @@ describe('firstLeafPath', () => {
     const records = [
       rec({ path: '/empty-dir', children: [] }),
       rec({ path: '/a', children: [rec({ path: '/a/hidden', meta: { hidden: true } })] }),
-      rec({ path: '/b', component: 'dashboard/index' }),
+      rec({ path: '/b', component: 'inv/overview/index' }),
     ]
     expect(firstLeafPath(records)).toBe('/b')
   })

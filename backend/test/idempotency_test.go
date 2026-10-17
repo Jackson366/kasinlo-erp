@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"nova-admin/internal/database"
-	"nova-admin/internal/middleware"
-	"nova-admin/internal/model"
+	"nova-erp/internal/database"
+	"nova-erp/internal/middleware"
+	"nova-erp/internal/model"
 )
 
 const (

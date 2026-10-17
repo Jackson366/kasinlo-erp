@@ -1629,17 +1629,23 @@ async function main() {
     `记录到的 ip=${probeRows[0]?.ip}`,
   )
 
-  section('令牌刷新与登出')
-  const refreshed = await request('POST', '/auth/refresh', { body: { refreshToken } })
-  ok('刷新令牌', refreshed.json?.code === 0 && !!refreshed.json?.data?.accessToken, JSON.stringify(refreshed.json))
-  const logout = await request('POST', '/auth/logout', { token: refreshed.json?.data?.accessToken })
-  ok('退出登录', logout.json?.code === 0, JSON.stringify(logout.json))
-
+  // 清理必须放在登出之前：登出会把该账号名下已签发的令牌一并吊销，
+  // 先登出再清理时连本脚本自己手里的 token 都会变成 40105。
   section('清理测试数据')
   const cleanRole = await request('DELETE', `/system/roles/${newRoleId}`, { token })
   ok('删除自测角色', cleanRole.json?.code === 0, JSON.stringify(cleanRole.json))
   const cleanUser = await request('DELETE', `/system/users/${newUserId}`, { token })
   ok('删除自测用户', cleanUser.json?.code === 0, JSON.stringify(cleanUser.json))
+
+  section('令牌刷新与登出')
+  const refreshed = await request('POST', '/auth/refresh', { body: { refreshToken } })
+  ok('刷新令牌', refreshed.json?.code === 0 && !!refreshed.json?.data?.accessToken, JSON.stringify(refreshed.json))
+  const logout = await request('POST', '/auth/logout', { token: refreshed.json?.data?.accessToken })
+  ok('退出登录', logout.json?.code === 0, JSON.stringify(logout.json))
+  // 加固点：登出吊销的是「账号维度」而不是「这一张令牌」，
+  // 否则用户在公用电脑上登出后，此前被复制走的旧令牌仍能继续用。
+  const afterLogout = await request('GET', '/profile', { token })
+  ok('登出后同账号其余令牌一并失效（40105）', afterLogout.json?.code === 40105, JSON.stringify(afterLogout.json))
 
   emit(`\n结果：通过 ${pass} 项，失败 ${fail} 项`)
   if (fail > 0) process.exit(1)

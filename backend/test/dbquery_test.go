@@ -4,10 +4,10 @@ import (
 	"errors"
 	"testing"
 
-	"nova-admin/internal/database"
-	"nova-admin/internal/model"
-	"nova-admin/internal/pkg/dbquery"
-	"nova-admin/internal/pkg/errcode"
+	"nova-erp/internal/database"
+	"nova-erp/internal/model"
+	"nova-erp/internal/pkg/dbquery"
+	"nova-erp/internal/pkg/errcode"
 )
 
 // TestFetchWithCap 验证「带上限取数」的核心约定：

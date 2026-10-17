@@ -17,8 +17,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"nova-admin/internal/database"
-	"nova-admin/internal/oplog"
+	"nova-erp/internal/database"
+	"nova-erp/internal/oplog"
 )
 
 // latencyBuckets 是请求耗时分桶上界（秒），渲染时自动补 +Inf 桶。

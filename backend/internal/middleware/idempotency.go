@@ -12,11 +12,11 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm/clause"
 
-	"nova-admin/internal/database"
-	"nova-admin/internal/logger"
-	"nova-admin/internal/model"
-	"nova-admin/internal/pkg/errcode"
-	"nova-admin/internal/pkg/response"
+	"nova-erp/internal/database"
+	"nova-erp/internal/logger"
+	"nova-erp/internal/model"
+	"nova-erp/internal/pkg/errcode"
+	"nova-erp/internal/pkg/response"
 )
 
 // IdempotencyKeyHeader 是调用方携带幂等键的请求头名，与主流 API（Stripe 等）一致。
