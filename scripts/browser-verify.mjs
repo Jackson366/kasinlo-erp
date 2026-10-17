@@ -724,6 +724,11 @@ async function main() {
   //      于是空规格能直接提交（服务端虽然会拦，但用户看到的是「点了确定没反应」）。
   console.log('[4.1] 商品多规格编辑弹窗（结构 + 嵌套校验）')
   await coldStart(`${APP}/#/inv/product`, 2800)
+  // 条码列要在列表上，且弹窗里能填 —— 扫码枪就是键盘，录进去要能一眼看见
+  const productHeads = await evaluate(`(() => Array.from(
+    document.querySelectorAll('.product-main .el-table__header th')
+  ).map((th) => (th.textContent || '').trim()).filter(Boolean))()`)
+  check('商品列表含「条码」列', productHeads.includes('条码'), JSON.stringify(productHeads))
   await evaluate(`(() => { const b = Array.from(document.querySelectorAll('button')).find(e => e.textContent.trim() === '新增商品'); if (b) b.click(); return !!b })()`)
   await sleep(1200)
 
@@ -1041,6 +1046,39 @@ async function main() {
     '单据操作栏不再出现「取消 / 删除」',
     !orderActions.includes('取消') && !orderActions.includes('删除'),
     JSON.stringify(Array.from(new Set(orderActions))),
+  )
+
+  // 筛选区：时间区间 + 单据状态 + 结算状态四件套，且用 grid 排成一行
+  const filterState = await evaluate(`(() => {
+    const f = document.querySelector('.order-page .filter-form');
+    if (!f) return null;
+    const items = Array.from(f.querySelectorAll('.el-form-item')).map((el) => {
+      const r = el.getBoundingClientRect();
+      return { top: Math.round(r.top), width: Math.round(r.width), label: (el.querySelector('.el-form-item__label')?.textContent || '').trim() };
+    });
+    const a = f.querySelector('.filter-form__actions');
+    return {
+      labels: items.map((i) => i.label),
+      rows: new Set(items.map((i) => i.top)).size,
+      widths: items.map((i) => i.width),
+      hasDateRange: !!f.querySelector('.el-date-editor--daterange'),
+      actionsRight: a ? Math.abs(a.getBoundingClientRect().right - f.getBoundingClientRect().right) < 24 : false,
+    };
+  })()`)
+  check(
+    '单据筛选含时间 / 单据状态 / 结算状态',
+    !!filterState &&
+      filterState.hasDateRange === true &&
+      ['关键字', '单据日期', '单据状态', '结算状态'].every((l) => filterState.labels.includes(l)),
+    JSON.stringify(filterState?.labels),
+  )
+  check(
+    '筛选区等宽排成一行且按钮右对齐',
+    !!filterState &&
+      filterState.rows === 1 &&
+      new Set(filterState.widths).size === 1 &&
+      filterState.actionsRight === true,
+    JSON.stringify({ rows: filterState?.rows, widths: filterState?.widths, right: filterState?.actionsRight }),
   )
 
   // 出入库单据同样要有业务员与操作人员（审核自动生成的单子沿用来源单的业务员）

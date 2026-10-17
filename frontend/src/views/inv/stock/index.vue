@@ -260,7 +260,10 @@ const pickQuery = ref('')
 
 /** 三字段模糊匹配，与后端 ProductList 口径一致（现场报「φ20」比编码更常见） */
 function matchProduct(p: InvProductPick, q: string): boolean {
+  // 条码也参与匹配：扫码枪就是键盘，扫完等于把整串条码敲进搜索框，
+  // 命中的通常只剩一条，回车即选中（el-select filterable 的原生行为）
   if (p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)) return true
+  if (p.barcode && p.barcode.toLowerCase().includes(q)) return true
   return p.specs.some((s) => s.spec.toLowerCase().includes(q))
 }
 
@@ -290,7 +293,9 @@ function onPickVisible(open: boolean): void {
 
 /** 商品下拉文案：名称 + 编码 + 规格数（具体规格在下一级选） */
 function productLabel(p: InvProductPick): string {
-  return `${p.name}（${p.code}）· ${p.specs.length} 个规格`
+  // 有码就带上：扫码枪敲完一串数字，用户要能一眼确认「选中的是这件货」
+  const key = p.barcode ? `${p.code} / ${p.barcode}` : p.code
+  return `${p.name}（${key}）· ${p.specs.length} 个规格`
 }
 
 function onTabChange(name: string | number): void {

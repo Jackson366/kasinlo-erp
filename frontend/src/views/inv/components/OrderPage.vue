@@ -14,6 +14,7 @@ import type {
   InvOrderRow,
   InvOrderStatus,
   InvPartyRow,
+  InvSettleStatus,
   InvPickSpec,
   InvPickUnit,
   InvProductPick,
@@ -51,10 +52,13 @@ interface OrderQuery {
   pageSize?: number
   keyword?: string
   status?: number
+  settleStatus?: InvSettleStatus
+  /** 单据日期区间 [开始, 结束]，空数组表示不限 */
+  dateRange?: string[]
 }
 
 const { query, loading, rows, total, load, search, reset } = useTableQuery<OrderQuery, InvOrderRow>(
-  { keyword: '', status: undefined },
+  { keyword: '', status: undefined, settleStatus: undefined, dateRange: [] },
   (params) =>
     invApi.orders({
       bizType: props.bizType,
@@ -62,8 +66,12 @@ const { query, loading, rows, total, load, search, reset } = useTableQuery<Order
       pageSize: params.pageSize,
       keyword: params.keyword || undefined,
       status: params.status ?? undefined,
+      settleStatus: params.settleStatus || undefined,
+      startDate: params.dateRange?.[0] || undefined,
+      endDate: params.dateRange?.[1] || undefined,
     }),
 )
+
 
 // ---------------- 备选数据 ----------------
 const parties = ref<InvPartyRow[]>([])
@@ -131,7 +139,10 @@ const pickQuery = ref('')
 
 /** 三字段模糊匹配，与后端 ProductList 的口径一致（现场报「φ20」比编码更常见） */
 function matchProduct(p: InvProductPick, q: string): boolean {
+  // 条码也参与匹配：扫码枪就是键盘，扫完等于把整串条码敲进搜索框，
+  // 命中的通常只剩一条，回车即选中（el-select filterable 的原生行为）
   if (p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)) return true
+  if (p.barcode && p.barcode.toLowerCase().includes(q)) return true
   return p.specs.some((s) => s.spec.toLowerCase().includes(q))
 }
 
@@ -233,7 +244,9 @@ function today(): string {
  * 反而看不出「这个商品有几个规格可选」。
  */
 function productLabel(p: InvProductPick): string {
-  return `${p.name}（${p.code}）· ${p.specs.length} 个规格`
+  // 有码就带上：扫码枪敲完一串数字，用户要能一眼确认「选中的是这件货」
+  const key = p.barcode ? `${p.code} / ${p.barcode}` : p.code
+  return `${p.name}（${key}）· ${p.specs.length} 个规格`
 }
 
 function addItem(): void {
@@ -419,31 +432,53 @@ onMounted(() => {
 
 <template>
   <div class="order-page">
+    <!-- 筛选区：网格自适应列数。
+         以前是 el-form inline + 固定像素宽，加了时间 / 结算之后控件宽度不一，
+         第二行会参差不齐地挤在一起。改成 grid 之后每列等宽、行高一致，
+         窗口变窄自动从四列折成两列，不会出现「一个控件孤零零占一行」。 -->
     <div class="page-card search-bar">
-      <el-form :inline="true" @submit.prevent>
+      <el-form class="filter-form" label-width="76px" @submit.prevent>
         <el-form-item label="关键字">
           <el-input
             v-model="query.keyword"
-            placeholder="单号 / 往来单位"
+            placeholder="单号 / 往来单位 / 业务员"
             clearable
-            style="width: 220px"
             @keyup.enter="search"
           />
         </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="query.status" placeholder="全部" clearable style="width: 140px">
+        <el-form-item label="单据日期">
+          <el-date-picker
+            v-model="query.dateRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            unlink-panels
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="单据状态">
+          <el-select v-model="query.status" placeholder="全部" clearable>
             <el-option label="待处理" :value="1" />
             <el-option label="已审核" :value="2" />
             <el-option label="已取消" :value="3" />
           </el-select>
         </el-form-item>
-        <el-form-item>
+        <el-form-item label="结算状态">
+          <el-select v-model="query.settleStatus" placeholder="全部" clearable>
+            <el-option label="未结清" value="unpaid" />
+            <el-option label="部分结算" value="partial" />
+            <el-option label="已结清" value="paid" />
+          </el-select>
+        </el-form-item>
+        <div class="filter-form__actions">
           <el-button type="primary" @click="search">
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="reset">重置</el-button>
-        </el-form-item>
+        </div>
       </el-form>
     </div>
 
@@ -749,6 +784,28 @@ onMounted(() => {
 </template>
 
 <style scoped lang="scss">
+.filter-form {
+  display: grid;
+  // 四列等宽；容器窄了自动折行（minmax 保证每个控件都有可用宽度，
+  // 不会像 flex 那样把日期区间压成一条缝）
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px 20px;
+  align-items: end;
+
+  :deep(.el-form-item) {
+    margin: 0;
+  }
+
+  // 按钮单独占一整行并右对齐：混在 grid 里会按列宽左对齐，
+  // 看起来像「第五个筛选条件」而不是动作区
+  &__actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}
+
 .table-pager {
   display: flex;
   justify-content: flex-end;

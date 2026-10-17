@@ -111,8 +111,15 @@ type InvProduct struct {
 	Code       string `gorm:"size:32;not null" json:"code"`  // 商品编码
 	Name       string `gorm:"size:128;not null" json:"name"` // 商品名称
 	CategoryID int64  `gorm:"index" json:"categoryId"`       // 商品分类
-	Status     int16  `gorm:"not null" json:"status"`
-	Remark     string `gorm:"size:255" json:"remark"`
+	// Barcode 商品条码（EAN-13 / Code128 等），选填。
+	//
+	// 不加唯一索引：同一商品常有「箱码 / 单品码」两个条码，供应商换包装也会
+	// 改码，历史上还可能出现重复贴错的场景。条码的作用是**扫得快**，
+	// 不是做唯一键 —— 拿它当唯一键会让正常录入被 409 挡住，
+	// 而库里真正的唯一性早就由 Code 保证了。
+	Barcode string `gorm:"size:64;index" json:"barcode"`
+	Status  int16  `gorm:"not null" json:"status"`
+	Remark  string `gorm:"size:255" json:"remark"`
 }
 
 // TableName 指定表名。

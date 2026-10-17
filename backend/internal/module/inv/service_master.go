@@ -554,10 +554,10 @@ func (s *Service) ProductList(q page.Query, status *int16, categoryID int64) ([]
 		// 规格也算「关键字」：现场沟通时用户报的往往是「φ20」而不是编码。
 		// 用 EXISTS 子查询而不是 JOIN —— JOIN 会让同一个商品被多规格放大成多行，
 		// 分页与总数随即对不上（AGENTS.md §2 Step 7 同一个坑）。
-		tx = tx.Where(`code ILIKE ? ESCAPE '\' OR name ILIKE ? ESCAPE '\' OR EXISTS (
+		tx = tx.Where(`code ILIKE ? ESCAPE '\' OR name ILIKE ? ESCAPE '\' OR barcode ILIKE ? ESCAPE '\' OR EXISTS (
 			SELECT 1 FROM inv_product_specs sp
 			WHERE sp.product_id = inv_products.id AND sp.deleted_at IS NULL AND sp.spec ILIKE ? ESCAPE '\')`,
-			likeKW(q.Keyword), likeKW(q.Keyword), likeKW(q.Keyword))
+			likeKW(q.Keyword), likeKW(q.Keyword), likeKW(q.Keyword), likeKW(q.Keyword))
 	}
 	if status != nil {
 		tx = tx.Where("status = ?", *status)
@@ -601,7 +601,7 @@ func (s *Service) ProductList(q page.Query, status *int16, categoryID int64) ([]
 			totalStock += sp.Stock
 		}
 		rows = append(rows, ProductRow{
-			ID: it.ID, Code: it.Code, Name: it.Name,
+			ID: it.ID, Code: it.Code, Name: it.Name, Barcode: it.Barcode,
 			CategoryID: it.CategoryID, CategoryName: categories[it.CategoryID],
 			SpecCount: len(specVOs), UnitCount: unitCount,
 			TotalStock: round4(totalStock), Warn: warn, Status: it.Status,
@@ -637,7 +637,7 @@ func (s *Service) ProductDetail(id int64) (*ProductRow, error) {
 		totalStock += sp.Stock
 	}
 	row := ProductRow{
-		ID: it.ID, Code: it.Code, Name: it.Name,
+		ID: it.ID, Code: it.Code, Name: it.Name, Barcode: it.Barcode,
 		CategoryID: it.CategoryID, CategoryName: categories[it.CategoryID],
 		SpecCount: len(specVOs), UnitCount: unitCount,
 		TotalStock: round4(totalStock), Warn: warn, Status: it.Status,
@@ -661,10 +661,10 @@ const pickLimit = 1000
 func (s *Service) ProductPick(keyword string) (*ProductPickResult, error) {
 	tx := s.db.Model(&model.InvProduct{}).Where("status = ?", model.StatusEnabled)
 	if keyword != "" {
-		tx = tx.Where(`code ILIKE ? ESCAPE '\' OR name ILIKE ? ESCAPE '\' OR EXISTS (
+		tx = tx.Where(`code ILIKE ? ESCAPE '\' OR name ILIKE ? ESCAPE '\' OR barcode ILIKE ? ESCAPE '\' OR EXISTS (
 			SELECT 1 FROM inv_product_specs sp
 			WHERE sp.product_id = inv_products.id AND sp.deleted_at IS NULL AND sp.spec ILIKE ? ESCAPE '\')`,
-			likeKW(keyword), likeKW(keyword), likeKW(keyword))
+			likeKW(keyword), likeKW(keyword), likeKW(keyword), likeKW(keyword))
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
@@ -702,7 +702,7 @@ func (s *Service) ProductPick(keyword string) (*ProductPickResult, error) {
 	}
 	out := make([]ProductPickVO, 0, len(list))
 	for _, p := range list {
-		pick := ProductPickVO{ID: p.ID, Code: p.Code, Name: p.Name, Specs: []PickSpecVO{}}
+		pick := ProductPickVO{ID: p.ID, Code: p.Code, Name: p.Name, Barcode: p.Barcode, Specs: []PickSpecVO{}}
 		for _, sp := range specs[p.ID] {
 			if sp.Status != model.StatusEnabled {
 				continue
@@ -1168,7 +1168,7 @@ func (s *Service) ProductCreate(req ProductReq) (int64, error) {
 		status = *req.Status
 	}
 	it := model.InvProduct{
-		Code: req.Code, Name: req.Name, CategoryID: req.CategoryID,
+		Code: req.Code, Name: req.Name, Barcode: req.Barcode, CategoryID: req.CategoryID,
 		Status: status, Remark: req.Remark,
 	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -1203,7 +1203,8 @@ func (s *Service) ProductUpdate(id int64, req ProductReq) error {
 		return errcode.New(errcode.ErrNotFound, "商品不存在")
 	}
 	updates := map[string]any{
-		"code": req.Code, "name": req.Name, "category_id": req.CategoryID, "remark": req.Remark,
+		"code": req.Code, "name": req.Name, "barcode": req.Barcode,
+		"category_id": req.CategoryID, "remark": req.Remark,
 	}
 	if req.Status != nil {
 		updates["status"] = *req.Status

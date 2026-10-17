@@ -429,6 +429,8 @@ export interface InvProductRow {
   id: number
   code: string
   name: string
+  /** 商品条码（选填，扫描/粘贴均可） */
+  barcode: string
   categoryId: number
   categoryName: string
   specCount: number
@@ -464,6 +466,8 @@ export interface InvProductSpecPayload {
 export interface InvProductPayload {
   code: string
   name: string
+  /** 商品条码（选填）；空串表示清空 */
+  barcode?: string
   categoryId?: number
   status?: Status
   remark?: string
@@ -493,6 +497,8 @@ export interface InvProductPick {
   id: number
   code: string
   name: string
+  /** 商品条码：开单时可以按条码模糊匹配，扫码枪输入即等于输入条码 */
+  barcode: string
   specs: InvPickSpec[]
 }
 

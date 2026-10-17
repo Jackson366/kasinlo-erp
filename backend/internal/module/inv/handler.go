@@ -3,6 +3,7 @@ package inv
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -90,4 +91,49 @@ func orderStatusQuery(c *gin.Context) (*int16, error) {
 	}
 	s := int16(n)
 	return &s, nil
+}
+
+// settleQuery 解析结算状态过滤参数（unpaid / partial / paid）。
+//
+// 同样不静默忽略：把 settleStatus=paied 这种笔误当成「全部」返回，
+// 用户会以为系统里真没有已结清的单据。
+func settleQuery(c *gin.Context) (string, error) {
+	v := strings.TrimSpace(c.Query("settleStatus"))
+	switch v {
+	case "", model.InvSettleUnpaid, model.InvSettlePartial, model.InvSettlePaid:
+		return v, nil
+	default:
+		return "", errcode.Newf(errcode.ErrBadRequest,
+			"查询参数 settleStatus 非法：%s（仅支持 unpaid / partial / paid）", v)
+	}
+}
+
+// orderRangeQuery 解析单据日期的起止（yyyy-MM-dd，闭区间）。
+//
+// 结束日按「当天 00:00」补齐：库里 order_date 是 date 类型，传时间戳也能比较，
+// 但若直接拿用户传来的 23:59 之外的零值做 <=，会把当天整天漏掉。
+func orderRangeQuery(c *gin.Context) (*time.Time, *time.Time, error) {
+	parse := func(key string) (*time.Time, error) {
+		v := strings.TrimSpace(c.Query(key))
+		if v == "" {
+			return nil, nil
+		}
+		t, err := parseDate(v)
+		if err != nil {
+			return nil, errcode.Newf(errcode.ErrBadRequest, "查询参数 %s 格式非法：%s（应为 yyyy-MM-dd）", key, v)
+		}
+		return &t, nil
+	}
+	start, err := parse("startDate")
+	if err != nil {
+		return nil, nil, err
+	}
+	end, err := parse("endDate")
+	if err != nil {
+		return nil, nil, err
+	}
+	if start != nil && end != nil && end.Before(*start) {
+		return nil, nil, errcode.Newf(errcode.ErrBadRequest, "结束日期不能早于开始日期")
+	}
+	return start, end, nil
 }

@@ -115,6 +115,7 @@ function blankSpec(): InvProductSpecPayload {
 const form = reactive<InvProductPayload>({
   code: '',
   name: '',
+  barcode: '',
   categoryId: undefined,
   status: 1,
   remark: '',
@@ -271,6 +272,7 @@ function openCreate(): void {
   Object.assign(form, {
     code: '',
     name: '',
+    barcode: '',
     categoryId: undefined,
     status: 1,
     remark: '',
@@ -285,6 +287,7 @@ function openEdit(row: InvProductRow): void {
   Object.assign(form, {
     code: row.code,
     name: row.name,
+    barcode: row.barcode || '',
     categoryId: row.categoryId || undefined,
     status: row.status,
     remark: row.remark,
@@ -320,6 +323,7 @@ async function submitForm(): Promise<void> {
     () => ({
       code: form.code.trim(),
       name: form.name.trim(),
+      barcode: (form.barcode || '').trim(),
       categoryId: form.categoryId ?? 0,
       status: form.status,
       remark: form.remark,
@@ -666,7 +670,7 @@ onMounted(() => {
             <el-form-item label="关键字">
               <el-input
                 v-model="query.keyword"
-                placeholder="编码 / 名称 / 规格"
+                placeholder="编码 / 名称 / 条码 / 规格"
                 clearable
                 style="width: 220px"
                 @keyup.enter="search"
@@ -684,23 +688,23 @@ onMounted(() => {
               </el-select>
             </el-form-item>
             <el-form-item label="状态">
-          <el-select v-model="query.status" placeholder="全部" clearable style="width: 140px">
-            <el-option label="启用" :value="1" />
-            <el-option label="停用" :value="0" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="search">
-            <AppIcon name="Search" />
-            <span>查询</span>
-          </el-button>
-          <el-button @click="reset">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </div>
+              <el-select v-model="query.status" placeholder="全部" clearable style="width: 140px">
+                <el-option label="启用" :value="1" />
+                <el-option label="停用" :value="0" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="search">
+                <AppIcon name="Search" />
+                <span>查询</span>
+              </el-button>
+              <el-button @click="reset">重置</el-button>
+            </el-form-item>
+          </el-form>
+        </div>
 
-    <div class="page-card">
-      <div class="toolbar">
+        <div class="page-card">
+          <div class="toolbar">
         <div class="toolbar__title">
           <h3>商品管理</h3>
           <span class="text-muted">
@@ -756,36 +760,39 @@ onMounted(() => {
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="code" label="编码" width="110" />
-        <el-table-column prop="name" label="商品名称" min-width="150" show-overflow-tooltip />
-        <el-table-column label="分类" width="110">
+        <el-table-column prop="code" label="编码" width="96" />
+        <el-table-column prop="name" label="商品名称" min-width="130" show-overflow-tooltip />
+        <el-table-column label="条码" width="116" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.barcode || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="分类" width="90">
           <template #default="{ row }">{{ row.categoryName || '-' }}</template>
         </el-table-column>
-        <el-table-column label="规格" min-width="160" show-overflow-tooltip>
+        <el-table-column label="规格" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ specSummary(row as InvProductRow) }}</template>
         </el-table-column>
-        <el-table-column label="规格数" width="90" align="center">
+        <el-table-column label="规格数" width="72" align="center">
           <template #default="{ row }">{{ row.specCount }}</template>
         </el-table-column>
-        <el-table-column label="单位数" width="90" align="center">
+        <el-table-column label="单位数" width="72" align="center">
           <template #default="{ row }">{{ row.unitCount }}</template>
         </el-table-column>
-        <el-table-column label="总库存" width="120" align="right">
+        <el-table-column label="总库存" width="96" align="right">
           <template #default="{ row }">
             <span :class="row.warn ? 'stock-warn' : ''">{{ formatQty(row.totalStock) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="90" align="center">
+        <el-table-column label="状态" width="80" align="center">
           <template #default="{ row }">
             <StatusTag :status="row.status" />
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="120">
+        <el-table-column label="创建时间" width="100">
           <template #default="{ row }">
             <span class="text-secondary">{{ formatDate(row.createdAt) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
             <el-button
               v-perm="'inv:product:update'"
@@ -869,12 +876,12 @@ onMounted(() => {
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
         <el-row :gutter="16">
-          <el-col :span="12">
+          <el-col :span="8">
             <el-form-item label="商品编码" prop="code">
               <el-input v-model="form.code" placeholder="如 SP001" />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :span="8">
             <el-form-item label="商品名称" prop="name">
               <el-input
                 v-model="form.name"
@@ -882,6 +889,13 @@ onMounted(() => {
                 @input="onNameInput"
                 @blur="checkDuplicates"
               />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <!-- 条码用普通输入框而不是扫码专用控件：扫码枪就是键盘，
+                 光标放进去扫一下就录完了，粘贴也行 -->
+            <el-form-item label="商品条码">
+              <el-input v-model="form.barcode" maxlength="64" placeholder="扫描或输入，选填" clearable />
             </el-form-item>
           </el-col>
         </el-row>
@@ -908,7 +922,7 @@ onMounted(() => {
         </el-alert>
 
         <el-row :gutter="16">
-          <el-col :span="12">
+          <el-col :span="8">
             <el-form-item label="商品分类">
               <!-- 可输入搜索，与销售单里选商品同一套交互：
                    分类多了（尤其多级）靠翻列表是找不到的 -->
@@ -923,7 +937,7 @@ onMounted(() => {
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :span="8">
             <el-form-item label="状态">
               <el-switch
                 :model-value="form.status === 1"
@@ -931,10 +945,12 @@ onMounted(() => {
               />
             </el-form-item>
           </el-col>
+          <el-col :span="8">
+            <el-form-item label="备注">
+              <el-input v-model="form.remark" placeholder="选填" />
+            </el-form-item>
+          </el-col>
         </el-row>
-        <el-form-item label="备注">
-          <el-input v-model="form.remark" placeholder="选填" />
-        </el-form-item>
 
         <div class="spec-head">
           <span class="divider-title">规格与计量单位（可留空）</span>

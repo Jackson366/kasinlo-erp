@@ -423,6 +423,7 @@ async function main() {
   const prodBody = {
     code: prodCode,
     name: '自测商品',
+    barcode: 'SMOKE-BC-0001',
     categoryId: catId,
     status: 1,
     remark: '接口自测',
@@ -457,6 +458,25 @@ async function main() {
       specCount: prodDetail.json?.data?.specCount,
       unitCount: prodDetail.json?.data?.unitCount,
     }),
+  )
+
+  // 条码走通三条链路：详情回显、列表关键字能搜到、开单下拉带出来
+  ok(
+    '商品条码回显',
+    prodDetail.json?.data?.barcode === 'SMOKE-BC-0001',
+    JSON.stringify(prodDetail.json?.data?.barcode),
+  )
+  const byBarcode = await request('GET', '/inv/products?keyword=SMOKE-BC-0001&pageSize=5', { token })
+  ok(
+    '按条码能搜到商品',
+    byBarcode.json?.code === 0 && byBarcode.json.data.list.some((p) => p.id === smokeProduct),
+    JSON.stringify(byBarcode.json?.data?.list?.map((p) => p.code)),
+  )
+  const pickByBarcode = await request('GET', '/inv/products/pick?keyword=SMOKE-BC-0001', { token })
+  ok(
+    '开单商品下拉按条码命中且带出条码',
+    pickByBarcode.json?.data?.items?.[0]?.barcode === 'SMOKE-BC-0001',
+    JSON.stringify(pickByBarcode.json?.data?.items?.map((p) => p.barcode)),
   )
 
   const prodDup = await request('POST', '/inv/products', { token, body: prodBody })
@@ -950,6 +970,37 @@ async function main() {
   ok('非法 bizType 返回 40000', badBiz.json?.code === 40000, JSON.stringify(badBiz.json))
   const badStatus = await request('GET', '/inv/orders?bizType=sales&status=9', { token })
   ok('非法单据状态返回 40000 而非静默忽略', badStatus.json?.code === 40000, JSON.stringify(badStatus.json))
+
+  // 结算状态筛选必须与 settleStatus() 同口径：SQL 侧写错（比如漏了 0.001 容差）
+  // 时，列表标签与筛选结果会对不上，而这种错在页面上看不出来
+  const unpaidSales = await request('GET', '/inv/orders?bizType=sales&settleStatus=unpaid&pageSize=50', { token })
+  ok(
+    '结算状态筛选只返回未结清单据',
+    unpaidSales.json?.code === 0 &&
+      unpaidSales.json.data.list.length > 0 &&
+      unpaidSales.json.data.list.every((r) => r.settleStatus === 'unpaid'),
+    JSON.stringify(unpaidSales.json?.data?.list?.map((r) => r.settleStatus)),
+  )
+  const badSettle = await request('GET', '/inv/orders?bizType=sales&settleStatus=paied', { token })
+  ok('非法结算状态返回 40000', badSettle.json?.code === 40000, JSON.stringify(badSettle.json))
+  // 区间取到一个必然覆盖全部数据的范围，用来验「闭区间 + 不漏行」
+  const allSales = await request('GET', '/inv/orders?bizType=sales&pageSize=1', { token })
+  const wideRange = await request(
+    'GET',
+    '/inv/orders?bizType=sales&pageSize=1&startDate=2000-01-01&endDate=2099-12-31',
+    { token },
+  )
+  ok(
+    '日期区间过滤能覆盖全部单据（闭区间不漏行）',
+    wideRange.json?.code === 0 && wideRange.json.data.total === allSales.json?.data?.total,
+    `区间=${wideRange.json?.data?.total} 全部=${allSales.json?.data?.total}`,
+  )
+  const badRange = await request(
+    'GET',
+    '/inv/orders?bizType=sales&startDate=2026-10-15&endDate=2026-10-01',
+    { token },
+  )
+  ok('结束日期早于开始日期返回 40000', badRange.json?.code === 40000, JSON.stringify(badRange.json))
 
   const cancelOrder = await request('PUT', `/inv/orders/${orderId}/status`, {
     token,

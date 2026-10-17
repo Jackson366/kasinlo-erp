@@ -113,6 +113,7 @@ type ProductSpecReq struct {
 type ProductReq struct {
 	Code       string           `json:"code" binding:"required,max=32" label:"商品编码"`
 	Name       string           `json:"name" binding:"required,max=128" label:"商品名称"`
+	Barcode    string           `json:"barcode" binding:"omitempty,max=64" label:"商品条码"`
 	CategoryID int64            `json:"categoryId" label:"商品分类"`
 	Status     *int16           `json:"status" binding:"omitempty,oneof=0 1" label:"状态"`
 	Remark     string           `json:"remark" binding:"omitempty,max=255" label:"备注"`
@@ -146,6 +147,7 @@ type ProductRow struct {
 	ID           int64           `json:"id"`
 	Code         string          `json:"code"`
 	Name         string          `json:"name"`
+	Barcode      string          `json:"barcode"`
 	CategoryID   int64           `json:"categoryId"`
 	CategoryName string          `json:"categoryName"`
 	SpecCount    int             `json:"specCount"`
@@ -188,10 +190,11 @@ type PickSpecVO struct {
 
 // ProductPickVO 单据明细的商品 → 规格 → 单位 级联选项。
 type ProductPickVO struct {
-	ID    int64        `json:"id"`
-	Code  string       `json:"code"`
-	Name  string       `json:"name"`
-	Specs []PickSpecVO `json:"specs"`
+	ID      int64        `json:"id"`
+	Code    string       `json:"code"`
+	Name    string       `json:"name"`
+	Barcode string       `json:"barcode"`
+	Specs   []PickSpecVO `json:"specs"`
 }
 
 // ProductPickResult 商品级联选项的返回体。
@@ -264,6 +267,22 @@ type OrderItemVO struct {
 	QtyBase     float64 `json:"qtyBase"`
 	Price       float64 `json:"price"`
 	Amount      float64 `json:"amount"`
+}
+
+// OrderFilter 单据列表筛选条件。
+//
+// 聚成一个结构体而不是继续加形参：单据类型、状态、结算状态、起止日期
+// 已经是四组条件，平铺成参数列表后调用处只剩一串「nil、""、nil」，
+// 谁都不愿意读。新增一种筛选只改这里和 service 里的一段 SQL。
+type OrderFilter struct {
+	BizType string
+	Status  *int16
+	// Settle 结算状态："" 全部 / unpaid 未结清 / partial 部分结算 / paid 已结清。
+	// 与 settleStatus() 的判定必须同一口径，否则筛选出来的行与标签对不上。
+	Settle string
+	// Start / End 按**单据日期**过滤，闭区间；nil 表示不限。
+	Start *time.Time
+	End   *time.Time
 }
 
 // OrderRow 单据列表行。

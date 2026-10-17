@@ -42,16 +42,34 @@ func (s *Service) itemCounts(orderIDs []int64) (map[int64]int64, error) {
 	return out, nil
 }
 
-// OrderList 单据列表。bizType 为 purchase / sales；status 为空表示不过滤。
-func (s *Service) OrderList(bizType string, q page.Query, status *int16, actor *authz.Identity) ([]OrderRow, int64, error) {
-	tx := s.db.Model(&model.InvOrder{}).Where("biz_type = ?", bizType)
+// OrderList 单据列表。筛选条件见 OrderFilter；q 只管分页。
+func (s *Service) OrderList(f OrderFilter, q page.Query, actor *authz.Identity) ([]OrderRow, int64, error) {
+	tx := s.db.Model(&model.InvOrder{}).Where("biz_type = ?", f.BizType)
 	tx = s.applyCreator(tx, actor)
 	if q.Keyword != "" {
+		// 业务员也能搜：现场常见的问法是「张伟那几张单」，
+		// 而业务员既不是单号也不是往来单位，漏了他这条搜索就得翻页找。
 		kw := likeKW(q.Keyword)
-		tx = tx.Where(likeExpr("order_no")+" OR "+likeExpr("party_name"), kw, kw)
+		tx = tx.Where(likeExpr("order_no")+" OR "+likeExpr("party_name")+" OR "+likeExpr("salesman"), kw, kw, kw)
 	}
-	if status != nil {
-		tx = tx.Where("status = ?", *status)
+	if f.Status != nil {
+		tx = tx.Where("status = ?", *f.Status)
+	}
+	// 结算状态在 SQL 侧复刻 settleStatus() 的三分支（含 0.001 容差），
+	// 口径必须一模一样：否则「筛已结清」会混进 settled 还差几分钱的单子。
+	switch f.Settle {
+	case model.InvSettleUnpaid:
+		tx = tx.Where("settled_amount <= 0")
+	case model.InvSettlePaid:
+		tx = tx.Where("settled_amount + 0.001 >= total_amount")
+	case model.InvSettlePartial:
+		tx = tx.Where("settled_amount > 0 AND settled_amount + 0.001 < total_amount")
+	}
+	if f.Start != nil {
+		tx = tx.Where("order_date >= ?", *f.Start)
+	}
+	if f.End != nil {
+		tx = tx.Where("order_date <= ?", *f.End)
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {

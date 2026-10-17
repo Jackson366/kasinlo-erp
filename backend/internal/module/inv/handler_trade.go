@@ -35,7 +35,18 @@ func (h *Handler) OrderList(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	list, total, err := h.svc.OrderList(bizType, q, status, middleware.CurrentIdentity(c))
+	settle, err := settleQuery(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	start, end, err := orderRangeQuery(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	filter := OrderFilter{BizType: bizType, Status: status, Settle: settle, Start: start, End: end}
+	list, total, err := h.svc.OrderList(filter, q, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
