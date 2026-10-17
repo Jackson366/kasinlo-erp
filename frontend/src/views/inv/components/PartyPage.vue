@@ -197,30 +197,30 @@ onMounted(load)
       </div>
 
       <el-table v-loading="loading" :data="rows" stripe>
-        <el-table-column prop="code" label="编号" width="100" />
-        <el-table-column prop="name" label="名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="contact" label="联系人" width="100" />
-        <el-table-column prop="phone" label="电话" width="130" />
-        <el-table-column prop="address" label="地址" min-width="190" show-overflow-tooltip />
-        <el-table-column prop="taxNo" label="开票信息" min-width="180" show-overflow-tooltip />
-        <el-table-column :label="balanceLabel" width="130" align="right">
+        <el-table-column prop="code" label="编号" width="90" />
+        <el-table-column prop="name" label="名称" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="contact" label="联系人" width="90" />
+        <el-table-column prop="phone" label="电话" width="120" />
+        <el-table-column prop="address" label="地址" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="taxNo" label="开票信息" min-width="150" show-overflow-tooltip />
+        <el-table-column :label="balanceLabel" width="120" align="right">
           <template #default="{ row }">
             <span :class="row.balance > 0 ? 'amount-warn' : 'text-muted'">
               {{ formatMoney(row.balance) }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="90" align="center">
+        <el-table-column label="状态" width="80" align="center">
           <template #default="{ row }">
             <StatusTag :status="row.status" />
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="120">
+        <el-table-column label="创建时间" width="110">
           <template #default="{ row }">
             <span class="text-secondary">{{ formatDate(row.createdAt) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
             <el-button v-perm="`inv:${bizType}:update`" link type="primary" @click="openEdit(row as InvPartyRow)">
               编辑

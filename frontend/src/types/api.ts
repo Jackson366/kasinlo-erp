@@ -550,6 +550,8 @@ export interface InvOrderPayload {
   orderDate: string
   dueDate?: string
   remark?: string
+  /** 业务员（自由文本，可不填） */
+  salesman?: string
   items: InvOrderItemPayload[]
 }
 
@@ -589,13 +591,15 @@ export interface InvOrderRow {
   settleStatus: InvSettleStatus
   itemCount: number
   remark: string
+  /** 业务员 */
+  salesman: string
+  /** 制单人显示名（昵称优先，回落用户名） */
+  operator: string
   createdAt: string
 }
 
 /** 单据详情 */
 export interface InvOrderDetail extends InvOrderRow {
-  /** 制单人显示名（昵称优先），打印纸面使用 */
-  operator: string
   items: InvOrderItem[]
 }
 
@@ -613,6 +617,8 @@ export interface InvStockOrderPayload {
   sourceType?: 'purchase' | 'sales' | 'manual'
   orderDate: string
   remark?: string
+  /** 业务员（自由文本，可不填） */
+  salesman?: string
   items: InvStockItemPayload[]
 }
 
@@ -628,6 +634,10 @@ export interface InvStockOrderRow {
   itemCount: number
   totalQty: number
   remark: string
+  /** 业务员 */
+  salesman: string
+  /** 制单人显示名（昵称优先，回落用户名） */
+  operator: string
   createdAt: string
 }
 
@@ -798,6 +808,8 @@ export interface InvStockOrderDetail {
   sourceOrderNo: string
   orderDate: string
   remark: string
+  /** 业务员 */
+  salesman: string
   operator: string
   totalQty: number
   items: InvStockPrintItem[]

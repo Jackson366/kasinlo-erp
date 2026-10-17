@@ -245,6 +245,7 @@ type OrderReq struct {
 	OrderDate string         `json:"orderDate" binding:"required" label:"单据日期"`
 	DueDate   string         `json:"dueDate" binding:"omitempty" label:"到期日"`
 	Remark    string         `json:"remark" binding:"omitempty,max=255" label:"备注"`
+	Salesman  string         `json:"salesman" binding:"omitempty,max=64" label:"业务员"`
 	Items     []OrderItemReq `json:"items" binding:"required,min=1" label:"明细"`
 }
 
@@ -280,14 +281,16 @@ type OrderRow struct {
 	SettleStatus  string     `json:"settleStatus"`
 	ItemCount     int64      `json:"itemCount"`
 	Remark        string     `json:"remark"`
-	CreatedAt     time.Time  `json:"createdAt"`
+	Salesman      string     `json:"salesman"`
+	// Operator 制单人显示名（昵称优先，回落用户名）。列表直接用，省得前端再查一次人。
+	Operator  string    `json:"operator"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
-// OrderDetail 单据详情（主表 + 明细）。Operator 为制单人显示名，打印纸面使用。
+// OrderDetail 单据详情（主表 + 明细）。制单人显示名在 OrderRow.Operator 里。
 type OrderDetail struct {
 	OrderRow
-	Operator string        `json:"operator"`
-	Items    []OrderItemVO `json:"items"`
+	Items []OrderItemVO `json:"items"`
 }
 
 // StatusReq 单据状态流转请求。status 仅允许 1（恢复待处理）/ 2（审核通过）/ 3（取消）。
@@ -313,6 +316,7 @@ type StockOrderReq struct {
 	SourceType string         `json:"sourceType" binding:"omitempty,oneof=purchase sales manual" label:"来源"`
 	OrderDate  string         `json:"orderDate" binding:"required" label:"单据日期"`
 	Remark     string         `json:"remark" binding:"omitempty,max=255" label:"备注"`
+	Salesman   string         `json:"salesman" binding:"omitempty,max=64" label:"业务员"`
 	Items      []StockItemReq `json:"items" binding:"required,min=1" label:"明细"`
 }
 
@@ -328,7 +332,10 @@ type StockOrderRow struct {
 	ItemCount  int64     `json:"itemCount"`
 	TotalQty   float64   `json:"totalQty"`
 	Remark     string    `json:"remark"`
-	CreatedAt  time.Time `json:"createdAt"`
+	Salesman   string    `json:"salesman"`
+	// Operator 制单人显示名（昵称优先，回落用户名）
+	Operator  string    `json:"operator"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // StockPrintItem 出入库单打印明细行。编码来自商品档案（打印时要能对上实物）。
@@ -354,6 +361,7 @@ type StockOrderDetail struct {
 	SourceOrderNo string           `json:"sourceOrderNo"` // 来源采购 / 销售单号，手工单为空
 	OrderDate     time.Time        `json:"orderDate"`
 	Remark        string           `json:"remark"`
+	Salesman      string           `json:"salesman"` // 业务员
 	Operator      string           `json:"operator"` // 制单人昵称
 	TotalQty      float64          `json:"totalQty"`
 	Items         []StockPrintItem `json:"items"`

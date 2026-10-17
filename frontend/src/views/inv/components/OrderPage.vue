@@ -198,12 +198,14 @@ const form = reactive<{
   partyId: number | undefined
   orderDate: string
   dueDate: string
+  salesman: string
   remark: string
   items: FormItem[]
 }>({
   partyId: undefined,
   orderDate: '',
   dueDate: '',
+  salesman: '',
   remark: '',
   items: [],
 })
@@ -281,7 +283,14 @@ function onUnitChange(item: FormItem): void {
 }
 
 function openCreate(): void {
-  Object.assign(form, { partyId: undefined, orderDate: today(), dueDate: '', remark: '', items: [] })
+  Object.assign(form, {
+    partyId: undefined,
+    orderDate: today(),
+    dueDate: '',
+    salesman: '',
+    remark: '',
+    items: [],
+  })
   addItem()
   dialogMode.value = 'create'
   editingId.value = null
@@ -297,6 +306,7 @@ async function openEdit(row: InvOrderRow): Promise<void> {
     partyId: data.partyId,
     orderDate: formatDay(data.orderDate),
     dueDate: due === '-' ? '' : due,
+    salesman: data.salesman,
     remark: data.remark,
     items: data.items.map((it) => ({
       productId: it.productId,
@@ -329,6 +339,7 @@ async function submitForm(): Promise<void> {
     partyId: form.partyId as number,
     orderDate: form.orderDate,
     dueDate: form.dueDate || undefined,
+    salesman: form.salesman.trim() || undefined,
     remark: form.remark,
     items: items.map((it) => ({
       productId: it.productId as number,
@@ -368,20 +379,6 @@ async function changeStatus(row: InvOrderRow, status: InvOrderStatus): Promise<v
   }
   await invApi.changeOrderStatus(row.id, status)
   ElMessage.success('操作成功')
-  load()
-}
-
-async function removeRow(row: InvOrderRow): Promise<void> {
-  try {
-    await ElMessageBox.confirm(`确定删除单据「${row.orderNo}」吗？`, '删除确认', {
-      type: 'warning',
-      confirmButtonText: '删除',
-    })
-  } catch {
-    return
-  }
-  await invApi.deleteOrder(row.id)
-  ElMessage.success('删除成功')
   load()
 }
 
@@ -468,46 +465,54 @@ onMounted(() => {
       </div>
 
       <el-table v-loading="loading" :data="rows" stripe>
-        <el-table-column prop="orderNo" label="单号" width="150" />
-        <el-table-column :label="partyLabel" min-width="150" show-overflow-tooltip>
+        <el-table-column prop="orderNo" label="单号" width="138" />
+        <el-table-column :label="partyLabel" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ row.partyName }}</template>
         </el-table-column>
-        <el-table-column prop="orderDate" label="单据日期" width="120">
+        <el-table-column prop="orderDate" label="单据日期" width="100">
           <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
         </el-table-column>
-        <el-table-column prop="dueDate" label="到期日" width="120">
+        <el-table-column prop="dueDate" label="到期日" width="100">
           <template #default="{ row }">{{ formatDay(row.dueDate) }}</template>
         </el-table-column>
-        <el-table-column label="明细" width="70" align="center">
+        <el-table-column label="明细" width="52" align="center">
           <template #default="{ row }">{{ row.itemCount }} 行</template>
         </el-table-column>
-        <el-table-column label="金额" width="130" align="right">
+        <el-table-column label="金额" width="112" align="right">
           <template #default="{ row }">
             <strong>{{ formatMoney(row.totalAmount) }}</strong>
           </template>
         </el-table-column>
-        <el-table-column label="已结算" width="130" align="right">
+        <el-table-column label="已结算" width="100" align="right">
           <template #default="{ row }">
             <span class="text-secondary">{{ formatMoney(row.settledAmount) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="结算" width="100" align="center">
+        <el-table-column label="结算" width="84" align="center">
           <template #default="{ row }">
             <el-tag :type="settleMeta[row.settleStatus]?.type" size="small" effect="light">
               {{ settleMeta[row.settleStatus]?.text }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="90" align="center">
+        <!-- 业务员 / 操作人员紧挨着放：一个说「这单是谁跑来的」，一个说「谁录的」，
+             现场追责时看的是这两列，分开摆反而要在屏幕上左右找 -->
+        <el-table-column label="业务员" width="72" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.salesman || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="操作人员" width="96" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.operator || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="84" align="center">
           <template #default="{ row }">
             <el-tag :type="statusMeta[row.status]?.type" size="small" effect="light">
               {{ statusMeta[row.status]?.text }}
             </el-tag>
           </template>
         </el-table-column>
-        <!-- 宽度按最多按钮的状态算（待处理单：详情/打印/编辑/审核/取消/删除 6 个），
-             写小了按钮会折成两行，"删除"被挤到第二行 -->
-        <el-table-column label="操作" width="330" fixed="right" align="center">
+        <!-- 宽度按最多按钮的状态算（待处理单：详情/打印/编辑/审核 4 个，
+             已审核单：详情/打印/反审核 3 个），写小了按钮会折成两行 -->
+        <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row as InvOrderRow)">详情</el-button>
             <el-button link type="primary" @click="printRef?.open(row as InvOrderRow)">打印</el-button>
@@ -530,15 +535,6 @@ onMounted(() => {
               审核
             </el-button>
             <el-button
-              v-if="row.status === 1"
-              v-perm="`inv:${bizType}:finish`"
-              link
-              type="warning"
-              @click="changeStatus(row as InvOrderRow, 3)"
-            >
-              取消
-            </el-button>
-            <el-button
               v-if="row.status === 2"
               v-perm="`inv:${bizType}:finish`"
               link
@@ -546,15 +542,6 @@ onMounted(() => {
               @click="reverseOrder(row as InvOrderRow)"
             >
               反审核
-            </el-button>
-            <el-button
-              v-if="row.status !== 2"
-              v-perm="`inv:${bizType}:delete`"
-              link
-              type="danger"
-              @click="removeRow(row as InvOrderRow)"
-            >
-              删除
             </el-button>
           </template>
         </el-table-column>
@@ -581,14 +568,14 @@ onMounted(() => {
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
         <el-row :gutter="16">
-          <el-col :span="8">
+          <el-col :span="6">
             <el-form-item :label="partyLabel" prop="partyId">
               <el-select v-model="form.partyId" filterable placeholder="请选择" style="width: 100%">
                 <el-option v-for="p in parties" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="6">
             <el-form-item label="单据日期" prop="orderDate">
               <el-date-picker
                 v-model="form.orderDate"
@@ -599,7 +586,7 @@ onMounted(() => {
               />
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="6">
             <el-form-item label="到期日">
               <el-date-picker
                 v-model="form.dueDate"
@@ -608,6 +595,13 @@ onMounted(() => {
                 placeholder="选填"
                 style="width: 100%"
               />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6">
+            <!-- 业务员是自由文本而不是人员下拉：跑业务的常常没有后台账号
+                 （门店、外包、已离职但历史单据还要能查），挂账号后这些人就录不进单 -->
+            <el-form-item label="业务员">
+              <el-input v-model="form.salesman" maxlength="64" placeholder="选填" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -717,6 +711,8 @@ onMounted(() => {
             {{ settleMeta[detail.row.settleStatus]?.text }}
           </el-descriptions-item>
           <el-descriptions-item label="单据状态">{{ statusMeta[detail.row.status]?.text }}</el-descriptions-item>
+          <el-descriptions-item label="业务员">{{ detail.row.salesman || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="操作人员">{{ detail.row.operator || '-' }}</el-descriptions-item>
           <el-descriptions-item label="备注" :span="3">{{ detail.row.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
         <el-table :data="detail.items" size="small" class="mt-16">

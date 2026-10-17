@@ -104,11 +104,13 @@ interface StockFormItem {
 const form = reactive<{
   direction: InvStockDirection
   orderDate: string
+  salesman: string
   remark: string
   items: StockFormItem[]
 }>({
   direction: 'in',
   orderDate: '',
+  salesman: '',
   remark: '',
   items: [],
 })
@@ -127,6 +129,7 @@ function openCreate(): void {
   Object.assign(form, {
     direction: 'in',
     orderDate: today(),
+    salesman: '',
     remark: '',
     items: [blankItem()],
   })
@@ -199,6 +202,7 @@ async function submitForm(): Promise<void> {
     direction: form.direction,
     sourceType: 'manual',
     orderDate: form.orderDate,
+    salesman: form.salesman.trim() || undefined,
     remark: form.remark,
     items: items.map((it) => ({
       productId: it.productId as number,
@@ -359,7 +363,14 @@ onMounted(() => {
             <el-table-column label="总数量" width="110" align="right">
               <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
             </el-table-column>
-            <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip>
+            <el-table-column label="业务员" width="90" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.salesman || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="操作人员" width="100" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.operator || '-' }}</template>
+            </el-table-column>
+            <!-- 备注只是辅助信息，不该按主数据列的宽度占位 -->
+            <el-table-column prop="remark" label="备注" min-width="100" show-overflow-tooltip>
               <template #default="{ row }">{{ row.remark || '-' }}</template>
             </el-table-column>
             <el-table-column label="操作" width="130" fixed="right" align="center">
@@ -465,7 +476,7 @@ onMounted(() => {
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
         <el-row :gutter="16">
-          <el-col :span="8">
+          <el-col :span="6">
             <el-form-item label="方向">
               <el-radio-group v-model="form.direction">
                 <el-radio-button value="in">入库</el-radio-button>
@@ -473,7 +484,7 @@ onMounted(() => {
               </el-radio-group>
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="6">
             <el-form-item label="单据日期" prop="orderDate">
               <el-date-picker
                 v-model="form.orderDate"
@@ -484,7 +495,13 @@ onMounted(() => {
               />
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="6">
+            <!-- 与采购 / 销售单一致：业务员是自由文本，不挂账号 -->
+            <el-form-item label="业务员">
+              <el-input v-model="form.salesman" maxlength="64" placeholder="选填" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6">
             <el-form-item label="备注">
               <el-input v-model="form.remark" placeholder="选填" />
             </el-form-item>

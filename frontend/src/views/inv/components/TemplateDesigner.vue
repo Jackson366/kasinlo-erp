@@ -54,6 +54,7 @@ const sample: InvStockOrderDetail = {
   sourceOrderNo: 'CG202610010001',
   orderDate: '2026-10-13T00:00:00Z',
   remark: '示例备注：按采购单批量入库，已验收。',
+  salesman: '李四',
   operator: '张三',
   totalQty: 148,
   items: [
@@ -80,6 +81,7 @@ const sampleOrder: InvOrderDetail = {
   itemCount: 3,
   remark: '示例备注：含运费，货到付款。',
   createdAt: '2026-10-13T08:00:00Z',
+  salesman: '李四',
   operator: '张三',
   items: [
     { id: 1, productId: 1, specId: 1, unitId: 1, productCode: 'SP001', productName: '高强度螺栓 M12', spec: 'M12×40', unit: '盒', rate: 1, qty: 120, qtyBase: 120, price: 45, amount: 5400 },

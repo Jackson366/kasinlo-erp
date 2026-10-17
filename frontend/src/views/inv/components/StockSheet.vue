@@ -39,6 +39,9 @@ const metaItems = computed(() => {
   if (d.sourceOrderNo) {
     rows.push({ label: sourceLabel.value, value: d.sourceOrderNo })
   }
+  if (d.salesman) {
+    rows.push({ label: '业务员', value: d.salesman })
+  }
   if (d.operator) {
     rows.push({ label: '制单人', value: d.operator })
   }

@@ -42,6 +42,9 @@ const metaItems = computed(() => {
   // 双方看的都是单据日期与账期约定，没有哪个采购单会在纸面上写「到期日」。
   // 此前这里按「有值就打印」输出，于是未填写的单据会因为零值时间
   // 被打出一行「到期日：0001-01-01」——模板里没有、纸面上却有，正是这个原因。
+  if (d.salesman) {
+    rows.push({ label: '业务员', value: d.salesman })
+  }
   if (d.operator) {
     rows.push({ label: '制单人', value: d.operator })
   }

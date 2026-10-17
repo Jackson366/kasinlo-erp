@@ -69,20 +69,29 @@ func (s *Service) OrderList(bizType string, q page.Query, status *int16, actor *
 	if err != nil {
 		return nil, 0, err
 	}
+	creators := make([]int64, 0, len(list))
+	for _, o := range list {
+		creators = append(creators, o.CreatedBy)
+	}
+	operators, err := s.operatorNames(creators)
+	if err != nil {
+		return nil, 0, err
+	}
 	rows := make([]OrderRow, 0, len(list))
 	for _, o := range list {
-		rows = append(rows, toOrderRow(o, counts[o.ID]))
+		rows = append(rows, toOrderRow(o, counts[o.ID], operators[o.CreatedBy]))
 	}
 	return rows, total, nil
 }
 
-func toOrderRow(o model.InvOrder, itemCount int64) OrderRow {
+func toOrderRow(o model.InvOrder, itemCount int64, operator string) OrderRow {
 	return OrderRow{
 		ID: o.ID, OrderNo: o.OrderNo, BizType: o.BizType, PartyID: o.PartyID, PartyName: o.PartyName,
 		OrderDate: o.OrderDate, DueDate: o.DueDate, Status: o.Status,
 		TotalAmount: o.TotalAmount, SettledAmount: o.SettledAmount,
 		SettleStatus: settleStatus(o.TotalAmount, o.SettledAmount),
-		ItemCount:    itemCount, Remark: o.Remark, CreatedAt: o.CreatedAt,
+		ItemCount:    itemCount, Remark: o.Remark, Salesman: o.Salesman, Operator: operator,
+		CreatedAt: o.CreatedAt,
 	}
 }
 
@@ -100,8 +109,7 @@ func (s *Service) OrderDetail(id int64, actor *authz.Identity) (*OrderDetail, er
 		return nil, err
 	}
 	return &OrderDetail{
-		OrderRow: toOrderRow(o, int64(len(items))),
-		Operator: s.operatorName(o.CreatedBy),
+		OrderRow: toOrderRow(o, int64(len(items)), s.operatorName(o.CreatedBy)),
 		Items:    items,
 	}, nil
 }
@@ -198,7 +206,7 @@ func (s *Service) OrderCreate(req OrderReq, actor *authz.Identity) (int64, error
 	order := model.InvOrder{
 		OrderNo: no, BizType: req.BizType, PartyID: req.PartyID, PartyName: partyName,
 		OrderDate: orderDate, DueDate: dueDate, Status: model.InvStatusPending,
-		TotalAmount: total, Remark: req.Remark, CreatedBy: actorUID(actor),
+		TotalAmount: total, Remark: req.Remark, Salesman: req.Salesman, CreatedBy: actorUID(actor),
 	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&order).Error; err != nil {
@@ -253,6 +261,7 @@ func (s *Service) OrderUpdate(id int64, req OrderReq, actor *authz.Identity) err
 		if err := tx.Model(&model.InvOrder{}).Where("id = ?", id).Updates(map[string]any{
 			"party_id": req.PartyID, "party_name": partyName, "order_date": orderDate,
 			"due_date": dueDate, "total_amount": total, "remark": req.Remark,
+			"salesman": req.Salesman,
 		}).Error; err != nil {
 			return err
 		}
@@ -343,7 +352,9 @@ func (s *Service) OrderChangeStatus(id int64, status int16, actor *authz.Identit
 	return saveErr(s.db.Transaction(func(tx *gorm.DB) error {
 		so := model.InvStockOrder{
 			OrderNo: stockNo, Direction: direction, SourceType: sourceType, SourceID: o.ID,
-			OrderDate: o.OrderDate, Status: 1, CreatedBy: actorUID(actor),
+			OrderDate: o.OrderDate, Status: 1,
+			// 业务员随来单一起带到出入库单：仓管在出入库列表里要能看出这批货是谁的
+			Salesman: o.Salesman, CreatedBy: actorUID(actor),
 		}
 		if err := tx.Create(&so).Error; err != nil {
 			return err

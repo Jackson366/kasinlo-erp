@@ -1022,6 +1022,41 @@ async function main() {
   })()`)
   check('待处理单据不显示「反审核」', reverseOnPending === false, `found=${reverseOnPending}`)
 
+  // 单据列表新增「业务员 / 操作人员」两列：前者是这单谁跑来的，后者是谁录的，
+  // 现场追责看的就是这两列，缺了就只能翻操作日志
+  const orderHeads = await evaluate(`(() => Array.from(
+    document.querySelectorAll('.order-page .el-table__header th')
+  ).map((th) => (th.textContent || '').trim()).filter(Boolean))()`)
+  check(
+    '采购 / 销售列表含「业务员」与「操作人员」列',
+    orderHeads.includes('业务员') && orderHeads.includes('操作人员'),
+    JSON.stringify(orderHeads),
+  )
+  // 操作栏不再提供「取消 / 删除」：状态流转只保留审核 / 反审核两条路径。
+  // 按按钮文案判断，不能用行文本 —— 状态列里本来就有「已取消」这个词。
+  const orderActions = await evaluate(`(() => Array.from(
+    document.querySelectorAll('.order-page .el-table__body .el-button')
+  ).map((b) => (b.textContent || '').trim()))()`)
+  check(
+    '单据操作栏不再出现「取消 / 删除」',
+    !orderActions.includes('取消') && !orderActions.includes('删除'),
+    JSON.stringify(Array.from(new Set(orderActions))),
+  )
+
+  // 出入库单据同样要有业务员与操作人员（审核自动生成的单子沿用来源单的业务员）
+  await coldStart(`${APP}/#/inv/stock`, 3200)
+  const stockHeads = await evaluate(`(() => {
+    const table = document.querySelector('.stock-page .el-table');
+    if (!table) return [];
+    return Array.from(table.querySelectorAll('.el-table__header th'))
+      .map((th) => (th.textContent || '').trim()).filter(Boolean);
+  })()`)
+  check(
+    '出入库列表含「业务员」与「操作人员」列',
+    stockHeads.includes('业务员') && stockHeads.includes('操作人员'),
+    JSON.stringify(stockHeads),
+  )
+
   // ── 阶段 5：低权限账号 ──────────────────────────────
   console.log('[5] 低权限账号：按钮级权限与接口鉴权')
   consoleLogs = []

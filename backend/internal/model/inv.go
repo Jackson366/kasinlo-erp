@@ -178,7 +178,14 @@ type InvOrder struct {
 	TotalAmount   float64    `gorm:"type:numeric(14,2);default:0" json:"totalAmount"`
 	SettledAmount float64    `gorm:"type:numeric(14,2);default:0" json:"settledAmount"`
 	Remark        string     `gorm:"size:255" json:"remark"`
-	CreatedBy     int64      `json:"createdBy"`
+
+	// Salesman 业务员，自由文本。
+	//
+	// 不建成外键指向 sys_users：跑业务的常常是没有后台账号的人（门店、外包、
+	// 已经离职但历史单据还要能查的人）。挂外键后这类人要么建不出单，要么
+	// 离职删账号时连带把历史单据的归属抹掉 —— 那正是最需要留痕的地方。
+	Salesman  string `gorm:"size:64" json:"salesman"`
+	CreatedBy int64  `json:"createdBy"`
 }
 
 // TableName 指定表名。
@@ -235,7 +242,9 @@ type InvStockOrder struct {
 	OrderDate  time.Time `gorm:"type:date" json:"orderDate"`
 	Status     int16     `gorm:"not null" json:"status"` // 1 已过账 2 已作废
 	Remark     string    `gorm:"size:255" json:"remark"`
-	CreatedBy  int64     `json:"createdBy"`
+	// Salesman 业务员：手工单由填单人选，审核自动生成的单据沿用来单的业务员。
+	Salesman  string `gorm:"size:64" json:"salesman"`
+	CreatedBy int64  `json:"createdBy"`
 }
 
 // TableName 指定表名。

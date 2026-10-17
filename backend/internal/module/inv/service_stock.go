@@ -63,13 +63,22 @@ func (s *Service) StockOrderList(q page.Query, direction string, actor *authz.Id
 	if err != nil {
 		return nil, 0, err
 	}
+	creators := make([]int64, 0, len(list))
+	for _, o := range list {
+		creators = append(creators, o.CreatedBy)
+	}
+	operators, err := s.operatorNames(creators)
+	if err != nil {
+		return nil, 0, err
+	}
 	rows := make([]StockOrderRow, 0, len(list))
 	for _, o := range list {
 		st := stats[o.ID]
 		rows = append(rows, StockOrderRow{
 			ID: o.ID, OrderNo: o.OrderNo, Direction: o.Direction, SourceType: o.SourceType,
 			SourceID: o.SourceID, OrderDate: o.OrderDate, Status: o.Status,
-			ItemCount: int64(st[0]), TotalQty: st[1], Remark: o.Remark, CreatedAt: o.CreatedAt,
+			ItemCount: int64(st[0]), TotalQty: st[1], Remark: o.Remark,
+			Salesman: o.Salesman, Operator: operators[o.CreatedBy], CreatedAt: o.CreatedAt,
 		})
 	}
 	return rows, total, nil
@@ -105,7 +114,8 @@ func (s *Service) StockOrderCreate(req StockOrderReq, actor *authz.Identity) (in
 	}
 	order := model.InvStockOrder{
 		OrderNo: no, Direction: req.Direction, SourceType: sourceType,
-		OrderDate: orderDate, Status: 1, Remark: req.Remark, CreatedBy: actorUID(actor),
+		OrderDate: orderDate, Status: 1, Remark: req.Remark,
+		Salesman: req.Salesman, CreatedBy: actorUID(actor),
 	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&order).Error; err != nil {
@@ -245,7 +255,7 @@ func (s *Service) StockOrderDetail(id int64, actor *authz.Identity) (*StockOrder
 	return &StockOrderDetail{
 		ID: o.ID, OrderNo: o.OrderNo, Direction: o.Direction, SourceType: o.SourceType,
 		SourceOrderNo: s.sourceOrderNo(o.SourceType, o.SourceID),
-		OrderDate:     o.OrderDate, Remark: o.Remark,
+		OrderDate:     o.OrderDate, Remark: o.Remark, Salesman: o.Salesman,
 		Operator: s.operatorName(o.CreatedBy), TotalQty: round4(total), Items: printItems,
 	}, nil
 }
@@ -263,18 +273,53 @@ func (s *Service) sourceOrderNo(sourceType string, sourceID int64) string {
 	return no
 }
 
-// operatorName 制单人显示名：昵称优先，退回用户名；用户已删除则留空。
+// operatorNames 批量取制单人显示名：昵称优先，退回用户名；用户已删除则留空。
+//
+// 列表页必须批量查：逐行调 operatorName 是标准的 N+1（一页 20 行就多 20 次
+// 往返），而且每行都是一次全表主键查询 —— 单看每条都不慢，加起来能占掉
+// 整个列表接口大半的耗时。
+func (s *Service) operatorNames(userIDs []int64) (map[int64]string, error) {
+	out := make(map[int64]string, len(userIDs))
+	ids := make([]int64, 0, len(userIDs))
+	seen := make(map[int64]struct{}, len(userIDs))
+	for _, id := range userIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		ID       int64
+		Nickname string
+		Username string
+	}
+	// 用 Table 而不是 Model：账号被停用/软删后，历史单据上的制单人名字还得显示出来
+	if err := s.db.Table("sys_users").Select("id", "nickname", "username").
+		Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	for _, r := range rows {
+		if r.Nickname != "" {
+			out[r.ID] = r.Nickname
+		} else {
+			out[r.ID] = r.Username
+		}
+	}
+	return out, nil
+}
+
+// operatorName 单个制单人显示名，用于详情 / 打印这类只涉及一条单据的场景。
 func (s *Service) operatorName(userID int64) string {
-	if userID <= 0 {
+	names, err := s.operatorNames([]int64{userID})
+	if err != nil {
 		return ""
 	}
-	var row struct{ Nickname, Username string }
-	if err := s.db.Table("sys_users").Select("nickname", "username").
-		Where("id = ?", userID).Scan(&row).Error; err != nil {
-		return ""
-	}
-	if row.Nickname != "" {
-		return row.Nickname
-	}
-	return row.Username
+	return names[userID]
 }
