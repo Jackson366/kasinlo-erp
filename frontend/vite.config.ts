@@ -1,3 +1,5 @@
+import { existsSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -76,6 +78,29 @@ export default defineConfig(({ mode }) => {
     },
   }
 
+  // element-plus 按需引入用的是「子路径 + 运行时解析器」，页面又经 import.meta.glob 懒加载，
+  // Vite 启动时的依赖扫描看不到这些子路径，会等到第一次点到某个菜单才发现新依赖，
+  // 于是触发一次 optimize + 整页 reload（表现为「每个菜单首次点击都整页刷新」）。
+  // 这里在启动时就把 element-plus 全部组件子路径（JS + 样式）纳入预构建，
+  // 一次性缓存后，之后点任何菜单都不会再触发 reload。
+  const epComponentsDir = fileURLToPath(
+    new URL('./node_modules/element-plus/es/components', import.meta.url),
+  )
+  // 只预构建真正的 barrel 目录（同时存在 index 入口与 style/css 样式）：
+  // table-column / option / aside 这类子组件只有 style、没有独立入口；
+  // collection / focus-trap / slot 等内部目录没有对外样式。两者都得跳过，
+  // 否则会在 optimize 时报「Failed to resolve dependency」。
+  const epDepPaths = readdirSync(epComponentsDir, { withFileTypes: true })
+    .filter((d) => {
+      if (!d.isDirectory()) return false
+      const dir = join(epComponentsDir, d.name)
+      return existsSync(join(dir, 'index.mjs')) && existsSync(join(dir, 'style', 'css.mjs'))
+    })
+    .flatMap((d) => [
+      `element-plus/es/components/${d.name}/index`,
+      `element-plus/es/components/${d.name}/style/css`,
+    ])
+
   return {
     plugins: [
       vue(),
@@ -91,6 +116,9 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
+    },
+    optimizeDeps: {
+      include: epDepPaths,
     },
     server: {
       host: '0.0.0.0',
