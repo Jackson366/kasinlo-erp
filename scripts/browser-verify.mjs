@@ -1118,6 +1118,65 @@ async function main() {
     JSON.stringify({ rows: filterState?.rows, widths: filterState?.widths, right: filterState?.actionsRight }),
   )
 
+  // ── 搜索区一致性：13 个列表逐个量 ─────────────────
+  // 「排版一致」靠肉眼比对不可靠：这类回归往往只是某个页面漏了网格、
+  // 或者控件还留着固定像素宽，看上去都正常，放在一起才看出不齐。
+  const searchPages = [
+    ['采购管理', '#/inv/purchase'],
+    ['销售管理', '#/inv/sales'],
+    ['库存管理', '#/inv/stock'],
+    ['商品管理', '#/inv/product'],
+    ['客户管理', '#/inv/customer'],
+    ['供应商管理', '#/inv/supplier'],
+    ['应收应付', '#/inv/finance'],
+    ['打印模板', '#/inv/print'],
+    ['用户管理', '#/system/user'],
+    ['角色管理', '#/system/role'],
+    ['菜单管理', '#/system/menu'],
+    ['部门管理', '#/system/dept'],
+    ['操作日志', '#/system/log'],
+  ]
+  const searchReport = []
+  for (const [label, hash] of searchPages) {
+    await coldStart(`${APP}/${hash}`, 2400)
+    const st = await evaluate(`(() => {
+      const cards = Array.from(document.querySelectorAll('.page-card.search-bar'))
+        .filter((c) => c.getBoundingClientRect().height > 0);
+      const card = cards[0];
+      if (!card) return { ok: false, reason: '没有独立搜索卡片' };
+      const form = card.querySelector('.filter-form');
+      if (!form) return { ok: false, reason: '不是 filter-form 网格' };
+      const actions = form.querySelector('.filter-form__actions');
+      // 控件必须撑满所在的内容区（而不是留着某个固定像素宽）
+      const inputs = Array.from(form.querySelectorAll('.el-input, .el-select, .el-date-editor'));
+      const fullWidth = inputs.every((el) => {
+        const content = el.closest('.el-form-item__content');
+        if (!content) return true;
+        return Math.abs(el.getBoundingClientRect().width - content.getBoundingClientRect().width) < 2;
+      });
+      const labelWidths = Array.from(form.querySelectorAll('.el-form-item__label'))
+        .map((l) => Math.round(l.getBoundingClientRect().width));
+      return {
+        ok: true,
+        cards: cards.length,
+        display: getComputedStyle(form).display,
+        actionsRight: actions
+          ? Math.abs(actions.getBoundingClientRect().right - (card.getBoundingClientRect().right - 20)) < 8
+          : false,
+        fullWidth,
+        labelWidths: [...new Set(labelWidths)],
+      };
+    })()`)
+    searchReport.push({ label, ...st })
+    check(
+      `搜索区统一：${label}`,
+      !!st && st.ok === true && st.cards === 1 && st.display === 'grid' &&
+        st.actionsRight === true && st.fullWidth === true && st.labelWidths.length === 1,
+      JSON.stringify(st),
+    )
+  }
+  report.phases.searchLayout = searchReport
+
   // 出入库单据同样要有业务员与操作人员（审核自动生成的单子沿用来源单的业务员）
   await coldStart(`${APP}/#/inv/stock`, 3200)
   const stockHeads = await evaluate(`(() => {

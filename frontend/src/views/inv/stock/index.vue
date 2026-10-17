@@ -377,28 +377,58 @@ onMounted(() => {
 
 <template>
   <div class="stock-page">
+    <!-- 筛选区与其它列表一致：独立卡片 + 网格；随 tab 切换内容 -->
+    <div class="page-card search-bar">
+      <el-form v-if="activeTab === 'orders'" class="filter-form" label-width="76px" @submit.prevent>
+        <el-form-item label="关键字">
+          <el-input
+            v-model="query.keyword"
+            placeholder="单号"
+            clearable
+            @keyup.enter="search"
+          />
+        </el-form-item>
+        <el-form-item label="方向">
+          <el-select v-model="query.direction" placeholder="全部方向" clearable>
+            <el-option label="入库" value="in" />
+            <el-option label="出库" value="out" />
+          </el-select>
+        </el-form-item>
+        <div class="filter-form__actions">
+          <el-button type="primary" @click="search">
+            <AppIcon name="Search" />
+            <span>查询</span>
+          </el-button>
+          <el-button @click="reset">重置</el-button>
+        </div>
+      </el-form>
+      <el-form v-else class="filter-form" label-width="76px" @submit.prevent>
+        <el-form-item label="关键字">
+          <el-input
+            v-model="inventoryKeyword"
+            placeholder="商品编码 / 名称"
+            clearable
+            @keyup.enter="loadInventory"
+          />
+        </el-form-item>
+        <div class="filter-form__actions">
+          <el-button type="primary" @click="loadInventory">
+            <AppIcon name="Search" />
+            <span>查询</span>
+          </el-button>
+          <el-button @click="inventoryKeyword = ''; loadInventory()">重置</el-button>
+        </div>
+      </el-form>
+    </div>
+
     <div class="page-card">
       <el-tabs v-model="activeTab" @tab-change="onTabChange">
         <!-- 出入库单据 -->
         <el-tab-pane label="出入库单据" name="orders">
           <div class="toolbar">
             <div class="toolbar__title">
-              <el-input
-                v-model="query.keyword"
-                placeholder="单号"
-                clearable
-                style="width: 200px"
-                @keyup.enter="search"
-              />
-              <el-select v-model="query.direction" placeholder="全部方向" clearable style="width: 150px">
-                <el-option label="入库" value="in" />
-                <el-option label="出库" value="out" />
-              </el-select>
-              <el-button type="primary" @click="search">
-                <AppIcon name="Search" />
-                <span>查询</span>
-              </el-button>
-              <el-button @click="reset">重置</el-button>
+              <h3>出入库单据</h3>
+              <span class="text-muted">共 {{ total }} 条</span>
               <span v-if="selection.length" class="selection-tip">
                 已选 {{ selection.length }} 项
                 <a @click="clearSelection(tableRef)">清空</a>
@@ -493,17 +523,7 @@ onMounted(() => {
         <el-tab-pane label="库存查询" name="inventory">
           <div class="toolbar">
             <div class="toolbar__title">
-              <el-input
-                v-model="inventoryKeyword"
-                placeholder="商品编码 / 名称"
-                clearable
-                style="width: 220px"
-                @keyup.enter="loadInventory"
-              />
-              <el-button type="primary" @click="loadInventory">
-                <AppIcon name="Search" />
-                <span>查询</span>
-              </el-button>
+              <h3>库存查询</h3>
               <span class="text-muted">
                 共 {{ inventory.length }} 条规格 · 预警 {{ warnCount }} 项
               </span>

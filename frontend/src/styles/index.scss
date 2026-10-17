@@ -161,6 +161,14 @@ a {
   width: 100%;
 }
 
+// 标签不许被压缩。
+// el-form-item 是 flex 容器，标签虽然写了 width:76px，但在「标签 + 100% 宽控件」
+// 的组合下会被 flex 按内容收缩：三字标签量出来 42px、两字 28px ——
+// 于是同一行里输入框的起点各不相同，看起来就是「没对齐」。
+.filter-form .el-form-item__label {
+  flex: 0 0 auto;
+}
+
 // ---------- 列表页工具栏 ----------
 // 四个系统页（user/role/menu/dept）曾各自在 scoped 样式里抄了同一份，
 // 现在收敛到全局：新增页面直接用 .toolbar / .toolbar__title / .toolbar__actions。

@@ -40,6 +40,24 @@ function epKebab(s: string): string {
   return s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
 }
 
+/**
+ * 该子组件是否只有「样式目录」而没有自己的 index。
+ *
+ * element-plus 2.x 里 form-item / radio-button / option 这类子组件：
+ *  - 组件本体由**父 barrel** 导出（`components/form/index` 里有 ElFormItem）；
+ *  - 样式却是**独立文件**（`components/form-item/style/css` → el-form-item.css），
+ *    父级的 `form/style/css` 只引 el-form.css，**不含** el-form-item.css。
+ *
+ * 只映射父 barrel 的后果：组件能渲染、但样式缺失 —— 表单标签没有
+ * `display:flex` / `width:76px`，label-width 形同虚设，所有表单都退化成
+ * 「标签在控件上方」。这种问题在构建、类型检查里都看不出来，只能量 DOM。
+ */
+function hasStyleOnly(partial: string): boolean {
+  const dir = join(process.cwd(), 'node_modules/element-plus/es/components', partial)
+  if (!existsSync(dir)) return false
+  return !existsSync(join(dir, 'index.mjs')) && existsSync(join(dir, 'style/css.mjs'))
+}
+
 // element-plus 按组件路径导入解析器。
 // 官方 ElementPlusResolver 对 2.x 生成 `import { ElXxx } from 'element-plus/es'`，
 // 而根入口顶层执行 makeInstaller([...全部组件])——这个副作用调用让 rollup
@@ -51,10 +69,15 @@ function ElementPlusDirectResolver() {
       if (!/^El[A-Z]/.test(rawName)) return undefined
       const partial = epKebab(rawName.slice(2))
       const barrel = EP_PARENT[partial] ?? partial
+      // 组件来自父 barrel，样式可能要两份：父级的 + 子组件自己的
+      const sideEffects = [`element-plus/es/components/${barrel}/style/css`]
+      if (partial !== barrel && hasStyleOnly(partial)) {
+        sideEffects.push(`element-plus/es/components/${partial}/style/css`)
+      }
       return {
         name: rawName,
         from: `element-plus/es/components/${barrel}/index`,
-        sideEffects: `element-plus/es/components/${barrel}/style/css`,
+        sideEffects,
       }
     },
   }

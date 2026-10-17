@@ -212,29 +212,28 @@ onMounted(load)
 <template>
   <div class="party-page">
     <div class="page-card search-bar">
-      <el-form :inline="true" @submit.prevent>
+      <el-form class="filter-form" label-width="76px" @submit.prevent>
         <el-form-item label="关键字">
           <el-input
             v-model="query.keyword"
             placeholder="编号 / 名称 / 联系人"
             clearable
-            style="width: 240px"
             @keyup.enter="search"
           />
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="query.status" placeholder="全部" clearable style="width: 140px">
+          <el-select v-model="query.status" placeholder="全部" clearable>
             <el-option label="启用" :value="1" />
             <el-option label="停用" :value="0" />
           </el-select>
         </el-form-item>
-        <el-form-item>
+        <div class="filter-form__actions">
           <el-button type="primary" @click="search">
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="reset">重置</el-button>
-        </el-form-item>
+        </div>
       </el-form>
     </div>
 

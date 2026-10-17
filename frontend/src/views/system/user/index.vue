@@ -382,7 +382,6 @@ onMounted(() => {
             v-model="query.keyword"
             placeholder="用户名 / 昵称 / 手机号"
             clearable
-            
             @keyup.enter="search"
           />
         </el-form-item>
@@ -399,7 +398,7 @@ onMounted(() => {
           />
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="query.status" placeholder="全部" clearable >
+          <el-select v-model="query.status" placeholder="全部" clearable>
             <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>

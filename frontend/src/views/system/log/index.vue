@@ -214,27 +214,28 @@ onMounted(async () => {
 
 <template>
   <div class="log-page">
-    <div class="page-card">
-      <el-tabs v-model="activeTab" @tab-change="handleTabChange">
-        <!-- 操作日志 -->
-        <el-tab-pane label="操作日志" name="operation">
-          <el-form class="search-bar filter-form" label-width="76px" @submit.prevent>
+    <!-- tab 头放在卡片外：每个 tab 内部再是「搜索卡片 + 表格卡片」，
+         与其它列表页的视觉节奏一致（筛选、表格各占一张卡） -->
+    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
+      <!-- 操作日志 -->
+      <el-tab-pane label="操作日志" name="operation">
+        <div class="page-card search-bar">
+          <el-form class="filter-form" label-width="76px" @submit.prevent>
             <el-form-item label="关键字">
               <el-input
                 v-model="opQuery.keyword"
                 placeholder="账号 / 操作 / 路径"
                 clearable
-                
                 @keyup.enter="searchOperations"
               />
             </el-form-item>
             <el-form-item label="模块">
-              <el-select v-model="opQuery.module" placeholder="全部" clearable >
+              <el-select v-model="opQuery.module" placeholder="全部" clearable>
                 <el-option v-for="item in opModules" :key="item" :label="item" :value="item" />
               </el-select>
             </el-form-item>
             <el-form-item label="方法">
-              <el-select v-model="opQuery.method" placeholder="全部" clearable >
+              <el-select v-model="opQuery.method" placeholder="全部" clearable>
                 <el-option v-for="item in methodOptions" :key="item" :label="item" :value="item" />
               </el-select>
             </el-form-item>
@@ -244,6 +245,17 @@ onMounted(async () => {
                 <span>查询</span>
               </el-button>
               <el-button @click="resetOperations">重置</el-button>
+            </div>
+          </el-form>
+        </div>
+
+        <div class="page-card">
+          <div class="toolbar">
+            <div class="toolbar__title">
+              <h3>操作日志</h3>
+              <span class="text-muted">共 {{ opTotal }} 条</span>
+            </div>
+            <div class="toolbar__actions">
               <el-button v-perm="'system:log:export'" :loading="exportingOp" @click="exportOperations">
                 <AppIcon name="Download" />
                 <span>导出</span>
@@ -254,81 +266,81 @@ onMounted(async () => {
                 <span>清空</span>
               </el-button>
             </div>
-          </el-form>
-
-          <el-table v-loading="opLoading" :data="opRows" stripe>
-            <el-table-column type="expand">
-              <template #default="{ row }">
-                <div class="log-detail">
-                  <div class="log-detail__item">
-                    <span class="log-detail__label">请求体</span>
-                    <pre class="log-detail__value">{{ row.request || '（无）' }}</pre>
-                  </div>
-                  <div class="log-detail__item">
-                    <span class="log-detail__label">User-Agent</span>
-                    <span class="log-detail__value">{{ row.userAgent || '-' }}</span>
-                  </div>
-                  <div v-if="row.errorMsg" class="log-detail__item">
-                    <span class="log-detail__label">错误信息</span>
-                    <span class="log-detail__value log-detail__value--error">{{ row.errorMsg }}</span>
-                  </div>
+          </div>
+        <el-table v-loading="opLoading" :data="opRows" stripe>
+          <el-table-column type="expand">
+            <template #default="{ row }">
+              <div class="log-detail">
+                <div class="log-detail__item">
+                  <span class="log-detail__label">请求体</span>
+                  <pre class="log-detail__value">{{ row.request || '（无）' }}</pre>
                 </div>
-              </template>
-            </el-table-column>
-            <el-table-column prop="username" label="操作账号" min-width="120">
-              <template #default="{ row }">{{ row.username || '匿名' }}</template>
-            </el-table-column>
-            <el-table-column prop="module" label="模块" width="110" />
-            <el-table-column prop="action" label="操作" width="120" />
-            <el-table-column label="请求" min-width="240">
-              <template #default="{ row }">
-                <span class="method" :class="`method--${row.method.toLowerCase()}`">{{ row.method }}</span>
-                <span class="path">{{ row.path }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="ip" label="IP" min-width="130" />
-            <el-table-column label="状态" width="90" align="center">
-              <template #default="{ row }">
-                <el-tag :type="statusTagType(row.status)" size="small" effect="light">{{ row.status }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="耗时" width="100" align="right">
-              <template #default="{ row }">
-                <span class="text-secondary">{{ formatLatency(row.latencyMs) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="时间" width="180" align="right">
-              <template #default="{ row }">
-                <span class="text-secondary">{{ formatDateTime(row.createdAt) }}</span>
-              </template>
-            </el-table-column>
-            <template #empty>
-              <el-empty description="暂无操作日志" :image-size="90" />
+                <div class="log-detail__item">
+                  <span class="log-detail__label">User-Agent</span>
+                  <span class="log-detail__value">{{ row.userAgent || '-' }}</span>
+                </div>
+                <div v-if="row.errorMsg" class="log-detail__item">
+                  <span class="log-detail__label">错误信息</span>
+                  <span class="log-detail__value log-detail__value--error">{{ row.errorMsg }}</span>
+                </div>
+              </div>
             </template>
-          </el-table>
+          </el-table-column>
+          <el-table-column prop="username" label="操作账号" min-width="120">
+            <template #default="{ row }">{{ row.username || '匿名' }}</template>
+          </el-table-column>
+          <el-table-column prop="module" label="模块" width="110" />
+          <el-table-column prop="action" label="操作" width="120" />
+          <el-table-column label="请求" min-width="240">
+            <template #default="{ row }">
+              <span class="method" :class="`method--${row.method.toLowerCase()}`">{{ row.method }}</span>
+              <span class="path">{{ row.path }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="ip" label="IP" min-width="130" />
+          <el-table-column label="状态" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag :type="statusTagType(row.status)" size="small" effect="light">{{ row.status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="耗时" width="100" align="right">
+            <template #default="{ row }">
+              <span class="text-secondary">{{ formatLatency(row.latencyMs) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="时间" width="180" align="right">
+            <template #default="{ row }">
+              <span class="text-secondary">{{ formatDateTime(row.createdAt) }}</span>
+            </template>
+          </el-table-column>
+          <template #empty>
+            <el-empty description="暂无操作日志" :image-size="90" />
+          </template>
+        </el-table>
 
-          <Pagination
-            v-model:page="opQuery.page!"
-            v-model:page-size="opQuery.pageSize!"
-            :total="opTotal"
-            @change="loadOperations"
-          />
-        </el-tab-pane>
+        <Pagination
+          v-model:page="opQuery.page!"
+          v-model:page-size="opQuery.pageSize!"
+          :total="opTotal"
+          @change="loadOperations"
+        />
+        </div>
+      </el-tab-pane>
 
-        <!-- 登录日志 -->
-        <el-tab-pane label="登录日志" name="login">
-          <el-form class="search-bar filter-form" label-width="76px" @submit.prevent>
+      <!-- 登录日志 -->
+      <el-tab-pane label="登录日志" name="login">
+        <div class="page-card search-bar">
+          <el-form class="filter-form" label-width="76px" @submit.prevent>
             <el-form-item label="关键字">
               <el-input
                 v-model="loginQuery.keyword"
                 placeholder="账号 / IP / 说明"
                 clearable
-                style="width: 220px"
                 @keyup.enter="searchLogins"
               />
             </el-form-item>
             <el-form-item label="结果">
-              <el-select v-model="loginQuery.success" placeholder="全部" clearable >
+              <el-select v-model="loginQuery.success" placeholder="全部" clearable>
                 <el-option label="成功" :value="true" />
                 <el-option label="失败" :value="false" />
               </el-select>
@@ -339,6 +351,17 @@ onMounted(async () => {
                 <span>查询</span>
               </el-button>
               <el-button @click="resetLogins">重置</el-button>
+            </div>
+          </el-form>
+        </div>
+
+        <div class="page-card">
+          <div class="toolbar">
+            <div class="toolbar__title">
+              <h3>登录日志</h3>
+              <span class="text-muted">共 {{ loginTotal }} 条</span>
+            </div>
+            <div class="toolbar__actions">
               <el-button v-perm="'system:log:export'" :loading="exportingLogin" @click="exportLogins">
                 <AppIcon name="Download" />
                 <span>导出</span>
@@ -349,39 +372,38 @@ onMounted(async () => {
                 <span>清空</span>
               </el-button>
             </div>
-          </el-form>
-
-          <el-table v-loading="loginLoading" :data="loginRows" stripe>
-            <el-table-column prop="username" label="账号" min-width="130" />
-            <el-table-column prop="ip" label="登录 IP" min-width="140" />
-            <el-table-column label="结果" width="100" align="center">
-              <template #default="{ row }">
-                <el-tag :type="row.success ? 'success' : 'danger'" size="small" effect="light">
-                  {{ row.success ? '成功' : '失败' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="message" label="说明" min-width="140" />
-            <el-table-column prop="userAgent" label="客户端" min-width="240" show-overflow-tooltip />
-            <el-table-column label="时间" width="200" align="right">
-              <template #default="{ row }">
-                <span class="text-secondary">{{ formatDateTime(row.createdAt) }}（{{ fromNow(row.createdAt) }}）</span>
-              </template>
-            </el-table-column>
-            <template #empty>
-              <el-empty description="暂无登录日志" :image-size="90" />
+          </div>
+        <el-table v-loading="loginLoading" :data="loginRows" stripe>
+          <el-table-column prop="username" label="账号" min-width="130" />
+          <el-table-column prop="ip" label="登录 IP" min-width="140" />
+          <el-table-column label="结果" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.success ? 'success' : 'danger'" size="small" effect="light">
+                {{ row.success ? '成功' : '失败' }}
+              </el-tag>
             </template>
-          </el-table>
+          </el-table-column>
+          <el-table-column prop="message" label="说明" min-width="140" />
+          <el-table-column prop="userAgent" label="客户端" min-width="240" show-overflow-tooltip />
+          <el-table-column label="时间" width="200" align="right">
+            <template #default="{ row }">
+              <span class="text-secondary">{{ formatDateTime(row.createdAt) }}（{{ fromNow(row.createdAt) }}）</span>
+            </template>
+          </el-table-column>
+          <template #empty>
+            <el-empty description="暂无登录日志" :image-size="90" />
+          </template>
+        </el-table>
 
-          <Pagination
-            v-model:page="loginQuery.page!"
-            v-model:page-size="loginQuery.pageSize!"
-            :total="loginTotal"
-            @change="loadLogins"
-          />
-        </el-tab-pane>
+        <Pagination
+          v-model:page="loginQuery.page!"
+          v-model:page-size="loginQuery.pageSize!"
+          :total="loginTotal"
+          @change="loadLogins"
+        />
+        </div>
+      </el-tab-pane>
       </el-tabs>
-    </div>
 
     <ListPrintDialog
       v-model="printVisible"
