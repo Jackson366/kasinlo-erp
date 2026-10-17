@@ -5763,6 +5763,9 @@ const docTemplate = `{
         "inv.ProductPickVO": {
             "type": "object",
             "properties": {
+                "barcode": {
+                    "type": "string"
+                },
                 "code": {
                     "type": "string"
                 },
@@ -5787,6 +5790,10 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "barcode": {
+                    "type": "string",
+                    "maxLength": 64
+                },
                 "categoryId": {
                     "type": "integer"
                 },
@@ -5820,6 +5827,9 @@ const docTemplate = `{
         "inv.ProductRow": {
             "type": "object",
             "properties": {
+                "barcode": {
+                    "type": "string"
+                },
                 "categoryId": {
                     "type": "integer"
                 },

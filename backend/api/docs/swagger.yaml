@@ -595,6 +595,8 @@ definitions:
     type: object
   inv.ProductPickVO:
     properties:
+      barcode:
+        type: string
       code:
         type: string
       id:
@@ -608,6 +610,9 @@ definitions:
     type: object
   inv.ProductReq:
     properties:
+      barcode:
+        maxLength: 64
+        type: string
       categoryId:
         type: integer
       code:
@@ -634,6 +639,8 @@ definitions:
     type: object
   inv.ProductRow:
     properties:
+      barcode:
+        type: string
       categoryId:
         type: integer
       categoryName:

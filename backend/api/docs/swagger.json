@@ -5760,6 +5760,9 @@
         "inv.ProductPickVO": {
             "type": "object",
             "properties": {
+                "barcode": {
+                    "type": "string"
+                },
                 "code": {
                     "type": "string"
                 },
@@ -5784,6 +5787,10 @@
                 "name"
             ],
             "properties": {
+                "barcode": {
+                    "type": "string",
+                    "maxLength": 64
+                },
                 "categoryId": {
                     "type": "integer"
                 },
@@ -5817,6 +5824,9 @@
         "inv.ProductRow": {
             "type": "object",
             "properties": {
+                "barcode": {
+                    "type": "string"
+                },
                 "categoryId": {
                     "type": "integer"
                 },
