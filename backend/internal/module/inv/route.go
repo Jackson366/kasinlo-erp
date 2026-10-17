@@ -18,6 +18,11 @@ func Register(rg *gin.RouterGroup) {
 		// 数据概览与报表：只读
 		g.GET("/overview", middleware.RequirePerm("inv:overview:view"), h.Overview)
 
+		// 列表导出：一个入口覆盖商品 / 往来单位 / 单据 / 出入库 / 库存。
+		// 这里不挂 RequirePerm —— 具体权限取决于 entity（商品要 product:list、
+		// 单据要按 bizType 精确判定），在 handler 里按实体校验，见 ensureExportPerm。
+		g.GET("/export", h.Export)
+
 		// 基础资料：客户 / 供应商 / 商品
 		g.GET("/customers", middleware.RequirePerm("inv:customer:list", "inv:sales:list"), h.CustomerList)
 		g.POST("/customers", middleware.RequirePerm("inv:customer:create"), h.CustomerCreate)

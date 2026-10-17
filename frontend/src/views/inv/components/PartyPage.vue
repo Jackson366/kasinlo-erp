@@ -3,7 +3,7 @@
  * 客户 / 供应商页面主体。两者字段、列、交互完全一致，差异只有
  * 「调哪个接口」「余额口径」「文案」——收敛成一个组件，由两个薄壳页面传入 bizType。
  */
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -11,10 +11,12 @@ import { invApi } from '@/api'
 import type { InvPartyPayload, InvPartyRow, Status } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { formatDate, formatMoney } from '@/utils/format'
 import { useCrudDialog } from '@/composables/useCrudDialog'
 import { useTableQuery } from '@/composables/useTableQuery'
+import { useListTools } from '@/composables/useListTools'
 
 const props = defineProps<{
   /** purchase = 供应商，sales = 客户 */
@@ -147,6 +149,63 @@ function onDialogOpen(): void {
 
 void editingId
 
+// ---------------- 导出 / 打印 / 批量 ----------------
+const tableRef = ref()
+const {
+  selection,
+  exporting,
+  batchRunning,
+  onSelectionChange,
+  clearSelection,
+  exportRows,
+  runBatch,
+} = useListTools<InvPartyRow>({
+  exportUrl: '/inv/export',
+  exportParams: () => ({
+    entity: props.bizType === 'purchase' ? 'supplier' : 'customer',
+    keyword: query.keyword || undefined,
+    status: query.status ?? undefined,
+  }),
+  fallbackName: `${props.title}.xlsx`,
+})
+
+const printVisible = ref(false)
+const printRows = computed(() => (selection.value.length ? selection.value : rows.value))
+
+const printColumns = computed<ListPrintColumn<InvPartyRow>[]>(() => [
+  { label: '编号', prop: 'code' },
+  { label: '名称', prop: 'name' },
+  { label: '联系人', value: (r) => r.contact || '-' },
+  { label: '电话', value: (r) => r.phone || '-' },
+  { label: '地址', value: (r) => r.address || '-' },
+  { label: '开票信息', value: (r) => r.taxNo || '-' },
+  { label: props.balanceLabel, value: (r) => formatMoney(r.balance), align: 'right' },
+  { label: '状态', value: (r) => (r.status === 1 ? '启用' : '停用') },
+])
+
+const printSubtitle = computed(() => {
+  const parts: string[] = []
+  if (query.keyword) parts.push(`关键字「${query.keyword}」`)
+  if (query.status !== undefined) parts.push(query.status === 1 ? '启用' : '停用')
+  if (selection.value.length) parts.push('仅打印勾选')
+  return parts.join(' · ') || '全部记录'
+})
+
+function deleteOne(row: InvPartyRow): Promise<unknown> {
+  return props.bizType === 'purchase'
+    ? invApi.deleteSupplier(row.id)
+    : invApi.deleteCustomer(row.id)
+}
+
+async function batchDelete(): Promise<void> {
+  if (!selection.value.length) return
+  const done = await runBatch('批量删除', selection.value, deleteOne, (r) => r.name)
+  if (done) {
+    clearSelection(tableRef.value)
+    load()
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -184,8 +243,19 @@ onMounted(load)
         <div class="toolbar__title">
           <h3>{{ title }}</h3>
           <span class="text-muted">{{ subtitle }} · 共 {{ total }} 条</span>
+          <span v-if="selection.length" class="selection-tip">
+            已选 {{ selection.length }} 项
+            <a @click="clearSelection(tableRef)">清空</a>
+          </span>
         </div>
         <div class="toolbar__actions">
+          <el-button v-if="selection.length" :loading="batchRunning" @click="batchDelete">
+            批量删除
+          </el-button>
+          <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">
+            导出{{ selection.length ? '选中' : '' }}
+          </el-button>
+          <el-button @click="printVisible = true">打印</el-button>
           <el-button v-perm="`inv:${bizType}:create`" type="primary" @click="openCreate">
             <AppIcon name="Plus" />
             <span>{{ createText }}</span>
@@ -196,7 +266,14 @@ onMounted(load)
         </div>
       </div>
 
-      <el-table v-loading="loading" :data="rows" stripe>
+      <el-table
+        ref="tableRef"
+        v-loading="loading"
+        :data="rows"
+        stripe
+        @selection-change="onSelectionChange"
+      >
+        <el-table-column type="selection" width="44" />
         <el-table-column prop="code" label="编号" width="90" />
         <el-table-column prop="name" label="名称" min-width="130" show-overflow-tooltip />
         <el-table-column prop="contact" label="联系人" width="90" />
@@ -241,6 +318,14 @@ onMounted(load)
         />
       </div>
     </div>
+
+    <ListPrintDialog
+      v-model="printVisible"
+      :title="title"
+      :subtitle="printSubtitle"
+      :columns="printColumns"
+      :rows="printRows"
+    />
 
     <el-dialog
       v-model="dialogVisible"

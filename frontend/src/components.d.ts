@@ -58,6 +58,7 @@ declare module 'vue' {
     ElTree: typeof import('element-plus/es/components/tree/index')['ElTree']
     ElTreeSelect: typeof import('element-plus/es/components/tree-select/index')['ElTreeSelect']
     ElUpload: typeof import('element-plus/es/components/upload/index')['ElUpload']
+    ListPrintDialog: typeof import('./components/ListPrintDialog.vue')['default']
     Pagination: typeof import('./components/Pagination.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

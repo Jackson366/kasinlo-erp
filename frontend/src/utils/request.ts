@@ -196,7 +196,11 @@ instance.interceptors.response.use(
     // 40300（无权限）与兜底分支行为一致：弹轻提示 + reject。
     // 保留弹窗是因为 403 大多来自用户刚点的操作，完全静默会让人以为按钮坏了；
     // 调用方拿到 rejected promise，自行决定后续处理。
-    ElMessage.error(message)
+    //
+    // silent: 批量操作里逐条调用时用。10 行里有 3 行失败会弹 3 次相同提示，
+    // 把真正要看的信息（哪几行失败了）淹没 —— 批量场景由调用方汇总成一条。
+    const silent = (error.config as { silent?: boolean } | undefined)?.silent
+    if (!silent) ElMessage.error(message)
     return Promise.reject(new ApiError(code, message, traceId))
   },
 )

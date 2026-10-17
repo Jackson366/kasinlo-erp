@@ -1680,6 +1680,47 @@ async function main() {
     `记录到的 ip=${probeRows[0]?.ip}`,
   )
 
+  // ---------------- 列表导出（统一入口） ----------------
+  // 导出与列表共用同一套查询，这里只验「能出文件、文件名对、参数非法会拒」，
+  // 内容正确性由各自的列表断言覆盖（导出的就是那些行）。
+  section('列表导出')
+  const listExportCases = [
+    ['商品档案', '/inv/export?entity=product'],
+    ['客户档案', '/inv/export?entity=customer'],
+    ['供应商档案', '/inv/export?entity=supplier'],
+    ['销售单', '/inv/export?entity=order&bizType=sales'],
+    ['出入库单', '/inv/export?entity=stock'],
+    ['库存查询', '/inv/export?entity=inventory'],
+    ['应收明细', '/inv/export?entity=finance&bizType=sales'],
+    ['应付明细', '/inv/export?entity=finance&bizType=purchase'],
+    ['菜单配置', '/system/menus/export'],
+    ['部门', '/system/depts/export'],
+  ]
+  for (const [label, url] of listExportCases) {
+    const res = await fetch(`${API}${url}`, { headers: { Authorization: `Bearer ${token}` } })
+    const buf = Buffer.from(await res.arrayBuffer())
+    // xlsx 是 zip，头两个字节固定是 PK；只看状态码会把「JSON 报错」也当成成功
+    const isXlsx = buf.length > 100 && buf.slice(0, 2).toString() === 'PK'
+    ok(`导出${label}`, res.status === 200 && isXlsx, `status=${res.status} bytes=${buf.length}`)
+  }
+  const badEntity = await request('GET', '/inv/export?entity=user', { token })
+  ok('非法导出实体返回 40000', badEntity.json?.code === 40000, JSON.stringify(badEntity.json))
+  const noData = await request('GET', '/inv/export?entity=customer&keyword=不存在的关键字zzz', { token })
+  ok('无数据时不产出空文件（40000）', noData.json?.code === 40000, JSON.stringify(noData.json))
+
+  // 勾选导出：ids 非空时只出这些行
+  const pickRow = (await request('GET', '/inv/customers?page=1&pageSize=1', { token })).json?.data?.list?.[0]
+  if (pickRow) {
+    const onlyOne = await fetch(`${API}/inv/export?entity=customer&ids=${pickRow.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const buf = Buffer.from(await onlyOne.arrayBuffer())
+    ok('导出选中（ids）产出文件', onlyOne.status === 200 && buf.slice(0, 2).toString() === 'PK', `bytes=${buf.length}`)
+    // 行数不容易在二进制里数，改成「一个不存在的 id 必须报无数据」
+    const ghost = await request('GET', '/inv/export?entity=customer&ids=99999999', { token })
+    ok('ids 指向不存在的记录时返回无数据', ghost.json?.code === 40000, JSON.stringify(ghost.json))
+  }
+
   // 清理必须放在登出之前：登出会把该账号名下已签发的令牌一并吊销，
   // 先登出再清理时连本脚本自己手里的 token 都会变成 40105。
   section('清理测试数据')

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import { useTableQuery } from '@/composables/useTableQuery'
@@ -7,6 +7,7 @@ import { logApi, type LoginLogQuery, type OperationLogQuery } from '@/api/log'
 import type { LoginLogItem, OperationLogItem } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import { exportStamp, formatDateTime, formatLatency, fromNow } from '@/utils/format'
 
 defineOptions({ name: 'SystemLog' })
@@ -166,6 +167,45 @@ function statusTagType(status: number): 'success' | 'warning' | 'danger' {
   return 'danger'
 }
 
+// ---------------- 打印 ----------------
+const printVisible = ref(false)
+const printKind = ref<'operation' | 'login'>('operation')
+
+function openPrint(kind: 'operation' | 'login'): void {
+  printKind.value = kind
+  printVisible.value = true
+}
+
+/** 日志打印统一取当前 tab 的当前页：日志量太大，打全量既慢也没人看 */
+const printRows = computed(() =>
+  printKind.value === 'operation' ? opRows.value : loginRows.value,
+)
+const printColumns = computed<ListPrintColumn<Record<string, any>>[]>(() =>
+  printKind.value === 'operation'
+    ? [
+        { label: '账号', value: (r) => r.username || '匿名' },
+        { label: '模块', value: (r) => r.module || '-' },
+        { label: '操作', value: (r) => r.action || '-' },
+        { label: '方法', value: (r) => r.method || '-' },
+        { label: '路径', value: (r) => r.path || '-' },
+        { label: 'IP', value: (r) => r.ip || '-' },
+        { label: '状态', value: (r) => String(r.status ?? '-'), align: 'center' },
+        { label: '耗时(ms)', value: (r) => String(r.latencyMs ?? '-'), align: 'right' },
+        { label: '时间', value: (r) => formatDateTime(r.createdAt) },
+      ]
+    : [
+        { label: '账号', value: (r) => r.username || '-' },
+        { label: '登录 IP', value: (r) => r.ip || '-' },
+        { label: '结果', value: (r) => (r.success ? '成功' : '失败') },
+        { label: '说明', value: (r) => r.message || '-' },
+        { label: '客户端', value: (r) => r.userAgent || '-' },
+        { label: '时间', value: (r) => formatDateTime(r.createdAt) },
+      ],
+)
+const printSubtitle = computed(() =>
+  printKind.value === 'operation' ? '操作日志（当前页）' : '登录日志（当前页）',
+)
+
 onMounted(async () => {
   // 首屏只有「操作日志」可见：只加载它 + 模块下拉，登录日志等切过去再说
   await Promise.all([ensureOperations(), loadModules()])
@@ -178,27 +218,27 @@ onMounted(async () => {
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <!-- 操作日志 -->
         <el-tab-pane label="操作日志" name="operation">
-          <el-form :inline="true" class="search-bar" @submit.prevent>
+          <el-form class="search-bar filter-form" label-width="76px" @submit.prevent>
             <el-form-item label="关键字">
               <el-input
                 v-model="opQuery.keyword"
                 placeholder="账号 / 操作 / 路径"
                 clearable
-                style="width: 200px"
+                
                 @keyup.enter="searchOperations"
               />
             </el-form-item>
             <el-form-item label="模块">
-              <el-select v-model="opQuery.module" placeholder="全部" clearable style="width: 140px">
+              <el-select v-model="opQuery.module" placeholder="全部" clearable >
                 <el-option v-for="item in opModules" :key="item" :label="item" :value="item" />
               </el-select>
             </el-form-item>
             <el-form-item label="方法">
-              <el-select v-model="opQuery.method" placeholder="全部" clearable style="width: 120px">
+              <el-select v-model="opQuery.method" placeholder="全部" clearable >
                 <el-option v-for="item in methodOptions" :key="item" :label="item" :value="item" />
               </el-select>
             </el-form-item>
-            <el-form-item>
+            <div class="filter-form__actions">
               <el-button type="primary" @click="searchOperations">
                 <AppIcon name="Search" />
                 <span>查询</span>
@@ -208,11 +248,12 @@ onMounted(async () => {
                 <AppIcon name="Download" />
                 <span>导出</span>
               </el-button>
+              <el-button @click="openPrint('operation')">打印</el-button>
               <el-button v-perm="'system:log:delete'" type="danger" plain @click="clearLogs">
                 <AppIcon name="Delete" />
                 <span>清空</span>
               </el-button>
-            </el-form-item>
+            </div>
           </el-form>
 
           <el-table v-loading="opLoading" :data="opRows" stripe>
@@ -276,7 +317,7 @@ onMounted(async () => {
 
         <!-- 登录日志 -->
         <el-tab-pane label="登录日志" name="login">
-          <el-form :inline="true" class="search-bar" @submit.prevent>
+          <el-form class="search-bar filter-form" label-width="76px" @submit.prevent>
             <el-form-item label="关键字">
               <el-input
                 v-model="loginQuery.keyword"
@@ -287,12 +328,12 @@ onMounted(async () => {
               />
             </el-form-item>
             <el-form-item label="结果">
-              <el-select v-model="loginQuery.success" placeholder="全部" clearable style="width: 120px">
+              <el-select v-model="loginQuery.success" placeholder="全部" clearable >
                 <el-option label="成功" :value="true" />
                 <el-option label="失败" :value="false" />
               </el-select>
             </el-form-item>
-            <el-form-item>
+            <div class="filter-form__actions">
               <el-button type="primary" @click="searchLogins">
                 <AppIcon name="Search" />
                 <span>查询</span>
@@ -302,11 +343,12 @@ onMounted(async () => {
                 <AppIcon name="Download" />
                 <span>导出</span>
               </el-button>
+              <el-button @click="openPrint('login')">打印</el-button>
               <el-button v-perm="'system:log:delete'" type="danger" plain @click="clearLogs">
                 <AppIcon name="Delete" />
                 <span>清空</span>
               </el-button>
-            </el-form-item>
+            </div>
           </el-form>
 
           <el-table v-loading="loginLoading" :data="loginRows" stripe>
@@ -340,6 +382,14 @@ onMounted(async () => {
         </el-tab-pane>
       </el-tabs>
     </div>
+
+    <ListPrintDialog
+      v-model="printVisible"
+      :title="printKind === 'operation' ? '操作日志' : '登录日志'"
+      :subtitle="printSubtitle"
+      :columns="printColumns"
+      :rows="printRows"
+    />
   </div>
 </template>
 

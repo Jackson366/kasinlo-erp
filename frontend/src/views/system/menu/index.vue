@@ -6,9 +6,11 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { menuApi } from '@/api'
 import type { MenuNode, MenuPayload, MenuType } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
+import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { iconMap } from '@/components/icons'
 import { flattenTree } from '@/utils/format'
+import { downloadFile } from '@/utils/download'
 import { availableViewPaths } from '@/router/helper'
 import { useLatestGuard } from '@/composables/useLatestGuard'
 import { useCrudDialog } from '@/composables/useCrudDialog'
@@ -358,36 +360,80 @@ watch(
   },
 )
 
+// ---------------- 导出 / 打印 ----------------
+const printVisible = ref(false)
+const exporting = ref(false)
+
+/** 摊平后的打印行：与导出文件同一口径（按层级缩进） */
+const flatRows = computed(() => {
+  const out: Array<{ row: MenuNode; depth: number }> = []
+  const walk = (list: MenuNode[], depth: number) => {
+    for (const n of list) {
+      out.push({ row: n, depth })
+      if (n.children?.length) walk(n.children, depth + 1)
+    }
+  }
+  walk(displayTree.value, 0)
+  return out
+})
+
+const printRows = computed(() => flatRows.value.map((x) => x.row))
+const printColumns: ListPrintColumn<MenuNode>[] = [
+  { label: '名称', value: (r) => '　'.repeat(flatRows.value.find((x) => x.row.id === r.id)?.depth ?? 0) + r.title },
+  { label: '类型', value: (r) => typeMeta[r.type]?.label || r.type },
+  { label: '路由路径', value: (r) => r.path || '-' },
+  { label: '权限标识', value: (r) => r.permission || '-' },
+  { label: '排序', value: (r) => String(r.sort), align: 'center' },
+]
+const printSubtitle = computed(() => {
+  const parts: string[] = []
+  if (keyword.value) parts.push(`关键字「${keyword.value}」`)
+  if (typeFilter.value) parts.push(typeMeta[typeFilter.value]?.label || '')
+  return parts.filter(Boolean).join(' · ') || '全部菜单'
+})
+
+async function handleExport(): Promise<void> {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    await downloadFile('/system/menus/export', {
+      keyword: keyword.value || undefined,
+      type: typeFilter.value || undefined,
+    }, '菜单配置.xlsx')
+  } finally {
+    exporting.value = false
+  }
+}
+
 onMounted(loadTree)
 </script>
 
 <template>
   <div class="menu-page">
     <div class="page-card search-bar">
-      <el-form :inline="true" @submit.prevent>
+      <el-form class="filter-form" label-width="76px" @submit.prevent>
         <el-form-item label="关键字">
           <el-input
             v-model="keyword"
             placeholder="标题 / 路由名称 / 权限标识"
             clearable
-            style="width: 240px"
             @keyup.enter="loadTree"
           />
         </el-form-item>
         <el-form-item label="类型">
-          <el-select v-model="typeFilter" placeholder="全部" clearable style="width: 120px">
+          <el-select v-model="typeFilter" placeholder="全部" clearable>
             <el-option label="目录" value="dir" />
             <el-option label="菜单" value="menu" />
             <el-option label="按钮" value="button" />
           </el-select>
         </el-form-item>
-        <el-form-item>
+        <div class="filter-form__actions">
           <el-button type="primary" @click="loadTree">
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="resetQuery">重置</el-button>
-        </el-form-item>
+        </div>
       </el-form>
     </div>
 
@@ -400,6 +446,8 @@ onMounted(loadTree)
           </span>
         </div>
         <div class="toolbar__actions">
+          <el-button :loading="exporting" @click="handleExport">导出</el-button>
+          <el-button @click="printVisible = true">打印</el-button>
           <el-button v-perm="'system:menu:create'" type="primary" @click="openCreate(0)">
             <AppIcon name="Plus" />
             <span>新增菜单</span>
@@ -654,6 +702,14 @@ onMounted(loadTree)
         <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
       </template>
     </el-dialog>
+
+    <ListPrintDialog
+      v-model="printVisible"
+      title="菜单结构"
+      :subtitle="printSubtitle"
+      :columns="printColumns"
+      :rows="printRows"
+    />
   </div>
 </template>
 

@@ -128,6 +128,39 @@ a {
   margin-bottom: 16px;
 }
 
+// ---------- 列表页筛选区 ----------
+// 一律用网格而不是 `el-form inline` + 固定像素宽：
+//  - 列数随容器自适应，不用为「几个筛选项」写媒体查询；
+//  - 每个控件等宽（100%），不会出现「这个 220、那个 140」的参差；
+//  - 窗口变窄自动折行，不会把某个控件挤成一条缝。
+.filter-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px 20px;
+  align-items: end;
+
+  :deep(.el-form-item),
+  .el-form-item {
+    margin: 0;
+  }
+
+  // 查询 / 重置单独占一行右对齐：留在网格里会按单列宽左对齐，
+  // 看着像「又一个筛选条件」而不是动作区
+  &__actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}
+
+// 筛选区控件统一撑满所在列
+.filter-form .el-input,
+.filter-form .el-select,
+.filter-form .el-date-editor {
+  width: 100%;
+}
+
 // ---------- 列表页工具栏 ----------
 // 四个系统页（user/role/menu/dept）曾各自在 scoped 样式里抄了同一份，
 // 现在收敛到全局：新增页面直接用 .toolbar / .toolbar__title / .toolbar__actions。
@@ -135,12 +168,14 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   margin-bottom: 14px;
 
   &__title {
     display: flex;
     align-items: baseline;
     gap: 10px;
+    flex-wrap: wrap;
 
     h3 {
       margin: 0;
@@ -156,9 +191,66 @@ a {
 
   &__actions {
     display: flex;
+    align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
   }
 }
+
+// 选中提示：与工具栏同处一行，避免多出一条横幅把表格往下顶
+.selection-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: var(--brand-primary);
+  background: var(--brand-primary-light, rgba(37, 99, 235, 0.08));
+  border-radius: 999px;
+
+  a {
+    color: var(--brand-primary);
+    cursor: pointer;
+    text-decoration: underline;
+  }
+}
+
+// 分页行：所有列表统一右对齐 + 等距
+.table-pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+// ---------- 列表打印 ----------
+// 打印时整页隐掉，只留 .list-sheet。与单据打印共用 body.printing 这个开关，
+// 区别是列表用横向 A4（列多）且不套打印模板。
+@media print {
+  body.printing * {
+    visibility: hidden !important;
+  }
+
+  body.printing .list-sheet,
+  body.printing .list-sheet * {
+    visibility: visible !important;
+  }
+
+  body.printing .list-sheet {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: auto !important;
+    max-width: none;
+    box-shadow: none;
+    border: none;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+}
+
 
 // ---------- 首屏骨架 ----------
 .app-loading {

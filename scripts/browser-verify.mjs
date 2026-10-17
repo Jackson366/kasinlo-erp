@@ -1072,6 +1072,43 @@ async function main() {
       ['关键字', '单据日期', '单据状态', '结算状态'].every((l) => filterState.labels.includes(l)),
     JSON.stringify(filterState?.labels),
   )
+  // 统一后的列表工具条：导出 / 打印 / 勾选批量
+  const toolbarTexts = await evaluate(`(() => Array.from(
+    document.querySelectorAll('.order-page .toolbar__actions button')
+  ).map((b) => (b.textContent || '').trim()))()`)
+  check(
+    '单据工具栏含导出与打印',
+    toolbarTexts.includes('导出') && toolbarTexts.includes('打印'),
+    JSON.stringify(toolbarTexts),
+  )
+  await evaluate(`(() => { const cb = document.querySelector('.order-page .el-table__body tr .el-checkbox'); if (cb) cb.click(); return !!cb })()`)
+  await sleep(400)
+  const batchEntry = await evaluate(`(() => Array.from(
+    document.querySelectorAll('.order-page .toolbar__actions button')
+  ).some((b) => (b.textContent || '').includes('批量处理')))()`)
+  check('勾选后出现批量处理入口', batchEntry === true, `found=${batchEntry}`)
+
+  // 列表打印：预览里必须是一张真表格（有标题、有表头、有数据行）
+  await evaluate(`(() => { const b = Array.from(document.querySelectorAll('.order-page .toolbar__actions button')).find((x) => (x.textContent || '').trim() === '打印'); if (b) b.click(); return !!b })()`)
+  await sleep(900)
+  const printState = await evaluate(`(() => {
+    const sheet = document.querySelector('.list-sheet');
+    if (!sheet) return { ok: false, reason: 'no sheet' };
+    return {
+      ok: true,
+      rows: sheet.querySelectorAll('tbody tr').length,
+      cols: sheet.querySelectorAll('thead th').length,
+      title: (sheet.querySelector('h2')?.textContent || '').trim(),
+    };
+  })()`)
+  check(
+    '列表打印预览渲染标题与数据表',
+    printState.ok === true && printState.rows > 0 && printState.cols > 4 && printState.title.length > 0,
+    JSON.stringify(printState),
+  )
+  await evaluate(`(() => { const b = Array.from(document.querySelectorAll('.el-dialog__footer button')).find((x) => (x.textContent || '').trim() === '关闭'); if (b) b.click(); return true })()`)
+  await sleep(300)
+
   check(
     '筛选区等宽排成一行且按钮右对齐',
     !!filterState &&

@@ -61,6 +61,14 @@ export const invApi = {
     return downloadFile('/inv/report/export', params as Record<string, unknown>, fallbackName)
   },
 
+  /**
+   * 列表导出（一个入口覆盖商品 / 往来单位 / 单据 / 出入库 / 库存）。
+   * 参数与对应列表接口一致；传 ids 表示只导出勾选的记录。
+   */
+  exportList(params?: Params, fallbackName = '导出.xlsx') {
+    return downloadFile('/inv/export', params as Record<string, unknown>, fallbackName)
+  },
+
   // ---------------- 客户 ----------------
   customers(params?: Params) {
     return http.get<PageResult<InvPartyRow>>('/inv/customers', params)

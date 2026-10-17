@@ -13,6 +13,8 @@ func Register(rg *gin.RouterGroup) {
 	g := rg.Group("/system/menus", middleware.Auth())
 	{
 		g.GET("", middleware.RequirePerm("system:menu:list"), h.List)
+		// /export 必须排在 /:id 之前：gin 的路由树里静态段与参数段在同一层会冲突
+		g.GET("/export", middleware.RequirePerm("system:menu:list"), h.Export)
 		g.GET("/:id", middleware.RequirePerm("system:menu:list"), h.Detail)
 		g.POST("", middleware.RequirePerm("system:menu:create"), h.Create)
 		g.PUT("/:id", middleware.RequirePerm("system:menu:update"), h.Update)

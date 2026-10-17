@@ -7,8 +7,10 @@ import type { ElTree } from 'element-plus'
 import { menuApi, roleApi } from '@/api'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useCrudDialog } from '@/composables/useCrudDialog'
+import { runBatchAction } from '@/composables/useListTools'
 import type { MenuNode, PageQuery, RoleItem, RolePayload } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
+import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import Pagination from '@/components/Pagination.vue'
 import { formatDate, exportStamp, flattenTree } from '@/utils/format'
@@ -214,6 +216,57 @@ async function removeRole(row: RoleItem): Promise<void> {
   loadList()
 }
 
+// ---------------- 勾选 / 打印 / 批量 ----------------
+const tableRef = ref()
+const selectedRows = ref<RoleItem[]>([])
+const batchRunning = ref(false)
+
+function handleSelectionChange(list: RoleItem[]): void {
+  selectedRows.value = list
+}
+
+function clearSelection(): void {
+  tableRef.value?.clearSelection()
+  selectedRows.value = []
+}
+
+const printVisible = ref(false)
+const printRows = computed(() => (selectedRows.value.length ? selectedRows.value : rows.value))
+const printColumns: ListPrintColumn<RoleItem>[] = [
+  { label: '角色名称', prop: 'name' },
+  { label: '角色标识', prop: 'code' },
+  { label: '数据范围', value: (r) => dataScopeLabels[r.dataScope] || '-' },
+  { label: '关联用户', value: (r) => String(r.userCount), align: 'center' },
+  { label: '状态', value: (r) => (r.status === 1 ? '启用' : '禁用') },
+  { label: '备注', value: (r) => r.remark || '-' },
+  { label: '创建时间', value: (r) => formatDate(r.createdAt) },
+]
+const printSubtitle = computed(() => {
+  const parts: string[] = []
+  if (query.keyword) parts.push(`关键字「${query.keyword}」`)
+  if (selectedRows.value.length) parts.push('仅打印勾选')
+  return parts.join(' · ') || '全部角色'
+})
+
+async function batchDelete(): Promise<void> {
+  if (!selectedRows.value.length) return
+  batchRunning.value = true
+  try {
+    const done = await runBatchAction(
+      '批量删除',
+      selectedRows.value,
+      (r) => roleApi.remove(r.id),
+      (r) => r.name,
+    )
+    if (done) {
+      clearSelection()
+      loadList()
+    }
+  } finally {
+    batchRunning.value = false
+  }
+}
+
 onMounted(() => {
   // 失败提示由请求层统一弹出；吞掉 rejection，避免未捕获告警
   void loadMenuTree()
@@ -225,23 +278,22 @@ onMounted(() => {
 <template>
   <div class="role-page">
     <div class="page-card search-bar">
-      <el-form :inline="true" @submit.prevent>
+      <el-form class="filter-form" label-width="76px" @submit.prevent>
         <el-form-item label="关键字">
           <el-input
             v-model="query.keyword"
             placeholder="角色名称 / 标识"
             clearable
-            style="width: 220px"
             @keyup.enter="search"
           />
         </el-form-item>
-        <el-form-item>
+        <div class="filter-form__actions">
           <el-button type="primary" @click="search">
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="resetQuery">重置</el-button>
-        </el-form-item>
+        </div>
       </el-form>
     </div>
 
@@ -252,6 +304,10 @@ onMounted(() => {
           <span class="text-muted">共 {{ total }} 条</span>
         </div>
         <div class="toolbar__actions">
+          <el-button v-if="selectedRows.length" :loading="batchRunning" @click="batchDelete">
+            批量删除（{{ selectedRows.length }}）
+          </el-button>
+          <el-button v-perm="'system:role:export'" @click="printVisible = true">打印</el-button>
           <el-button v-perm="'system:role:create'" type="primary" @click="openCreate">
             <AppIcon name="Plus" />
             <span>新增角色</span>
@@ -266,7 +322,14 @@ onMounted(() => {
         </div>
       </div>
 
-      <el-table v-loading="loading" :data="rows" stripe>
+      <el-table
+        ref="tableRef"
+        v-loading="loading"
+        :data="rows"
+        stripe
+        @selection-change="handleSelectionChange"
+      >
+        <el-table-column type="selection" width="44" />
         <el-table-column prop="name" label="角色名称" min-width="150">
           <template #default="{ row }">
             <div class="cell-role">
@@ -441,6 +504,14 @@ onMounted(() => {
         <el-button type="primary" :loading="assignSubmitting" @click="submitAssign">保存</el-button>
       </template>
     </el-dialog>
+
+    <ListPrintDialog
+      v-model="printVisible"
+      title="角色列表"
+      :subtitle="printSubtitle"
+      :columns="printColumns"
+      :rows="printRows"
+    />
   </div>
 </template>
 

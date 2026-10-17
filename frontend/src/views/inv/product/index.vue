@@ -36,10 +36,12 @@ import type {
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { formatDate, formatMoney, formatQty } from '@/utils/format'
 import { useCrudDialog } from '@/composables/useCrudDialog'
 import { useTableQuery } from '@/composables/useTableQuery'
+import { useListTools } from '@/composables/useListTools'
 
 defineOptions({ name: 'InvProduct' })
 
@@ -590,6 +592,66 @@ async function removeCat(id: number): Promise<void> {
   await Promise.all([loadCatTree(), loadCategories()])
 }
 
+// ---------------- 导出 / 打印 / 批量 ----------------
+const tableRef = ref()
+const {
+  selection,
+  exporting,
+  batchRunning,
+  onSelectionChange,
+  clearSelection,
+  exportRows,
+  runBatch,
+} = useListTools<InvProductRow>({
+  exportUrl: '/inv/export',
+  exportParams: () => ({
+    entity: 'product',
+    keyword: query.keyword || undefined,
+    status: query.status ?? undefined,
+    categoryId: query.categoryId ?? undefined,
+  }),
+  fallbackName: '商品档案.xlsx',
+})
+
+const printVisible = ref(false)
+const printRows = computed(() => (selection.value.length ? selection.value : rows.value))
+
+const printColumns = computed<ListPrintColumn<InvProductRow>[]>(() => [
+  { label: '编码', prop: 'code' },
+  { label: '名称', prop: 'name' },
+  { label: '条码', value: (r) => r.barcode || '-' },
+  { label: '分类', value: (r) => r.categoryName || '-' },
+  { label: '规格', value: (r) => specSummary(r) },
+  { label: '规格数', value: (r) => String(r.specCount), align: 'center' },
+  { label: '单位数', value: (r) => String(r.unitCount), align: 'center' },
+  { label: '总库存', value: (r) => formatQty(r.totalStock), align: 'right' },
+  { label: '状态', value: (r) => (r.status === 1 ? '启用' : '停用') },
+])
+
+const printSubtitle = computed(() => {
+  const parts: string[] = []
+  if (query.keyword) parts.push(`关键字「${query.keyword}」`)
+  if (query.categoryId) parts.push('已按分类筛选')
+  if (query.status !== undefined) parts.push(query.status === 1 ? '启用' : '停用')
+  if (selection.value.length) parts.push('仅打印勾选')
+  return parts.join(' · ') || '全部商品'
+})
+
+async function batchDelete(): Promise<void> {
+  if (!selection.value.length) return
+  const done = await runBatch(
+    '批量删除',
+    selection.value,
+    (r) => invApi.deleteProduct(r.id),
+    (r) => r.name,
+  )
+  if (done) {
+    clearSelection(tableRef.value)
+    load()
+    loadCategories()
+  }
+}
+
 onMounted(() => {
   load()
   loadCategories()
@@ -710,8 +772,19 @@ onMounted(() => {
           <span class="text-muted">
             商品档案与价格维护 · 共 {{ total }} 条 · 展开行可看规格与单位
           </span>
+          <span v-if="selection.length" class="selection-tip">
+            已选 {{ selection.length }} 项
+            <a @click="clearSelection(tableRef)">清空</a>
+          </span>
         </div>
         <div class="toolbar__actions">
+          <el-button v-if="selection.length" :loading="batchRunning" @click="batchDelete">
+            批量删除
+          </el-button>
+          <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">
+            导出{{ selection.length ? '选中' : '' }}
+          </el-button>
+          <el-button @click="printVisible = true">打印</el-button>
           <el-button v-perm="'inv:product:create'" type="primary" @click="openCreate">
             <AppIcon name="Plus" />
             <span>新增商品</span>
@@ -722,7 +795,14 @@ onMounted(() => {
         </div>
       </div>
 
-      <el-table v-loading="loading" :data="rows" stripe>
+      <el-table
+        ref="tableRef"
+        v-loading="loading"
+        :data="rows"
+        stripe
+        @selection-change="onSelectionChange"
+      >
+        <el-table-column type="selection" width="44" />
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="spec-detail">
@@ -1099,6 +1179,14 @@ onMounted(() => {
         <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
       </template>
     </el-dialog>
+
+    <ListPrintDialog
+      v-model="printVisible"
+      title="商品档案"
+      :subtitle="printSubtitle"
+      :columns="printColumns"
+      :rows="printRows"
+    />
   </div>
 </template>
 

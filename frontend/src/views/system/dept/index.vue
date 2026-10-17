@@ -6,8 +6,10 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { deptApi } from '@/api'
 import type { DeptNode, DeptPayload } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
+import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { formatDate, flattenTree } from '@/utils/format'
+import { downloadFile } from '@/utils/download'
 import { useLatestGuard } from '@/composables/useLatestGuard'
 import { useCrudDialog } from '@/composables/useCrudDialog'
 
@@ -136,29 +138,67 @@ function resetQuery(): void {
   loadTree()
 }
 
+// ---------------- 导出 / 打印 ----------------
+const printVisible = ref(false)
+const exporting = ref(false)
+
+const flatRows = computed(() => {
+  const out: Array<{ row: DeptNode; depth: number }> = []
+  const walk = (list: DeptNode[], depth: number) => {
+    for (const n of list) {
+      out.push({ row: n, depth })
+      if (n.children?.length) walk(n.children, depth + 1)
+    }
+  }
+  walk(tree.value, 0)
+  return out
+})
+
+const printRows = computed(() => flatRows.value.map((x) => x.row))
+const printColumns: ListPrintColumn<DeptNode>[] = [
+  { label: '部门名称', value: (r) => '　'.repeat(flatRows.value.find((x) => x.row.id === r.id)?.depth ?? 0) + r.name },
+  { label: '负责人', value: (r) => r.leader || '-' },
+  { label: '电话', value: (r) => r.phone || '-' },
+  { label: '邮箱', value: (r) => r.email || '-' },
+  { label: '人数', value: (r) => String(r.userCount), align: 'center' },
+  { label: '状态', value: (r) => (r.status === 1 ? '启用' : '停用') },
+]
+const printSubtitle = computed(() => (keyword.value ? `关键字「${keyword.value}」` : '全部部门'))
+
+async function handleExport(): Promise<void> {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    await downloadFile('/system/depts/export', {
+      keyword: keyword.value || undefined,
+    }, '部门.xlsx')
+  } finally {
+    exporting.value = false
+  }
+}
+
 onMounted(loadTree)
 </script>
 
 <template>
   <div class="dept-page">
     <div class="page-card search-bar">
-      <el-form :inline="true" @submit.prevent>
+      <el-form class="filter-form" label-width="76px" @submit.prevent>
         <el-form-item label="关键字">
           <el-input
             v-model="keyword"
             placeholder="部门名称 / 负责人"
             clearable
-            style="width: 240px"
             @keyup.enter="loadTree"
           />
         </el-form-item>
-        <el-form-item>
+        <div class="filter-form__actions">
           <el-button type="primary" @click="loadTree">
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="resetQuery">重置</el-button>
-        </el-form-item>
+        </div>
       </el-form>
     </div>
 
@@ -169,6 +209,8 @@ onMounted(loadTree)
           <span class="text-muted">共 {{ totalCount }} 个部门</span>
         </div>
         <div class="toolbar__actions">
+          <el-button :loading="exporting" @click="handleExport">导出</el-button>
+          <el-button @click="printVisible = true">打印</el-button>
           <el-button v-perm="'system:dept:create'" type="primary" @click="openCreate(0)">
             <AppIcon name="Plus" />
             <span>新增部门</span>
@@ -299,6 +341,14 @@ onMounted(loadTree)
         <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
       </template>
     </el-dialog>
+
+    <ListPrintDialog
+      v-model="printVisible"
+      title="组织架构"
+      :subtitle="printSubtitle"
+      :columns="printColumns"
+      :rows="printRows"
+    />
   </div>
 </template>
 

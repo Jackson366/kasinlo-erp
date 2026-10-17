@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import type { TableInstance } from 'element-plus'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
@@ -7,6 +7,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { deptApi, roleApi, userApi } from '@/api'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useCrudDialog } from '@/composables/useCrudDialog'
+import { runBatchAction } from '@/composables/useListTools'
 import type {
   DeptNode,
   RoleOption,
@@ -18,9 +19,10 @@ import type {
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import UserImportDialog from './UserImportDialog.vue'
 import UserPasswordDialog from './UserPasswordDialog.vue'
-import { exportStamp, formatDateTime } from '@/utils/format'
+import { exportStamp, formatDate, formatDateTime } from '@/utils/format'
 import { useUserStore } from '@/store'
 
 defineOptions({ name: 'SystemUser' })
@@ -259,6 +261,67 @@ function clearSelection(): void {
   selectedRows.value = []
 }
 
+// ---------------- 打印 ----------------
+const printVisible = ref(false)
+const printRows = computed(() => (selectedRows.value.length ? selectedRows.value : rows.value))
+const printColumns: ListPrintColumn<UserItem>[] = [
+  { label: '账号', prop: 'username' },
+  { label: '昵称', value: (r) => r.nickname || '-' },
+  { label: '部门', value: (r) => r.deptName || '-' },
+  { label: '手机号', value: (r) => r.phone || '-' },
+  { label: '角色', value: (r) => r.roleNames.join('、') || '-' },
+  { label: '状态', value: (r) => (r.status === 1 ? '启用' : '禁用') },
+  { label: '创建时间', value: (r) => formatDate(r.createdAt) },
+]
+const printSubtitle = computed(() => {
+  const parts: string[] = []
+  if (query.keyword) parts.push(`关键字「${query.keyword}」`)
+  if (query.status !== undefined) parts.push(query.status === 1 ? '启用' : '禁用')
+  if (selectedRows.value.length) parts.push('仅打印勾选')
+  return parts.join(' · ') || '全部用户'
+})
+
+// ---------------- 批量 ----------------
+const batchRunning = ref(false)
+
+async function batchDelete(): Promise<void> {
+  if (!selectedRows.value.length) return
+  batchRunning.value = true
+  try {
+    const done = await runBatchAction(
+      '批量删除',
+      selectedRows.value,
+      (r) => userApi.remove(r.id),
+      (r) => r.username,
+    )
+    if (done) {
+      clearSelection()
+      loadList()
+    }
+  } finally {
+    batchRunning.value = false
+  }
+}
+
+async function batchStatus(next: Status): Promise<void> {
+  if (!selectedRows.value.length) return
+  batchRunning.value = true
+  try {
+    const done = await runBatchAction(
+      next === 1 ? '批量启用' : '批量禁用',
+      selectedRows.value.filter((r) => r.status !== next),
+      (r) => userApi.updateStatus(r.id, next),
+      (r) => r.username,
+    )
+    if (done) {
+      clearSelection()
+      loadList()
+    }
+  } finally {
+    batchRunning.value = false
+  }
+}
+
 /**
  * 导出用户。
  * scope='selected' 时只导出勾选行（依赖 el-table 的 reserve-selection，可跨页保留）；
@@ -313,13 +376,13 @@ onMounted(() => {
   <div class="user-page">
     <!-- 搜索区 -->
     <div class="page-card search-bar">
-      <el-form :inline="true" @submit.prevent>
+      <el-form class="filter-form" label-width="76px" @submit.prevent>
         <el-form-item label="关键字">
           <el-input
             v-model="query.keyword"
             placeholder="用户名 / 昵称 / 手机号"
             clearable
-            style="width: 220px"
+            
             @keyup.enter="search"
           />
         </el-form-item>
@@ -332,21 +395,21 @@ onMounted(() => {
             check-strictly
             clearable
             placeholder="全部部门"
-            style="width: 180px"
+            
           />
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="query.status" placeholder="全部" clearable style="width: 120px">
+          <el-select v-model="query.status" placeholder="全部" clearable >
             <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item>
+        <div class="filter-form__actions">
           <el-button type="primary" @click="search">
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="resetQuery">重置</el-button>
-        </el-form-item>
+        </div>
       </el-form>
     </div>
 
@@ -358,6 +421,21 @@ onMounted(() => {
           <span class="text-muted">共 {{ total }} 条</span>
         </div>
         <div class="toolbar__actions">
+          <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
+          <el-dropdown v-if="selectedRows.length" trigger="click">
+            <el-button :loading="batchRunning">
+              <span>批量处理（{{ selectedRows.length }}）</span>
+              <AppIcon name="ArrowDown" />
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="batchStatus(1)">启用</el-dropdown-item>
+                <el-dropdown-item @click="batchStatus(0)">禁用</el-dropdown-item>
+                <el-dropdown-item divided @click="batchDelete">删除</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button v-perm="'system:user:export'" @click="printVisible = true">打印</el-button>
           <el-button v-perm="'system:user:create'" type="primary" @click="openCreate">
             <AppIcon name="Plus" />
             <span>新增用户</span>
@@ -572,6 +650,14 @@ onMounted(() => {
     <UserPasswordDialog v-model="pwdVisible" :target="pwdTarget" />
 
     <UserImportDialog v-model="importVisible" @imported="loadList" />
+
+    <ListPrintDialog
+      v-model="printVisible"
+      title="用户列表"
+      :subtitle="printSubtitle"
+      :columns="printColumns"
+      :rows="printRows"
+    />
   </div>
 </template>
 

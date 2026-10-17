@@ -21,9 +21,11 @@ import type {
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import OrderPrintDialog from './OrderPrintDialog.vue'
 import { formatDay, formatMoney, formatQty } from '@/utils/format'
 import { useTableQuery } from '@/composables/useTableQuery'
+import { useListTools } from '@/composables/useListTools'
 
 const props = defineProps<{
   bizType: 'purchase' | 'sales'
@@ -424,6 +426,89 @@ async function openDetail(row: InvOrderRow): Promise<void> {
   detailVisible.value = true
 }
 
+// ---------------- 导出 / 打印 / 批量 ----------------
+const tableRef = ref()
+const {
+  selection,
+  exporting,
+  batchRunning,
+  onSelectionChange,
+  clearSelection,
+  exportRows,
+  runBatch,
+} = useListTools<InvOrderRow>({
+  exportUrl: '/inv/export',
+  exportParams: () => ({
+    entity: 'order',
+    bizType: props.bizType,
+    keyword: query.keyword || undefined,
+    status: query.status ?? undefined,
+    settleStatus: query.settleStatus || undefined,
+    startDate: query.dateRange?.[0] || undefined,
+    endDate: query.dateRange?.[1] || undefined,
+  }),
+  fallbackName: `${props.title}.xlsx`,
+})
+
+const printVisible = ref(false)
+/** 有勾选就打印勾选的，没勾选打印当前页 —— 与导出的默认口径一致 */
+const printRows = computed(() => (selection.value.length ? selection.value : rows.value))
+
+const printColumns = computed<ListPrintColumn<InvOrderRow>[]>(() => [
+  { label: '单号', prop: 'orderNo' },
+  { label: props.partyLabel, prop: 'partyName' },
+  { label: '单据日期', value: (r) => formatDay(r.orderDate) },
+  { label: '到期日', value: (r) => formatDay(r.dueDate) },
+  { label: '状态', value: (r) => statusMeta[r.status]?.text || '-' },
+  { label: '金额', value: (r) => formatMoney(r.totalAmount), align: 'right' },
+  { label: '已结算', value: (r) => formatMoney(r.settledAmount), align: 'right' },
+  { label: '结算', value: (r) => settleMeta[r.settleStatus]?.text || '-' },
+  { label: '业务员', value: (r) => r.salesman || '-' },
+  { label: '操作人员', value: (r) => r.operator || '-' },
+])
+
+const printSubtitle = computed(() => {
+  const parts: string[] = []
+  if (query.keyword) parts.push(`关键字「${query.keyword}」`)
+  if (query.dateRange?.length === 2) parts.push(`日期 ${query.dateRange[0]} ~ ${query.dateRange[1]}`)
+  if (query.status) parts.push(`状态 ${statusMeta[query.status]?.text}`)
+  if (query.settleStatus) parts.push(`结算 ${settleMeta[query.settleStatus]?.text}`)
+  if (selection.value.length) parts.push('仅打印勾选')
+  return parts.join(' · ') || '全部单据'
+})
+
+/** 批量审核 / 反审核：跳过状态不符的行，避免把只读的已审核单重复提交 */
+async function batchAudit(): Promise<void> {
+  const target = selection.value.filter((r) => r.status === 1)
+  if (!target.length) {
+    ElMessage.warning('请先勾选待处理的单据')
+    return
+  }
+  const done = await runBatch(
+    '批量审核',
+    target,
+    (r) => invApi.changeOrderStatus(r.id, 2),
+    (r) => r.orderNo,
+  )
+  if (done) {
+    clearSelection(tableRef.value)
+    load()
+  }
+}
+
+async function batchReverse(): Promise<void> {
+  const target = selection.value.filter((r) => r.status === 2)
+  if (!target.length) {
+    ElMessage.warning('请先勾选已审核的单据')
+    return
+  }
+  const done = await runBatch('批量反审核', target, (r) => invApi.reverseOrder(r.id), (r) => r.orderNo)
+  if (done) {
+    clearSelection(tableRef.value)
+    load()
+  }
+}
+
 onMounted(() => {
   load()
   loadOptions()
@@ -487,8 +572,29 @@ onMounted(() => {
         <div class="toolbar__title">
           <h3>{{ title }}</h3>
           <span class="text-muted">共 {{ total }} 张单据</span>
+          <span v-if="selection.length" class="selection-tip">
+            已选 {{ selection.length }} 项
+            <a @click="clearSelection(tableRef)">清空</a>
+          </span>
         </div>
         <div class="toolbar__actions">
+          <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
+          <el-dropdown v-if="selection.length" trigger="click">
+            <el-button :loading="batchRunning">
+              批量处理
+              <AppIcon name="ArrowDown" />
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="batchAudit">审核（仅待处理）</el-dropdown-item>
+                <el-dropdown-item @click="batchReverse">反审核（仅已审核）</el-dropdown-item>
+                <el-dropdown-item divided @click="exportRows(selection)">导出选中</el-dropdown-item>
+                <el-dropdown-item @click="printVisible = true">打印选中</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button :loading="exporting" @click="exportRows()">导出</el-button>
+          <el-button @click="printVisible = true">打印</el-button>
           <el-button v-perm="`inv:${bizType}:create`" type="primary" @click="openCreate">
             <AppIcon name="Plus" />
             <span>{{ createText }}</span>
@@ -499,7 +605,14 @@ onMounted(() => {
         </div>
       </div>
 
-      <el-table v-loading="loading" :data="rows" stripe>
+      <el-table
+        ref="tableRef"
+        v-loading="loading"
+        :data="rows"
+        stripe
+        @selection-change="onSelectionChange"
+      >
+        <el-table-column type="selection" width="44" />
         <el-table-column prop="orderNo" label="单号" width="138" />
         <el-table-column :label="partyLabel" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ row.partyName }}</template>
@@ -780,6 +893,15 @@ onMounted(() => {
 
     <!-- 打印 -->
     <OrderPrintDialog ref="printRef" :biz-type="bizType" :party-label="partyLabel" />
+
+    <!-- 列表打印：有勾选打勾选的，没勾选打当前页 -->
+    <ListPrintDialog
+      v-model="printVisible"
+      :title="title"
+      :subtitle="printSubtitle"
+      :columns="printColumns"
+      :rows="printRows"
+    />
   </div>
 </template>
 

@@ -10,6 +10,8 @@ import { invApi } from '@/api'
 import type { InvFinanceRow, InvFinanceSummary, InvSettlePayload } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
+import { downloadFile } from '@/utils/download'
 import { formatDay, formatMoney } from '@/utils/format'
 
 defineOptions({ name: 'InvFinance' })
@@ -128,6 +130,46 @@ async function submitForm(): Promise<void> {
   }
 }
 
+// ---------------- 导出 / 打印 ----------------
+const exporting = ref(false)
+const printVisible = ref(false)
+
+const bizType = computed(() => (activeTab.value === 'payable' ? 'purchase' : 'sales'))
+const tabLabel = computed(() => (activeTab.value === 'payable' ? '应付明细' : '应收明细'))
+
+const printRows = computed(() => rows.value)
+const printColumns: ListPrintColumn<InvFinanceRow>[] = [
+  { label: '单号', prop: 'orderNo' },
+  { label: '往来单位', prop: 'partyName' },
+  { label: '单据日期', value: (r) => formatDay(r.orderDate) },
+  { label: '到期日', value: (r) => formatDay(r.dueDate) },
+  { label: '单据金额', value: (r) => formatMoney(r.totalAmount), align: 'right' },
+  { label: '已结算', value: (r) => formatMoney(r.settledAmount), align: 'right' },
+  { label: '未结余额', value: (r) => formatMoney(r.outstanding), align: 'right' },
+  { label: '状态', value: (r) => (r.overdue ? '已逾期' : settleMeta[r.settleStatus]?.text || '-') },
+]
+const printSubtitle = computed(() => {
+  const parts = [tabLabel.value]
+  if (query.keyword) parts.push(`关键字「${query.keyword}」`)
+  if (query.settle) parts.push(settleMeta[query.settle]?.text || '已逾期')
+  return parts.join(' · ')
+})
+
+async function handleExport(): Promise<void> {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    await downloadFile('/inv/export', {
+      entity: 'finance',
+      bizType: bizType.value,
+      keyword: query.keyword || undefined,
+      settleStatus: query.settle || undefined,
+    }, `${tabLabel.value}.xlsx`)
+  } finally {
+    exporting.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -140,6 +182,34 @@ onMounted(load)
       </div>
     </div>
 
+    <div class="page-card search-bar">
+      <el-form class="filter-form" label-width="76px" @submit.prevent>
+        <el-form-item label="关键字">
+          <el-input
+            v-model="query.keyword"
+            placeholder="单号 / 往来单位"
+            clearable
+            @keyup.enter="search"
+          />
+        </el-form-item>
+        <el-form-item label="结算状态">
+          <el-select v-model="query.settle" placeholder="全部状态" clearable>
+            <el-option label="未结清" value="unpaid" />
+            <el-option label="部分结算" value="partial" />
+            <el-option label="已结清" value="paid" />
+            <el-option label="已逾期" value="overdue" />
+          </el-select>
+        </el-form-item>
+        <div class="filter-form__actions">
+          <el-button type="primary" @click="search">
+            <AppIcon name="Search" />
+            <span>查询</span>
+          </el-button>
+          <el-button @click="reset">重置</el-button>
+        </div>
+      </el-form>
+    </div>
+
     <div class="page-card">
       <el-tabs v-model="activeTab" @tab-change="onTabChange">
         <el-tab-pane label="应收明细" name="receivable" />
@@ -148,26 +218,12 @@ onMounted(load)
 
       <div class="toolbar">
         <div class="toolbar__title">
-          <el-input
-            v-model="query.keyword"
-            placeholder="单号 / 往来单位"
-            clearable
-            style="width: 220px"
-            @keyup.enter="search"
-          />
-          <el-select v-model="query.settle" placeholder="全部状态" clearable style="width: 150px">
-            <el-option label="未结清" value="unpaid" />
-            <el-option label="部分结算" value="partial" />
-            <el-option label="已结清" value="paid" />
-            <el-option label="已逾期" value="overdue" />
-          </el-select>
-          <el-button type="primary" @click="search">
-            <AppIcon name="Search" />
-            <span>查询</span>
-          </el-button>
-          <el-button @click="reset">重置</el-button>
+          <h3>{{ tabLabel }}</h3>
+          <span class="text-muted">共 {{ total }} 条</span>
         </div>
         <div class="toolbar__actions">
+          <el-button :loading="exporting" @click="handleExport">导出</el-button>
+          <el-button @click="printVisible = true">打印</el-button>
           <el-button @click="load">
             <AppIcon name="Refresh" />
           </el-button>
@@ -229,6 +285,14 @@ onMounted(load)
         <Pagination v-model:page="query.page" v-model:page-size="query.pageSize" :total="total" @change="load" />
       </div>
     </div>
+
+    <ListPrintDialog
+      v-model="printVisible"
+      :title="tabLabel"
+      :subtitle="printSubtitle"
+      :columns="printColumns"
+      :rows="printRows"
+    />
 
     <el-dialog
       v-model="dialogVisible"

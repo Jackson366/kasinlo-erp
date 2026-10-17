@@ -24,8 +24,10 @@ import type {
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import { formatDay, formatMoney, formatQty } from '@/utils/format'
 import { useTableQuery } from '@/composables/useTableQuery'
+import { useListTools } from '@/composables/useListTools'
 import StockPrintDialog from '../components/StockPrintDialog.vue'
 
 defineOptions({ name: 'InvStock' })
@@ -302,6 +304,70 @@ function onTabChange(name: string | number): void {
   if (name === 'inventory') loadInventory()
 }
 
+/** 来源文案（模板与打印共用一份，避免两处各写一遍映射） */
+function sourceLabel(t: string): string {
+  return { purchase: '采购', sales: '销售', manual: '手工' }[t] || '-'
+}
+
+// ---------------- 导出 / 打印 / 批量（出入库单据） ----------------
+const tableRef = ref()
+const {
+  selection,
+  exporting,
+  batchRunning,
+  onSelectionChange,
+  clearSelection,
+  exportRows,
+  runBatch,
+} = useListTools<InvStockOrderRow>({
+  exportUrl: '/inv/export',
+  exportParams: () => ({
+    entity: 'stock',
+    keyword: query.keyword || undefined,
+    direction: query.direction || undefined,
+  }),
+  fallbackName: '出入库单据.xlsx',
+})
+
+const printVisible = ref(false)
+const printRows = computed(() => (selection.value.length ? selection.value : rows.value))
+
+const printColumns = computed<ListPrintColumn<InvStockOrderRow>[]>(() => [
+  { label: '单号', prop: 'orderNo' },
+  { label: '方向', value: (r) => (r.direction === 'in' ? '入库' : '出库') },
+  { label: '来源', value: (r) => sourceLabel(r.sourceType) },
+  { label: '单据日期', value: (r) => formatDay(r.orderDate) },
+  { label: '明细', value: (r) => `${r.itemCount} 行`, align: 'center' },
+  { label: '总数量', value: (r) => formatQty(r.totalQty), align: 'right' },
+  { label: '业务员', value: (r) => r.salesman || '-' },
+  { label: '操作人员', value: (r) => r.operator || '-' },
+  { label: '备注', value: (r) => r.remark || '-' },
+])
+
+const printSubtitle = computed(() => {
+  const parts: string[] = []
+  if (query.keyword) parts.push(`单号「${query.keyword}」`)
+  if (query.direction) parts.push(query.direction === 'in' ? '入库' : '出库')
+  if (selection.value.length) parts.push('仅打印勾选')
+  return parts.join(' · ') || '全部出入库单据'
+})
+
+/** 批量作废：逐条回滚库存，失败项汇总提示（已被引用的单据会拒绝） */
+async function batchVoid(): Promise<void> {
+  if (!selection.value.length) return
+  const done = await runBatch(
+    '批量作废',
+    selection.value,
+    (r) => invApi.voidStockOrder(r.id),
+    (r) => r.orderNo,
+  )
+  if (done) {
+    clearSelection(tableRef.value)
+    load()
+    loadInventory()
+  }
+}
+
 onMounted(() => {
   load()
   loadInventory()
@@ -333,8 +399,19 @@ onMounted(() => {
                 <span>查询</span>
               </el-button>
               <el-button @click="reset">重置</el-button>
+              <span v-if="selection.length" class="selection-tip">
+                已选 {{ selection.length }} 项
+                <a @click="clearSelection(tableRef)">清空</a>
+              </span>
             </div>
             <div class="toolbar__actions">
+              <el-button v-if="selection.length" :loading="batchRunning" @click="batchVoid">
+                批量作废
+              </el-button>
+              <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">
+                导出{{ selection.length ? '选中' : '' }}
+              </el-button>
+              <el-button @click="printVisible = true">打印</el-button>
               <el-button v-perm="'inv:stock:create'" type="primary" @click="openCreate">
                 <AppIcon name="Plus" />
                 <span>新增出入库单</span>
@@ -345,8 +422,15 @@ onMounted(() => {
             </div>
           </div>
 
-          <el-table v-loading="loading" :data="rows" stripe>
-            <el-table-column prop="orderNo" label="单号" width="160" />
+          <el-table
+            ref="tableRef"
+            v-loading="loading"
+            :data="rows"
+            stripe
+            @selection-change="onSelectionChange"
+          >
+            <el-table-column type="selection" width="44" />
+            <el-table-column prop="orderNo" label="单号" width="150" />
             <el-table-column label="方向" width="90" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.direction === 'in' ? 'success' : 'warning'" size="small" effect="light">
@@ -356,7 +440,7 @@ onMounted(() => {
             </el-table-column>
             <el-table-column label="来源" width="110">
               <template #default="{ row }">
-                {{ { purchase: '采购', sales: '销售', manual: '手工' }[row.sourceType as string] || '-' }}
+                {{ sourceLabel(row.sourceType) }}
               </template>
             </el-table-column>
             <el-table-column prop="orderDate" label="单据日期" width="130">
@@ -589,6 +673,14 @@ onMounted(() => {
     </el-dialog>
 
     <StockPrintDialog ref="printRef" />
+
+    <ListPrintDialog
+      v-model="printVisible"
+      title="出入库单据"
+      :subtitle="printSubtitle"
+      :columns="printColumns"
+      :rows="printRows"
+    />
   </div>
 </template>
 
