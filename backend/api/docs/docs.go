@@ -5279,6 +5279,7 @@ const docTemplate = `{
                     }
                 },
                 "operator": {
+                    "description": "Operator 制单人显示名（昵称优先，回落用户名）。列表直接用，省得前端再查一次人。",
                     "type": "string"
                 },
                 "orderDate": {
@@ -5294,6 +5295,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "remark": {
+                    "type": "string"
+                },
+                "salesman": {
                     "type": "string"
                 },
                 "settleStatus": {
@@ -5416,6 +5420,10 @@ const docTemplate = `{
                 "remark": {
                     "type": "string",
                     "maxLength": 255
+                },
+                "salesman": {
+                    "type": "string",
+                    "maxLength": 64
                 }
             }
         },
@@ -5438,6 +5446,10 @@ const docTemplate = `{
                 "itemCount": {
                     "type": "integer"
                 },
+                "operator": {
+                    "description": "Operator 制单人显示名（昵称优先，回落用户名）。列表直接用，省得前端再查一次人。",
+                    "type": "string"
+                },
                 "orderDate": {
                     "type": "string"
                 },
@@ -5451,6 +5463,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "remark": {
+                    "type": "string"
+                },
+                "salesman": {
                     "type": "string"
                 },
                 "settleStatus": {
@@ -6176,6 +6191,10 @@ const docTemplate = `{
                 "remark": {
                     "type": "string"
                 },
+                "salesman": {
+                    "description": "业务员",
+                    "type": "string"
+                },
                 "sourceOrderNo": {
                     "description": "来源采购 / 销售单号，手工单为空",
                     "type": "string"
@@ -6217,6 +6236,10 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 255
                 },
+                "salesman": {
+                    "type": "string",
+                    "maxLength": 64
+                },
                 "sourceType": {
                     "type": "string",
                     "enum": [
@@ -6242,6 +6265,10 @@ const docTemplate = `{
                 "itemCount": {
                     "type": "integer"
                 },
+                "operator": {
+                    "description": "Operator 制单人显示名（昵称优先，回落用户名）",
+                    "type": "string"
+                },
                 "orderDate": {
                     "type": "string"
                 },
@@ -6249,6 +6276,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "remark": {
+                    "type": "string"
+                },
+                "salesman": {
                     "type": "string"
                 },
                 "sourceId": {

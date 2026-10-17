@@ -267,6 +267,7 @@ definitions:
           $ref: '#/definitions/inv.OrderItemVO'
         type: array
       operator:
+        description: Operator 制单人显示名（昵称优先，回落用户名）。列表直接用，省得前端再查一次人。
         type: string
       orderDate:
         type: string
@@ -277,6 +278,8 @@ definitions:
       partyName:
         type: string
       remark:
+        type: string
+      salesman:
         type: string
       settleStatus:
         type: string
@@ -356,6 +359,9 @@ definitions:
       remark:
         maxLength: 255
         type: string
+      salesman:
+        maxLength: 64
+        type: string
     required:
     - bizType
     - items
@@ -375,6 +381,9 @@ definitions:
         type: integer
       itemCount:
         type: integer
+      operator:
+        description: Operator 制单人显示名（昵称优先，回落用户名）。列表直接用，省得前端再查一次人。
+        type: string
       orderDate:
         type: string
       orderNo:
@@ -384,6 +393,8 @@ definitions:
       partyName:
         type: string
       remark:
+        type: string
+      salesman:
         type: string
       settleStatus:
         type: string
@@ -875,6 +886,9 @@ definitions:
         type: string
       remark:
         type: string
+      salesman:
+        description: 业务员
+        type: string
       sourceOrderNo:
         description: 来源采购 / 销售单号，手工单为空
         type: string
@@ -900,6 +914,9 @@ definitions:
       remark:
         maxLength: 255
         type: string
+      salesman:
+        maxLength: 64
+        type: string
       sourceType:
         enum:
         - purchase
@@ -921,11 +938,16 @@ definitions:
         type: integer
       itemCount:
         type: integer
+      operator:
+        description: Operator 制单人显示名（昵称优先，回落用户名）
+        type: string
       orderDate:
         type: string
       orderNo:
         type: string
       remark:
+        type: string
+      salesman:
         type: string
       sourceId:
         type: integer
