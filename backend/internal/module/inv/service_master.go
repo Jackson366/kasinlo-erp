@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"nova-erp/internal/authz"
 	"nova-erp/internal/model"
 	"nova-erp/internal/pkg/errcode"
 	"nova-erp/internal/pkg/page"
@@ -18,18 +19,22 @@ type partyStat struct {
 }
 
 // partyStats 按业务类型统计每个往来单位的未结金额与单据数。
-// 一次性聚合，避免列表里逐行查库（N+1）。
-func (s *Service) partyStats(bizType string) (map[int64]partyStat, error) {
+//
+// 往来单位档案是共享主数据、不套范围；但「余额」是单据的派生数据，
+// 必须按当前操作者的数据范围收窄 —— 否则「仅本人/本部门」账号会看到
+// 全公司的应收应付。所以这里单独套 applyCreator，主数据列表不受影响。
+func (s *Service) partyStats(bizType string, actor *authz.Identity) (map[int64]partyStat, error) {
 	type row struct {
 		PartyID int64
 		Bal     float64
 		Cnt     int64
 	}
 	var rows []row
-	if err := s.db.Model(&model.InvOrder{}).
+	tx := s.db.Model(&model.InvOrder{}).
 		Select("party_id, COALESCE(SUM(total_amount - settled_amount), 0) AS bal, COUNT(*) AS cnt").
-		Where("biz_type = ? AND status <> ?", bizType, model.InvStatusCanceled).
-		Group("party_id").Scan(&rows).Error; err != nil {
+		Where("biz_type = ? AND status <> ?", bizType, model.InvStatusCanceled)
+	tx = s.applyCreator(tx, actor)
+	if err := tx.Group("party_id").Scan(&rows).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	out := make(map[int64]partyStat, len(rows))
@@ -40,12 +45,12 @@ func (s *Service) partyStats(bizType string) (map[int64]partyStat, error) {
 }
 
 // partyList 客户 / 供应商通用列表。bizType 决定余额口径与冗余名称来源。
-func (s *Service) partyList(bizType string, q page.Query, status *int16) ([]PartyRow, int64, error) {
+func (s *Service) partyList(bizType string, q page.Query, status *int16, actor *authz.Identity) ([]PartyRow, int64, error) {
 	var (
 		rows  []PartyRow
 		total int64
 	)
-	stats, err := s.partyStats(bizType)
+	stats, err := s.partyStats(bizType, actor)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -104,8 +109,8 @@ func (s *Service) partyList(bizType string, q page.Query, status *int16) ([]Part
 }
 
 // PartyList 客户 / 供应商列表入口，bizType 取 purchase（供应商）或 sales（客户）。
-func (s *Service) PartyList(bizType string, q page.Query, status *int16) ([]PartyRow, int64, error) {
-	return s.partyList(bizType, q, status)
+func (s *Service) PartyList(bizType string, q page.Query, status *int16, actor *authz.Identity) ([]PartyRow, int64, error) {
+	return s.partyList(bizType, q, status, actor)
 }
 
 // partyNameFree 校验编号唯一（存活数据内）。

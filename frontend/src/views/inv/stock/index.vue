@@ -669,7 +669,7 @@ onMounted(() => {
                   :value="u.id"
                 />
               </el-select>
-              <el-input-number v-model="item.qty" class="col-num" :min="0.01" :controls="false" />
+              <el-input-number v-model="item.qty" class="col-num" :min="0.01" :precision="3" :controls="false" />
               <span class="col-base">
                 {{ formatQty(qtyBase(item)) }}
                 {{ unitOptions(item).find((u) => u.isBase)?.unit || '' }}

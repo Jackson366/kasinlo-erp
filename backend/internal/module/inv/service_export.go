@@ -68,7 +68,7 @@ func (s *Service) ExportInv(q ExportQuery, actor *authz.Identity) ([]byte, strin
 			bizType = model.InvBizPurchase
 			label = "供应商"
 		}
-		rows, err := s.exportPartyRows(bizType, pageQ, q)
+		rows, err := s.exportPartyRows(bizType, pageQ, q, actor)
 		if err != nil {
 			return nil, "", err
 		}
@@ -213,8 +213,8 @@ func (s *Service) exportProductRows(q page.Query, f ExportQuery) ([][]string, er
 	return out, nil
 }
 
-func (s *Service) exportPartyRows(bizType string, q page.Query, f ExportQuery) ([][]string, error) {
-	list, _, err := s.PartyList(bizType, q, f.Status)
+func (s *Service) exportPartyRows(bizType string, q page.Query, f ExportQuery, actor *authz.Identity) ([][]string, error) {
+	list, _, err := s.PartyList(bizType, q, f.Status, actor)
 	if err != nil {
 		return nil, err
 	}

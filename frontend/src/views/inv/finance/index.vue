@@ -309,7 +309,7 @@ onMounted(load)
       </el-descriptions>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
         <el-form-item label="金额" prop="amount">
-          <el-input-number v-model="form.amount" :min="0.01" :max="currentRow?.outstanding ?? 0" :controls="false" style="width: 100%" />
+          <el-input-number v-model="form.amount" :min="0.01" :max="currentRow?.outstanding ?? 0" :precision="2" :controls="false" style="width: 100%" />
         </el-form-item>
         <el-form-item label="结算方式">
           <el-select v-model="form.method" style="width: 100%">

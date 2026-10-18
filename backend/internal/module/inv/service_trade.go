@@ -336,6 +336,11 @@ func (s *Service) OrderChangeStatus(id int64, status int16, actor *authz.Identit
 	if o.Status == status {
 		return nil
 	}
+	// 审核通过只允许从「待处理」出发：已取消的单据不能再被审核 ——
+	// 它已经不参与库存，放行会让取消单重新生成出入库单并过账。
+	if status == model.InvStatusDone && o.Status != model.InvStatusPending {
+		return errcode.New(errcode.ErrConflict, "只有待处理的单据才能审核")
+	}
 	if status != model.InvStatusDone {
 		return saveErr(s.db.Model(&model.InvOrder{}).Where("id = ?", id).
 			Update("status", status).Error)
@@ -520,14 +525,26 @@ func (s *Service) applyStock(tx *gorm.DB, direction string, items []model.InvSto
 			continue
 		}
 		if d < 0 {
-			var sp model.InvProductSpec
-			if err := tx.First(&sp, specID).Error; err != nil {
-				return err
+			// 扣减用「条件更新」原子兜底：把「读库存 → 校验 → 扣减」合并成一条
+			// WHERE stock + ? >= 0 的 UPDATE。先读再判再写的写法在两张不同单据
+			// 并发审核同一规格时，两次都能读到同一份充足库存、各自扣减，最终把
+			// 库存扣成负数 —— 条件更新抢不到的那一次 RowsAffected=0，在这里兜住。
+			res := tx.Model(&model.InvProductSpec{}).
+				Where("id = ? AND stock + ? >= -0.00005", specID, d).
+				UpdateColumn("stock", gorm.Expr("stock + ?", d))
+			if res.Error != nil {
+				return res.Error
 			}
-			if sp.Stock+d < -0.00005 {
+			if res.RowsAffected == 0 {
+				// 要么规格不存在、要么库存不足：回读一次区分，报错不含糊。
+				var sp model.InvProductSpec
+				if err := tx.First(&sp, specID).Error; err != nil {
+					return err
+				}
 				return errcode.Newf(errcode.ErrConflict,
 					"「%s」库存不足（现有 %s）", label[specID], fmtQty(sp.Stock))
 			}
+			continue
 		}
 		if err := tx.Model(&model.InvProductSpec{}).Where("id = ?", specID).
 			UpdateColumn("stock", gorm.Expr("stock + ?", d)).Error; err != nil {

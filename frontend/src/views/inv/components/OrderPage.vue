@@ -830,12 +830,12 @@ onMounted(() => {
                   :value="u.id"
                 />
               </el-select>
-              <el-input-number v-model="item.qty" class="col-num" :min="0.01" :controls="false" />
+              <el-input-number v-model="item.qty" class="col-num" :min="0.01" :precision="3" :controls="false" />
               <span class="col-base">
                 {{ formatQty(qtyBase(item)) }}
                 {{ unitOptions(item).find((u) => u.isBase)?.unit || '' }}
               </span>
-              <el-input-number v-model="item.price" class="col-num" :min="0" :controls="false" />
+              <el-input-number v-model="item.price" class="col-num" :min="0" :precision="2" :controls="false" />
               <span class="col-num amount">{{ formatMoney((item.qty || 0) * (item.price || 0)) }}</span>
               <el-button class="col-act" link type="danger" @click="removeItem(index)">删除</el-button>
             </div>

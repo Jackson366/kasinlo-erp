@@ -3,6 +3,7 @@ package inv
 import (
 	"github.com/gin-gonic/gin"
 
+	"nova-erp/internal/middleware"
 	"nova-erp/internal/model"
 	"nova-erp/internal/pkg/bind"
 	"nova-erp/internal/pkg/page"
@@ -42,7 +43,7 @@ func (h *Handler) partyList(c *gin.Context, bizType string) {
 		response.Fail(c, err)
 		return
 	}
-	list, total, err := h.svc.PartyList(bizType, q, status)
+	list, total, err := h.svc.PartyList(bizType, q, status, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
