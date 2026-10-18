@@ -26,7 +26,10 @@ type RestoreOptions struct {
 	Yes           bool   // 必须显式确认：恢复是覆盖性操作
 	Force         bool   // 允许把目标指向生产库本身
 	PgRestorePath string
-	Now           time.Time
+	// AnchorTables 是恢复后核对的锚点表清单（与备份时的 AnchorTables 对齐）。
+	// 缺省只锚定框架表 sys_users；业务表由应用层（module/ops、nova-ops）传入。
+	AnchorTables []string
+	Now          time.Time
 }
 
 // RestoreResult 是恢复结果。
@@ -56,6 +59,9 @@ func Restore(cfg *config.Config, opt RestoreOptions) (*RestoreResult, error) {
 	}
 	if !opt.Yes {
 		return nil, fmt.Errorf("恢复会写入一个数据库，请确认后加 --yes 再执行")
+	}
+	if len(opt.AnchorTables) == 0 {
+		opt.AnchorTables = []string{"sys_users"}
 	}
 	file, err := filepath.Abs(opt.File)
 	if err != nil {
@@ -112,7 +118,7 @@ func Restore(cfg *config.Config, opt RestoreOptions) (*RestoreResult, error) {
 	duration := time.Since(started)
 
 	// 3) 核对：表数与锚点行数
-	tables, rows, err := queryCounts(cfg.Database, target)
+	tables, rows, err := queryCounts(cfg.Database, target, opt.AnchorTables)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +162,7 @@ func createDatabase(dbc config.DatabaseConfig, name string) error {
 }
 
 // queryCounts 统计恢复后的表数与锚点行数。
-func queryCounts(dbc config.DatabaseConfig, dbName string) (int64, map[string]int64, error) {
+func queryCounts(dbc config.DatabaseConfig, dbName string, anchorTables []string) (int64, map[string]int64, error) {
 	clone := dbc
 	clone.DBName = dbName
 	conn, err := sql.Open("pgx", clone.DSN())
@@ -171,7 +177,7 @@ func queryCounts(dbc config.DatabaseConfig, dbName string) (int64, map[string]in
 		return 0, nil, fmt.Errorf("统计表数量失败: %w", err)
 	}
 	rows := map[string]int64{}
-	for _, t := range []string{"sys_users", "inv_orders", "inv_order_items", "inv_products"} {
+	for _, t := range anchorTables {
 		var n int64
 		if err := conn.QueryRow("SELECT count(*) FROM " + t).Scan(&n); err != nil {
 			// 老备份里可能没有某张表：记 -1 表示缺失，而不是让整个恢复判定为失败

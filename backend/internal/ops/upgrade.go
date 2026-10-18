@@ -134,6 +134,15 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 	// 后面的「升级前备份」「执行升级」都按它定位。
 	planID := newPlanID(pkgSHA, mf.Version)
 
+	// 同一份包（同 sha256）若已有一个待执行计划，拒绝重复上传 ——
+	// 否则「传一次 → 传一次」会堆出一串指向同一份内容的 pending 计划，
+	// staging 目录也随之增生。已失败（failed）的包可重新上传，不受此限制。
+	var dup model.UpgradeRecord
+	if err := db.Where("package_sha256 = ? AND status = ?", pkgSHA, model.UpgradePending).
+		First(&dup).Error; err == nil {
+		return nil, fmt.Errorf("该升级包已有待执行计划 %s，请先执行或等待，无需重复上传", dup.PlanID)
+	}
+
 	plan := &UpgradePlan{
 		PlanID:        planID,
 		FromVersion:   fromVersion,
@@ -150,6 +159,14 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 	if err := os.MkdirAll(staging, 0o755); err != nil {
 		return nil, fmt.Errorf("创建升级暂存目录失败：%w", err)
 	}
+	// 占位之后任何一步失败都要把 staging 目录整个删掉：失败重传一次就多一个目录，
+	// 里面躺着半截文件，只会让人分不清「哪次上传是完整的」。
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.RemoveAll(staging)
+		}
+	}()
 	// manifest 也要落一份到 staging：执行阶段（可能是另一次进程、重启之后）
 	// 只认 staging 里的文件，不认调用方传进来的字节 —— 上传时校验过的内容
 	// 与执行时用的内容必须是同一份，否则「校验通过」与「实际执行」会脱节。
@@ -225,6 +242,7 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 	if err := db.Model(rec).Update("plan", rec.Plan).Error; err != nil {
 		return nil, fmt.Errorf("保存升级计划失败：%w", err)
 	}
+	committed = true // 记录落库成功，staging 与计划才一起生效
 	return &UpgradePackageResult{Plan: plan, Record: rec}, nil
 }
 
@@ -471,8 +489,12 @@ func validateManifest(mf *upgradeManifest) error {
 	return nil
 }
 
-// newPlanID 生成计划标识：版本 + 包摘要前 12 位 + 时间戳。
-// 同一份包重复上传会得到同一个 ID（幂等），不同时间上传则各自独立。
+// newPlanID 生成计划标识：版本 + 包摘要前 12 位 + 秒级时间戳。
+//
+// 刻意含时间戳而不是「版本 + 摘要」：PlanID 是唯一索引，同一份包重传若得到
+// 同一个 ID，会撞唯一索引、也没法区分「第一次上传」和「失败后的重传」。
+// 时间戳保证每次上传都是独立计划；「同一份包已有 pending 计划」的重复上传
+// 由 ParseUpgradePackage 按 package_sha256 兜住（拒绝而非再建一条）。
 func newPlanID(pkgSHA, version string) string {
 	short := pkgSHA
 	if len(short) > 12 {

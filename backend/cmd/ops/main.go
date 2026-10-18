@@ -33,6 +33,15 @@ import (
 	"nova-erp/internal/ops"
 )
 
+// bizAnchorTables 是备份/巡检/恢复的锚点业务表。
+//
+// nova-ops 是进销存系统的运维命令，知道这些表；框架层 internal/ops 不硬编码
+// 业务表名，由本命令与 HTTP 模块（module/ops）各自传入。两边清单必须保持一致，
+// 否则同一份能力在 CLI 与页面上覆盖的业务表不同（已有教训：CLI 曾退化到只锚定 sys_users）。
+var bizAnchorTables = []string{
+	"inv_orders", "inv_order_items", "inv_products", "inv_customers",
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -129,11 +138,12 @@ func runBackup(args []string) error {
 	}
 	// 命令行优先，未给则用配置默认（0 / 空串表示「没给」）
 	opt := ops.BackupOptions{
-		Dir:        firstNonEmpty(*dir, cfg.Backup.Dir),
-		KeepCount:  firstPositive(*keep, cfg.Backup.KeepCount),
-		KeepMonths: firstPositive(*keepMonths, cfg.Backup.KeepMonths),
-		PgDumpPath: firstNonEmpty(*dumpPath, cfg.Backup.PgDumpPath),
-		SkipPrune:  *noPrune,
+		Dir:          firstNonEmpty(*dir, cfg.Backup.Dir),
+		KeepCount:    firstPositive(*keep, cfg.Backup.KeepCount),
+		KeepMonths:   firstPositive(*keepMonths, cfg.Backup.KeepMonths),
+		PgDumpPath:   firstNonEmpty(*dumpPath, cfg.Backup.PgDumpPath),
+		AnchorTables: append([]string{"sys_users"}, bizAnchorTables...),
+		SkipPrune:    *noPrune,
 	}
 
 	if err := openDB(cfg); err != nil {
@@ -181,6 +191,7 @@ func runRestore(args []string) error {
 		Yes:           *yes,
 		Force:         *force,
 		PgRestorePath: firstNonEmpty(*restore, cfg.Backup.PgRestorePath),
+		AnchorTables:  append([]string{"sys_users"}, bizAnchorTables...),
 	})
 	if err != nil {
 		return err
@@ -355,6 +366,7 @@ func runCheck(args []string) error {
 	rep, warns, err := ops.Check(database.DB(), cfg, ops.CheckOptions{
 		BackupDir:    firstNonEmpty(*backupDir, cfg.Backup.Dir),
 		MaxBackupAge: time.Duration(*maxAge) * time.Hour,
+		KeyTables:    append([]string{"sys_users"}, bizAnchorTables...),
 	})
 	if err != nil {
 		return err

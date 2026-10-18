@@ -1,6 +1,8 @@
 package ops
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 
 	"nova-erp/internal/config"
@@ -23,7 +25,11 @@ func Register(rg *gin.RouterGroup, cfg *config.Config) {
 	// 写接口统一挂幂等中间件：未带 Idempotency-Key 的调用方不受影响，
 	// 带键的重复提交（双击、超时重试）由它兜住 —— 执行升级这类动作
 	// 多跑一遍的代价是前端目录被切换两次，必须在 HTTP 层就拦下来。
-	idem := middleware.Idempotency()
+	//
+	// 运维写接口全是长任务（备份 pg_dump、恢复建库、清理批量删、升级解压），
+	// 默认 2 分钟的「处理中」租期不够：租期一到，超时重试的请求会抢占同一个键
+	// 再跑一遍（备份没有业务层二次幂等，等于白多一份）。这里统一放宽到 30 分钟。
+	idem := middleware.IdempotencyWithLease(30 * time.Minute)
 	{
 		g.GET("/backups", middleware.RequirePerm("ops:list"), h.Backups)
 		g.POST("/backups", idem, middleware.RequirePerm("ops:backup"), h.RunBackup)

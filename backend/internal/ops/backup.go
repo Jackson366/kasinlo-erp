@@ -231,7 +231,10 @@ func collectStats(db *gorm.DB, anchorTables []string) (BackupStats, error) {
 	for _, t := range anchorTables {
 		var n int64
 		if err := db.Raw("SELECT count(*) FROM " + t).Scan(&n).Error; err != nil {
-			return stats, fmt.Errorf("统计 %s 行数失败: %w", t, err)
+			// 表不存在（老库/精简部署）：记 -1 表示缺失，不让整次备份因此失败 ——
+			// 备份本身已经成功，锚点少一张只是「对不上账」的精度下降，不是灾难。
+			stats.Rows[t] = -1
+			continue
 		}
 		stats.Rows[t] = n
 	}

@@ -34,7 +34,15 @@ const (
 	completedTTL = 24 * time.Hour
 )
 
-// Idempotency 提供基于 Idempotency-Key 头的写请求幂等保护。
+// Idempotency 提供基于 Idempotency-Key 头的写请求幂等保护，租期为默认的 2 分钟。
+func Idempotency() gin.HandlerFunc {
+	return IdempotencyWithLease(processingLease)
+}
+
+// IdempotencyWithLease 同 Idempotency，但允许调用方指定「处理中」租期。
+//
+// 长任务接口（备份 pg_dump、恢复建库、清理批量删、升级解压）往往远超 2 分钟：
+// 租期一到，超时重试的请求就会抢占同一个键再跑一遍。这类接口应传入更长的租期。
 //
 // 未携带该请求头的请求原样放行 —— 幂等是可选的增强能力，不该改变未适配调用方的行为。
 // 携带时按下面的状态机处理：
@@ -44,7 +52,7 @@ const (
 //	已存在且「已完成」  直接回放上次的响应状态码与响应体
 //
 // 只应挂在**写接口**上：读接口天然幂等，挂上去只会白白写库。
-func Idempotency() gin.HandlerFunc {
+func IdempotencyWithLease(lease time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := strings.TrimSpace(c.GetHeader(IdempotencyKeyHeader))
 		if key == "" {
@@ -61,7 +69,7 @@ func Idempotency() gin.HandlerFunc {
 		// 就已完成路由匹配并写好了 fullPath。
 		scope := c.Request.Method + " " + c.FullPath()
 
-		record, owned, err := claim(key, scope)
+		record, owned, err := claim(key, scope, lease)
 		if err != nil {
 			logger.Error("幂等键登记失败",
 				zap.String("key", key), zap.String("scope", scope), zap.Error(err))
@@ -105,7 +113,7 @@ func Idempotency() gin.HandlerFunc {
 // 「抢占」用一条带条件更新的 UPSERT 完成：发生冲突时，只有当已存在记录的
 // expires_at 已过期才允许覆盖。这样「首次插入」与「抢占过期记录」就是同一个
 // 原子语句，并发下只可能有一个请求拿到 RowsAffected == 1，无需额外加锁。
-func claim(key, scope string) (model.Idempotency, bool, error) {
+func claim(key, scope string, lease time.Duration) (model.Idempotency, bool, error) {
 	db := database.DB()
 	if db == nil {
 		return model.Idempotency{}, false, errors.New("数据库未初始化")
@@ -117,7 +125,7 @@ func claim(key, scope string) (model.Idempotency, bool, error) {
 		Scope:  scope,
 		Status: model.IdempotencyProcessing,
 		// 抢占后写入的是「处理中」租期；业务成功后会改成 completedTTL。
-		ExpiresAt: now.Add(processingLease),
+		ExpiresAt: now.Add(lease),
 	}
 	result := db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "key"}},

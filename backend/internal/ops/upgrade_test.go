@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 // 文件名带路径就能越出 staging 目录写文件 —— 升级包是上传来的，不可信输入。
@@ -93,18 +94,22 @@ func TestOpenPackageSkipsDirsAndSeparatesManifest(t *testing.T) {
 	}
 }
 
-// 同一份包重复上传必须得到同一个计划 ID，否则 staging 目录会无限增生。
-func TestNewPlanIDStable(t *testing.T) {
+// newPlanID 含秒级时间戳是**有意**的：同一份包不同时间上传得到不同 ID，
+// 允许失败后重传（PlanID 是唯一索引，去掉时间戳会让同包重传撞索引）。
+// 真正的「同包重复上传」防护在 ParseUpgradePackage 里按 package_sha256 拒绝 pending。
+func TestNewPlanIDFormatAndUniqueness(t *testing.T) {
 	a := newPlanID("abcdef0123456789", "1.2.0")
-	b := newPlanID("abcdef0123456789", "1.2.0")
-	if a != b {
-		t.Fatalf("同一输入应得到同一 ID：%s vs %s", a, b)
-	}
 	if !strings.HasPrefix(a, "upg-1.2.0-") {
 		t.Fatalf("ID 应带版本前缀：%s", a)
 	}
+	// 不同摘要得到不同 ID
 	if c := newPlanID("ffffffffffffffff", "1.2.0"); c == a {
 		t.Fatal("不同摘要应得到不同 ID")
+	}
+	// ID 以 14 位时间戳结尾：靠它区分「同包的不同次上传」
+	ts := a[len(a)-14:]
+	if _, err := time.Parse("20060102150405", ts); err != nil {
+		t.Fatalf("ID 应以 14 位时间戳结尾：%s", a)
 	}
 }
 

@@ -97,7 +97,12 @@ func Check(db *gorm.DB, cfg *config.Config, opt CheckOptions) (*CheckReport, []s
 		// Rows 只数存活行：把软删除也算进去，「存活 163 / 软删除 161」这种
 		// 数字会同时误导两件事 —— 以为数据还在用，以及看不出到底删了多少。
 		if err := db.Raw("SELECT count(*) FROM " + t + " WHERE deleted_at IS NULL").Scan(&stat.Rows).Error; err != nil {
-			return nil, nil, fmt.Errorf("统计 %s 失败: %w", t, err)
+			// 表不存在（老库/精简部署）：记 -1 表示缺失，不让整次体检失败。
+			// 体检的意义是「把所有该看的都摊出来」，缺一张表不构成失败。
+			stat.Rows = -1
+			stat.SoftDeleted = -1
+			rep.KeyTables = append(rep.KeyTables, stat)
+			continue
 		}
 		// 软删除计数对业务表同样重要：它们看不见却还在库里，
 		// 会让人误判「数据怎么越用越多」。

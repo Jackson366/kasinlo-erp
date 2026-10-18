@@ -205,6 +205,7 @@ func (s *Service) Restore(req RestoreReq) (*fwops.RestoreResult, error) {
 		Yes:           true,
 		Force:         false,
 		PgRestorePath: s.cfg.Backup.PgRestorePath,
+		AnchorTables:  append([]string{"sys_users"}, bizAnchorTables...),
 	})
 }
 
