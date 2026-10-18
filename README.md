@@ -170,6 +170,7 @@ nova-erp/
 │   │   ├── middleware/                 # TraceID / Logger / Recovery / CORS / Auth / RequirePerm / 操作日志
 │   │   ├── model/                      # GORM 模型（框架表 + 进销存业务表）
 │   │   ├── module/inv/                 # 进销存业务模块（本仓库的主线功能）
+│   │   ├── module/ops/                  # 系统运维模块：备份 / 清理 / 巡检 / 系统升级（管理页接口）
 │   │   ├── module/<业务模块>/           # ★ 业务代码都放这里
 │   │   │   ├── dto.go                  #    请求/响应结构体
 │   │   │   ├── service.go              #    业务逻辑
@@ -177,7 +178,7 @@ nova-erp/
 │   │   │   ├── route.go                #    路由注册（含权限码）
 │   │   │   └── excel.go                #    可选：该模块的导入导出
 │   │   ├── oplog/                      # 操作日志异步落库
-│   │   ├── ops/                        # 运维能力：备份 / 恢复 / 清理 / 体检（供 cmd/ops 用）
+│   │   ├── ops/                        # 运维能力：备份 / 恢复 / 清理 / 体检 / 系统升级（cmd/ops 与 module/ops 共用）
 │   │   ├── pkg/                        # 通用工具：errcode / response / bind / jwt / hash / page / sheet
 │   │   ├── router/router.go            # 路由总装配
 │   │   └── seed/seed.go                # 幂等种子数据
@@ -195,12 +196,12 @@ nova-erp/
 │       ├── utils/                      # auth / request / download / format / theme
 │       └── views/                      # 页面：system / inv（进销存）/ dashboard
 ├── scripts/
-│   ├── api-smoke.mjs                   # 零依赖接口冒烟脚本（236 项）
-│   ├── browser-verify.mjs              # 零依赖浏览器运行时验证（87 项 / 15 个页面，含双主题）
+│   ├── api-smoke.mjs                   # 零依赖接口冒烟脚本（280 项）
+│   ├── browser-verify.mjs              # 零依赖浏览器运行时验证（88 项 / 16 个页面，含双主题）
 │   ├── interaction-verify.mjs          # 零依赖受控组件交互验证（9 项）
 │   ├── gen-swagger.sh                  # swag init 封装：重新生成 OpenAPI 文档
 │   └── fixtures/                       # 测试样例文件（含生成脚本）
-├── docs/                               # GUIDE.md / API.md / DATABASE.md / OPS.md
+├── docs/                               # GUIDE.md / API.md / DATABASE.md / OPS.md（运维方案）
 └── AGENTS.md                           # ★ AI 开发约定（改代码前先读）
 ```
 
@@ -231,7 +232,7 @@ node scripts/api-smoke.mjs                      # 默认 http://127.0.0.1:6802
 node scripts/api-smoke.mjs http://host:port     # 指定实例
 ```
 
-共 236 项断言，覆盖登录/令牌刷新/CRUD/权限隔离/参数校验/日志/导入导出/数据范围/令牌吊销/报表排行维度/库存分析/反审核。
+共 280 项断言，覆盖登录/令牌刷新/CRUD/权限隔离/参数校验/日志/导入导出/数据范围/令牌吊销/报表排行维度/库存分析/反审核/系统运维（备份·清理·巡检·升级）。
 
 ### 前端：类型检查与构建
 
@@ -273,7 +274,7 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs    # 验证生产�
   （在线版：后端开启 `app.swagger` 后访问 `/swagger/index.html`，由 swag 注解自动生成）
 - 数据表结构与索引设计 → [`docs/DATABASE.md`](docs/DATABASE.md)
 - 后台系统独立升级方案（目录契约 / 迁移分段 / 升级 SOP / 回滚） → [`docs/UPGRADE.md`](docs/UPGRADE.md)
-- 备份 / 数据清理 / 系统升级的运维方案与命令（`nova-ops`） → [`docs/OPS.md`](docs/OPS.md)
+- 备份 / 数据清理 / 系统升级的运维方案与命令（`nova-ops` 命令行 + 后台「系统运维」页） → [`docs/OPS.md`](docs/OPS.md)
 - 版本变更明细（改了什么、动了哪些表、要不要手工步骤） → [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 - 新增模块 / 新增页面的标准做法、踩坑记录 → [`AGENTS.md`](AGENTS.md)
 
