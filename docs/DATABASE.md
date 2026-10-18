@@ -20,8 +20,9 @@
 | `sys_operation_logs` | 操作日志 | 否 |
 | `sys_login_logs` | 登录日志 | 否 |
 | `sys_idempotencies` | 幂等键登记（写接口防重复提交） | 否 |
+| `sys_schema_versions` | 数据库结构版本（`version` 为主键，升级闸门） | 否 |
 
-进销存业务表（前缀 `inv_`，共 12 张）：
+框架表共 10 张；进销存业务表（前缀 `inv_`，共 12 张）：
 
 | 表名 | 说明 | 软删除 |
 | --- | --- | --- |
@@ -347,6 +348,14 @@ sys_role_menus (role_id bigint PK, menu_id bigint PK)
   已完成的行保留 24 小时，均由 `expires_at` 控制。
 - 过期记录不做主动清理：被复用的键会**原地覆盖**（`ON CONFLICT ... DO UPDATE ... WHERE expires_at < now()`），
   因此行数上界是「历史上出现过的不同键数量」，不随运行时间无限增长。
+  需要回收空间时用 `nova-ops cleanup`（幂等键过期后再多留 7 天，见 [`OPS.md`](OPS.md)）。
+
+### 结构版本表
+
+`sys_schema_versions`：`version`(PK, bigint)、`applied_at`、`note`。
+每次 `AutoMigrate` + 数据补丁成功后写入**当前程序版本**（`ON CONFLICT DO NOTHING`，幂等）。
+用途是**升级闸门**：库版本高于程序版本时直接拒绝启动，避免旧程序连上新库静默改结构。
+详见 [`OPS.md`](OPS.md) 三、升级。
 
 ---
 

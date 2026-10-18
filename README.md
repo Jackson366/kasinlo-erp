@@ -158,6 +158,7 @@ nova-erp/
 ├── LICENSE                             # MIT
 ├── backend/
 │   ├── cmd/server/main.go              # 进程入口：装配依赖 + 优雅关停
+│   ├── cmd/ops/main.go                 # 运维命令 nova-ops：备份 / 恢复 / 清理 / 体检
 │   ├── config.example.yaml             # 配置模板（复制为 config.yaml 后填写）
 │   ├── config.yaml                     # 本地配置，含口令，已在 .gitignore 中
 │   ├── internal/
@@ -176,6 +177,7 @@ nova-erp/
 │   │   │   ├── route.go                #    路由注册（含权限码）
 │   │   │   └── excel.go                #    可选：该模块的导入导出
 │   │   ├── oplog/                      # 操作日志异步落库
+│   │   ├── ops/                        # 运维能力：备份 / 恢复 / 清理 / 体检（供 cmd/ops 用）
 │   │   ├── pkg/                        # 通用工具：errcode / response / bind / jwt / hash / page / sheet
 │   │   ├── router/router.go            # 路由总装配
 │   │   └── seed/seed.go                # 幂等种子数据
@@ -198,7 +200,7 @@ nova-erp/
 │   ├── interaction-verify.mjs          # 零依赖受控组件交互验证（9 项）
 │   ├── gen-swagger.sh                  # swag init 封装：重新生成 OpenAPI 文档
 │   └── fixtures/                       # 测试样例文件（含生成脚本）
-├── docs/                               # GUIDE.md / API.md / DATABASE.md
+├── docs/                               # GUIDE.md / API.md / DATABASE.md / OPS.md
 └── AGENTS.md                           # ★ AI 开发约定（改代码前先读）
 ```
 
@@ -271,6 +273,7 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs    # 验证生产�
   （在线版：后端开启 `app.swagger` 后访问 `/swagger/index.html`，由 swag 注解自动生成）
 - 数据表结构与索引设计 → [`docs/DATABASE.md`](docs/DATABASE.md)
 - 后台系统独立升级方案（目录契约 / 迁移分段 / 升级 SOP / 回滚） → [`docs/UPGRADE.md`](docs/UPGRADE.md)
+- 备份 / 数据清理 / 系统升级的运维方案与命令（`nova-ops`） → [`docs/OPS.md`](docs/OPS.md)
 - 版本变更明细（改了什么、动了哪些表、要不要手工步骤） → [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 - 新增模块 / 新增页面的标准做法、踩坑记录 → [`AGENTS.md`](AGENTS.md)
 

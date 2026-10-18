@@ -387,7 +387,7 @@ src/
 
 ## 1.7 数据表
 
-21 张表，全部由 GORM `AutoMigrate` 自动创建。框架表 9 张（`sys_` 前缀）：
+22 张表，全部由 GORM `AutoMigrate` 自动创建。框架表 10 张（`sys_` 前缀）：
 
 | 表名 | 用途 | 软删除 |
 | --- | --- | --- |
@@ -400,6 +400,7 @@ src/
 | `sys_operation_logs` | 操作日志 | 否 |
 | `sys_login_logs` | 登录日志 | 否 |
 | `sys_idempotencies` | 幂等键登记（写接口防重复提交与响应回放） | 否 |
+| `sys_schema_versions` | 数据库结构版本（升级闸门，见 [`OPS.md`](OPS.md)） | 否 |
 
 进销存业务表 12 张（`inv_` 前缀）：
 
