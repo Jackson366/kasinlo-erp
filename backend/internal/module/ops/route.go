@@ -10,11 +10,13 @@ import (
 
 // Register 注册运维模块路由。
 // 权限标识：ops:list（查看）/ ops:backup（备份）/ ops:restore（恢复）/
-// ops:cleanup（清理）/ ops:upgrade（升级）。
+// ops:cleanup（日志清理）/ ops:reset（业务数据清理）/ ops:upgrade（升级）。
 //
 // 备份、恢复、清理、升级四类动作各自独立授权：它们的影响面完全不同 ——
 // 备份只是读，恢复会建一个库，清理不可逆，升级会替换正在运行的程序。
 // 合成一个「ops:admin」看似省事，实际是逼着把所有权限发给同一个人。
+// 业务数据清理（ops:reset）又单独于日志清理（ops:cleanup）：
+// 清日志是日常动作，重置数据库是交还系统前的终局动作，不该是同一把钥匙。
 func Register(rg *gin.RouterGroup, cfg *config.Config) {
 	h := NewHandler(NewService(cfg, database.DB()))
 	g := rg.Group("/ops", middleware.Auth())
@@ -32,9 +34,9 @@ func Register(rg *gin.RouterGroup, cfg *config.Config) {
 
 		g.GET("/cleanup/preview", middleware.RequirePerm("ops:list"), h.CleanupPreview)
 		g.POST("/cleanup/apply", idem, middleware.RequirePerm("ops:cleanup"), h.CleanupApply)
-		// 业务数据清理（不可逆）：范围预览用 ops:list，执行必须 ops:cleanup
+		// 业务数据清理（不可逆）：范围预览用 ops:list，执行必须 ops:reset
 		g.GET("/cleanup/scopes", middleware.RequirePerm("ops:list"), h.BizScopes)
-		g.POST("/cleanup/business", idem, middleware.RequirePerm("ops:cleanup"), h.BusinessCleanup)
+		g.POST("/cleanup/business", idem, middleware.RequirePerm("ops:reset"), h.BusinessCleanup)
 
 		g.GET("/check", middleware.RequirePerm("ops:list"), h.Check)
 

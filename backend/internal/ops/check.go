@@ -19,7 +19,11 @@ type CheckOptions struct {
 	// MaxBackupAge 备份「多久没更新」算异常，默认 48h（允许一天一次的备份
 	// 偶尔晚几个小时，但连续两天没备份必须报出来）。
 	MaxBackupAge time.Duration
-	Now          time.Time
+	// KeyTables 是巡检要逐张统计的关键表清单。缺省只巡检框架表 sys_users ——
+	// 框架层（本包）不 import 业务模块，也不该硬编码业务表名，
+	// 业务表清单由应用层（module/ops、nova-ops）传入。
+	KeyTables []string
+	Now       time.Time
 }
 
 // TableStat 是单表统计。
@@ -65,6 +69,9 @@ func Check(db *gorm.DB, cfg *config.Config, opt CheckOptions) (*CheckReport, []s
 	if opt.BackupDir == "" {
 		opt.BackupDir = cfg.Backup.Dir
 	}
+	if len(opt.KeyTables) == 0 {
+		opt.KeyTables = []string{"sys_users"}
+	}
 
 	rep := &CheckReport{Database: cfg.Database.DBName, CheckedAt: opt.Now}
 	if err := db.Raw("SELECT current_setting('server_version')").Scan(&rep.ServerVersion).Error; err != nil {
@@ -85,7 +92,7 @@ func Check(db *gorm.DB, cfg *config.Config, opt CheckOptions) (*CheckReport, []s
 	rep.SchemaDB, rep.SchemaKnown = st.Version, st.Known
 	rep.SchemaBinary, _ = database.Current()
 
-	for _, t := range []string{"sys_users", "inv_orders", "inv_order_items", "inv_products", "inv_customers"} {
+	for _, t := range opt.KeyTables {
 		stat := TableStat{Name: t}
 		// Rows 只数存活行：把软删除也算进去，「存活 163 / 软删除 161」这种
 		// 数字会同时误导两件事 —— 以为数据还在用，以及看不出到底删了多少。
@@ -115,7 +122,9 @@ func Check(db *gorm.DB, cfg *config.Config, opt CheckOptions) (*CheckReport, []s
 	_ = db.Raw("SELECT count(*) FROM sys_idempotencies WHERE expires_at < ?", opt.Now).Scan(&rep.IdemExpired).Error
 
 	if latest, ok := latestBackup(opt.BackupDir); ok {
-		rep.LatestBackup = latest.Path
+		// 只回文件名，不回绝对路径：巡检报告经 ops:list 权限即可见，
+		// 绝对路径会把服务器的目录结构整个抖出去，而文件名已经足够判断「有没有备份」。
+		rep.LatestBackup = filepath.Base(latest.Path)
 		rep.LatestBackupA = latest.Time
 	}
 
@@ -178,7 +187,7 @@ func latestBackup(dir string) (BackupFile, bool) {
 		}
 		f := BackupFile{
 			Path: filepath.Join(abs, e.Name()),
-			Time: backupTimeFromName(e.Name(), info.ModTime()),
+			Time: BackupTimeFromName(e.Name(), info.ModTime()),
 			Size: info.Size(),
 		}
 		if best.Path == "" || f.Time.After(best.Time) {

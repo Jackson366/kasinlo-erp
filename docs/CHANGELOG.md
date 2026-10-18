@@ -407,6 +407,44 @@
   已审核行有「反审核」入口、待处理行不显示「反审核」。
 - `go test ./...` / `gofmt` / `vet` 全绿；交互 8/8；swagger 已重生成。
 
+### 二十三、运维加固第三批（P3×10：架构洁癖与运行时弱点）
+
+扫描出的 10 项 P3 全部收口。共同主题：**框架层不该知道业务**、**同一件事只有一份实现**、
+**长任务不要被默认 20 秒误杀**、**危险动作拆成独立钥匙**。
+
+#### Fixed
+
+- **框架层去掉业务表硬编码**：`internal/ops` 的巡检关键表与备份锚点表不再写死 `inv_*`，
+  改为 `CheckOptions.KeyTables` / `BackupOptions.AnchorTables` 注入，缺省只锚定框架表 `sys_users`；
+  业务表清单由应用层 `module/ops` 传入。框架层不 import 业务模块，也不硬编码业务表名。
+- **拆 `ops:reset` 权限点**：业务数据清理（整表清空账本 / 重置数据库）与日志清理分开授权。
+  新增 `ops:reset`，`/ops/cleanup/business` 改用 `ops:reset`，前端按钮 `v-perm` 同步；
+  「能清日志」不再等于「能重置数据库」。
+- **删除 `UpgradePlan` 死字段**：`staging`、`manifest` 两个赋值后从未读取的字段移除。
+- **`verifyArchive` 不再静默放行**：找不到 `pg_restore` 时记告警日志，并把 `verified=false`
+  写进备份元数据，前端备份列表加「校验」列提示「未校验」。
+- **巡检不暴露绝对路径**：`Check.LatestBackup` 由绝对路径改为文件名，`ops:list` 不再把服务器
+  目录结构抖出去。
+- **长任务放宽前端超时**：备份 / 恢复 / 清理 / 升级 / 上传 / 下载统一 10 分钟超时，
+  不再沿用普通 CRUD 的 20 秒。
+- **锁定 `internal/ops` 别名约定**：`module/ops` 与 `internal/ops` 包名同为 `ops`，
+  补包注释锁定「引用本包必须用 `fwops` 别名」，防未来裸 import 撞名。
+- **统一备份时间戳两份实现**：CLI（Split 版）与列表（正则版）各写一份，而 Split 版对
+  下划线库名（`nova_inv_v5`）会解析失败、静默回落到 mtime —— 同一份备份两边时间不一致。
+  收敛为框架层唯一导出的 `ops.BackupTimeFromName`（正则版），`module/ops` 复用。
+- **切换清理范围清空残留**：前端切换业务清理范围时复位 `bizResult` 与「清零库存」勾选，
+  不再让上一档结果与当前范围错位。
+- **升级包解压流式化**：`readZipFiles` 不再把 backend/frontend 整段读进内存，改为
+  `openPackage`（manifest 读内存，大文件只登记 zip 条目）+ `writeZipEntry`（边写 staging
+  边算 sha256）。上传 512 MB 上限的峰值内存从「原始包 + 解压内容 ≈ 1 GB」降到约 512 MB。
+
+#### 测试
+
+- 新增：`BackupTimeFromName`（下划线 / 横线库名 + fallback）、`openPackage`（拒嵌套目录、
+  分离 manifest）、上传限长识别、备份占位撞名、`isAllowedBizTable` 按档位、危险目录校验等。
+- `go test ./...` 全绿；`vue-tsc` 无错；冒烟 **293 项全过**；swagger 重生成；
+  后端重启后新增 `ops:reset` 菜单自动 seed（count: 1）。
+
 ### 二十二、运维加固两批（升级状态机 / 幂等 / 上传限长 / 备份撞名 / 配置校验 / 清理白名单）
 
 全项目扫描出的 16 项发现里，P1 两项与 P2 四项在这一轮修完。共同特点是：

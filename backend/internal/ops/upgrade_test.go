@@ -47,7 +47,7 @@ func TestValidateManifestAcceptsBackendOnly(t *testing.T) {
 }
 
 // 嵌套目录要么说明打包方式不对，要么是想借路径做别的事，两种都该拒绝。
-func TestReadZipFilesRejectsNestedDirs(t *testing.T) {
+func TestOpenPackageRejectsNestedDirs(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	w, _ := zw.Create("manifest.json")
@@ -61,12 +61,12 @@ func TestReadZipFilesRejectsNestedDirs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readZipFiles(zr); err == nil {
+	if _, err := openPackage(zr); err == nil {
 		t.Fatal("包含嵌套目录的升级包应被拒绝")
 	}
 }
 
-func TestReadZipFilesSkipsDirs(t *testing.T) {
+func TestOpenPackageSkipsDirsAndSeparatesManifest(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	w, _ := zw.Create("manifest.json")
@@ -81,12 +81,15 @@ func TestReadZipFilesSkipsDirs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, err := readZipFiles(zr)
+	pkg, err := openPackage(zr)
 	if err != nil {
 		t.Fatalf("目录项应被跳过而不是报错：%v", err)
 	}
-	if len(files) != 1 {
-		t.Fatalf("应只收到 1 个文件，实际 %d", len(files))
+	if pkg.manifest == nil {
+		t.Fatal("manifest.json 应被单独读入内存")
+	}
+	if len(pkg.files) != 0 {
+		t.Fatalf("manifest 不应算进 files，实际 %d", len(pkg.files))
 	}
 }
 

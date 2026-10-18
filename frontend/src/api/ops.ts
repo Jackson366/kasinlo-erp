@@ -13,9 +13,17 @@ function newKey(): string {
   return `ops-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+/** 运维长任务超时（10 分钟）。普通列表/详情走 request.ts 的 20s，互不干扰。 */
+const OPS_TIMEOUT = 10 * 60 * 1000
+
 /** 带 Idempotency-Key 的 POST：双击 / 超时重试由服务端兜住，不会重复执行。 */
 function postIdempotent<T>(url: string, data?: unknown): Promise<T> {
-  const config: AxiosRequestConfig = { headers: { 'Idempotency-Key': newKey() } }
+  const config: AxiosRequestConfig = {
+    headers: { 'Idempotency-Key': newKey() },
+    // 运维写接口是长任务（备份大库、恢复、清理、执行升级都可能远超 20s），
+    // 单独放宽到 10 分钟，不能沿用 request.ts 里给普通 CRUD 定的 20s。
+    timeout: OPS_TIMEOUT,
+  }
   return http.post<T>(url, data, config)
 }
 
@@ -30,6 +38,8 @@ export interface BackupItem {
   serverVersion: string
   tables: number
   hasMeta: boolean
+  /** false 表示写完未用 pg_restore 回读校验（缺 pg_restore 的精简安装） */
+  verified: boolean
 }
 
 /** 清理的一类数据 */
@@ -194,6 +204,7 @@ export const opsApi = {
       `/ops/backups/download?file=${encodeURIComponent(file)}`,
       undefined,
       file,
+      { timeout: OPS_TIMEOUT },
     )
   },
 
@@ -242,7 +253,10 @@ export const opsApi = {
 
   /** 上传升级包 */
   uploadPackage(file: File) {
-    return uploadFile<UpgradePlanResult>('/ops/upgrade/package', file, { idempotencyKey: newKey() })
+    return uploadFile<UpgradePlanResult>('/ops/upgrade/package', file, {
+      idempotencyKey: newKey(),
+      config: { timeout: OPS_TIMEOUT },
+    })
   },
 
   /** 升级前强制留档备份 */

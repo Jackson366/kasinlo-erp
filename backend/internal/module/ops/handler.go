@@ -370,7 +370,7 @@ func (h *Handler) BizScopes(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        body  body      BizCleanupReq  true  "清理范围、确认口令与库存选项"
 // @Success      200   {object}  response.Body{data=ops.BizCleanupReport}
-// @Failure      403   {object}  response.Body  "缺少 ops:cleanup 权限"
+// @Failure      403   {object}  response.Body  "缺少 ops:reset 权限"
 // @Router       /ops/cleanup/business [post]
 func (h *Handler) BusinessCleanup(c *gin.Context) {
 	var req BizCleanupReq

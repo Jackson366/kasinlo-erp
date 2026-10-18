@@ -67,6 +67,9 @@ type BackupItem struct {
 	ServerVersion string    `json:"serverVersion"`
 	Tables        int64     `json:"tables"`
 	HasMeta       bool      `json:"hasMeta"`
+	// Verified 表示这份备份写完是否用 pg_restore 回读过。false 表示
+	// 「没坏但也没验过」（缺 pg_restore 的精简安装），前端据此提示。
+	Verified bool `json:"verified"`
 }
 
 // CleanupView 是清理结果的展示形态。

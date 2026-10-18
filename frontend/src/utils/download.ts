@@ -49,6 +49,7 @@ export async function downloadFile(
   url: string,
   params?: Record<string, unknown>,
   fallbackName = 'export.xlsx',
+  config?: AxiosRequestConfig,
 ): Promise<void> {
   try {
     const response = await instance.request<Blob>({
@@ -56,6 +57,7 @@ export async function downloadFile(
       method: 'GET',
       params,
       responseType: 'blob',
+      ...config,
     })
     const disposition = response.headers['content-disposition'] as string | undefined
     triggerDownload(response.data, parseFilename(disposition) || fallbackName)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { opsApi } from '@/api/ops'
 import type {
@@ -161,6 +161,14 @@ const bizBackupAge = ref('')
 const currentBizScope = computed(() =>
   bizScopes.value.find((s) => s.key === bizScopeKey.value) || null,
 )
+
+// 切换范围后，上一档的清理结果与「清零库存」勾选都会残留：
+// 结果表是上一档的表、勾选是上一档才有的语义，都会和当前范围对不上，
+// 让界面看起来像「已经对这档清理过」。跟着范围一起复位才不留错觉。
+watch(bizScopeKey, () => {
+  bizResult.value = null
+  bizResetStock.value = false
+})
 
 async function loadBizScopes(): Promise<void> {
   bizLoading.value = true
@@ -465,6 +473,19 @@ onMounted(async () => {
             <el-table-column label="表数" width="80" align="right">
               <template #default="{ row }">{{ row.hasMeta ? row.tables : '-' }}</template>
             </el-table-column>
+            <el-table-column label="校验" width="90" align="center">
+              <template #default="{ row }">
+                <el-tooltip
+                  v-if="row.hasMeta && !row.verified"
+                  content="写完后未回读校验（缺少 pg_restore），文件未验过"
+                  placement="top"
+                >
+                  <el-tag type="warning" size="small">未校验</el-tag>
+                </el-tooltip>
+                <span v-else-if="row.hasMeta" class="text-muted">已校验</span>
+                <span v-else class="text-muted">-</span>
+              </template>
+            </el-table-column>
             <el-table-column label="摘要" width="150">
               <template #default="{ row }">
                 <span class="mono" :title="row.sha256">{{ row.hasMeta ? shortSha(row.sha256) : '-' }}</span>
@@ -638,7 +659,7 @@ onMounted(async () => {
               <AppIcon name="Download" /><span>先备份</span>
             </el-button>
             <el-button
-              v-perm="'ops:cleanup'"
+              v-perm="'ops:reset'"
               type="danger"
               :loading="bizRunning"
               :disabled="!currentBizScope || currentBizScope.totalRows === 0"

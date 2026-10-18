@@ -9,12 +9,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
 	"nova-erp/internal/config"
+	"nova-erp/internal/logger"
+
+	"go.uber.org/zap"
 )
 
 // backupFileSuffix 是备份文件后缀。用 pg_dump 的自定义格式（-Fc）而不是纯 SQL：
@@ -33,6 +37,10 @@ type BackupOptions struct {
 	KeepCount  int
 	KeepMonths int
 	PgDumpPath string
+	// AnchorTables 是恢复后用来「对得上账」的锚点表清单（几张关键表的行数）。
+	// 缺省只锚定框架表 sys_users —— 框架层不 import 业务模块，业务表清单
+	// 由应用层（module/ops、nova-ops）传入。
+	AnchorTables []string
 	// SkipPrune 为 true 时不做轮转（首次接入、或手工备份时不想删旧的）。
 	SkipPrune bool
 	Now       time.Time
@@ -60,6 +68,9 @@ type BackupMeta struct {
 	Size     int64       `json:"size"`
 	SHA256   string      `json:"sha256"`
 	Stats    BackupStats `json:"stats"`
+	// Verified 表示写完是否用 pg_restore --list 回读过。false 时这份备份
+	// 「没坏，但也没验过」—— 通常是缺 pg_restore 的那类精简安装。
+	Verified bool `json:"verified"`
 }
 
 // BackupResult 是备份结果。
@@ -69,6 +80,7 @@ type BackupResult struct {
 	SHA256   string
 	Duration time.Duration
 	Stats    BackupStats
+	Verified bool
 	Removed  []string
 	Meta     BackupMeta
 }
@@ -80,6 +92,9 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 	}
 	if opt.Dir == "" {
 		opt.Dir = "backups"
+	}
+	if len(opt.AnchorTables) == 0 {
+		opt.AnchorTables = []string{"sys_users"}
 	}
 	dir, err := filepath.Abs(opt.Dir)
 	if err != nil {
@@ -112,7 +127,7 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 		}
 	}()
 
-	stats, err := collectStats(db)
+	stats, err := collectStats(db, opt.AnchorTables)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +159,8 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 
 	// 立刻回读一遍归档清单：dump 进程退出码为 0 不等于文件可恢复
 	// （磁盘写满时可能截断），而「备份是坏的」要到真出事那天才发现。
-	if err := verifyArchive(dumpPath, target, opt.PgDumpPath); err != nil {
+	verified, err := verifyArchive(dumpPath, target, opt.PgDumpPath)
+	if err != nil {
 		return nil, err
 	}
 
@@ -160,6 +176,7 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 		Size:     size,
 		SHA256:   sum,
 		Stats:    stats,
+		Verified: verified,
 	}
 	if err := writeSidecars(target, meta); err != nil {
 		return nil, err
@@ -167,7 +184,8 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 	committed = true // dump、校验、摘要、元数据都齐了，这份备份才算成立
 
 	res := &BackupResult{
-		Path: target, Size: size, SHA256: sum, Duration: duration, Stats: stats, Meta: meta,
+		Path: target, Size: size, SHA256: sum, Duration: duration, Stats: stats,
+		Verified: verified, Meta: meta,
 	}
 	if !opt.SkipPrune {
 		removed, err := pruneBackups(dir, opt)
@@ -199,7 +217,7 @@ func reserveBackupFile(path string) error {
 }
 
 // collectStats 采集恢复后用于比对的锚点。
-func collectStats(db *gorm.DB) (BackupStats, error) {
+func collectStats(db *gorm.DB, anchorTables []string) (BackupStats, error) {
 	stats := BackupStats{Rows: map[string]int64{}}
 	if err := db.Raw("SELECT current_setting('server_version')").Scan(&stats.ServerVersion).Error; err != nil {
 		return stats, fmt.Errorf("读取数据库版本失败: %w", err)
@@ -208,9 +226,9 @@ func collectStats(db *gorm.DB) (BackupStats, error) {
 		WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`).Scan(&stats.Tables).Error; err != nil {
 		return stats, fmt.Errorf("统计表数量失败: %w", err)
 	}
-	// 锚点表：一张系统表、一张单据主表、一张明细表、一张主数据表 ——
-	// 覆盖四类数据，任何一类丢了都能从计数上看出来。
-	for _, t := range []string{"sys_users", "inv_orders", "inv_order_items", "inv_products"} {
+	// 锚点表由调用方传入：一张系统表 + 若干业务表（单据主表、明细表、主数据表）。
+	// 覆盖多类数据，任何一类丢了都能从计数上看出来。
+	for _, t := range anchorTables {
 		var n int64
 		if err := db.Raw("SELECT count(*) FROM " + t).Scan(&n).Error; err != nil {
 			return stats, fmt.Errorf("统计 %s 行数失败: %w", t, err)
@@ -221,22 +239,28 @@ func collectStats(db *gorm.DB) (BackupStats, error) {
 }
 
 // verifyArchive 用 pg_restore --list 回读归档目录，确认文件结构完整。
-func verifyArchive(pgDumpPath, file, configuredRestore string) error {
+//
+// 返回 (是否真的校验了, 错误)。「找不到 pg_restore」不是错误（不该卡住备份），
+// 但要通过日志与元数据的 verified=false 让用户知道「这次没验」——
+// 静默放行会让「没验过」的备份看起来和「验过」的一样可信。
+func verifyArchive(pgDumpPath, file, configuredRestore string) (bool, error) {
 	restorePath, err := locateTool("pg_restore", configuredRestore)
 	if err != nil {
 		// 只有 pg_dump 没有 pg_restore 的安装（极少见）不该卡住备份，
 		// 但要明确告诉用户「这次没有校验」。
-		return nil
+		logger.Warn("本次备份未做归档校验（找不到 pg_restore）",
+			zap.String("file", filepath.Base(file)))
+		return false, nil
 	}
 	_ = pgDumpPath
 	out, err := exec.Command(restorePath, "--list", file).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("备份文件校验失败（归档不可读）: %w\n%s", err, strings.TrimSpace(string(out)))
+		return false, fmt.Errorf("备份文件校验失败（归档不可读）: %w\n%s", err, strings.TrimSpace(string(out)))
 	}
 	if len(strings.TrimSpace(string(out))) == 0 {
-		return fmt.Errorf("备份文件校验失败：归档清单为空，文件可能被截断")
+		return false, fmt.Errorf("备份文件校验失败：归档清单为空，文件可能被截断")
 	}
-	return nil
+	return true, nil
 }
 
 // writeSidecars 写 sha256 与元数据。
@@ -272,7 +296,7 @@ func pruneBackups(dir string, opt BackupOptions) ([]string, error) {
 		path := filepath.Join(dir, e.Name())
 		files = append(files, BackupFile{
 			Path: path,
-			Time: backupTimeFromName(e.Name(), info.ModTime()),
+			Time: BackupTimeFromName(e.Name(), info.ModTime()),
 			Size: info.Size(),
 		})
 	}
@@ -289,16 +313,23 @@ func pruneBackups(dir string, opt BackupOptions) ([]string, error) {
 	return removed, nil
 }
 
-// backupTimeFromName 从文件名解析备份时间；解析不到就回落到 mtime。
-func backupTimeFromName(name string, fallback time.Time) time.Time {
-	base := strings.TrimSuffix(name, backupFileSuffix)
-	// <db>-YYYYMMDD-HHMMSS：库名里可能有横线，所以从右往左取两段
-	parts := strings.Split(base, "-")
-	if len(parts) < 2 {
+// backupTimeRe 从 <库名>-20060102150405.dump 里提取时间戳。
+// 用「最后一个 - 后面的 14 位数字 + .dump 结尾」定位：库名里无论有没有横线、
+// 下划线都不影响 —— 时间戳永远在文件名末尾、紧贴 .dump 之前。
+var backupTimeRe = regexp.MustCompile(`-(\d{14})\.dump$`)
+
+// BackupTimeFromName 从备份文件名解析时间戳；解析不到就回落到 mtime。
+//
+// 导出给应用层（module/ops）复用：备份时间的解析规则只该有一份。
+// 之前 CLI（internal/ops 用 Split）与列表（module/ops 的自有正则）各写一遍，
+// 而 Split 版本对「下划线库名」（如 nova_inv_v5）会解析失败、静默回落到 mtime
+// —— 同一份备份在两边显示不同时间。统一收敛到正则这一份。
+func BackupTimeFromName(name string, fallback time.Time) time.Time {
+	m := backupTimeRe.FindStringSubmatch(name)
+	if len(m) != 2 {
 		return fallback
 	}
-	ts := parts[len(parts)-2] + parts[len(parts)-1]
-	if t, err := time.ParseInLocation("20060102150405", ts, time.Local); err == nil {
+	if t, err := time.ParseInLocation("20060102150405", m[1], time.Local); err == nil {
 		return t
 	}
 	return fallback

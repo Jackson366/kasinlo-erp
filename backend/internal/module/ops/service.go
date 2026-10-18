@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -38,8 +37,14 @@ const (
 	confirmUpgrade = "确认升级"
 )
 
-// 备份文件名里的时间戳：<库名>-20060102150405.dump
-var backupNameTime = regexp.MustCompile(`-(\d{14})\.dump$`)
+// bizAnchorTables 是巡检与备份锚点关心的业务表。
+//
+// 放在应用层（本模块）而不是框架层（internal/ops）：框架层不 import 业务模块，
+// 也不该硬编码业务表名 —— 那是「业务模块永远删不掉」的另一种形式。
+// 本模块知道这是一个进销存系统，由它把清单喂给框架层的 Check / Backup。
+var bizAnchorTables = []string{
+	"inv_orders", "inv_order_items", "inv_products", "inv_customers",
+}
 
 // Service 运维服务。
 type Service struct {
@@ -92,7 +97,8 @@ func (s *Service) backupItem(dir, name string) (BackupItem, error) {
 		Size: info.Size(),
 		// 时间取文件名里的时间戳，取不到才回落到 mtime —— 拷贝过的备份
 		// mtime 会变成拷贝时间，而名字里的时间戳才是「这个备份是哪一刻的库」。
-		Time: backupTimeFromName(name, info.ModTime()),
+		// 解析规则统一走框架层的 BackupTimeFromName，CLI 与列表只有一份实现。
+		Time: fwops.BackupTimeFromName(name, info.ModTime()),
 	}
 	if meta, err := readBackupMeta(full + ".json"); err == nil {
 		item.HasMeta = true
@@ -100,6 +106,7 @@ func (s *Service) backupItem(dir, name string) (BackupItem, error) {
 		item.Database = meta.Database
 		item.ServerVersion = meta.Stats.ServerVersion
 		item.Tables = meta.Stats.Tables
+		item.Verified = meta.Verified
 	}
 	return item, nil
 }
@@ -107,11 +114,12 @@ func (s *Service) backupItem(dir, name string) (BackupItem, error) {
 // RunBackup 执行一次备份。
 func (s *Service) RunBackup(req RunBackupReq) (*BackupItem, error) {
 	res, err := fwops.Backup(s.db, s.cfg.Database, fwops.BackupOptions{
-		Dir:        s.backupDir(),
-		KeepCount:  s.cfg.Backup.KeepCount,
-		KeepMonths: s.cfg.Backup.KeepMonths,
-		PgDumpPath: s.cfg.Backup.PgDumpPath,
-		SkipPrune:  req.SkipPrune,
+		Dir:          s.backupDir(),
+		KeepCount:    s.cfg.Backup.KeepCount,
+		KeepMonths:   s.cfg.Backup.KeepMonths,
+		PgDumpPath:   s.cfg.Backup.PgDumpPath,
+		AnchorTables: append([]string{"sys_users"}, bizAnchorTables...),
+		SkipPrune:    req.SkipPrune,
 	})
 	if err != nil {
 		return nil, err
@@ -256,6 +264,7 @@ func (s *Service) Check() (*fwops.CheckReport, []string, error) {
 	return fwops.Check(s.db, s.cfg, fwops.CheckOptions{
 		BackupDir:    s.backupDir(),
 		MaxBackupAge: 48 * time.Hour,
+		KeyTables:    append([]string{"sys_users"}, bizAnchorTables...),
 	})
 }
 
@@ -389,19 +398,6 @@ func (s *Service) ApplyUpgrade(req ApplyUpgradeReq) (*UpgradeRecord, error) {
 }
 
 // ── 小工具 ──────────────────────────────────────────────
-
-// backupTimeFromName 从 <库名>-20060102150405.dump 里取备份时间。
-func backupTimeFromName(name string, fallback time.Time) time.Time {
-	m := backupNameTime.FindStringSubmatch(name)
-	if len(m) != 2 {
-		return fallback
-	}
-	t, err := time.ParseInLocation("20060102150405", m[1], time.Local)
-	if err != nil {
-		return fallback
-	}
-	return t
-}
 
 // readBackupMeta 读备份的 .json 元数据。
 func readBackupMeta(path string) (fwops.BackupMeta, error) {

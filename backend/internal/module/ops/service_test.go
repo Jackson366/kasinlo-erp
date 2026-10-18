@@ -2,22 +2,10 @@ package ops
 
 import (
 	"testing"
-	"time"
 )
 
-// 备份时间必须取文件名里的时间戳：拷贝过的备份 mtime 会变成拷贝时间，
-// 用它排序会把「新拷的旧备份」排到最前面，恢复时拿错文件。
-func TestBackupTimeFromName(t *testing.T) {
-	fallback := time.Date(2020, 1, 1, 0, 0, 0, 0, time.Local)
-	got := backupTimeFromName("nova_inv_v5-20261018220000.dump", fallback)
-	want := time.Date(2026, 10, 18, 22, 0, 0, 0, time.Local)
-	if !got.Equal(want) {
-		t.Fatalf("got %v, want %v", got, want)
-	}
-	if got := backupTimeFromName("weird-name.dump", fallback); !got.Equal(fallback) {
-		t.Fatalf("解析不出时间戳应回落到 fallback，实际 %v", got)
-	}
-}
+// 备份时间的解析规则已上收到框架层 ops.BackupTimeFromName（唯一实现），
+// 这里只守护「列表排序依赖时间戳」这一行为不变量，具体解析见框架层测试。
 
 // 确认口令必须是精确匹配：模糊匹配（包含、忽略大小写）会让「确认」形同虚设。
 func TestConfirmPasswordsAreExact(t *testing.T) {

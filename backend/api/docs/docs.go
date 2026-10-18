@@ -2883,7 +2883,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "缺少 ops:cleanup 权限",
+                        "description": "缺少 ops:reset 权限",
                         "schema": {
                             "$ref": "#/definitions/response.Body"
                         }
@@ -7628,6 +7628,10 @@ const docTemplate = `{
                 },
                 "time": {
                     "type": "string"
+                },
+                "verified": {
+                    "description": "Verified 表示这份备份写完是否用 pg_restore 回读过。false 表示\n「没坏但也没验过」（缺 pg_restore 的精简安装），前端据此提示。",
+                    "type": "boolean"
                 }
             }
         },

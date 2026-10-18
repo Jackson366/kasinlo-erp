@@ -71,11 +71,6 @@ type UpgradePlan struct {
 	Notes         string          `json:"notes"`
 	Actions       []UpgradeAction `json:"actions"`
 	Warnings      []string        `json:"warnings"`
-
-	// staging 是解压后的包所在目录（<stagingRoot>/<PlanID>），不进 JSON。
-	staging string
-	// manifest 是校验通过的原始清单，执行时按它取文件名。
-	manifest upgradeManifest
 }
 
 // UpgradePackageResult 是上传升级包的结果。
@@ -116,12 +111,12 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 		return nil, fmt.Errorf("升级包不是有效的 zip：%w", err)
 	}
 
-	files, err := readZipFiles(zr)
+	pkg, err := openPackage(zr)
 	if err != nil {
 		return nil, err
 	}
-	raw, ok := files["manifest.json"]
-	if !ok {
+	raw := pkg.manifest
+	if raw == nil {
 		return nil, errors.New("升级包缺少 manifest.json")
 	}
 	var mf upgradeManifest
@@ -148,7 +143,6 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 		PackageSize:   int64(len(data)),
 		Notes:         strings.TrimSpace(mf.Notes),
 		Actions:       make([]UpgradeAction, 0, 2),
-		manifest:      mf,
 	}
 
 	// 逐项校验摘要，并把文件写进 staging。
@@ -163,15 +157,17 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 		return nil, fmt.Errorf("写入 manifest 失败：%w", err)
 	}
 	if mf.Backend != nil {
-		body, ok := files[mf.Backend.File]
+		zf, ok := pkg.files[mf.Backend.File]
 		if !ok {
 			return nil, fmt.Errorf("manifest 声明的后端文件 %s 不在包里", mf.Backend.File)
 		}
-		if got := hex.EncodeToString(sha256Sum(body)); !strings.EqualFold(got, mf.Backend.SHA256) {
-			return nil, fmt.Errorf("后端文件 %s 摘要不匹配（manifest 写 %s，实际 %s）", mf.Backend.File, mf.Backend.SHA256, got)
+		got, err := writeZipEntry(zf, filepath.Join(staging, mf.Backend.File), 0o755)
+		if err != nil {
+			return nil, err
 		}
-		if err := os.WriteFile(filepath.Join(staging, mf.Backend.File), body, 0o755); err != nil {
-			return nil, fmt.Errorf("写入后端文件失败：%w", err)
+		if !strings.EqualFold(got, mf.Backend.SHA256) {
+			_ = os.Remove(filepath.Join(staging, mf.Backend.File))
+			return nil, fmt.Errorf("后端文件 %s 摘要不匹配（manifest 写 %s，实际 %s）", mf.Backend.File, mf.Backend.SHA256, got)
 		}
 		plan.Actions = append(plan.Actions, UpgradeAction{
 			Key:    "backend",
@@ -180,15 +176,17 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 		})
 	}
 	if mf.Frontend != nil {
-		body, ok := files[mf.Frontend.File]
+		zf, ok := pkg.files[mf.Frontend.File]
 		if !ok {
 			return nil, fmt.Errorf("manifest 声明的前端文件 %s 不在包里", mf.Frontend.File)
 		}
-		if got := hex.EncodeToString(sha256Sum(body)); !strings.EqualFold(got, mf.Frontend.SHA256) {
-			return nil, fmt.Errorf("前端文件 %s 摘要不匹配（manifest 写 %s，实际 %s）", mf.Frontend.File, mf.Frontend.SHA256, got)
+		got, err := writeZipEntry(zf, filepath.Join(staging, mf.Frontend.File), 0o755)
+		if err != nil {
+			return nil, err
 		}
-		if err := os.WriteFile(filepath.Join(staging, mf.Frontend.File), body, 0o755); err != nil {
-			return nil, fmt.Errorf("写入前端文件失败：%w", err)
+		if !strings.EqualFold(got, mf.Frontend.SHA256) {
+			_ = os.Remove(filepath.Join(staging, mf.Frontend.File))
+			return nil, fmt.Errorf("前端文件 %s 摘要不匹配（manifest 写 %s，实际 %s）", mf.Frontend.File, mf.Frontend.SHA256, got)
 		}
 		dir := strings.TrimSpace(cfg.Upgrade.FrontendDir)
 		if dir == "" {
@@ -210,7 +208,6 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 		plan.Warnings = append(plan.Warnings, fmt.Sprintf(
 			"当前库结构版本 v%d 低于升级包要求的 v%d：请先升级到中间版本", dbVer, mf.MinSchemaVersion))
 	}
-	plan.staging = staging
 
 	rec := &model.UpgradeRecord{
 		PlanID:        planID,
@@ -370,9 +367,20 @@ func FinalizeUpgrades(db *gorm.DB, currentRelease string) error {
 
 // ── 内部实现 ──────────────────────────────────────────────
 
-// readZipFiles 读出包内全部普通文件（跳过目录项），键为包内路径。
-func readZipFiles(zr *zip.Reader) (map[string][]byte, error) {
-	out := make(map[string][]byte, len(zr.File))
+// upgradePackage 是解包后的中间形态。
+//
+// manifest 很小，读进内存；backend / frontend 可能是几十 MB 的二进制/压缩包，
+// **不读进内存**，只保留 zip 条目引用，写 staging 时再流式解压 ——
+// 否则上传的 512 MB 上限会让「原始包 + 解压内容」同时驻留内存，峰值逼近 1 GB。
+type upgradePackage struct {
+	manifest []byte
+	files    map[string]*zip.File // 包内普通文件（除 manifest 外），键为文件名
+}
+
+// openPackage 遍历 zip 条目：只收一层、拒绝嵌套目录；manifest 读入内存，
+// 其余文件登记为 zip.File 供后续流式写出。
+func openPackage(zr *zip.Reader) (*upgradePackage, error) {
+	pkg := &upgradePackage{files: make(map[string]*zip.File, len(zr.File))}
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
 			continue
@@ -386,18 +394,45 @@ func readZipFiles(zr *zip.Reader) (map[string][]byte, error) {
 		if name == "" || name == "." {
 			continue
 		}
-		rc, err := f.Open()
-		if err != nil {
-			return nil, fmt.Errorf("读取 %s 失败：%w", f.Name, err)
+		if name == "manifest.json" {
+			rc, err := f.Open()
+			if err != nil {
+				return nil, fmt.Errorf("读取 %s 失败：%w", f.Name, err)
+			}
+			body, err := io.ReadAll(rc)
+			_ = rc.Close()
+			if err != nil {
+				return nil, fmt.Errorf("读取 %s 失败：%w", f.Name, err)
+			}
+			pkg.manifest = body
+			continue
 		}
-		body, err := io.ReadAll(rc)
-		_ = rc.Close()
-		if err != nil {
-			return nil, fmt.Errorf("读取 %s 失败：%w", f.Name, err)
-		}
-		out[name] = body
+		pkg.files[name] = f
 	}
-	return out, nil
+	return pkg, nil
+}
+
+// writeZipEntry 把 zip 条目流式写到 dest，边写边算 sha256，返回摘要。
+//
+// 刻意「边写边算」而不是「先算再写」：先算就要先把整个文件读进内存，
+// 与 openPackage 的流式目标相悖。调用方拿到摘要后与 manifest 比对，
+// 不匹配时由调用方删除已写出的文件。
+func writeZipEntry(zf *zip.File, dest string, mode os.FileMode) (string, error) {
+	rc, err := zf.Open()
+	if err != nil {
+		return "", fmt.Errorf("读取 %s 失败：%w", zf.Name, err)
+	}
+	defer func() { _ = rc.Close() }()
+	out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return "", fmt.Errorf("写出 %s 失败：%w", zf.Name, err)
+	}
+	defer func() { _ = out.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(out, h), rc); err != nil {
+		return "", fmt.Errorf("解压 %s 失败：%w", zf.Name, err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // validateManifest 校验清单必填项与文件名安全性。
@@ -444,11 +479,6 @@ func newPlanID(pkgSHA, version string) string {
 		short = short[:12]
 	}
 	return fmt.Sprintf("upg-%s-%s-%s", version, short, time.Now().Format("20060102150405"))
-}
-
-func sha256Sum(b []byte) []byte {
-	s := sha256.Sum256(b)
-	return s[:]
 }
 
 // currentExePath 返回正在运行的可执行文件路径，仅用于给人看的提示。
