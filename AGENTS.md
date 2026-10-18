@@ -2346,6 +2346,34 @@ if (partial !== barrel && hasStyleOnly(partial)) {
 该组件的基础规则（比如 `.el-form-item{display:flex`）在不在。在 JS 里能跑、
 在 CSS 里找不到 —— 就是这条。
 
+### 5.100 无标签的 form-item 仍占 label-width，且是行内样式
+
+**诱因**：弹窗里用 `el-form label-width="88px"` 统一标签宽度，规格名输入框、
+单位表里的输入控件这些**没有标签**的 `el-form-item` 也会被塞进 88px 的左边距。
+
+**症状**：自绘的小表格（表头 + 数据行）里，表头比输入框左移 88px，
+看着像整张表错位。而在 JS/类型检查里毫无异常，只有量 DOM 才看得出来：
+
+```js
+getComputedStyle(content).marginLeft  // "88px"
+content.getAttribute('style')          // "margin-left: 88px;"  ← 行内样式
+```
+
+**做法**：给这类 form-item 一个类名，`!important` 盖掉（行内样式只能这么处理）：
+
+```scss
+.unit-form-item :deep(.el-form-item__content) {
+  margin-left: 0 !important;
+}
+```
+
+**为什么不能靠 CSS 优先级**：这个 `margin-left` 是 Element Plus 在
+`contentStyle` 里算出来写到元素上的行内样式，普通选择器赢不了它。
+
+**顺带**：这类「自绘小表格」的表头与数据行要么共用同一套 flex 列
+（`.unit-col--*`），要么用 grid 模板同时套在 `thead` 与 `tbody` 上；
+两边各写一套宽度，迟早会有一边对不齐。
+
 ### 6.1 交互缺陷另跑 `interaction-verify.mjs`
 
 
