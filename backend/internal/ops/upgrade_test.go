@@ -120,3 +120,37 @@ func TestPlanJSONRoundTrip(t *testing.T) {
 		t.Fatalf("往返结果不符：%+v", back)
 	}
 }
+
+// 纯前端包执行成功即升级完成：前端目录切换是即时生效的，
+// 若按后端包的流程「等重启比对版本」，二进制永远不变（它不在包里），
+// 记录会被永久误标为「未生效」。
+func TestUpgradeOutcomeFrontendOnlyIsSuccess(t *testing.T) {
+	status, msg := upgradeOutcome([]UpgradeAction{
+		{Key: "frontend", Title: "替换前端产物", Done: true},
+	}, "")
+	if status != "success" {
+		t.Fatalf("纯前端包应直接 success，实际 %s", status)
+	}
+	if msg == "" || !strings.Contains(msg, "无需重启") {
+		t.Fatalf("说明应写明无需重启：%s", msg)
+	}
+}
+
+func TestUpgradeOutcomeWithBackendWaitsRestart(t *testing.T) {
+	status, _ := upgradeOutcome([]UpgradeAction{
+		{Key: "backend", Title: "替换后端程序", Done: true},
+		{Key: "frontend", Title: "替换前端产物", Done: true},
+	}, "")
+	if status != "applied" {
+		t.Fatalf("含后端动作应等待重启（applied），实际 %s", status)
+	}
+}
+
+func TestUpgradeOutcomeFailureWins(t *testing.T) {
+	status, msg := upgradeOutcome([]UpgradeAction{
+		{Key: "backend", Done: false, Error: "磁盘不足"},
+	}, "磁盘不足")
+	if status != "failed" || !strings.Contains(msg, "磁盘不足") {
+		t.Fatalf("执行失败应优先于其它判定：%s / %s", status, msg)
+	}
+}

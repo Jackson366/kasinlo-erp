@@ -395,7 +395,7 @@ const preflightAllPass = computed(() =>
 
 function statusTagType(status: string): 'success' | 'warning' | 'danger' | 'info' {
   if (status === 'success') return 'success'
-  if (status === 'applied') return 'warning'
+  if (status === 'applied' || status === 'executing') return 'warning'
   if (status === 'failed') return 'danger'
   return 'info'
 }
@@ -403,6 +403,7 @@ function statusTagType(status: string): 'success' | 'warning' | 'danger' | 'info
 function statusText(status: string): string {
   const map: Record<string, string> = {
     pending: '待执行',
+    executing: '执行中',
     applied: '已执行待重启',
     success: '已完成',
     failed: '未生效',

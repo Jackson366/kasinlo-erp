@@ -45,13 +45,17 @@ func TestParseActionsToleratesGarbage(t *testing.T) {
 	}
 }
 
-// hasPendingUpgrade 决定「能不能再升一次」：pending 与 applied 都算未收尾。
+// hasPendingUpgrade 决定「能不能再升一次」：除 success / failed 外都算未收尾，
+// 含 executing（正在执行 —— 并发抢占态）。
 func TestHasPendingUpgrade(t *testing.T) {
 	if hasPendingUpgrade(nil) {
 		t.Fatal("没有记录不应判为有待升级")
 	}
 	if !hasPendingUpgrade([]UpgradeRecord{{Status: "pending"}}) {
 		t.Fatal("pending 应判为有待升级")
+	}
+	if !hasPendingUpgrade([]UpgradeRecord{{Status: "executing"}}) {
+		t.Fatal("executing（执行中）应判为有待升级")
 	}
 	if !hasPendingUpgrade([]UpgradeRecord{{Status: "applied"}}) {
 		t.Fatal("applied（已执行未确认）应判为有待升级")

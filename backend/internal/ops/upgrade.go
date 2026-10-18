@@ -242,13 +242,30 @@ func ExecuteUpgradePlan(db *gorm.DB, cfg *config.Config, planID string) (*model.
 	if err := db.Where("plan_id = ?", planID).First(&rec).Error; err != nil {
 		return nil, fmt.Errorf("升级计划不存在：%w", err)
 	}
-	if rec.Status != model.UpgradePending {
-		return nil, fmt.Errorf("该计划已执行过（状态 %s），不能重复执行", rec.Status)
+
+	// 抢占：只有 pending 能进入执行，且必须是原子的条件更新。
+	//
+	// 先读状态再判断再写回的写法在并发下会双双通过（TOCTOU）：
+	// 双击「执行升级」或客户端超时重试时，两个请求各执行一遍动作 ——
+	// 后端 .new 写两次无害，但前端目录会被切换两次，第二次就找不到 .new 了。
+	claimed := db.Model(&model.UpgradeRecord{}).
+		Where("plan_id = ? AND status = ?", planID, model.UpgradePending).
+		Update("status", model.UpgradeExecuting)
+	if claimed.Error != nil {
+		return nil, fmt.Errorf("占用升级计划失败：%w", claimed.Error)
+	}
+	if claimed.RowsAffected == 0 {
+		return nil, fmt.Errorf("该计划不在待执行状态（当前 %s）：不能重复执行", rec.Status)
 	}
 
 	staging := filepath.Join(StagingRoot(cfg), planID)
 	mf, actions, err := loadPlan(staging, &rec)
 	if err != nil {
+		// 抢占了却走不下去：必须把状态推进掉，否则这条记录永远卡在 executing。
+		_ = db.Model(&model.UpgradeRecord{}).Where("plan_id = ?", planID).Updates(map[string]any{
+			"status": model.UpgradeFailed, "message": "执行失败：" + err.Error(),
+			"finished_at": time.Now(),
+		})
 		return nil, err
 	}
 
@@ -274,14 +291,11 @@ func ExecuteUpgradePlan(db *gorm.DB, cfg *config.Config, planID string) (*model.
 	}
 
 	now := time.Now()
-	updates := map[string]any{"plan": planJSONFromActions(actions), "applied_at": &now}
-	if failed != "" {
-		updates["status"] = model.UpgradeFailed
-		updates["message"] = "执行失败：" + failed
+	status, message := upgradeOutcome(actions, failed)
+	updates := map[string]any{"plan": planJSONFromActions(actions), "applied_at": &now,
+		"status": status, "message": message}
+	if status != model.UpgradeApplied {
 		updates["finished_at"] = &now
-	} else {
-		updates["status"] = model.UpgradeApplied
-		updates["message"] = "已执行，等待重启生效"
 	}
 	if err := db.Model(&model.UpgradeRecord{}).Where("plan_id = ?", planID).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("更新升级记录失败：%w", err)
@@ -290,6 +304,24 @@ func ExecuteUpgradePlan(db *gorm.DB, cfg *config.Config, planID string) (*model.
 		return nil, err
 	}
 	return &rec, nil
+}
+
+// upgradeOutcome 决定执行完成后的去向。
+//
+// 纯前端包是这里的关键分支：前端目录切换是**即时生效**的，不存在「等重启」，
+// 所以执行成功即升级完成（success）。若仍按后端包的流程等重启比对版本，
+// 二进制永远不会变成目标版本（它本来就不在包里），记录会被永久误标为
+// 「未生效」—— 前端明明升好了，状态却说失败。
+func upgradeOutcome(actions []UpgradeAction, execErr string) (status, message string) {
+	if execErr != "" {
+		return model.UpgradeFailed, "执行失败：" + execErr
+	}
+	for _, a := range actions {
+		if a.Key == "backend" {
+			return model.UpgradeApplied, "已执行，等待重启生效"
+		}
+	}
+	return model.UpgradeSuccess, "前端产物已切换，即时生效，无需重启"
 }
 
 // FinalizeUpgrades 在启动时核对「已执行但未确认」的升级。
@@ -303,19 +335,27 @@ func ExecuteUpgradePlan(db *gorm.DB, cfg *config.Config, planID string) (*model.
 //
 // 没有第三条路。若这里图省事直接标 success，「升级完成」就成了假消息。
 func FinalizeUpgrades(db *gorm.DB, currentRelease string) error {
+	// executing 也要一起捞：进程在执行中途崩溃 / 被杀时记录会停在 executing，
+	// 启动是唯一能发现并收尾的时机 —— 不捞的话这条记录永远「卡死」。
 	var recs []model.UpgradeRecord
-	if err := db.Where("status = ?", model.UpgradeApplied).Order("id ASC").Find(&recs).Error; err != nil {
+	if err := db.Where("status IN ?", []string{model.UpgradeApplied, model.UpgradeExecuting}).
+		Order("id ASC").Find(&recs).Error; err != nil {
 		return fmt.Errorf("读取待确认的升级记录失败：%w", err)
 	}
 	now := time.Now()
 	for i := range recs {
 		r := &recs[i]
-		status, msg := model.UpgradeFailed, ""
-		if strings.EqualFold(r.ToVersion, currentRelease) {
+		var status, msg string
+		switch {
+		case r.Status == model.UpgradeExecuting:
+			status, msg = model.UpgradeFailed,
+				"执行中进程中断（崩溃或被停止），请重新上传升级包后再执行"
+		case strings.EqualFold(r.ToVersion, currentRelease):
 			status, msg = model.UpgradeSuccess, "重启后版本一致，升级完成"
-		} else {
+		default:
 			msg = fmt.Sprintf("当前运行版本 %s 与升级目标 %s 不一致：升级未生效（回滚或未替换二进制）",
 				currentRelease, r.ToVersion)
+			status = model.UpgradeFailed
 		}
 		if err := db.Model(r).Updates(map[string]any{
 			"status":      status,

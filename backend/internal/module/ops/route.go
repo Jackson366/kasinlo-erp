@@ -18,26 +18,30 @@ import (
 func Register(rg *gin.RouterGroup, cfg *config.Config) {
 	h := NewHandler(NewService(cfg, database.DB()))
 	g := rg.Group("/ops", middleware.Auth())
+	// 写接口统一挂幂等中间件：未带 Idempotency-Key 的调用方不受影响，
+	// 带键的重复提交（双击、超时重试）由它兜住 —— 执行升级这类动作
+	// 多跑一遍的代价是前端目录被切换两次，必须在 HTTP 层就拦下来。
+	idem := middleware.Idempotency()
 	{
 		g.GET("/backups", middleware.RequirePerm("ops:list"), h.Backups)
-		g.POST("/backups", middleware.RequirePerm("ops:backup"), h.RunBackup)
-		g.DELETE("/backups", middleware.RequirePerm("ops:backup"), h.DeleteBackup)
+		g.POST("/backups", idem, middleware.RequirePerm("ops:backup"), h.RunBackup)
+		g.DELETE("/backups", idem, middleware.RequirePerm("ops:backup"), h.DeleteBackup)
 		g.GET("/backups/download", middleware.RequirePerm("ops:backup"), h.DownloadBackup)
 
-		g.POST("/restore", middleware.RequirePerm("ops:restore"), h.Restore)
+		g.POST("/restore", idem, middleware.RequirePerm("ops:restore"), h.Restore)
 
 		g.GET("/cleanup/preview", middleware.RequirePerm("ops:list"), h.CleanupPreview)
-		g.POST("/cleanup/apply", middleware.RequirePerm("ops:cleanup"), h.CleanupApply)
+		g.POST("/cleanup/apply", idem, middleware.RequirePerm("ops:cleanup"), h.CleanupApply)
 		// 业务数据清理（不可逆）：范围预览用 ops:list，执行必须 ops:cleanup
 		g.GET("/cleanup/scopes", middleware.RequirePerm("ops:list"), h.BizScopes)
-		g.POST("/cleanup/business", middleware.RequirePerm("ops:cleanup"), h.BusinessCleanup)
+		g.POST("/cleanup/business", idem, middleware.RequirePerm("ops:cleanup"), h.BusinessCleanup)
 
 		g.GET("/check", middleware.RequirePerm("ops:list"), h.Check)
 
 		g.GET("/upgrade", middleware.RequirePerm("ops:list"), h.UpgradeStatus)
 		g.GET("/upgrade/records", middleware.RequirePerm("ops:list"), h.UpgradeRecords)
-		g.POST("/upgrade/package", middleware.RequirePerm("ops:upgrade"), h.UploadPackage)
-		g.POST("/upgrade/backup", middleware.RequirePerm("ops:upgrade"), h.UpgradeBackup)
-		g.POST("/upgrade/apply", middleware.RequirePerm("ops:upgrade"), h.ApplyUpgrade)
+		g.POST("/upgrade/package", idem, middleware.RequirePerm("ops:upgrade"), h.UploadPackage)
+		g.POST("/upgrade/backup", idem, middleware.RequirePerm("ops:upgrade"), h.UpgradeBackup)
+		g.POST("/upgrade/apply", idem, middleware.RequirePerm("ops:upgrade"), h.ApplyUpgrade)
 	}
 }

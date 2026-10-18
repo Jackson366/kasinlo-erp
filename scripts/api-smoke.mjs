@@ -80,8 +80,8 @@ function readZipEntry(buf, name) {
   throw new Error(`zip 里没有 ${name}`)
 }
 
-async function request(method, path, { token, body, raw } = {}) {
-  const headers = {}
+async function request(method, path, { token, body, raw, headers: extraHeaders } = {}) {
+  const headers = { ...(extraHeaders || {}) }
   if (token) headers.Authorization = `Bearer ${token}`
   if (body) headers['Content-Type'] = 'application/json'
   const res = await fetch(`${API}${path}`, {
@@ -1818,6 +1818,20 @@ async function main() {
   ok('清理口令错误被拦下且不删数据',
     cleanupWrong.json?.data?.dryRun === true && !!cleanupWrong.json?.data?.blocked,
     JSON.stringify(cleanupWrong.json?.data?.blocked))
+
+  // 幂等回放：同一个 Idempotency-Key 重复提交写接口，第二次应回放首次结果，
+  // 备份目录里只多一份文件 —— 双击 / 超时重试不能变成两次备份。
+  const backupsBeforeIdem = (await request('GET', '/ops/backups', { token })).json?.data?.length
+  const idemKey = `smoke-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const idemHeaders = { 'Idempotency-Key': idemKey }
+  const idemFirst = await request('POST', '/ops/backups', { token, body: {}, headers: idemHeaders })
+  const idemSecond = await request('POST', '/ops/backups', { token, body: {}, headers: idemHeaders })
+  ok('幂等键首次提交成功', idemFirst.json?.code === 0, JSON.stringify(idemFirst.json?.message))
+  ok('幂等键重复提交被回放', idemSecond.json?.code === 0 && idemSecond.json?.data?.name === idemFirst.json?.data?.name,
+    `${idemFirst.json?.data?.name} vs ${idemSecond.json?.data?.name}`)
+  const backupsAfterIdem = (await request('GET', '/ops/backups', { token })).json?.data?.length
+  ok('重复提交没有产生第二份备份', backupsAfterIdem === backupsBeforeIdem + 1,
+    `before=${backupsBeforeIdem} after=${backupsAfterIdem}`)
 
   // 业务数据清理：范围必须是服务端登记好的几档，且每档口令不同
   const bizScopes = await request('GET', '/ops/cleanup/scopes', { token })

@@ -1,5 +1,23 @@
+import type { AxiosRequestConfig } from 'axios'
 import { http } from '@/utils/request'
 import { downloadFile, uploadFile } from '@/utils/download'
+
+/**
+ * 生成一次性幂等键：crypto.randomUUID 只在安全上下文（https / localhost）可用，
+ * 退化到 Math.random（幂等键只要求「一次操作内唯一」，不要求密码学强度）。
+ */
+function newKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `ops-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+/** 带 Idempotency-Key 的 POST：双击 / 超时重试由服务端兜住，不会重复执行。 */
+function postIdempotent<T>(url: string, data?: unknown): Promise<T> {
+  const config: AxiosRequestConfig = { headers: { 'Idempotency-Key': newKey() } }
+  return http.post<T>(url, data, config)
+}
 
 /** 备份文件 */
 export interface BackupItem {
@@ -162,12 +180,12 @@ export const opsApi = {
 
   /** 执行备份；skipPrune 为 true 时不轮转（升级前留档用） */
   runBackup(skipPrune = false) {
-    return http.post<BackupItem>('/ops/backups', { skipPrune })
+    return postIdempotent<BackupItem>('/ops/backups', { skipPrune })
   },
 
   /** 删除一个备份 */
   deleteBackup(file: string) {
-    return http.delete('/ops/backups', { file })
+    return http.delete('/ops/backups', { file }, { headers: { 'Idempotency-Key': newKey() } })
   },
 
   /** 下载备份文件 */
@@ -181,7 +199,7 @@ export const opsApi = {
 
   /** 恢复演练：恢复到新库 */
   restore(file: string, target?: string) {
-    return http.post<{ Target: string; Tables: number; Rows: Record<string, number>; Warn: string[] }>(
+    return postIdempotent<{ Target: string; Tables: number; Rows: Record<string, number>; Warn: string[] }>(
       '/ops/restore',
       { file, target },
     )
@@ -194,7 +212,7 @@ export const opsApi = {
 
   /** 真删；confirm 必须正好是「确认清理」 */
   cleanupApply(confirm: string, days?: { opLogDays?: number; loginLogDays?: number; idempotencyDays?: number }) {
-    return http.post<CleanupView>('/ops/cleanup/apply', { confirm, ...days })
+    return postIdempotent<CleanupView>('/ops/cleanup/apply', { confirm, ...days })
   },
 
   /** 业务清理范围与各表行数预览 */
@@ -204,7 +222,7 @@ export const opsApi = {
 
   /** 执行业务数据清理（不可逆）；confirm 必须正好等于该范围的口令 */
   businessCleanup(body: { scope: string; confirm: string; resetStock?: boolean }) {
-    return http.post<BizCleanupReport>('/ops/cleanup/business', body)
+    return postIdempotent<BizCleanupReport>('/ops/cleanup/business', body)
   },
 
   /** 系统体检 */
@@ -224,16 +242,16 @@ export const opsApi = {
 
   /** 上传升级包 */
   uploadPackage(file: File) {
-    return uploadFile<UpgradePlanResult>('/ops/upgrade/package', file)
+    return uploadFile<UpgradePlanResult>('/ops/upgrade/package', file, { idempotencyKey: newKey() })
   },
 
   /** 升级前强制留档备份 */
   upgradeBackup(planId: string) {
-    return http.post<BackupItem>('/ops/upgrade/backup', { planId })
+    return postIdempotent<BackupItem>('/ops/upgrade/backup', { planId })
   },
 
   /** 执行升级；confirm 必须正好是「确认升级」 */
   applyUpgrade(planId: string, confirm: string) {
-    return http.post<UpgradeRecord>('/ops/upgrade/apply', { planId, confirm })
+    return postIdempotent<UpgradeRecord>('/ops/upgrade/apply', { planId, confirm })
   },
 }

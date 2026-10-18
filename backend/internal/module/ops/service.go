@@ -353,7 +353,7 @@ func (s *Service) UpgradeBackup(req UpgradeBackupReq) (*BackupItem, error) {
 		return nil, errors.New("升级计划不存在")
 	}
 	if rec.Status != model.UpgradePending {
-		return nil, fmt.Errorf("该计划状态为 %s，不能再次留档", rec.Status)
+		return nil, fmt.Errorf("该计划当前状态为「%s」，只有待执行的计划才能留档", upgradeStatusText(rec.Status))
 	}
 	item, err := s.RunBackup(RunBackupReq{SkipPrune: true, Note: "升级前留档：" + req.PlanID})
 	if err != nil {
@@ -449,11 +449,27 @@ func parseActions(planJSON string) []UpgradeAction {
 
 func hasPendingUpgrade(records []UpgradeRecord) bool {
 	for _, r := range records {
-		if r.Status == model.UpgradeApplied || r.Status == model.UpgradePending {
+		// executing（正在执行）与 applied（已执行未确认）都算未收尾
+		if r.Status != model.UpgradeSuccess && r.Status != model.UpgradeFailed {
 			return true
 		}
 	}
 	return false
+}
+
+// upgradeStatusText 给报错信息用的状态中文名。
+func upgradeStatusText(status string) string {
+	m := map[string]string{
+		model.UpgradePending:   "待执行",
+		model.UpgradeExecuting: "执行中",
+		model.UpgradeApplied:   "已执行待重启",
+		model.UpgradeSuccess:   "已完成",
+		model.UpgradeFailed:    "未生效",
+	}
+	if t, ok := m[status]; ok {
+		return t
+	}
+	return status
 }
 
 func backupAgeHint(at time.Time) string {

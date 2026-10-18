@@ -4,17 +4,25 @@ import "time"
 
 // 升级记录状态。一次升级走完的完整生命周期：
 //
-//	pending ──apply──> applied ──(重启后由启动流程核对)──> success
-//	                       └──(换了回二进制 / 长时间没重启)──> failed
+//	pending ──apply(抢占)──> executing ──┬──> applied ──(重启后核对)──> success
+//	                                   ├──> success（纯前端包：切换即生效）
+//	                                   └──> failed（执行中断 / 回滚 / 版本不一致）
 //
 // 为什么要有 applied 这个中间态：升级的**执行**与**生效**是两件事 ——
 // 后端二进制落位成 `.new` 之后必须重启才生效，而这之间进程还跑着旧代码。
 // 少了这个状态，「执行成功」会被误读成「升级完成」。
+//
+// 为什么要有 executing 这个抢占态：执行入口是 HTTP，双击 / 超时重试会产生
+// 并发请求。先「抢占」再执行（条件更新 status=pending→executing），
+// 第二个请求抢不到就退出 —— 没有它，两个请求都能通过「状态是 pending」
+// 的检查然后各执行一遍（TOCTOU）。进程执行中途崩溃会停在 executing，
+// 由启动流程判定为 failed，不会卡死状态机。
 const (
-	UpgradePending = "pending" // 计划已生成，等待执行
-	UpgradeApplied = "applied" // 已执行，等待重启生效
-	UpgradeSuccess = "success" // 重启后核对版本一致，升级完成
-	UpgradeFailed  = "failed"  // 重启后核对不一致（回滚了或没换成）
+	UpgradePending   = "pending"   // 计划已生成，等待执行
+	UpgradeExecuting = "executing" // 已抢占，正在执行（并发第二个请求会被拒）
+	UpgradeApplied   = "applied"   // 已执行，等待重启生效
+	UpgradeSuccess   = "success"   // 生效核对通过（或纯前端包切换即生效），升级完成
+	UpgradeFailed    = "failed"    // 执行失败 / 中断 / 重启后核对不一致
 )
 
 // UpgradeRecord 是一次系统升级的登记。

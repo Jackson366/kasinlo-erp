@@ -2835,6 +2835,62 @@ const docTemplate = `{
                 }
             }
         },
+        "/ops/cleanup/business": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "执行业务数据清理",
+                "parameters": [
+                    {
+                        "description": "清理范围、确认口令与库存选项",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ops.BizCleanupReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/ops.BizCleanupReport"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:cleanup 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/ops/cleanup/preview": {
             "get": {
                 "security": [
@@ -2862,6 +2918,51 @@ const docTemplate = `{
                                     "properties": {
                                         "data": {
                                             "$ref": "#/definitions/ops.CleanupView"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:list 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/ops/cleanup/scopes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "业务清理范围预览",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/ops.BizScopeView"
+                                            }
                                         }
                                     }
                                 }
@@ -7527,6 +7628,121 @@ const docTemplate = `{
                 },
                 "time": {
                     "type": "string"
+                }
+            }
+        },
+        "ops.BizCleanupReport": {
+            "type": "object",
+            "properties": {
+                "dryRun": {
+                    "type": "boolean"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "stockReset": {
+                    "description": "请求了清零",
+                    "type": "boolean"
+                },
+                "stockResetRows": {
+                    "description": "实际被清零的规格行数",
+                    "type": "integer"
+                },
+                "tables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ops.BizCleanupTable"
+                    }
+                },
+                "title": {
+                    "type": "string"
+                },
+                "totalDeleted": {
+                    "type": "integer"
+                }
+            }
+        },
+        "ops.BizCleanupReq": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "scope"
+            ],
+            "properties": {
+                "confirm": {
+                    "description": "Confirm 必须正好等于该范围的口令。",
+                    "type": "string"
+                },
+                "resetStock": {
+                    "description": "ResetStock 同时清零规格库存（仅「进销存单据」档有效）。",
+                    "type": "boolean"
+                },
+                "scope": {
+                    "description": "Scope 是清理范围，只接受服务端登记好的几档。",
+                    "type": "string"
+                }
+            }
+        },
+        "ops.BizCleanupTable": {
+            "type": "object",
+            "properties": {
+                "deleted": {
+                    "description": "实际删除行数",
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "rows": {
+                    "description": "清理前的总行数（含历史软删除行）",
+                    "type": "integer"
+                },
+                "seqReset": {
+                    "description": "表被清空后是否重置了自增序列",
+                    "type": "boolean"
+                }
+            }
+        },
+        "ops.BizScopeView": {
+            "type": "object",
+            "properties": {
+                "confirm": {
+                    "type": "string"
+                },
+                "desc": {
+                    "type": "string"
+                },
+                "keep": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "resetStockable": {
+                    "type": "boolean"
+                },
+                "tables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ops.BizTableView"
+                    }
+                },
+                "title": {
+                    "type": "string"
+                },
+                "totalRows": {
+                    "type": "integer"
+                }
+            }
+        },
+        "ops.BizTableView": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "rows": {
+                    "type": "integer"
                 }
             }
         },
