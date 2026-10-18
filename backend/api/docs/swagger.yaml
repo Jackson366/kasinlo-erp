@@ -112,6 +112,34 @@ definitions:
     required:
     - name
     type: object
+  internal_module_ops.CleanupStep:
+    properties:
+      batches:
+        type: integer
+      cutoff:
+        type: string
+      name:
+        type: string
+      note:
+        type: string
+      rows:
+        type: integer
+      table:
+        type: string
+    type: object
+  internal_module_ops.UpgradeAction:
+    properties:
+      detail:
+        type: string
+      done:
+        type: boolean
+      error:
+        type: string
+      key:
+        type: string
+      title:
+        type: string
+    type: object
   inv.CategoryOption:
     properties:
       id:
@@ -1214,6 +1242,181 @@ definitions:
         type: integer
       username:
         type: string
+    type: object
+  ops.ApplyUpgradeReq:
+    properties:
+      confirm:
+        description: Confirm 必须正好等于「确认升级」。
+        type: string
+      planId:
+        type: string
+    required:
+    - confirm
+    - planId
+    type: object
+  ops.BackupItem:
+    properties:
+      database:
+        type: string
+      hasMeta:
+        type: boolean
+      name:
+        type: string
+      path:
+        type: string
+      serverVersion:
+        type: string
+      sha256:
+        type: string
+      size:
+        type: integer
+      tables:
+        type: integer
+      time:
+        type: string
+    type: object
+  ops.CleanupApplyReq:
+    properties:
+      confirm:
+        description: Confirm 必须正好等于「确认清理」。清理不可逆，多打四个字换一道闸门。
+        type: string
+      idempotencyDays:
+        type: integer
+      loginLogDays:
+        type: integer
+      opLogDays:
+        type: integer
+    required:
+    - confirm
+    type: object
+  ops.CleanupView:
+    properties:
+      blocked:
+        description: 非空表示被拦下（确认口令不对等）
+        type: string
+      dryRun:
+        type: boolean
+      steps:
+        items:
+          $ref: '#/definitions/internal_module_ops.CleanupStep'
+        type: array
+      vacuumed:
+        items:
+          type: string
+        type: array
+    type: object
+  ops.DeleteBackupReq:
+    properties:
+      file:
+        type: string
+    required:
+    - file
+    type: object
+  ops.PreflightItem:
+    properties:
+      hint:
+        type: string
+      key:
+        type: string
+      pass:
+        type: boolean
+      title:
+        type: string
+    type: object
+  ops.RestoreReq:
+    properties:
+      file:
+        type: string
+      target:
+        description: |-
+          Target 目标库名。留空自动生成 <生产库>_restore_<时间戳>；
+          **不允许**指向生产库本身（命令行要 --force，接口干脆不给这个能力）。
+        type: string
+    required:
+    - file
+    type: object
+  ops.RunBackupReq:
+    properties:
+      note:
+        type: string
+      skipPrune:
+        description: SkipPrune 为 true 时不做轮转（升级前留档用）。
+        type: boolean
+    type: object
+  ops.UpgradeBackupReq:
+    properties:
+      planId:
+        type: string
+    required:
+    - planId
+    type: object
+  ops.UpgradeRecord:
+    properties:
+      actions:
+        items:
+          $ref: '#/definitions/internal_module_ops.UpgradeAction'
+        type: array
+      appliedAt:
+        type: string
+      backupPath:
+        type: string
+      createdAt:
+        type: string
+      finishedAt:
+        type: string
+      fromVersion:
+        type: string
+      id:
+        type: integer
+      message:
+        type: string
+      packageSha256:
+        type: string
+      packageSize:
+        type: integer
+      planId:
+        type: string
+      status:
+        type: string
+      toVersion:
+        type: string
+    type: object
+  ops.UpgradeStatus:
+    properties:
+      database:
+        type: string
+      latestBackup:
+        type: string
+      latestBackupAt:
+        type: string
+      preflight:
+        items:
+          $ref: '#/definitions/ops.PreflightItem'
+        type: array
+      records:
+        items:
+          $ref: '#/definitions/ops.UpgradeRecord'
+        type: array
+      release:
+        type: string
+      restartHint:
+        type: string
+      schemaBinary:
+        type: integer
+      schemaDb:
+        type: integer
+      schemaKnown:
+        type: boolean
+      schemaNote:
+        type: string
+      serverVersion:
+        type: string
+      sizeBytes:
+        type: integer
+      warnings:
+        items:
+          type: string
+        type: array
     type: object
   profile.ChangePasswordReq:
     properties:
@@ -3081,6 +3284,349 @@ paths:
       summary: 修改供应商
       tags:
       - 进销存-供应商
+  /ops/backups:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: 备份文件名
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/ops.DeleteBackupReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: 缺少 ops:backup 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除备份
+      tags:
+      - 系统运维
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ops.BackupItem'
+                  type: array
+              type: object
+        "403":
+          description: 缺少 ops:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 备份列表
+      tags:
+      - 系统运维
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 备份参数
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/ops.RunBackupReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/ops.BackupItem'
+              type: object
+        "403":
+          description: 缺少 ops:backup 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 执行备份
+      tags:
+      - 系统运维
+  /ops/backups/download:
+    get:
+      parameters:
+      - description: 备份文件名
+        in: query
+        name: file
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "403":
+          description: 缺少 ops:backup 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 下载备份
+      tags:
+      - 系统运维
+  /ops/check:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: 缺少 ops:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 系统体检
+      tags:
+      - 系统运维
+  /ops/cleanup/apply:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 确认口令与保留天数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/ops.CleanupApplyReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/ops.CleanupView'
+              type: object
+        "403":
+          description: 缺少 ops:cleanup 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 执行数据清理
+      tags:
+      - 系统运维
+  /ops/cleanup/preview:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/ops.CleanupView'
+              type: object
+        "403":
+          description: 缺少 ops:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 数据清理预演
+      tags:
+      - 系统运维
+  /ops/restore:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 备份文件名与目标库
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/ops.RestoreReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: 缺少 ops:restore 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 恢复演练
+      tags:
+      - 系统运维
+  /ops/upgrade:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/ops.UpgradeStatus'
+              type: object
+        "403":
+          description: 缺少 ops:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 升级状态与预检
+      tags:
+      - 系统运维
+  /ops/upgrade/apply:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 计划标识与确认口令
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/ops.ApplyUpgradeReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/ops.UpgradeRecord'
+              type: object
+        "403":
+          description: 缺少 ops:upgrade 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 执行升级
+      tags:
+      - 系统运维
+  /ops/upgrade/backup:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 升级计划标识
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/ops.UpgradeBackupReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/ops.BackupItem'
+              type: object
+        "403":
+          description: 缺少 ops:upgrade 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 升级前备份
+      tags:
+      - 系统运维
+  /ops/upgrade/package:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: 升级包 zip
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: 缺少 ops:upgrade 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 上传升级包
+      tags:
+      - 系统运维
+  /ops/upgrade/records:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/ops.UpgradeRecord'
+                  type: array
+              type: object
+        "403":
+          description: 缺少 ops:list 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 升级记录
+      tags:
+      - 系统运维
   /profile:
     get:
       description: 返回个人资料、角色与权限码集合（超管不返回权限码，前端以其 isSuper 判定放行）。

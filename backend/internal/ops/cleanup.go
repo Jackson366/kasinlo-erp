@@ -50,12 +50,38 @@ type CleanupReport struct {
 //
 // 删除分批进行（默认 5000 行一批）：一条 DELETE 删几十万行会长时间持锁、
 // 把 WAL 打满，还会让表膨胀得更厉害。分批之后每批都很短，期间业务不受影响。
+// 保留期默认值。与 config 里的默认值保持一致，但**在这里也兜一次底**：
+//
+// 调用方传 0 的语义是「用默认值」，而如果某一层忘了把 0 换成默认值，
+// 0 天的字面含义就是「删掉此刻之前的全部记录」—— 对操作日志那是清空审计。
+// 命令行有 firstPositive 兜底，HTTP 接口有配置兜底，这里再兜一次：
+// 同一道安全约束不能只依赖某一个调用方记得传对。
+const (
+	defaultOpLogDays       = 180
+	defaultLoginLogDays    = 180
+	defaultIdempotencyDays = 7
+	defaultLoginLockSec    = 300
+	defaultCleanupBatch    = 5000
+)
+
 func Cleanup(db *gorm.DB, opt CleanupOptions) (*CleanupReport, error) {
 	if opt.Now.IsZero() {
 		opt.Now = time.Now()
 	}
 	if opt.BatchSize <= 0 {
-		opt.BatchSize = 5000
+		opt.BatchSize = defaultCleanupBatch
+	}
+	if opt.OpLogDays <= 0 {
+		opt.OpLogDays = defaultOpLogDays
+	}
+	if opt.LoginLogDays <= 0 {
+		opt.LoginLogDays = defaultLoginLogDays
+	}
+	if opt.IdempotencyDays <= 0 {
+		opt.IdempotencyDays = defaultIdempotencyDays
+	}
+	if opt.LoginLockSeconds <= 0 {
+		opt.LoginLockSeconds = defaultLoginLockSec
 	}
 	opCut, loginCut, idemCut := resolveCutoffs(opt)
 	rep := &CleanupReport{DryRun: !opt.Apply}

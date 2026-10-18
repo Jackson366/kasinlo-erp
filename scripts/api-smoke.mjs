@@ -1787,6 +1787,74 @@ async function main() {
 
   // 清理必须放在登出之前：登出会把该账号名下已签发的令牌一并吊销，
   // 先登出再清理时连本脚本自己手里的 token 都会变成 40105。
+  section('系统运维（备份 / 清理 / 巡检 / 升级）')
+  // 运维接口是「能改系统本身」的一类：备份要能建文件、清理不可逆、
+  // 升级会替换正在运行的程序。因此除了 happy path，更要覆盖「被拒」的路径。
+  const opsBackups = await request('GET', '/ops/backups', { token })
+  ok('备份列表返回数组', Array.isArray(opsBackups.json?.data), JSON.stringify(opsBackups.json).slice(0, 120))
+
+  const opsCheck = await request('GET', '/ops/check', { token })
+  const rep = opsCheck.json?.data?.report
+  ok('体检报告可用', opsCheck.json?.code === 0 && rep?.tables > 0, `tables=${rep?.tables}`)
+  ok('体检报告里结构版本库不高于程序', rep.schemaVersionDb <= rep.schemaVersionBinary,
+    `db=${rep?.schemaVersionDb} bin=${rep?.schemaVersionBinary}`)
+
+  // 备份文件名由客户端给出：必须按纯 basename 校验，否则 ../ 就能越出目录
+  const traversal = await request('DELETE', '/ops/backups', {
+    token,
+    body: { file: '../../../etc/passwd' },
+  })
+  ok('删除备份拒绝路径穿越', traversal.json?.code !== 0, JSON.stringify(traversal.json))
+  const notDump = await request('DELETE', '/ops/backups', { token, body: { file: 'config.yaml' } })
+  ok('删除备份只认 .dump', notDump.json?.code !== 0, JSON.stringify(notDump.json))
+
+  const cleanupPreview = await request('GET', '/ops/cleanup/preview', { token })
+  const steps = cleanupPreview.json?.data?.steps || []
+  ok('清理预演默认 dry-run', cleanupPreview.json?.data?.dryRun === true)
+  ok('预演列出三类清理对象', steps.length === 3 && steps.every((s) => s.rows >= 0), JSON.stringify(steps))
+
+  // 口令不对时必须按预演处理，且明确告知没有删数据
+  const cleanupWrong = await request('POST', '/ops/cleanup/apply', { token, body: { confirm: '确认' } })
+  ok('清理口令错误被拦下且不删数据',
+    cleanupWrong.json?.data?.dryRun === true && !!cleanupWrong.json?.data?.blocked,
+    JSON.stringify(cleanupWrong.json?.data?.blocked))
+
+  // 恢复演练不允许指向生产库：HTTP 接口不该提供「一次误点盖掉生产库」的能力
+  const restoreProd = await request('POST', '/ops/restore', { token, body: { file: 'whatever.dump' } })
+  ok('恢复演练拒绝不存在的备份', restoreProd.json?.code !== 0, JSON.stringify(restoreProd.json))
+
+  const upgradeStatus = await request('GET', '/ops/upgrade', { token })
+  const ust = upgradeStatus.json?.data
+  ok('升级状态含版本与预检', upgradeStatus.json?.code === 0 && Array.isArray(ust?.preflight) && ust.preflight.length === 4,
+    JSON.stringify(ust?.preflight?.map((p) => p.key)))
+  ok('升级记录可读', Array.isArray(ust?.records))
+
+  // 未生成的计划 ID：必须报「计划不存在」，而不是静默成功
+  const applyGhost = await request('POST', '/ops/upgrade/apply', {
+    token,
+    body: { planId: 'upg-does-not-exist', confirm: '确认升级' },
+  })
+  ok('执行不存在的升级计划被拒', applyGhost.json?.code !== 0, JSON.stringify(applyGhost.json))
+  const backupGhost = await request('POST', '/ops/upgrade/backup', { token, body: { planId: 'upg-does-not-exist' } })
+  ok('为不存在的计划留档被拒', backupGhost.json?.code !== 0, JSON.stringify(backupGhost.json))
+
+  // 上传非 zip：必须在校验阶段就失败，不能写出一个半截的暂存目录
+  const badPackage = await upload('/ops/upgrade/package', token, 'broken.zip', Buffer.from('not a zip at all'))
+  ok('上传非 zip 升级包被拒', badPackage.json?.code !== 0, JSON.stringify(badPackage.json))
+
+  // 只读账号的边界是「能看不能做」：ops:list 是页面权限，看得见列表与巡检；
+  // 而备份、清理、升级是按钮权限，一个都不能给。
+  ok('只读账号可查看备份列表', (await request('GET', '/ops/backups', { token: demoToken })).status === 200)
+  ok('只读账号可查看升级状态', (await request('GET', '/ops/upgrade', { token: demoToken })).status === 200)
+  ok('只读账号执行备份被拒(403)',
+    (await request('POST', '/ops/backups', { token: demoToken, body: {} })).status === 403)
+  ok('只读账号执行清理被拒(403)',
+    (await request('POST', '/ops/cleanup/apply', { token: demoToken, body: { confirm: '确认清理' } })).status === 403)
+  ok('只读账号上传升级包被拒(403)',
+    (await upload('/ops/upgrade/package', demoToken, 'x.zip', Buffer.from('x'))).status === 403)
+  ok('只读账号恢复演练被拒(403)',
+    (await request('POST', '/ops/restore', { token: demoToken, body: { file: 'x.dump' } })).status === 403)
+
   section('清理测试数据')
   const cleanRole = await request('DELETE', `/system/roles/${newRoleId}`, { token })
   ok('删除自测角色', cleanRole.json?.code === 0, JSON.stringify(cleanRole.json))

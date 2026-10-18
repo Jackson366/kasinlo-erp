@@ -16,6 +16,11 @@ app:
   port: 6802
   prefix: /api            # 路由统一前缀
   version: v1             # API 版本段，最终前缀为 /api/v1
+  # 程序发布版本号（如 1.2.0），与上面的 version（API 版本段）是两件事。
+  # 升级包校验、升级记录、启动后的「升级是否生效」核对都读它。
+  # 建议由构建脚本注入：-ldflags "-X nova-erp/internal/config.appRelease=1.2.0"，
+  # 缺省 dev —— 为 dev 时升级后无法自动确认生效，记录会一直停在「已执行」。
+  release: dev
   # 是否挂载在线接口文档（/swagger/index.html）。
   # 不写则跟随 mode：debug 打开、release 关闭 —— 接口文档会暴露全部路由与参数结构，
   # 生产环境默认不该对外可见。需要时可用 NOVA_APP_SWAGGER=true 覆盖。
@@ -105,3 +110,12 @@ maintenance:
   op_log_days: 180        # 操作日志
   login_log_days: 180     # 登录日志（实际还会受账号锁定窗口约束，取更早者）
   idempotency_days: 7     # 幂等键「过期之后」再保留多少天
+
+upgrade:
+  # 前端产物目录（vite build 输出）。升级包里带前端部分时，会原子替换这个目录，
+  # 旧目录保留为 <dir>.old.<时间戳> 以便回滚。留空表示「本次只升后端」。
+  frontend_dir: ../frontend/dist
+  # 升级包暂存目录。留空取 <可执行文件所在目录>/upgrade/staging。
+  # 放在可执行文件旁边而不是系统临时目录：升级是跨重启的动作，
+  # 计划生成后要等人点「执行」，期间重启或清理临时目录都会让它丢掉。
+  staging_dir: ""

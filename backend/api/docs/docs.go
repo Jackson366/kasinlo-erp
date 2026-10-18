@@ -2570,6 +2570,598 @@ const docTemplate = `{
                 }
             }
         },
+        "/ops/backups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "备份列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/ops.BackupItem"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:list 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "执行备份",
+                "parameters": [
+                    {
+                        "description": "备份参数",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/ops.RunBackupReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/ops.BackupItem"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:backup 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "删除备份",
+                "parameters": [
+                    {
+                        "description": "备份文件名",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ops.DeleteBackupReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:backup 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/ops/backups/download": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "下载备份",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "备份文件名",
+                        "name": "file",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:backup 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/ops/check": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "系统体检",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:list 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/ops/cleanup/apply": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "执行数据清理",
+                "parameters": [
+                    {
+                        "description": "确认口令与保留天数",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ops.CleanupApplyReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/ops.CleanupView"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:cleanup 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/ops/cleanup/preview": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "数据清理预演",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/ops.CleanupView"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:list 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/ops/restore": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "恢复演练",
+                "parameters": [
+                    {
+                        "description": "备份文件名与目标库",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ops.RestoreReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:restore 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/ops/upgrade": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "升级状态与预检",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/ops.UpgradeStatus"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:list 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/ops/upgrade/apply": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "执行升级",
+                "parameters": [
+                    {
+                        "description": "计划标识与确认口令",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ops.ApplyUpgradeReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/ops.UpgradeRecord"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:upgrade 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/ops/upgrade/backup": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "升级前备份",
+                "parameters": [
+                    {
+                        "description": "升级计划标识",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ops.UpgradeBackupReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/ops.BackupItem"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:upgrade 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/ops/upgrade/package": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "上传升级包",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "升级包 zip",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:upgrade 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/ops/upgrade/records": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "升级记录",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/ops.UpgradeRecord"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:list 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/profile": {
             "get": {
                 "security": [
@@ -5227,6 +5819,49 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_module_ops.CleanupStep": {
+            "type": "object",
+            "properties": {
+                "batches": {
+                    "type": "integer"
+                },
+                "cutoff": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "rows": {
+                    "type": "integer"
+                },
+                "table": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_module_ops.UpgradeAction": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "type": "string"
+                },
+                "done": {
+                    "type": "boolean"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
         "inv.CategoryOption": {
             "type": "object",
             "properties": {
@@ -6844,6 +7479,268 @@ const docTemplate = `{
                 },
                 "username": {
                     "type": "string"
+                }
+            }
+        },
+        "ops.ApplyUpgradeReq": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "planId"
+            ],
+            "properties": {
+                "confirm": {
+                    "description": "Confirm 必须正好等于「确认升级」。",
+                    "type": "string"
+                },
+                "planId": {
+                    "type": "string"
+                }
+            }
+        },
+        "ops.BackupItem": {
+            "type": "object",
+            "properties": {
+                "database": {
+                    "type": "string"
+                },
+                "hasMeta": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "serverVersion": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "tables": {
+                    "type": "integer"
+                },
+                "time": {
+                    "type": "string"
+                }
+            }
+        },
+        "ops.CleanupApplyReq": {
+            "type": "object",
+            "required": [
+                "confirm"
+            ],
+            "properties": {
+                "confirm": {
+                    "description": "Confirm 必须正好等于「确认清理」。清理不可逆，多打四个字换一道闸门。",
+                    "type": "string"
+                },
+                "idempotencyDays": {
+                    "type": "integer"
+                },
+                "loginLogDays": {
+                    "type": "integer"
+                },
+                "opLogDays": {
+                    "type": "integer"
+                }
+            }
+        },
+        "ops.CleanupView": {
+            "type": "object",
+            "properties": {
+                "blocked": {
+                    "description": "非空表示被拦下（确认口令不对等）",
+                    "type": "string"
+                },
+                "dryRun": {
+                    "type": "boolean"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_module_ops.CleanupStep"
+                    }
+                },
+                "vacuumed": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "ops.DeleteBackupReq": {
+            "type": "object",
+            "required": [
+                "file"
+            ],
+            "properties": {
+                "file": {
+                    "type": "string"
+                }
+            }
+        },
+        "ops.PreflightItem": {
+            "type": "object",
+            "properties": {
+                "hint": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "pass": {
+                    "type": "boolean"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "ops.RestoreReq": {
+            "type": "object",
+            "required": [
+                "file"
+            ],
+            "properties": {
+                "file": {
+                    "type": "string"
+                },
+                "target": {
+                    "description": "Target 目标库名。留空自动生成 \u003c生产库\u003e_restore_\u003c时间戳\u003e；\n**不允许**指向生产库本身（命令行要 --force，接口干脆不给这个能力）。",
+                    "type": "string"
+                }
+            }
+        },
+        "ops.RunBackupReq": {
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "string"
+                },
+                "skipPrune": {
+                    "description": "SkipPrune 为 true 时不做轮转（升级前留档用）。",
+                    "type": "boolean"
+                }
+            }
+        },
+        "ops.UpgradeBackupReq": {
+            "type": "object",
+            "required": [
+                "planId"
+            ],
+            "properties": {
+                "planId": {
+                    "type": "string"
+                }
+            }
+        },
+        "ops.UpgradeRecord": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_module_ops.UpgradeAction"
+                    }
+                },
+                "appliedAt": {
+                    "type": "string"
+                },
+                "backupPath": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "finishedAt": {
+                    "type": "string"
+                },
+                "fromVersion": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "packageSha256": {
+                    "type": "string"
+                },
+                "packageSize": {
+                    "type": "integer"
+                },
+                "planId": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "toVersion": {
+                    "type": "string"
+                }
+            }
+        },
+        "ops.UpgradeStatus": {
+            "type": "object",
+            "properties": {
+                "database": {
+                    "type": "string"
+                },
+                "latestBackup": {
+                    "type": "string"
+                },
+                "latestBackupAt": {
+                    "type": "string"
+                },
+                "preflight": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ops.PreflightItem"
+                    }
+                },
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ops.UpgradeRecord"
+                    }
+                },
+                "release": {
+                    "type": "string"
+                },
+                "restartHint": {
+                    "type": "string"
+                },
+                "schemaBinary": {
+                    "type": "integer"
+                },
+                "schemaDb": {
+                    "type": "integer"
+                },
+                "schemaKnown": {
+                    "type": "boolean"
+                },
+                "schemaNote": {
+                    "type": "string"
+                },
+                "serverVersion": {
+                    "type": "string"
+                },
+                "sizeBytes": {
+                    "type": "integer"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

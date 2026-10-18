@@ -473,7 +473,12 @@ func createBuiltinRoles(db *gorm.DB) error {
 // 而非「临时插入的敏感业务」——把整条业务线从内置角色里隐去，会让
 // 系统管理员登录后看不到任何业务菜单。若将来引入与主线无关的敏感模块，
 // 请不要加进这里，而是到「角色管理」里手工分配。
-var frameworkNamespaces = []string{"system", "profile", "auth", "inv"}
+//
+// ops（系统运维）也在列：备份、清理、升级都是「维护框架」的一部分，
+// 与清空日志同类（系统管理员同样拿不到 *:delete，而 ops 五个权限点里
+// 没有一个是 :delete）。若现场要求把升级权单独收给超管，
+// 从这里摘掉 ops 即可 —— 菜单与权限点仍在，只是不再自动授权。
+var frameworkNamespaces = []string{"system", "profile", "auth", "inv", "ops"}
 
 // grantRule 描述一个内置角色应有的菜单授权。
 type grantRule struct {

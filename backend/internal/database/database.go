@@ -100,6 +100,8 @@ func AutoMigrate() error {
 		&model.Idempotency{},
 		// 结构版本表：记录库已升到哪一版，供启动闸门判断方向
 		&model.SchemaVersion{},
+		// 升级记录表：每次升级的版本、升级前备份、执行动作与结果
+		&model.UpgradeRecord{},
 	)
 }
 

@@ -2,6 +2,7 @@
 backend/bin/
 backend/logs/
 *.exe
+*.exe~
 *.test
 
 # 本地配置含数据库口令，不进版本库；模板见同目录 config.example.yaml
@@ -16,6 +17,11 @@ frontend/.vite/
 
 # 数据库备份：含全部业务数据，绝不能进版本库
 backend/backups/
+
+# 升级包暂存与替换下来的旧产物：含完整可执行程序，同样不进版本库
+backend/upgrade/
+*.new
+frontend/dist.old.*/
 
 # ── 脚本产物 ──────────────────────────
 scripts/.browser-verify.json

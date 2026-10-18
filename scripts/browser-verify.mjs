@@ -563,6 +563,7 @@ async function main() {
     菜单管理: { hash: '#/system/menu', cls: 'menu-page' },
     部门管理: { hash: '#/system/dept', cls: 'dept-page' },
     操作日志: { hash: '#/system/log', cls: 'log-page' },
+    系统运维: { hash: '#/system/ops', cls: 'ops-page' },
   }
   const menuResults = []
   for (const label of labels) {

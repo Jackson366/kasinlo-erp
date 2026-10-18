@@ -41,3 +41,29 @@ func TestResolveCutoffsRespectsLockWindow(t *testing.T) {
 		t.Fatalf("锁定窗口未生效：边界=%v，期望 %v", loginCut, want)
 	}
 }
+
+// 调用方传 0 表示「用默认值」，而不是「删掉此刻之前的全部记录」。
+// 0 天的字面含义对操作日志就是清空审计，所以框架层必须自己兜底，
+// 不能指望每个调用方（命令行、HTTP 接口、将来的定时任务）都记得换算。
+func TestCleanupDefaultsGuardAgainstZeroDays(t *testing.T) {
+	// 默认值必须是正的：任何一项 <= 0 都会让对应边界退化成「现在」，
+	// 于是「清理」变成「删掉全部」。
+	if defaultOpLogDays <= 0 || defaultLoginLogDays <= 0 ||
+		defaultIdempotencyDays <= 0 || defaultLoginLockSec <= 0 {
+		t.Fatal("清理默认值必须为正")
+	}
+	now := time.Now()
+	opCut, loginCut, idemCut := resolveCutoffs(CleanupOptions{
+		OpLogDays:        defaultOpLogDays,
+		LoginLogDays:     defaultLoginLogDays,
+		IdempotencyDays:  defaultIdempotencyDays,
+		LoginLockSeconds: defaultLoginLockSec,
+		Now:              now,
+	})
+	// 边界必须早于「现在」，否则等于全删
+	for name, cut := range map[string]time.Time{"操作日志": opCut, "登录日志": loginCut, "幂等键": idemCut} {
+		if cut.IsZero() || !cut.Before(now) {
+			t.Fatalf("%s 边界异常：%v", name, cut)
+		}
+	}
+}

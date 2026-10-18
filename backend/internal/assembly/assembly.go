@@ -20,6 +20,7 @@ import (
 	"nova-erp/internal/module/inv"
 	"nova-erp/internal/module/log"
 	"nova-erp/internal/module/menu"
+	"nova-erp/internal/module/ops"
 	"nova-erp/internal/module/profile"
 	"nova-erp/internal/module/role"
 	"nova-erp/internal/module/user"
@@ -53,6 +54,10 @@ func Modules(cfg *config.Config) []module.Module {
 			menu.Module(),
 			dept.Module(),
 			log.Module(cfg.Security),
+			// 运维：备份 / 恢复 / 数据清理 / 巡检 / 系统升级。
+			// 放「系统管理」下而不是独立顶级菜单：它是偶发动作，
+			// 不该和每天都在用的进销存入口抢位置。
+			ops.Module(cfg),
 		),
 	}
 }

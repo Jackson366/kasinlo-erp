@@ -11,6 +11,7 @@ import (
 	"nova-erp/internal/database"
 	"nova-erp/internal/logger"
 	"nova-erp/internal/module"
+	"nova-erp/internal/ops"
 	"nova-erp/internal/pkg/jwt"
 	"nova-erp/internal/seed"
 )
@@ -69,6 +70,12 @@ func Init(configPath string, opts Options) (*Result, error) {
 	// 结构就位、数据修补完成之后才把版本推进：中途失败时版本仍停在旧值，
 	// 下次启动会重新走一遍（AutoMigrate 与 PatchData 都是幂等的）。
 	if err := database.RecordSchemaVersion(database.DB()); err != nil {
+		return nil, err
+	}
+	// 核对上一次升级是否真的生效：升级执行只是把新程序落位成 .new，
+	// 生效与否只有现在这个进程知道。放在种子数据之前 ——
+	// 早一步发现「版本没换过来」，比带着错版本的种子数据跑一整天再发现要好。
+	if err := ops.FinalizeUpgrades(database.DB(), cfg.App.Release); err != nil {
 		return nil, err
 	}
 

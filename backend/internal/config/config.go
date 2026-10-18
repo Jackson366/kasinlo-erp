@@ -21,6 +21,17 @@ type Config struct {
 	Security    SecurityConfig    `yaml:"security"`
 	Backup      BackupConfig      `yaml:"backup"`
 	Maintenance MaintenanceConfig `yaml:"maintenance"`
+	Upgrade     UpgradeConfig     `yaml:"upgrade"`
+}
+
+// UpgradeConfig 是系统升级的默认参数。
+type UpgradeConfig struct {
+	// FrontendDir 是前端产物目录（vite build 的输出）。升级包里的前端部分
+	// 会原子替换这个目录。留空表示「本次升级只含后端」。
+	FrontendDir string `yaml:"frontend_dir"`
+	// StagingDir 是升级包的暂存目录（解压后的 manifest / 二进制 / 前端包）。
+	// 留空取 <可执行文件所在目录>/upgrade/staging。
+	StagingDir string `yaml:"staging_dir"`
 }
 
 // BackupConfig 是备份/恢复的默认参数，由独立命令 nova-ops 读取。
@@ -62,6 +73,11 @@ type AppConfig struct {
 	Port    int    `yaml:"port"`
 	Prefix  string `yaml:"prefix"`
 	Version string `yaml:"version"`
+	// Release 是**程序发布版本号**（如 1.2.0），与 Version（API 版本段 /api/v1）
+	// 是两件事：API 版本段描述接口形状，发布版本号描述这一版程序本身。
+	// 升级包校验、升级记录、启动后的生效核对都读它；建议由构建脚本用
+	// -ldflags "-X ...config.appRelease=1.2.0" 注入，缺省 dev。
+	Release string `yaml:"release"`
 	// Swagger 控制是否挂载 /swagger 在线接口文档。
 	//
 	// 默认跟随 mode：debug 打开，release 关闭 —— 接口文档会把全部路由与参数结构
@@ -355,6 +371,12 @@ func applyDefaults(c *Config) {
 		def := 120
 		c.Security.RefreshRateLimit = &def
 	}
+	// 发布版本号缺省 dev。升级核对拿它和升级包里的目标版本比，
+	// 没注入时的表现是「升级后版本没变」→ 升级记录停在 applied，
+	// 这是有意让它显眼，而不是静默显示成功。
+	if strings.TrimSpace(c.App.Release) == "" {
+		c.App.Release = "dev"
+	}
 }
 
 // applyEnvOverrides 用环境变量覆盖配置，规则 NOVA_<SECTION>_<KEY>。
@@ -378,6 +400,7 @@ func applyEnvOverrides(c *Config) {
 	num("NOVA_APP_PORT", &c.App.Port)
 	str("NOVA_APP_PREFIX", &c.App.Prefix)
 	str("NOVA_APP_VERSION", &c.App.Version)
+	str("NOVA_APP_RELEASE", &c.App.Release)
 	if v := os.Getenv("NOVA_APP_SWAGGER"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			c.App.Swagger = &b
