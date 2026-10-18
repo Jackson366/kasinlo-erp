@@ -641,6 +641,68 @@ async function main() {
     JSON.stringify(catOps),
   )
 
+  // 左侧选中分类后点「新增商品」，分类要被带进去 ——
+  // 「点进钢材 → 新增商品」本就是往钢材里加货，再选一次是多余且易忘的一步
+  const catPicked = await evaluate(`(() => {
+    const nodes = Array.from(document.querySelectorAll('.cat-pane .el-tree-node__content'));
+    const node = nodes.find((n) => (n.textContent || '').includes('（'));
+    if (!node) return { ok: false, reason: 'no node' };
+    const label = (node.querySelector('.cat-node__label')?.textContent || '').trim().replace(/（.*$/, '');
+    node.click();
+    return { ok: true, label };
+  })()`)
+  await sleep(900)
+  await evaluate(`(() => {
+    const b = Array.from(document.querySelectorAll('.toolbar__actions button')).find((e) => (e.textContent || '').includes('新增商品'));
+    if (b) b.click();
+    return !!b;
+  })()`)
+  await sleep(1200)
+  const prefilledCat = await evaluate(`(() => {
+    const items = Array.from(document.querySelectorAll('.el-dialog .el-form-item'));
+    const item = items.find((el) => (el.querySelector('.el-form-item__label')?.textContent || '').includes('商品分类'));
+    return item ? (item.querySelector('.el-select')?.textContent || '').trim() : null;
+  })()`)
+  check(
+    '选中分类后新增商品自动带上该分类',
+    catPicked.ok === true && prefilledCat === catPicked.label,
+    `期望=${catPicked.label} 实际=${prefilledCat}`,
+  )
+  // 弹窗版式：两个区块（基本信息 / 规格与单位），字段三列等宽
+  const prodFormLayout = await evaluate(`(() => {
+    const dlg = document.querySelector('.el-dialog');
+    if (!dlg) return { ok: false };
+    const sections = Array.from(dlg.querySelectorAll('.form-section'));
+    const grid = dlg.querySelector('.form-grid');
+    const cells = grid ? Array.from(grid.children).map((c) => Math.round(c.getBoundingClientRect().width)) : [];
+    return {
+      ok: sections.length === 2 && !!grid,
+      sections: sections.length,
+      widths: [...new Set(cells)],
+      unitAligned: (() => {
+        const head = dlg.querySelector('.unit-table__row--head');
+        const row = dlg.querySelector('.unit-table__row:not(.unit-table__row--head)');
+        if (!head || !row) return false;
+        return Array.from(head.children).every((c, i) => {
+          const a = c.getBoundingClientRect();
+          const b = row.children[i]?.getBoundingClientRect();
+          return !!b && Math.abs(a.left - b.left) < 2 && Math.abs(a.width - b.width) < 2;
+        });
+      })(),
+    };
+  })()`)
+  check(
+    '新增商品弹窗分两个区块，字段三列等宽且单位表列对齐',
+    prodFormLayout.ok === true && prodFormLayout.sections === 2 && prodFormLayout.widths.length === 1 && prodFormLayout.unitAligned === true,
+    JSON.stringify(prodFormLayout),
+  )
+  await evaluate(`(() => {
+    const b = Array.from(document.querySelectorAll('.el-dialog__footer button')).find((e) => (e.textContent || '').trim() === '取消');
+    if (b) b.click();
+    return true;
+  })()`)
+  await sleep(500)
+
   await navigate(`${APP}/#/inv/sales`, 2400)
   const pickOpened = await evaluate(`(() => {
     const b = Array.from(document.querySelectorAll('.toolbar__actions button'))
@@ -767,7 +829,9 @@ async function main() {
   // 打开「价格设置」→ 价格两列出现且不横向溢出
   await evaluate(`(() => {
     const dlg = document.querySelector('.el-dialog');
-    const sw = dlg.querySelector('.spec-head .el-switch');
+    // 价格开关在「规格与计量单位」区块标题右侧（原 .spec-head 已并入 .form-section__head）
+    const sw = Array.from(dlg.querySelectorAll('.form-section__head .el-switch'))
+      .find((el) => (el.parentElement?.textContent || '').includes('价格'));
     if (sw) sw.click();
     return true;
   })()`)
@@ -790,7 +854,9 @@ async function main() {
   // 收起，避免影响后续步骤
   await evaluate(`(() => {
     const dlg = document.querySelector('.el-dialog');
-    const sw = dlg.querySelector('.spec-head .el-switch');
+    // 价格开关在「规格与计量单位」区块标题右侧（原 .spec-head 已并入 .form-section__head）
+    const sw = Array.from(dlg.querySelectorAll('.form-section__head .el-switch'))
+      .find((el) => (el.parentElement?.textContent || '').includes('价格'));
     if (sw) sw.click();
     return true;
   })()`)
@@ -1026,6 +1092,41 @@ async function main() {
     return false;
   })()`)
   check('待处理单据不显示「反审核」', reverseOnPending === false, `found=${reverseOnPending}`)
+
+  // 详情弹窗：抬头概览 + 基本信息网格 + 明细表（带合计行）
+  await evaluate(`(() => {
+    const b = Array.from(document.querySelectorAll('.order-page .el-table__body button')).find((e) => (e.textContent || '').trim() === '详情');
+    if (b) b.click();
+    return !!b;
+  })()`)
+  await sleep(1400)
+  const detailState = await evaluate(`(() => {
+    const dlg = document.querySelector('.el-dialog');
+    if (!dlg) return { ok: false, reason: 'no dialog' };
+    const head = dlg.querySelector('.detail-head');
+    const fields = dlg.querySelectorAll('.detail-field').length;
+    const rows = dlg.querySelectorAll('.detail-items .el-table__body tr').length;
+    const footer = Array.from(dlg.querySelectorAll('.dialog-detail-footer, .el-dialog__footer td')).map((td) => (td.textContent || '').trim()).filter(Boolean);
+    return {
+      ok: !!head && fields >= 6 && rows > 0,
+      amount: (head?.querySelector('strong')?.textContent || '').trim(),
+      fields,
+      rows,
+      summary: footer,
+      printBtn: Array.from(dlg.querySelectorAll('.el-dialog__footer button')).some((b) => (b.textContent || '').includes('打印')),
+    };
+  })()`)
+  check(
+    '单据详情为「抬头 + 基本信息 + 明细合计」结构',
+    detailState.ok === true && detailState.amount.length > 0 && detailState.printBtn === true,
+    JSON.stringify(detailState),
+  )
+  await evaluate(`(() => {
+    const b = Array.from(document.querySelectorAll('.el-dialog__footer button')).find((e) => (e.textContent || '').trim() === '关闭');
+    if (b) b.click();
+    return true;
+  })()`)
+  await sleep(400)
 
   // 单据列表新增「业务员 / 操作人员」两列：前者是这单谁跑来的，后者是谁录的，
   // 现场追责看的就是这两列，缺了就只能翻操作日志

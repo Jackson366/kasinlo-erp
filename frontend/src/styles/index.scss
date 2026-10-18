@@ -169,6 +169,85 @@ a {
   flex: 0 0 auto;
 }
 
+// ---------- 弹窗内表单分区 ----------
+// 内容多于一屏的弹窗（新增商品、单据详情）统一用这套：
+// 区块标题左侧一道色条，区块之间靠留白分隔，不画分割线 ——
+// 线一多，弹窗看起来就像一张要填的表单，越看越累。
+.form-section {
+  & + & {
+    margin-top: 20px;
+    padding-top: 18px;
+    border-top: 1px solid var(--app-border-light);
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--app-text);
+
+    &::before {
+      content: '';
+      width: 3px;
+      height: 13px;
+      border-radius: 2px;
+      background: var(--brand-primary);
+    }
+
+    small {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--app-text-muted);
+    }
+  }
+
+  &__hint {
+    margin: -4px 0 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+  }
+}
+
+// 弹窗内字段网格：三列等宽（--2 两列），控件一律撑满，行距固定。
+// 与列表筛选区的网格同一套思路，只是列数固定 —— 弹窗宽度是固定的，
+// auto-fit 在这里只会让「多一个字段就换一种排法」。
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 16px;
+
+  .el-form-item {
+    margin-bottom: 16px;
+  }
+
+  .el-input,
+  .el-select,
+  .el-date-editor,
+  .el-input-number {
+    width: 100%;
+  }
+
+  &--2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  // 占满一整行（备注这类长文本）
+  &__full {
+    grid-column: 1 / -1;
+  }
+}
+
 // ---------- 列表页工具栏 ----------
 // 四个系统页（user/role/menu/dept）曾各自在 scoped 样式里抄了同一份，
 // 现在收敛到全局：新增页面直接用 .toolbar / .toolbar__title / .toolbar__actions。

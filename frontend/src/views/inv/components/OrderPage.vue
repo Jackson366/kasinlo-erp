@@ -205,6 +205,22 @@ const submitting = ref(false)
 const editingId = ref<number | null>(null)
 const detailVisible = ref(false)
 const detail = ref<{ row: InvOrderRow; items: InvOrderItem[] } | null>(null)
+
+/**
+ * 明细表的合计行。只合计「金额」一列 ——
+ * 数量跨单位（箱 / 个 / 根）相加没有意义，价格相加更没有。
+ * 合计取单据头部的 totalAmount 而不是把明细金额再加一遍：
+ * 明细是快照，单据金额是审核后的口径，两者不一致时以单据为准。
+ */
+function detailSummary(param: { columns: unknown[] }): string[] {
+  const last = param.columns.length - 1
+  const total = detail.value?.row.totalAmount ?? 0
+  return param.columns.map((_, i) => {
+    if (i === 0) return '合计'
+    if (i === last) return formatMoney(total)
+    return ''
+  })
+}
 const printRef = ref<InstanceType<typeof OrderPrintDialog> | null>(null)
 
 const form = reactive<{
@@ -846,48 +862,111 @@ onMounted(() => {
       </template>
     </el-dialog>
 
-    <!-- 详情 -->
-    <!-- 详情：与新增 / 编辑同宽同档（同一份数据的三种看法，宽度不该跳） -->
-    <el-dialog v-model="detailVisible" title="单据详情" width="1280px" top="6vh">
+    <!-- 详情：与新增 / 编辑同宽同档（同一份数据的三种看法，宽度不该跳）。
+         版式与「新增商品」等弹窗共用 form-section / form-grid，
+         全站的弹窗因此是同一套视觉语言。 -->
+    <el-dialog v-model="detailVisible" :title="`${title}详情`" width="1280px" top="6vh">
       <template v-if="detail">
-        <el-descriptions :column="3" border size="small">
-          <el-descriptions-item label="单号">{{ detail.row.orderNo }}</el-descriptions-item>
-          <el-descriptions-item :label="partyLabel">{{ detail.row.partyName }}</el-descriptions-item>
-          <el-descriptions-item label="单据日期">{{ formatDay(detail.row.orderDate) }}</el-descriptions-item>
-          <el-descriptions-item label="到期日">{{ formatDay(detail.row.dueDate) }}</el-descriptions-item>
-          <el-descriptions-item label="结算状态">
-            {{ settleMeta[detail.row.settleStatus]?.text }}
-          </el-descriptions-item>
-          <el-descriptions-item label="单据状态">{{ statusMeta[detail.row.status]?.text }}</el-descriptions-item>
-          <el-descriptions-item label="业务员">{{ detail.row.salesman || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="操作人员">{{ detail.row.operator || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="备注" :span="3">{{ detail.row.remark || '-' }}</el-descriptions-item>
-        </el-descriptions>
-        <el-table :data="detail.items" size="small" class="mt-16">
-          <el-table-column prop="productName" label="商品" min-width="130" />
-          <el-table-column prop="spec" label="规格" width="100" />
-          <el-table-column label="数量" width="110" align="right">
-            <template #default="{ row }">{{ formatQty(row.qty) }} {{ row.unit }}</template>
-          </el-table-column>
-          <el-table-column label="折算基本数量" width="140" align="right">
-            <template #default="{ row }">
-              <span v-if="row.rate === 1" class="text-muted">—</span>
-              <span v-else>
-                ×{{ row.rate }} = {{ formatQty(row.qtyBase) }}
-                {{ baseUnitNameOf(row.productId, row.specId) }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column label="单价" width="100" align="right">
-            <template #default="{ row }">{{ formatMoney(row.price) }}</template>
-          </el-table-column>
-          <el-table-column label="金额" width="110" align="right">
-            <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
-          </el-table-column>
-        </el-table>
-        <div class="detail-total">
-          合计：<strong>{{ formatMoney(detail.row.totalAmount) }}</strong>
+        <!-- 概览条：单号与两个状态在左，金额与结算情况在右 ——
+             这三项是看单据时最先要确认的东西，不该埋在描述表里 -->
+        <div class="detail-head">
+          <div class="detail-head__main">
+            <span class="detail-head__no">{{ detail.row.orderNo }}</span>
+            <el-tag :type="statusMeta[detail.row.status]?.type" size="small" effect="light">
+              {{ statusMeta[detail.row.status]?.text }}
+            </el-tag>
+            <el-tag :type="settleMeta[detail.row.settleStatus]?.type" size="small" effect="light">
+              {{ settleMeta[detail.row.settleStatus]?.text }}
+            </el-tag>
+          </div>
+          <div class="detail-head__amount">
+            <span class="detail-head__label">单据金额</span>
+            <strong>{{ formatMoney(detail.row.totalAmount) }}</strong>
+            <span class="detail-head__sub">
+              已结算 {{ formatMoney(detail.row.settledAmount) }} · 未结
+              {{ formatMoney(detail.row.totalAmount - detail.row.settledAmount) }}
+            </span>
+          </div>
         </div>
+
+        <section class="form-section">
+          <div class="form-section__head">
+            <div class="form-section__title">基本信息</div>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-field">
+              <span class="detail-field__label">{{ partyLabel }}</span>
+              <div class="detail-field__value">{{ detail.row.partyName }}</div>
+            </div>
+            <div class="detail-field">
+              <span class="detail-field__label">单据日期</span>
+              <div class="detail-field__value">{{ formatDay(detail.row.orderDate) }}</div>
+            </div>
+            <div class="detail-field">
+              <span class="detail-field__label">到期日</span>
+              <div class="detail-field__value">{{ formatDay(detail.row.dueDate) }}</div>
+            </div>
+            <div class="detail-field">
+              <span class="detail-field__label">业务员</span>
+              <div class="detail-field__value">{{ detail.row.salesman || '-' }}</div>
+            </div>
+            <div class="detail-field">
+              <span class="detail-field__label">操作人员</span>
+              <div class="detail-field__value">{{ detail.row.operator || '-' }}</div>
+            </div>
+            <div class="detail-field">
+              <span class="detail-field__label">备注</span>
+              <div class="detail-field__value">{{ detail.row.remark || '-' }}</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="form-section__head">
+            <div class="form-section__title">
+              单据明细
+              <small>共 {{ detail.items.length }} 行</small>
+            </div>
+          </div>
+          <!-- 合计做成表格的合计行而不是表格外面的一行文字：
+               金额与「金额」列自然对齐，扫一眼就知道总数对应哪一列 -->
+          <el-table
+            :data="detail.items"
+            size="small"
+            show-summary
+            :summary-method="detailSummary"
+            class="detail-items"
+          >
+            <el-table-column type="index" label="#" width="52" align="center" />
+            <el-table-column prop="productName" label="商品" min-width="150" show-overflow-tooltip />
+            <el-table-column prop="spec" label="规格" width="120" show-overflow-tooltip />
+            <el-table-column label="数量" width="120" align="right">
+              <template #default="{ row }">{{ formatQty(row.qty) }} {{ row.unit }}</template>
+            </el-table-column>
+            <el-table-column label="折算基本数量" width="150" align="right">
+              <template #default="{ row }">
+                <span v-if="row.rate === 1" class="text-muted">—</span>
+                <span v-else>
+                  ×{{ row.rate }} = {{ formatQty(row.qtyBase) }}
+                  {{ baseUnitNameOf(row.productId, row.specId) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="单价" width="110" align="right">
+              <template #default="{ row }">{{ formatMoney(row.price) }}</template>
+            </el-table-column>
+            <el-table-column label="金额" width="120" align="right">
+              <template #default="{ row }">
+                <strong>{{ formatMoney(row.amount) }}</strong>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+      </template>
+
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+        <el-button type="primary" @click="detail && printRef?.open(detail.row)">打印单据</el-button>
       </template>
     </el-dialog>
 
@@ -1023,15 +1102,80 @@ onMounted(() => {
   }
 }
 
-.detail-total {
-  margin-top: 12px;
-  text-align: right;
-  font-size: 14px;
-  color: var(--app-text-secondary);
+// ---------------- 详情弹窗 ----------------
+// 概览条：左侧单号 + 状态，右侧金额与结算情况。
+// 用浅色底而不是描边卡片 —— 它只是「抬头」，不该和下面的表格抢层级。
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  background: var(--app-bg-subtle, #f8fafc);
+  border-radius: var(--radius-md);
 
-  strong {
+  &__main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  &__no {
+    font-family: var(--app-font-mono, monospace);
+    font-size: 15px;
+    font-weight: 600;
     color: var(--app-text);
-    font-size: 16px;
+  }
+
+  &__amount {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex: none;
+  }
+
+  &__label {
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__amount strong {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--app-text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__sub {
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+}
+
+// 详情字段：三列等宽，标签在上、值在下 ——
+// 值的长短差别很大（单号 / 备注），左对齐的标签在右会让右侧全空。
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 20px;
+}
+
+.detail-field {
+  min-width: 0;
+
+  &__label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__value {
+    font-size: 13px;
+    color: var(--app-text);
+    word-break: break-word;
   }
 }
 </style>

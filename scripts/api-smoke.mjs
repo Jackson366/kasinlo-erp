@@ -7,6 +7,7 @@ const API = `${BASE}/api/v1`
 
 // 同步落盘，便于在进程被外部终止时仍能查到执行进度
 import fs from 'node:fs'
+import { inflateRawSync } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 
 // 导入接口的测试样例。样例全部按 dryRun（只校验不写库）使用，因此脚本可反复执行。
@@ -38,6 +39,45 @@ function ok(name, cond, extra = '') {
     fail++
     emit(`  \u2717 ${name} ${extra}`)
   }
+}
+
+/**
+ * 从 zip 里读一个entry的文本（xlsx 就是 zip，内部 XML 都是 deflate 压缩过的）。
+ *
+ * 为什么不用 `unzip` 命令：冒烟脚本要能在任意机器上跑，不能依赖外部命令。
+ * 自己解析中央目录只有几十行，比引一个 zip 依赖更轻。
+ */
+function readZipEntry(buf, name) {
+  // EOCD 在文件尾部，签名固定，从后往前找
+  let eocd = -1
+  for (let i = buf.length - 22; i >= 0 && i > buf.length - 66000; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) {
+      eocd = i
+      break
+    }
+  }
+  if (eocd < 0) throw new Error('不是有效的 zip：找不到 EOCD')
+  const count = buf.readUInt16LE(eocd + 10)
+  let ptr = buf.readUInt32LE(eocd + 16)
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(ptr) !== 0x02014b50) break
+    const method = buf.readUInt16LE(ptr + 10)
+    const compressed = buf.readUInt32LE(ptr + 20)
+    const nameLen = buf.readUInt16LE(ptr + 28)
+    const extraLen = buf.readUInt16LE(ptr + 30)
+    const commentLen = buf.readUInt16LE(ptr + 32)
+    const localOffset = buf.readUInt32LE(ptr + 42)
+    const entryName = buf.subarray(ptr + 46, ptr + 46 + nameLen).toString('utf8')
+    if (entryName === name) {
+      const localNameLen = buf.readUInt16LE(localOffset + 26)
+      const localExtraLen = buf.readUInt16LE(localOffset + 28)
+      const start = localOffset + 30 + localNameLen + localExtraLen
+      const raw = buf.subarray(start, start + compressed)
+      return (method === 0 ? raw : inflateRawSync(raw)).toString('utf8')
+    }
+    ptr += 46 + nameLen + extraLen + commentLen
+  }
+  throw new Error(`zip 里没有 ${name}`)
 }
 
 async function request(method, path, { token, body, raw } = {}) {
@@ -1703,6 +1743,30 @@ async function main() {
     const isXlsx = buf.length > 100 && buf.slice(0, 2).toString() === 'PK'
     ok(`导出${label}`, res.status === 200 && isXlsx, `status=${res.status} bytes=${buf.length}`)
   }
+  // 单据导出必须**带明细**：只给列表的话，「金额」对不出账，
+  // 收到文件的人还得回头一张张点详情。zip 里两个工作表的名字是明文字节，
+  // 直接查 buffer 即可，不用解压。
+  for (const [label, biz] of [
+    ['销售单', 'sales'],
+    ['采购单', 'purchase'],
+  ]) {
+    const res = await fetch(`${API}/inv/export?entity=order&bizType=${biz}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const buf = Buffer.from(await res.arrayBuffer())
+    const book = readZipEntry(buf, 'xl/workbook.xml')
+    const shared = readZipEntry(buf, 'xl/sharedStrings.xml')
+    const hasList = book.includes(`${label}列表`)
+    const hasDetail = book.includes(`${label}明细`)
+    // 明细表头落在 sharedStrings 里
+    const hasCols = ['商品编码', '换算率', '折算基本数量'].every((c) => shared.includes(c))
+    ok(
+      `${label}导出含列表 + 明细两个工作表`,
+      res.status === 200 && hasList && hasDetail && hasCols,
+      `列表=${hasList} 明细=${hasDetail} 列=${hasCols}`,
+    )
+  }
+
   const badEntity = await request('GET', '/inv/export?entity=user', { token })
   ok('非法导出实体返回 40000', badEntity.json?.code === 40000, JSON.stringify(badEntity.json))
   const noData = await request('GET', '/inv/export?entity=customer&keyword=不存在的关键字zzz', { token })

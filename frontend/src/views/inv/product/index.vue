@@ -270,18 +270,31 @@ const rules: FormRules<InvProductPayload> = {
   specs: [{ validator: validateSpecs, trigger: 'change' }],
 }
 
+/**
+ * 新增商品。左侧分类树选中了某一类时，**把这一类带进来** ——
+ * 「点进钢材 → 新增商品」本就是「往钢材里加货」的意思，
+ * 让人再选一次分类是多余的一步，还容易忘。
+ */
 function openCreate(): void {
+  // 用 activeCat 而不是 query.categoryId：两者平时一致，但 query 会因为
+  // 「重置」被清空而树上的选中态还在，以树的选中为准更符合直觉
+  const prefill = activeCat.value
+  const cat = prefill ? catRows.value.find((c) => c.id === prefill) : undefined
+
   Object.assign(form, {
     code: '',
     name: '',
     barcode: '',
-    categoryId: undefined,
+    categoryId: cat?.id,
     status: 1,
     remark: '',
     specs: [blankSpec()],
   })
   duplicates.value = []
-  editingCategory.value = undefined
+  // 选中分类可能是停用的（树里看得见全部），补进下拉才不至于显示成空白
+  editingCategory.value = cat
+    ? { id: cat.id, parentId: cat.parentId, name: cat.name }
+    : undefined
   dialog.openCreate()
 }
 
@@ -953,13 +966,19 @@ onMounted(() => {
       @open="onDialogOpen"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
-        <el-row :gutter="16">
-          <el-col :span="8">
+        <!-- 基本信息：两行排完（编码 / 名称 / 条码 · 分类 / 状态 / 备注） -->
+        <section class="form-section">
+          <div class="form-section__head">
+            <div class="form-section__title">
+              基本信息
+              <small>编码与名称必填，其余选填</small>
+            </div>
+          </div>
+
+          <div class="form-grid">
             <el-form-item label="商品编码" prop="code">
               <el-input v-model="form.code" placeholder="如 SP001" />
             </el-form-item>
-          </el-col>
-          <el-col :span="8">
             <el-form-item label="商品名称" prop="name">
               <el-input
                 v-model="form.name"
@@ -968,39 +987,16 @@ onMounted(() => {
                 @blur="checkDuplicates"
               />
             </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <!-- 条码用普通输入框而不是扫码专用控件：扫码枪就是键盘，
-                 光标放进去扫一下就录完了，粘贴也行 -->
             <el-form-item label="商品条码">
-              <el-input v-model="form.barcode" maxlength="64" placeholder="扫描或输入，选填" clearable />
+              <!-- 条码用普通输入框而不是扫码专用控件：扫码枪就是键盘，
+                   光标放进去扫一下就录完了，粘贴也行 -->
+              <el-input
+                v-model="form.barcode"
+                maxlength="64"
+                placeholder="扫描或输入，选填"
+                clearable
+              />
             </el-form-item>
-          </el-col>
-        </el-row>
-
-        <el-alert
-          v-if="duplicates.length"
-          type="warning"
-          :closable="false"
-          show-icon
-          class="dup-alert"
-        >
-          <template #title>
-            发现 {{ duplicates.length }} 个同名商品，确认不是同一个再继续保存
-          </template>
-          <div class="dup-list">
-            <div v-for="d in duplicates" :key="d.id" class="dup-list__item">
-              <span class="dup-list__code">{{ d.code }}</span>
-              <span class="dup-list__name">{{ d.name }}</span>
-              <span class="text-muted">{{ d.categoryName || '未分类' }}</span>
-              <span class="text-muted">规格：{{ d.specSummary || '-' }}</span>
-              <StatusTag :status="d.status" />
-            </div>
-          </div>
-        </el-alert>
-
-        <el-row :gutter="16">
-          <el-col :span="8">
             <el-form-item label="商品分类">
               <!-- 可输入搜索，与销售单里选商品同一套交互：
                    分类多了（尤其多级）靠翻列表是找不到的 -->
@@ -1009,167 +1005,180 @@ onMounted(() => {
                 filterable
                 clearable
                 placeholder="输入分类名搜索，如 钢材 / 螺纹钢"
-                style="width: 100%"
               >
-                <el-option v-for="c in categoryFlatOptions" :key="c.id" :label="c.path" :value="c.id" />
+                <el-option
+                  v-for="c in categoryFlatOptions"
+                  :key="c.id"
+                  :label="c.path"
+                  :value="c.id"
+                />
               </el-select>
             </el-form-item>
-          </el-col>
-          <el-col :span="8">
             <el-form-item label="状态">
               <el-switch
                 :model-value="form.status === 1"
+                active-text="启用"
+                inactive-text="停用"
                 @update:model-value="(v) => (form.status = v ? 1 : 0)"
               />
             </el-form-item>
-          </el-col>
-          <el-col :span="8">
             <el-form-item label="备注">
               <el-input v-model="form.remark" placeholder="选填" />
             </el-form-item>
-          </el-col>
-        </el-row>
+          </div>
 
-        <div class="spec-head">
-          <span class="divider-title">规格与计量单位（可留空）</span>
-          <!-- 价格默认收起：简单商品录「编码 + 名称 + 规格」就够，五列表格太重 -->
-          <el-switch v-model="showPrice" size="small" active-text="价格设置" />
-        </div>
-        <p class="spec-tip">
-          简单商品<strong>留空即可</strong>，保存时自动按「默认 / 个」处理。
-          需要区分时才填：一个商品可维护多个规格，每个规格下可维护多个计量单位；
-          库存按<strong>基本单位</strong>计数，出入库时按所选单位的换算率折算。
-        </p>
-
-        <!-- 跨行约束只剩「重名」一项，由 validateSpecs 判完。它挂在 specs 这个
-             「整数组」上，必须有一个绑到 prop="specs" 的 form-item 才会被
-             form.validate() 调到 —— 否则 rules.specs 就是一段死配置。 -->
-        <el-form-item prop="specs" class="spec-errors" label-width="0" />
-
-        <!-- 规格列表：规格名 / 单位名 / 换算率都不再是必填，
-             错误信息只在「重名」时从整组校验里给出 -->
-        <div class="spec-list">
-          <div v-for="(spec, si) in form.specs" :key="si" class="spec-card">
-            <div class="spec-card__head">
-              <span class="spec-card__index">规格 {{ si + 1 }}</span>
-              <el-form-item
-                :prop="`specs.${si}.spec`"
-                label="规格"
-                class="spec-card__field"
-              >
-                <el-input v-model="spec.spec" placeholder="选填，如 φ20 / 500ml（留空按「默认」）" />
-              </el-form-item>
-              <el-form-item
-                :prop="`specs.${si}.warnStock`"
-                label="预警下限"
-                class="spec-card__field spec-card__field--narrow"
-              >
-                <el-input-number
-                  v-model="spec.warnStock"
-                  :min="0"
-                  :precision="2"
-                  :controls="false"
-                  style="width: 100%"
-                />
-              </el-form-item>
-              <!-- 规格级停用：被单据引用过的规格删不掉（只能停用），
-                   没有这个开关就只能干瞪眼 —— 想让它退出新单据却无从下手。
-                   新增中的规格不显示，因为「新建一个停用的规格」没有意义。 -->
-              <el-form-item v-if="spec.id" label="启用" class="spec-card__field--narrow">
-                <el-switch
-                  :model-value="(spec.status ?? 1) === 1"
-                  @update:model-value="(v) => (spec.status = v ? 1 : 0)"
-                />
-              </el-form-item>
-              <el-button link type="danger" @click="removeSpec(si)">
-                <AppIcon name="Delete" />
-                <span>删除规格</span>
-              </el-button>
-            </div>
-
-            <div class="unit-table">
-              <div class="unit-table__row unit-table__row--head">
-                <span class="unit-col unit-col--unit">计量单位</span>
-                <span class="unit-col unit-col--rate">换算率</span>
-                <span class="unit-col unit-col--base">基本单位</span>
-                <span v-if="showPrice" class="unit-col unit-col--price">采购价</span>
-                <span v-if="showPrice" class="unit-col unit-col--price">销售价</span>
-                <span class="unit-col unit-col--op"></span>
+          <!-- 同名提示：只提示不拦截（同名不同规格是合法场景） -->
+          <el-alert
+            v-if="duplicates.length"
+            type="warning"
+            :closable="false"
+            show-icon
+            class="dup-alert"
+          >
+            <template #title>
+              发现 {{ duplicates.length }} 个同名商品，确认不是同一个再继续保存
+            </template>
+            <div class="dup-list">
+              <div v-for="d in duplicates" :key="d.id" class="dup-list__item">
+                <span class="dup-list__code">{{ d.code }}</span>
+                <span class="dup-list__name">{{ d.name }}</span>
+                <span class="text-muted">{{ d.categoryName || '未分类' }}</span>
+                <span class="text-muted">规格：{{ d.specSummary || '-' }}</span>
+                <StatusTag :status="d.status" />
               </div>
-              <div v-for="(u, ui) in spec.units" :key="ui" class="unit-table__row">
-                <div class="unit-col unit-col--unit">
-                  <el-form-item
-                    :prop="`specs.${si}.units.${ui}.unit`"
-                    class="unit-form-item"
-                  >
-                    <el-input v-model="u.unit" placeholder="选填，如 根 / 箱" />
-                  </el-form-item>
+            </div>
+          </el-alert>
+        </section>
+
+        <section class="form-section">
+          <div class="form-section__head">
+            <div class="form-section__title">
+              规格与计量单位
+              <small>简单商品留空即可</small>
+            </div>
+            <!-- 价格默认收起：简单商品录「编码 + 名称 + 规格」就够，五列表格太重 -->
+            <el-switch v-model="showPrice" size="small" active-text="价格" />
+          </div>
+          <p class="form-section__hint">
+            留空保存时自动按「默认 / 个」处理。需要区分时才填：一个商品可维护多个规格，
+            每个规格下可维护多个计量单位；库存按<strong>基本单位</strong>计数，
+            出入库时按所选单位的换算率折算。
+          </p>
+
+          <!-- 跨行约束只剩「重名」一项，由 validateSpecs 判完。它挂在 specs 这个
+               「整数组」上，必须有一个绑到 prop="specs" 的 form-item 才会被
+               form.validate() 调到 —— 否则 rules.specs 就是一段死配置。 -->
+          <el-form-item prop="specs" class="spec-errors" label-width="0" />
+
+          <div class="spec-list">
+            <div v-for="(spec, si) in form.specs" :key="si" class="spec-card">
+              <div class="spec-card__head">
+                <span class="spec-card__index">规格 {{ si + 1 }}</span>
+                <el-form-item :prop="`specs.${si}.spec`" class="spec-card__name">
+                  <el-input v-model="spec.spec" placeholder="选填，如 φ20 / 500ml（留空按「默认」）" />
+                </el-form-item>
+                <div class="spec-card__warn">
+                  <span class="spec-card__label">预警下限</span>
+                  <el-input-number
+                    v-model="spec.warnStock"
+                    :min="0"
+                    :precision="2"
+                    :controls="false"
+                  />
                 </div>
-                <div class="unit-col unit-col--rate">
-                  <el-form-item class="unit-form-item">
-                    <div class="rate-cell">
+                <!-- 规格级停用：被单据引用过的规格删不掉（只能停用），
+                     没有这个开关就只能干瞪眼。新增中的规格不显示，
+                     因为「新建一个停用的规格」没有意义。 -->
+                <div v-if="spec.id" class="spec-card__toggle">
+                  <el-switch
+                    :model-value="(spec.status ?? 1) === 1"
+                    @update:model-value="(v) => (spec.status = v ? 1 : 0)"
+                  />
+                  <span class="spec-card__label">启用</span>
+                </div>
+                <el-button link type="danger" class="spec-card__del" @click="removeSpec(si)">
+                  <AppIcon name="Delete" />
+                  <span>删除</span>
+                </el-button>
+              </div>
+
+              <div class="unit-table">
+                <div class="unit-table__row unit-table__row--head">
+                  <span class="unit-col unit-col--unit">计量单位</span>
+                  <span class="unit-col unit-col--rate">换算率</span>
+                  <span class="unit-col unit-col--base">基本单位</span>
+                  <span v-if="showPrice" class="unit-col unit-col--price">采购价</span>
+                  <span v-if="showPrice" class="unit-col unit-col--price">销售价</span>
+                  <span class="unit-col unit-col--op"></span>
+                </div>
+                <div v-for="(u, ui) in spec.units" :key="ui" class="unit-table__row">
+                  <div class="unit-col unit-col--unit">
+                    <el-form-item :prop="`specs.${si}.units.${ui}.unit`" class="unit-form-item">
+                      <el-input v-model="u.unit" placeholder="选填，如 根 / 箱" />
+                    </el-form-item>
+                  </div>
+                  <div class="unit-col unit-col--rate">
+                    <el-form-item class="unit-form-item">
+                      <div class="rate-cell">
+                        <el-input-number
+                          v-model="u.rate"
+                          :min="0.0001"
+                          :precision="4"
+                          :controls="false"
+                        />
+                        <span class="rate-hint">{{ rateHint(spec, ui) }}</span>
+                      </div>
+                    </el-form-item>
+                  </div>
+                  <div class="unit-col unit-col--base">
+                    <el-radio-group
+                      :model-value="baseIndex(spec)"
+                      @update:model-value="(v) => setBaseUnit(spec, Number(v))"
+                    >
+                      <el-radio :value="ui" />
+                    </el-radio-group>
+                  </div>
+                  <div v-if="showPrice" class="unit-col unit-col--price">
+                    <el-form-item class="unit-form-item">
                       <el-input-number
-                        v-model="u.rate"
-                        :min="0.0001"
-                        :precision="4"
+                        v-model="u.purchasePrice"
+                        :min="0"
+                        :precision="2"
                         :controls="false"
-                        :disabled="u.isBase"
-                        style="width: 100%"
                       />
-                      <span class="rate-hint">{{ rateHint(spec, ui) }}</span>
-                    </div>
-                  </el-form-item>
+                    </el-form-item>
+                  </div>
+                  <div v-if="showPrice" class="unit-col unit-col--price">
+                    <el-form-item class="unit-form-item">
+                      <el-input-number
+                        v-model="u.salePrice"
+                        :min="0"
+                        :precision="2"
+                        :controls="false"
+                      />
+                    </el-form-item>
+                  </div>
+                  <div class="unit-col unit-col--op">
+                    <el-button link type="danger" @click="removeUnit(spec, ui)">
+                      <AppIcon name="Delete" />
+                    </el-button>
+                  </div>
                 </div>
-                <div class="unit-col unit-col--base">
-                  <el-radio-group
-                    :model-value="baseIndex(spec)"
-                    @update:model-value="(v) => setBaseUnit(spec, Number(v))"
-                  >
-                    <el-radio :value="ui" />
-                  </el-radio-group>
-                </div>
-                <div v-if="showPrice" class="unit-col unit-col--price">
-                  <el-form-item class="unit-form-item">
-                    <el-input-number
-                      v-model="u.purchasePrice"
-                      :min="0"
-                      :precision="2"
-                      :controls="false"
-                      style="width: 100%"
-                    />
-                  </el-form-item>
-                </div>
-                <div v-if="showPrice" class="unit-col unit-col--price">
-                  <el-form-item class="unit-form-item">
-                    <el-input-number
-                      v-model="u.salePrice"
-                      :min="0"
-                      :precision="2"
-                      :controls="false"
-                      style="width: 100%"
-                    />
-                  </el-form-item>
-                </div>
-                <div class="unit-col unit-col--op">
-                  <el-button link type="danger" @click="removeUnit(spec, ui)">
-                    <AppIcon name="Delete" />
+                <div class="unit-table__foot">
+                  <el-button link type="primary" @click="addUnit(spec)">
+                    <AppIcon name="Plus" />
+                    <span>添加计量单位</span>
                   </el-button>
                 </div>
               </div>
-              <div class="unit-table__foot">
-                <el-button link type="primary" @click="addUnit(spec)">
-                  <AppIcon name="Plus" />
-                  <span>添加计量单位</span>
-                </el-button>
-              </div>
             </div>
           </div>
-        </div>
 
-        <el-button class="add-spec" @click="addSpec">
-          <AppIcon name="Plus" />
-          <span>添加规格</span>
-        </el-button>
+          <el-button class="add-spec" @click="addSpec">
+            <AppIcon name="Plus" />
+            <span>添加规格</span>
+          </el-button>
+        </section>
       </el-form>
 
       <template #footer>
@@ -1346,34 +1355,6 @@ onMounted(() => {
   font-weight: 600;
 }
 
-// 规格区分隔头：标题 + 右侧「价格设置」开关（替代原来的 el-divider，
-// 好把开关放在同一行右端）
-.spec-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 8px;
-  margin-bottom: 10px;
-  border-bottom: 1px solid var(--app-border-light);
-
-  .divider-title {
-    font-size: 14px;
-  }
-}
-
-.divider-title {
-  font-weight: 600;
-  color: var(--app-text);
-}
-
-.spec-tip {
-  margin: 0 0 12px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--app-text-muted);
-}
-
 .spec-list {
   display: flex;
   flex-direction: column;
@@ -1396,16 +1377,21 @@ onMounted(() => {
 }
 
 .spec-card {
-  padding: 12px;
-  border: 1px solid var(--app-border);
-  border-radius: 6px;
-  background: var(--app-bg-subtle, transparent);
+  padding: 12px 14px;
+  border: 1px solid var(--app-border-light);
+  border-radius: var(--radius-md);
+  background: var(--app-surface);
 }
 
+// 卡片头一行：规格名弹性占满，其余定宽 —— 多个规格卡片之间
+// 「预警下限 / 启用 / 删除」因此永远对齐在同一竖线上。
 .spec-card__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
+  padding-bottom: 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px dashed var(--app-border-light);
 
   // 卡片头一行的 form-item 去掉默认下边距，避免卡片被撑高
   :deep(.el-form-item) {
@@ -1415,19 +1401,61 @@ onMounted(() => {
 
 .spec-card__index {
   flex: none;
-  padding-top: 8px;
+  padding: 2px 8px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--app-text);
+  color: var(--app-text-secondary);
+  background: var(--app-bg-subtle, #f3f4f6);
+  border-radius: 999px;
 }
 
-.spec-card__field {
+.spec-card__name {
   flex: 1;
   min-width: 0;
 }
 
-.spec-card__field--narrow {
+// 弹窗里的 el-form 统一设了 label-width=88px，**没有标签**的 form-item
+// 仍会空出这 88px —— 而且这个 margin-left 是 Element Plus 写进 content 的
+// **行内样式**，只能 !important 盖掉。规格名与单位表的输入框因此比表头
+// 缩进一大段，看起来像「表格错位」。这两处本就不需要标签，直接归零。
+.spec-card__name,
+.unit-form-item {
+  :deep(.el-form-item__content) {
+    margin-left: 0 !important;
+  }
+}
+
+// 弹窗里的 el-form 统一设了 label-width=88px，**没有标签**的 form-item
+// 仍会空出这 88px —— 而且这个 margin-left 是 Element Plus 写进 content 的
+// **行内样式**，只能 !important 盖掉。规格名与单位表的输入框因此比表头
+// 缩进一大段，看起来像「表格错位」。这两处本就不需要标签，直接归零。
+.spec-card__name,
+.unit-form-item {
+  :deep(.el-form-item__content) {
+    margin-left: 0 !important;
+  }
+}
+
+.spec-card__warn,
+.spec-card__toggle {
   flex: none;
-  width: 140px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spec-card__warn :deep(.el-input-number) {
+  width: 104px;
+}
+
+.spec-card__label {
+  font-size: 12px;
+  color: var(--app-text-muted);
+  white-space: nowrap;
+}
+
+.spec-card__del {
+  flex: none;
 }
 
 .unit-table__row {

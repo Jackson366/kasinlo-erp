@@ -83,14 +83,33 @@ func (s *Service) ExportInv(q ExportQuery, actor *authz.Identity) ([]byte, strin
 		if q.Order.BizType == model.InvBizSales {
 			label = "销售单"
 		}
-		rows, err := s.exportOrderRows(pageQ, q, actor)
+		list, err := s.exportOrderList(pageQ, q, actor)
 		if err != nil {
 			return nil, "", err
 		}
-		if len(rows) == 0 {
+		if len(list) == 0 {
 			return nil, "", errNoExportData()
 		}
-		data, err := buildExport(label+"列表", []string{"单号", "往来单位", "单据日期", "到期日", "状态", "明细行数", "金额", "已结算", "结算状态", "业务员", "制单人", "备注"}, rows)
+		// 单据导出**带明细**：只看列表的「金额」对不出账，收到文件的人还得
+		// 回头一张张点详情。所以出两个工作表 —— 列表看汇总，明细看每一行。
+		detail, err := s.exportOrderDetailRows(list)
+		if err != nil {
+			return nil, "", err
+		}
+		data, err := buildReportWorkbook([]reportSheet{
+			{
+				Name:    label + "列表",
+				Headers: []string{"单号", "往来单位", "单据日期", "到期日", "状态", "明细行数", "金额", "已结算", "结算状态", "业务员", "制单人", "备注"},
+				Widths:  []float64{20, 22, 12, 12, 10, 10, 14, 14, 12, 12, 12, 28},
+				Rows:    orderRowCells(list),
+			},
+			{
+				Name:    label + "明细",
+				Headers: []string{"单号", "往来单位", "业务员", "商品编码", "商品名称", "规格", "单位", "数量", "换算率", "折算基本数量", "单价", "金额"},
+				Widths:  []float64{20, 22, 12, 14, 24, 14, 10, 12, 10, 16, 12, 14},
+				Rows:    detail,
+			},
+		})
 		return data, label + "列表.xlsx", err
 
 	case exportStock:
@@ -213,22 +232,82 @@ func (s *Service) exportPartyRows(bizType string, q page.Query, f ExportQuery) (
 	return out, nil
 }
 
-func (s *Service) exportOrderRows(q page.Query, f ExportQuery, actor *authz.Identity) ([][]string, error) {
+// exportOrderList 取筛选后的单据行（同时供列表页与明细页复用）。
+//
+// 返回结构体而不是直接返回单元格：明细工作表要靠这批 id 去捞 order_items，
+// 先转成字符串数组就得再从里面抠 id 出来，多一道没意义的往返。
+func (s *Service) exportOrderList(q page.Query, f ExportQuery, actor *authz.Identity) ([]OrderRow, error) {
 	list, _, err := s.OrderList(f.Order, q, actor)
 	if err != nil {
 		return nil, err
 	}
 	keep := idSet(f.IDs)
+	out := make([]OrderRow, 0, len(list))
+	for _, it := range list {
+		if keep(it.ID) {
+			out = append(out, it)
+		}
+	}
+	return out, nil
+}
+
+// orderRowCells 单据列表工作表的行。
+func orderRowCells(list []OrderRow) [][]string {
 	out := make([][]string, 0, len(list))
 	for _, it := range list {
-		if !keep(it.ID) {
-			continue
-		}
 		out = append(out, []string{
 			it.OrderNo, it.PartyName, fmtDay(it.OrderDate), fmtDayPtr(it.DueDate),
 			orderStatusText(it.Status), strconv.FormatInt(it.ItemCount, 10),
 			money(it.TotalAmount), money(it.SettledAmount), settleText(it.SettleStatus),
 			it.Salesman, it.Operator, it.Remark,
+		})
+	}
+	return out
+}
+
+// exportOrderDetailRows 明细工作表：一行一条单据明细。
+//
+// 一次 IN 查询把所有明细捞出来再按 order_id 归组，而不是对每张单各查一次 ——
+// 导出上限一万张单，逐单查就是一万次往返。
+func (s *Service) exportOrderDetailRows(list []OrderRow) ([][]string, error) {
+	if len(list) == 0 {
+		return nil, nil
+	}
+	ids := make([]int64, 0, len(list))
+	byID := make(map[int64]OrderRow, len(list))
+	for _, it := range list {
+		ids = append(ids, it.ID)
+		byID[it.ID] = it
+	}
+
+	var items []model.InvOrderItem
+	if err := s.db.Where("order_id IN ?", ids).Order("order_id ASC, id ASC").Find(&items).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	// 明细快照里没有商品编码，从档案补齐；商品已删就留空，不因档案变动导不出文件
+	productIDs := make([]int64, 0, len(items))
+	for _, it := range items {
+		productIDs = append(productIDs, it.ProductID)
+	}
+	products, err := s.productByIDs(productIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([][]string, 0, len(items))
+	for _, it := range items {
+		head, ok := byID[it.OrderID]
+		if !ok {
+			continue
+		}
+		code := ""
+		if p, hit := products[it.ProductID]; hit {
+			code = p.Code
+		}
+		out = append(out, []string{
+			head.OrderNo, head.PartyName, head.Salesman, code, it.ProductName,
+			it.Spec, it.Unit, fmtQty(it.Qty), strconv.FormatFloat(it.Rate, 'f', -1, 64),
+			fmtQty(it.QtyBase), money(it.Price), money(it.Amount),
 		})
 	}
 	return out, nil
