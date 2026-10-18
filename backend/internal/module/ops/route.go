@@ -28,6 +28,9 @@ func Register(rg *gin.RouterGroup, cfg *config.Config) {
 
 		g.GET("/cleanup/preview", middleware.RequirePerm("ops:list"), h.CleanupPreview)
 		g.POST("/cleanup/apply", middleware.RequirePerm("ops:cleanup"), h.CleanupApply)
+		// 业务数据清理（不可逆）：范围预览用 ops:list，执行必须 ops:cleanup
+		g.GET("/cleanup/scopes", middleware.RequirePerm("ops:list"), h.BizScopes)
+		g.POST("/cleanup/business", middleware.RequirePerm("ops:cleanup"), h.BusinessCleanup)
 
 		g.GET("/check", middleware.RequirePerm("ops:list"), h.Check)
 

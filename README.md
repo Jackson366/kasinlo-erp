@@ -196,7 +196,7 @@ nova-erp/
 │       ├── utils/                      # auth / request / download / format / theme
 │       └── views/                      # 页面：system / inv（进销存）/ dashboard
 ├── scripts/
-│   ├── api-smoke.mjs                   # 零依赖接口冒烟脚本（280 项）
+│   ├── api-smoke.mjs                   # 零依赖接口冒烟脚本（290 项）
 │   ├── browser-verify.mjs              # 零依赖浏览器运行时验证（88 项 / 16 个页面，含双主题）
 │   ├── interaction-verify.mjs          # 零依赖受控组件交互验证（9 项）
 │   ├── gen-swagger.sh                  # swag init 封装：重新生成 OpenAPI 文档
@@ -232,7 +232,7 @@ node scripts/api-smoke.mjs                      # 默认 http://127.0.0.1:6802
 node scripts/api-smoke.mjs http://host:port     # 指定实例
 ```
 
-共 280 项断言，覆盖登录/令牌刷新/CRUD/权限隔离/参数校验/日志/导入导出/数据范围/令牌吊销/报表排行维度/库存分析/反审核/系统运维（备份·清理·巡检·升级）。
+共 290 项断言，覆盖登录/令牌刷新/CRUD/权限隔离/参数校验/日志/导入导出/数据范围/令牌吊销/报表排行维度/库存分析/反审核/系统运维（备份·清理·巡检·升级·业务重置）。
 
 ### 前端：类型检查与构建
 

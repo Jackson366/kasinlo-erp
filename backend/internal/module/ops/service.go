@@ -24,8 +24,11 @@ import (
 
 	"nova-erp/internal/config"
 	"nova-erp/internal/database"
+	"nova-erp/internal/logger"
 	"nova-erp/internal/model"
 	fwops "nova-erp/internal/ops"
+
+	"go.uber.org/zap"
 )
 
 // 真删 / 真升级的确认口令。故意是中文短句而不是 YES：
@@ -459,4 +462,96 @@ func backupAgeHint(at time.Time) string {
 	}
 	d := time.Since(at).Round(time.Hour)
 	return fmt.Sprintf("最近一份：%s（%s 前）", at.Format("2006-01-02 15:04"), d)
+}
+
+// ── 业务数据清理 ─────────────────────────────────────────
+
+// bizCleanupMaxBackupAge 业务清理要求的回滚点新鲜度。
+// 与升级共用一把尺子：24 小时内必须有备份，否则不许动业务数据。
+const bizCleanupMaxBackupAge = 24 * time.Hour
+
+// BizScopes 返回全部清理范围及各表当前行数，供界面做预演。
+func (s *Service) BizScopes() ([]BizScopeView, error) {
+	// 同一张表可能出现在多档里，行数只查一次。
+	counts := map[string]int64{}
+	count := func(table string) error {
+		if _, ok := counts[table]; ok {
+			return nil
+		}
+		var n int64
+		if err := s.db.Table(table).Count(&n).Error; err != nil {
+			return fmt.Errorf("统计 %s 行数失败：%w", table, err)
+		}
+		counts[table] = n
+		return nil
+	}
+
+	out := make([]BizScopeView, 0, 3)
+	for _, sc := range fwops.BizCleanupScopes() {
+		view := BizScopeView{
+			Key: sc.Key, Title: sc.Title, Desc: sc.Desc, Keep: sc.Keep,
+			Confirm: sc.Confirm, ResetStockable: sc.ResetStockable,
+			Tables: make([]BizTableView, 0, len(sc.Tables)),
+		}
+		for _, t := range sc.Tables {
+			if err := count(t); err != nil {
+				return nil, err
+			}
+			view.Tables = append(view.Tables, BizTableView{Name: t, Rows: counts[t]})
+			view.TotalRows += counts[t]
+		}
+		out = append(out, view)
+	}
+	return out, nil
+}
+
+// BusinessCleanup 执行业务数据清理。
+//
+// 与日志清理不同，这里是**不可逆**的硬删，所以多两道闸门：
+//  1. 24 小时内必须有备份（没有回滚点不许动账）；
+//  2. 确认口令必须与该档完全一致（每档口令不同，手滑跳不了档）。
+func (s *Service) BusinessCleanup(req BizCleanupReq) (*fwops.BizCleanupReport, error) {
+	scope, err := fwops.FindBizCleanupScope(req.Scope)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(req.Confirm) != scope.Confirm {
+		return nil, fmt.Errorf("确认口令不正确（「%s」需要输入「%s」）", scope.Title, scope.Confirm)
+	}
+
+	// 闸门一：回滚点。取最近一份备份的时间，不拷文件、不校验内容 ——
+	// 那份备份在创建时已经回读校验过（见 ops.Backup）。
+	items, err := s.ListBackups()
+	if err != nil {
+		return nil, err
+	}
+	var latest time.Time
+	for _, it := range items {
+		if it.Time.After(latest) {
+			latest = it.Time
+		}
+	}
+	if ok, hint := fwops.BizCleanupGate(latest, time.Now(), bizCleanupMaxBackupAge); !ok {
+		return nil, errors.New(hint)
+	}
+
+	rep, err := fwops.BizCleanup(s.db, fwops.BizCleanupOptions{
+		Scope:      req.Scope,
+		ResetStock: req.ResetStock,
+		Apply:      true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// 审计：业务清理会连日志一起删掉（database 档），
+	// 所以除了操作日志，再往应用日志里写一条摘要 ——
+	// 「谁在什么时候清了多少行」必须留得下来。
+	logger.Info("业务数据清理完成",
+		zap.String("scope", rep.Scope),
+		zap.String("title", rep.Title),
+		zap.Int64("totalDeleted", rep.TotalDeleted),
+		zap.Bool("stockReset", rep.StockReset),
+		zap.Int64("stockResetRows", rep.StockResetRows),
+	)
+	return rep, nil
 }

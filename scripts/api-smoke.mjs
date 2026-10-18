@@ -1819,6 +1819,41 @@ async function main() {
     cleanupWrong.json?.data?.dryRun === true && !!cleanupWrong.json?.data?.blocked,
     JSON.stringify(cleanupWrong.json?.data?.blocked))
 
+  // 业务数据清理：范围必须是服务端登记好的几档，且每档口令不同
+  const bizScopes = await request('GET', '/ops/cleanup/scopes', { token })
+  const scopes = bizScopes.json?.data || []
+  ok('业务清理范围预览可用', scopes.length === 3, `scopes=${scopes.map((s) => s.key).join(',')}`)
+  const docScope = scopes.find((s) => s.key === 'inv_documents')
+  ok('单据范围带行数预览', !!docScope && docScope.totalRows >= 0 && docScope.tables.length === 5,
+    `total=${docScope?.totalRows}`)
+  const phrases = scopes.map((s) => s.confirm)
+  ok('每档确认口令互不相同', new Set(phrases).size === phrases.length, phrases.join(' / '))
+  // 框架表（账号/角色/菜单/权限/部门/结构版本/升级记录）在任何范围下都不出现；
+  // 日志表按设计只允许出现在 database 档 —— 那是「整库重置」的语义。
+  const framework = ['sys_users', 'sys_roles', 'sys_menus', 'sys_depts', 'sys_user_roles',
+    'sys_role_menus', 'sys_schema_versions', 'sys_upgrade_records']
+  const logs = ['sys_operation_logs', 'sys_login_logs', 'sys_idempotencies']
+  ok('任何范围都不含框架表',
+    scopes.every((s) => !s.tables.some((t) => framework.includes(t.name))),
+    '账号/角色/菜单/权限必须免疫')
+  ok('日志表只出现在 database 档',
+    scopes.every((s) => {
+      const hasLog = s.tables.some((t) => logs.includes(t.name))
+      return s.key === 'database' ? hasLog : !hasLog
+    }))
+
+  const bizWrong = await request('POST', '/ops/cleanup/business', { token, body: { scope: 'inv_documents', confirm: '确认' } })
+  ok('业务清理口令错误被拒', bizWrong.json?.code !== 0, JSON.stringify(bizWrong.json?.message))
+  const bizUnknown = await request('POST', '/ops/cleanup/business', { token, body: { scope: 'drop_all', confirm: 'x' } })
+  ok('业务清理拒绝未知范围', bizUnknown.json?.code !== 0 && /合法值/.test(bizUnknown.json?.message || ''),
+    JSON.stringify(bizUnknown.json?.message))
+  // 口令对但范围跨档：用 database 档的口令去清 documents 档，必须被拒
+  const bizCross = await request('POST', '/ops/cleanup/business', {
+    token,
+    body: { scope: 'inv_documents', confirm: '确认重置数据库' },
+  })
+  ok('业务清理拒绝跨档口令', bizCross.json?.code !== 0, JSON.stringify(bizCross.json?.message))
+
   // 恢复演练不允许指向生产库：HTTP 接口不该提供「一次误点盖掉生产库」的能力
   const restoreProd = await request('POST', '/ops/restore', { token, body: { file: 'whatever.dump' } })
   ok('恢复演练拒绝不存在的备份', restoreProd.json?.code !== 0, JSON.stringify(restoreProd.json))
@@ -1854,6 +1889,9 @@ async function main() {
     (await upload('/ops/upgrade/package', demoToken, 'x.zip', Buffer.from('x'))).status === 403)
   ok('只读账号恢复演练被拒(403)',
     (await request('POST', '/ops/restore', { token: demoToken, body: { file: 'x.dump' } })).status === 403)
+  ok('只读账号查看业务清理范围', (await request('GET', '/ops/cleanup/scopes', { token: demoToken })).status === 200)
+  ok('只读账号执行业务清理被拒(403)',
+    (await request('POST', '/ops/cleanup/business', { token: demoToken, body: { scope: 'inv_documents', confirm: '确认清理单据' } })).status === 403)
 
   section('清理测试数据')
   const cleanRole = await request('DELETE', `/system/roles/${newRoleId}`, { token })

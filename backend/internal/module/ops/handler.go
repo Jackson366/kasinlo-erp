@@ -310,3 +310,44 @@ func (h *Handler) ApplyUpgrade(c *gin.Context) {
 
 // maxPackageBytes 升级包大小上限（512 MB），与 service 里的限制保持一致。
 const maxPackageBytes = 512 << 20
+
+// BizScopes 清理范围与行数预览
+// @Summary      业务清理范围预览
+// @Tags         系统运维
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  response.Body{data=[]BizScopeView}
+// @Failure      403  {object}  response.Body  "缺少 ops:list 权限"
+// @Router       /ops/cleanup/scopes [get]
+func (h *Handler) BizScopes(c *gin.Context) {
+	scopes, err := h.svc.BizScopes()
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, scopes)
+}
+
+// BusinessCleanup 执行业务数据清理
+// @Summary      执行业务数据清理
+// @Tags         系统运维
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      BizCleanupReq  true  "清理范围、确认口令与库存选项"
+// @Success      200   {object}  response.Body{data=ops.BizCleanupReport}
+// @Failure      403   {object}  response.Body  "缺少 ops:cleanup 权限"
+// @Router       /ops/cleanup/business [post]
+func (h *Handler) BusinessCleanup(c *gin.Context) {
+	var req BizCleanupReq
+	if err := bind.JSON(c, &req); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	rep, err := h.svc.BusinessCleanup(req)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, rep)
+}

@@ -14,7 +14,8 @@
 | 全量备份 | `pg_dump` 自定义格式 + sha256 + 元数据，自动轮转 | 每日 22:00 | `nova-ops backup` |
 | 升级前备份 | 同上，标 `--no-prune` 单独留档 | 每次升级前 | `nova-ops backup --no-prune` |
 | 恢复演练 | 恢复到临时库，核对表数与锚点行数 | 每月 1 次 | `nova-ops restore --file … --yes` |
-| 数据清理 | 日志按 180 天、幂等键按过期 +7 天，分批删除 | 每月 1 次 | `nova-ops cleanup --apply` |
+| 数据清理（日志） | 日志按 180 天、幂等键按过期 +7 天，分批删除 | 每月 1 次 | `nova-ops cleanup --apply` |
+| 数据清理（业务） | 清单据 / 清进销存 / 重置数据库，硬删不可逆 | 按需 | `nova-ops reset --scope … --apply` |
 | 体检 | 结构版本 / 体积 / 日志膨胀 / 备份新鲜度 | 每日 | `nova-ops check --strict` |
 | 系统升级 | 备份 → 换二进制 → 启动自动迁移 → 冒烟 | 按需 | 见 §4.3 |
 
@@ -228,8 +229,11 @@ archive_command = 'copy "%p" "D:\\pgwal\\%f"'   # Windows；Linux 用 cp
 | 操作日志 `sys_operation_logs` | 保留 180 天 | 追责窗口通常一个考核周期；超过半年的「谁改了这个价」没人再查 |
 | 登录日志 `sys_login_logs` | 保留 180 天，**锁定窗口内不删** | 见 §3.5 |
 | 幂等键 `sys_idempotencies` | 过期后再留 7 天 | 过期即不可能被回放；留 7 天覆盖「过期前提交、过期后重试」 |
-| 单据 / 明细 / 出入库 | **永不自动删除** | 这是账。删了库存与应收应付都对不上，且无法追溯 |
+| 单据 / 明细 / 出入库 | **不按保留期自动删**，只能走业务清理（§3.7） | 这是账。删了库存与应收应付都对不上，且无法追溯 |
 | 软删除的主数据（商品 / 客户 / 供应商） | **不自动物理删除**，只在体检里报告 | 它们被历史单据引用着；物理删掉后「这笔单卖的是什么」永久无解 |
+
+> 「日志按保留期自动清」与「业务数据手工清」是两回事，前者可以进计划任务，
+> 后者必须是有人看着确认的一次性动作 —— 见 §3.7。
 
 ### 3.2 命令
 
@@ -295,6 +299,54 @@ maintenance:
 3. **不删库里的单据** —— 十几 MB 的数据不值得为它冒「对不上账」的风险。
 
 数据量真的到了 GB 级（十年以上）再考虑按年分库，那时也应当先做归档表而不是删数据。
+
+### 3.7 业务数据清理（不可逆）
+
+日志清理按保留期进行，适合无人值守；**业务数据是另一回事** ——
+「把今年的单据全清了、只留商品」这种需求真实存在（年底重开账、演示环境复位、
+把系统交给下一个使用者），但它不可逆，所以单独做成一档一档确认的动作。
+
+命令（`nova-ops reset`）与管理页（「系统运维 → 数据清理 → 业务数据清理」）能力完全一致：
+
+```bash
+# 预演：只报每张表会删多少，不删任何数据
+./nova-ops reset --config config.yaml --scope inv_documents
+
+# 真删：必须输入该范围专属的确认口令
+./nova-ops reset --config config.yaml --scope inv_documents --confirm 确认清理单据 --apply
+
+# 清单据的同时把规格库存归零（默认不动库存）
+./nova-ops reset --config config.yaml --scope inv_documents --confirm 确认清理单据 --apply --reset-stock
+```
+
+三档范围：
+
+| 范围 | 删什么 | 保留什么 | 确认口令 |
+| --- | --- | --- | --- |
+| `inv_documents` | 采购/销售/出入库单据与明细、收付款记录 | 商品、规格、单位、分类、客户、供应商、打印模板、系统框架 | 确认清理单据 |
+| `inv_all` | 全部进销存业务表（含商品与往来单位档案） | 系统框架 | 确认清空进销存 |
+| `database` | 全部进销存业务表 + 操作日志 + 登录日志 + 幂等键 | 系统框架（账号、角色、菜单、权限、部门、结构版本、升级记录） | 确认重置数据库 |
+
+**「数据库重置」刻意不动系统框架**：账号/角色/菜单/权限删掉之后，正在跑的系统会立刻
+失去登录与鉴权依据，现场看到的现象是「所有人都登不进去」，分不清是数据丢了还是系统坏了。
+真要连框架一起清，请直接 DROP DATABASE —— 程序会重新建库并播种，
+那才是「交还给下一个使用者」的正确做法。
+
+三道闸门（代码里钉死，有测试）：
+
+1. **24 小时内必须有备份**。没有回滚点不许动账；界面上「先备份」按钮就在旁边，
+   而命令行要加 `--force` 才能跳过（危险，仅用于备份盘也坏了的极端情况）。
+2. **确认口令与范围绑定**。三档口令互不相同，手滑点到「确认」跳不到更危险的档。
+3. **一个事务**。全部删除要么都成要么都不成 —— 清到一半失败会留下
+   「单据没了但收付款还在」的库，比不清更难查。
+
+两个实现细节：
+
+- **硬删 + 序号重置**：业务清理的目的就是回收空间与重置状态，软删只会把行留着继续占
+  唯一索引与主键。表被清空后顺手 `setval` 把自增序列重置，下一单从 1 开始。
+- **库存是可选项**：清单据时默认**不动** `inv_product_specs.stock`。
+  重录单据的人要勾「同时清零」，刚盘点完的人不能勾 —— 这两种场景都存在，
+  所以做成勾选框而不是替用户决定。
 
 ---
 
@@ -525,6 +577,8 @@ inv_orders       19     142    168.0 KB
 - [ ] 构建脚本注入 `app.release`（`-ldflags "-X nova-erp/internal/config.appRelease=1.0.0"`），
       否则升级后无法自动核对是否生效
 - [ ] 在「角色管理」里确认谁能拿到 `ops:*` 五个权限点（默认超管全有、系统管理员全有、只读访客只有页面）
+- [ ] 与业务方约定「业务数据清理」三档范围各自的使用场景与审批人 ——
+      尤其是 `database` 档会连日志一起清掉，清完「谁在什么时候删了多少行」只剩应用日志里那一条摘要
 
 **例行日历**
 
@@ -558,6 +612,13 @@ nova-ops cleanup --config config.yaml --apply --op-log-days 365
 # 体检
 nova-ops check --config config.yaml
 nova-ops check --config config.yaml --strict --json
+
+# 业务数据清理（不可逆；默认预演，--apply 才真删，要求 24 小时内有备份）
+nova-ops reset --config config.yaml --scope inv_documents                      # 预演
+nova-ops reset --config config.yaml --scope inv_documents --confirm 确认清理单据 --apply
+nova-ops reset --config config.yaml --scope inv_all --confirm 确认清空进销存 --apply
+nova-ops reset --config config.yaml --scope database --confirm 确认重置数据库 --apply
+nova-ops reset --config config.yaml --scope inv_documents --confirm 确认清理单据 --apply --reset-stock
 ```
 
 > 所有子命令都支持 `--config`；未给的参数一律取 `config.yaml` 里的默认值，

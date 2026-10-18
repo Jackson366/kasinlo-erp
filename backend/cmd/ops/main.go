@@ -20,9 +20,11 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -44,6 +46,8 @@ func main() {
 		err = runRestore(os.Args[2:])
 	case "cleanup":
 		err = runCleanup(os.Args[2:])
+	case "reset":
+		err = runReset(os.Args[2:])
 	case "check":
 		err = runCheck(os.Args[2:])
 	case "-h", "--help", "help":
@@ -76,6 +80,10 @@ func usage() {
   cleanup  按保留期清理日志与过期幂等键；默认 dry-run，加 --apply 才真删
            --op-log-days 180   --login-log-days 180   --idempotency-days 7
            --batch 5000
+
+  reset   业务数据清理（不可逆，硬删）。范围：inv_documents / inv_all / database
+           --scope inv_documents   --confirm 确认清理单据   --reset-stock
+           要求 24 小时内有备份（--force 可跳过，慎用）
 
   check    体检：结构版本 / 数据库体积 / 日志与软删除堆积 / 备份新鲜度
            --json                  --max-backup-age 48（小时）
@@ -243,6 +251,88 @@ func runCleanup(args []string) error {
 	return nil
 }
 
+// runReset 业务数据清理。与 cleanup 的区别：这里是整表硬删、不可逆，
+// 因此多两道闸门 —— 24 小时内必须有备份，且必须输入该范围专属的确认口令。
+func runReset(args []string) error {
+	fs, cfgPath := newFlags("reset")
+	scope := fs.String("scope", "", "清理范围：inv_documents / inv_all / database")
+	confirm := fs.String("confirm", "", "确认口令（必须与该范围完全一致）")
+	resetStock := fs.Bool("reset-stock", false, "同时清零规格库存（仅 inv_documents）")
+	apply := fs.Bool("apply", false, "真正执行（默认只预演）")
+	force := fs.Bool("force", false, "跳过「24 小时内有备份」这道闸门（危险）")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *scope == "" {
+		return fmt.Errorf("必须用 --scope 指定清理范围（inv_documents / inv_all / database）")
+	}
+	sc, err := ops.FindBizCleanupScope(*scope)
+	if err != nil {
+		return err
+	}
+	if *apply && *confirm != sc.Confirm {
+		return fmt.Errorf("确认口令不正确：%s 需要输入「%s」", sc.Title, sc.Confirm)
+	}
+	cfg, err := loadConfig(*cfgPath)
+	if err != nil {
+		return err
+	}
+	if err := openDB(cfg); err != nil {
+		return err
+	}
+	defer func() { _ = database.Close() }()
+
+	if *apply && !*force {
+		dir := cfg.Backup.Dir
+		if dir == "" {
+			dir = "backups"
+		}
+		var latest time.Time
+		if entries, err := os.ReadDir(dir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() || !strings.HasSuffix(e.Name(), ".dump") {
+					continue
+				}
+				if info, err := e.Info(); err == nil && info.ModTime().After(latest) {
+					latest = info.ModTime()
+				}
+			}
+		}
+		if ok, hint := ops.BizCleanupGate(latest, time.Now(), 24*time.Hour); !ok {
+			return errors.New(hint + "；确认要继续请加 --force")
+		}
+	}
+
+	rep, err := ops.BizCleanup(database.DB(), ops.BizCleanupOptions{
+		Scope:      *scope,
+		ResetStock: *resetStock,
+		Apply:      *apply,
+	})
+	if err != nil {
+		return err
+	}
+
+	if rep.DryRun {
+		fmt.Printf("预演模式：%s（不会删除任何数据）\n", rep.Title)
+	} else {
+		fmt.Printf("已执行：%s\n", rep.Title)
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "表\t清理前行数\t删除行数\t序列重置")
+	for _, t := range rep.Tables {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", t.Name, humanCount(t.Rows), humanCount(t.Deleted), yesNo(t.SeqReset))
+	}
+	_ = w.Flush()
+	fmt.Printf("合计删除 %s 行\n", humanCount(rep.TotalDeleted))
+	if rep.StockReset {
+		fmt.Printf("已清零规格库存 %s 行\n", humanCount(rep.StockResetRows))
+	}
+	if rep.DryRun {
+		fmt.Println("确认无误后加 --apply 执行。")
+	}
+	return nil
+}
+
 func runCheck(args []string) error {
 	fs, cfgPath := newFlags("check")
 	asJSON := fs.Bool("json", false, "以 JSON 输出（给监控用）")
@@ -392,4 +482,11 @@ func firstPositive(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "是"
+	}
+	return "否"
 }

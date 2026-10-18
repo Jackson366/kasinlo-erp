@@ -4,6 +4,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { opsApi } from '@/api/ops'
 import type {
   BackupItem,
+  BizCleanupReport,
+  BizScopeView,
   CheckReport,
   CleanupStep,
   CleanupView,
@@ -141,6 +143,95 @@ const cleanupDays = ref<{ opLogDays?: number; loginLogDays?: number; idempotency
 const cleanupLoading = ref(false)
 const cleanupView = ref<CleanupView | null>(null)
 const cleanupApplying = ref(false)
+
+// ── 业务数据清理（不可逆）─────────────────────────────
+const bizScopes = ref<BizScopeView[]>([])
+const bizScopeKey = ref('inv_documents')
+const bizResetStock = ref(false)
+const bizLoading = ref(false)
+const bizRunning = ref(false)
+const bizBackupRunning = ref(false)
+const bizResult = ref<BizCleanupReport | null>(null)
+const bizBackupAge = ref('')
+
+const currentBizScope = computed(() =>
+  bizScopes.value.find((s) => s.key === bizScopeKey.value) || null,
+)
+
+async function loadBizScopes(): Promise<void> {
+  bizLoading.value = true
+  try {
+    bizScopes.value = await opsApi.cleanupScopes()
+  } catch {
+    // 失败提示由响应拦截器统一处理
+  } finally {
+    bizLoading.value = false
+  }
+}
+
+/** 看一下最近一份备份有多旧：业务清理要求 24 小时内有回滚点。 */
+async function refreshBizBackupAge(): Promise<void> {
+  try {
+    const items = await opsApi.backups()
+    if (items.length === 0) {
+      bizBackupAge.value = '尚未备份'
+      return
+    }
+    const latest = items.reduce((a, b) => (new Date(a.time) > new Date(b.time) ? a : b))
+    bizBackupAge.value = `${formatDateTime(latest.time)}（${fromNow(latest.time)}）`
+  } catch {
+    bizBackupAge.value = ''
+  }
+}
+
+async function runBizBackup(): Promise<void> {
+  bizBackupRunning.value = true
+  try {
+    await opsApi.runBackup(false)
+    ElMessage.success('备份完成，回滚点已刷新')
+    await refreshBizBackupAge()
+  } catch {
+    // 失败提示由响应拦截器统一处理
+  } finally {
+    bizBackupRunning.value = false
+  }
+}
+
+/**
+ * 执行业务清理。确认口令由服务端按范围下发，前端不存第二份 ——
+ * 口令与范围表必须同源，否则会出现「页面让输 A、服务端要 B」的死局。
+ */
+async function applyBizCleanup(): Promise<void> {
+  const scope = currentBizScope.value
+  if (!scope) return
+  const { value } = await ElMessageBox.prompt(
+    `将${scope.desc}，删除后无法恢复。请输入「${scope.confirm}」以继续。`,
+    `业务数据清理：${scope.title}`,
+    {
+      type: 'warning',
+      confirmButtonText: '执行删除',
+      cancelButtonText: '取消',
+      inputPlaceholder: scope.confirm,
+      inputValidator: (v: string) => (v.trim() === scope.confirm ? true : `请准确输入「${scope.confirm}」`),
+    },
+  )
+  if (value?.trim() !== scope.confirm) return
+
+  bizRunning.value = true
+  try {
+    bizResult.value = await opsApi.businessCleanup({
+      scope: scope.key,
+      confirm: scope.confirm,
+      resetStock: bizResetStock.value,
+    })
+    ElMessage.success(`清理完成，共删除 ${bizResult.value.totalDeleted} 行`)
+    await Promise.all([loadBizScopes(), loadCheck(), refreshBizBackupAge()])
+  } catch {
+    // 失败提示由响应拦截器统一处理
+  } finally {
+    bizRunning.value = false
+  }
+}
 
 async function previewCleanup(): Promise<void> {
   cleanupLoading.value = true
@@ -320,7 +411,7 @@ function statusText(status: string): string {
 }
 
 onMounted(async () => {
-  await Promise.all([loadBackups(), loadCheck(), loadUpgrade()])
+  await Promise.all([loadBackups(), loadCheck(), loadUpgrade(), loadBizScopes(), refreshBizBackupAge()])
 })
 </script>
 
@@ -471,6 +562,107 @@ onMounted(async () => {
           </div>
         </div>
       </el-tab-pane>
+
+      <!-- ═══════════ 业务数据清理 ═══════════ -->
+      <div class="ops-biz">
+        <el-alert type="error" :closable="false" show-icon class="ops-alert">
+          <template #title>
+            业务数据清理是<b>不可逆的硬删除</b>，与上面的日志清理不是一回事：
+            执行前 24 小时内必须有备份（回滚点），且需要输入该范围专属的确认口令。
+            系统框架（账号 / 角色 / 菜单 / 权限 / 部门）在任何范围下都不会被删除。
+          </template>
+        </el-alert>
+
+        <el-radio-group v-model="bizScopeKey" class="ops-biz__scopes">
+          <!--
+            用 el-radio 而不是 el-radio-button：后者的插槽内容渲染在
+            .el-radio-button__inner 里，改造成卡片时必须把那个 span 藏掉，
+            结果连卡片内容一起藏了（第一版就踩了这个坑，卡片整块消失）。
+          -->
+          <el-radio
+            v-for="sc in bizScopes"
+            :key="sc.key"
+            :value="sc.key"
+            class="ops-biz__scope"
+          >
+            <div class="ops-biz__scope-title">
+              <span>{{ sc.title }}</span>
+              <span class="text-muted">共 {{ sc.totalRows }} 行</span>
+            </div>
+            <div class="ops-biz__scope-desc">{{ sc.desc }}</div>
+            <div class="ops-biz__scope-keep">保留：{{ sc.keep }}</div>
+          </el-radio>
+        </el-radio-group>
+
+        <div class="ops-biz__tables">
+          <div class="ops-biz__tables-head">
+            <span>将删除以下表（当前行数）</span>
+            <span class="text-muted">顺序即依赖顺序：子表在前</span>
+          </div>
+          <el-table :data="currentBizScope?.tables || []" border size="small" :loading="bizLoading">
+            <el-table-column prop="name" label="表" min-width="200" />
+            <el-table-column label="行数" width="120" align="right">
+              <template #default="{ row }"><b>{{ row.rows }}</b></template>
+            </el-table-column>
+            <template #empty><span class="text-muted">该范围没有数据</span></template>
+          </el-table>
+        </div>
+
+        <div class="ops-biz__gate">
+          <el-checkbox
+            v-if="currentBizScope?.resetStockable"
+            v-model="bizResetStock"
+          >
+            同时清零商品规格库存（inv_product_specs.stock）
+          </el-checkbox>
+          <span v-else class="text-muted">该范围会连商品一起清空，无需单独处理库存</span>
+        </div>
+
+        <div class="ops-biz__actions">
+          <span class="text-muted">
+            回滚点：{{ bizBackupAge || '读取中…' }}（要求 24 小时内）
+          </span>
+          <span class="ops-biz__btns">
+            <el-button :loading="bizBackupRunning" @click="runBizBackup">
+              <AppIcon name="Download" /><span>先备份</span>
+            </el-button>
+            <el-button
+              v-perm="'ops:cleanup'"
+              type="danger"
+              :loading="bizRunning"
+              :disabled="!currentBizScope || currentBizScope.totalRows === 0"
+              @click="applyBizCleanup"
+            >
+              <AppIcon name="Delete" /><span>执行业务清理</span>
+            </el-button>
+          </span>
+        </div>
+
+        <el-table v-if="bizResult" :data="bizResult.tables" border size="small" class="ops-biz__result">
+          <el-table-column prop="name" label="表" min-width="200" />
+          <el-table-column label="清理前" width="110" align="right">
+            <template #default="{ row }">{{ row.rows }}</template>
+          </el-table-column>
+          <el-table-column label="已删除" width="110" align="right">
+            <template #default="{ row }"><b>{{ row.deleted }}</b></template>
+          </el-table-column>
+          <el-table-column label="序号重置" width="110" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.seqReset ? 'success' : 'info'" size="small">{{ row.seqReset ? '是' : '否' }}</el-tag>
+            </template>
+          </el-table-column>
+          <template #empty><span class="text-muted">无可删除数据</span></template>
+        </el-table>
+        <div v-if="bizResult" class="ops-summary">
+          <span>
+            模式：<el-tag :type="bizResult.dryRun ? 'info' : 'success'" size="small">
+              {{ bizResult.dryRun ? '预演' : '已执行' }}
+            </el-tag>
+          </span>
+          <span>合计删除 <b>{{ bizResult.totalDeleted }}</b> 行</span>
+          <span v-if="bizResult.stockReset">已清零规格库存 <b>{{ bizResult.stockResetRows }}</b> 行</span>
+        </div>
+      </div>
 
       <!-- ═══════════ 系统巡检 ═══════════ -->
       <el-tab-pane label="系统巡检" name="check">
@@ -954,6 +1146,108 @@ onMounted(async () => {
     b {
       color: var(--el-text-color-primary);
     }
+  }
+}
+
+.ops-biz {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--el-border-color-lighter);
+
+  &__scopes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+    width: 100%;
+    margin-bottom: 16px;
+  }
+
+  // 三档范围的影响面差异很大，必须一眼看全「删什么、留什么」再选，
+  // 所以把默认的一排小圆点改成卡片。
+  &__scope {
+    margin: 0 !important;
+    width: 100%;
+    height: auto !important;
+    padding: 12px 14px;
+    border: 1px solid var(--el-border-color);
+    border-radius: var(--el-border-radius-base);
+    background: var(--el-fill-color-lighter);
+    align-items: flex-start;
+
+    :deep(.el-radio__input) {
+      margin-top: 3px;
+    }
+
+    :deep(.el-radio__label) {
+      flex: 1;
+      padding-left: 8px;
+      line-height: 1.5;
+      white-space: normal;
+    }
+  }
+
+  // 选中态：描边与底色都要变，只改边框在暗色下几乎看不出来
+  &__scope.is-checked {
+    border-color: var(--el-color-danger);
+    background: var(--el-color-danger-light-9);
+  }
+
+  &__scope-title {
+    display: flex;
+    flex-wrap: wrap; // 窄屏时让行数换行，而不是被裁掉半个数字
+    justify-content: space-between;
+    gap: 4px 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+
+  &__scope-desc {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--el-text-color-regular);
+  }
+
+  &__scope-keep {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--el-color-success);
+  }
+
+  &__tables {
+    margin-bottom: 16px;
+
+    &-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: var(--el-text-color-regular);
+    }
+  }
+
+  &__gate {
+    margin-bottom: 12px;
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    font-size: 13px;
+  }
+
+  &__btns {
+    display: flex;
+    gap: 8px;
+  }
+
+  &__result {
+    margin-bottom: 12px;
   }
 }
 

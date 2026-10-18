@@ -130,6 +130,29 @@ export interface UpgradePlan {
   warnings: string[]
 }
 
+/** 一档业务清理范围 + 各表行数 */
+export interface BizScopeView {
+  key: string
+  title: string
+  desc: string
+  keep: string
+  confirm: string
+  resetStockable: boolean
+  totalRows: number
+  tables: { name: string; rows: number }[]
+}
+
+/** 业务清理结果 */
+export interface BizCleanupReport {
+  scope: string
+  title: string
+  dryRun: boolean
+  tables: { name: string; rows: number; deleted: number; seqReset: boolean }[]
+  stockReset: boolean
+  stockResetRows: number
+  totalDeleted: number
+}
+
 /** 系统运维接口 */
 export const opsApi = {
   /** 备份列表 */
@@ -172,6 +195,16 @@ export const opsApi = {
   /** 真删；confirm 必须正好是「确认清理」 */
   cleanupApply(confirm: string, days?: { opLogDays?: number; loginLogDays?: number; idempotencyDays?: number }) {
     return http.post<CleanupView>('/ops/cleanup/apply', { confirm, ...days })
+  },
+
+  /** 业务清理范围与各表行数预览 */
+  cleanupScopes() {
+    return http.get<BizScopeView[]>('/ops/cleanup/scopes')
+  },
+
+  /** 执行业务数据清理（不可逆）；confirm 必须正好等于该范围的口令 */
+  businessCleanup(body: { scope: string; confirm: string; resetStock?: boolean }) {
+    return http.post<BizCleanupReport>('/ops/cleanup/business', body)
   },
 
   /** 系统体检 */

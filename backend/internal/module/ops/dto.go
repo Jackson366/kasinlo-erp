@@ -139,3 +139,33 @@ type UpgradeAction struct {
 	Done   bool   `json:"done"`
 	Error  string `json:"error"`
 }
+
+// ── 业务数据清理 ─────────────────────────────────────────
+
+// BizScopeView 是一档清理范围 + 每张表的当前行数（预演数据）。
+type BizScopeView struct {
+	Key            string         `json:"key"`
+	Title          string         `json:"title"`
+	Desc           string         `json:"desc"`
+	Keep           string         `json:"keep"`
+	Confirm        string         `json:"confirm"`
+	ResetStockable bool           `json:"resetStockable"`
+	TotalRows      int64          `json:"totalRows"`
+	Tables         []BizTableView `json:"tables"`
+}
+
+// BizTableView 是一张表的行数预览。
+type BizTableView struct {
+	Name string `json:"name"`
+	Rows int64  `json:"rows"`
+}
+
+// BizCleanupReq 业务清理请求。
+type BizCleanupReq struct {
+	// Scope 是清理范围，只接受服务端登记好的几档。
+	Scope string `json:"scope" label:"清理范围" binding:"required"`
+	// Confirm 必须正好等于该范围的口令。
+	Confirm string `json:"confirm" label:"确认口令" binding:"required"`
+	// ResetStock 同时清零规格库存（仅「进销存单据」档有效）。
+	ResetStock bool `json:"resetStock" label:"同时清零规格库存"`
+}
