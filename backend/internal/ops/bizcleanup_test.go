@@ -44,9 +44,36 @@ func TestBizCleanupNeverTouchesFrameworkTables(t *testing.T) {
 	// 日志表只允许出现在 database 档
 	for _, s := range BizCleanupScopes() {
 		for _, tbl := range s.Tables {
-			if scopeLogTables[tbl] && s.Key != "database" {
+			if scopeLogTables[tbl] && s.Key != ScopeDatabase {
 				t.Fatalf("日志表 %s 只允许出现在 database 档，却出现在 %s", tbl, s.Key)
 			}
+		}
+	}
+}
+
+// 白名单必须**按档位**判定，不能只看「是不是日志表」：
+// 之前的实现把「属于 scopeLogTables」当成豁免条件，于是任何档都能删日志表，
+// 只是恰好没有档登记了它。这里钉住运行时判据本身。
+func TestIsAllowedBizTableIsScopeAware(t *testing.T) {
+	cases := []struct {
+		table string
+		scope string
+		want  bool
+	}{
+		{"sys_operation_logs", ScopeDatabase, true},
+		{"sys_login_logs", ScopeDatabase, true},
+		{"sys_idempotencies", ScopeDatabase, true},
+		{"sys_operation_logs", ScopeInvDocuments, false},
+		{"sys_login_logs", ScopeInvAll, false},
+		{"sys_idempotencies", ScopeInvDocuments, false},
+		{"sys_users", ScopeDatabase, false},
+		{"sys_upgrade_records", ScopeDatabase, false},
+		{"inv_orders", ScopeInvDocuments, true},
+		{"inv_products", ScopeInvAll, true},
+	}
+	for _, c := range cases {
+		if got := isAllowedBizTable(c.table, c.scope); got != c.want {
+			t.Fatalf("isAllowedBizTable(%s, %s) = %v，期望 %v", c.table, c.scope, got, c.want)
 		}
 	}
 }

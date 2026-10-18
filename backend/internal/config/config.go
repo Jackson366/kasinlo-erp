@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -295,7 +296,82 @@ func (c *Config) validate() error {
 			return fmt.Errorf("security.trusted_proxies 中的 %q 既不是 IP 也不是网段", p)
 		}
 	}
+	if err := c.validateUpgradeDirs(); err != nil {
+		return err
+	}
 	return nil
+}
+
+// validateUpgradeDirs 校验升级相关目录。
+//
+// frontend_dir 是要被**整目录替换**的目标：升级时先把旧目录改名，再把新目录顶上。
+// 配成工作目录、盘符根、或可执行文件所在目录（及其祖先）的话，
+// 「改名旧目录」这一步就把自己脚下的东西搬走了，进程当场失去可执行文件与配置。
+// 这类错误在开发环境不会犯，但在现场「顺手改一下配置」时会犯，
+// 所以宁可启动失败，也不能等升级那天才发现。
+func (c *Config) validateUpgradeDirs() error {
+	fe := strings.TrimSpace(c.Upgrade.FrontendDir)
+	// 空表示本次升级只含后端，不替换前端。
+	if fe != "" {
+		abs, err := filepath.Abs(filepath.Clean(fe))
+		if err != nil {
+			return fmt.Errorf("upgrade.frontend_dir 解析失败 %q: %w", fe, err)
+		}
+		if isRootPath(abs) {
+			return fmt.Errorf("upgrade.frontend_dir 不能是文件系统根 %q：升级会整目录替换它", fe)
+		}
+		if exeDir, err := executableDir(); err == nil && exeDir != "" {
+			if abs == exeDir || isAncestorOf(abs, exeDir) {
+				return fmt.Errorf("upgrade.frontend_dir 指向可执行文件所在目录 %q（或其祖先）：升级替换该目录会让程序删掉自己", abs)
+			}
+		}
+		// 工作目录：配成 "." 时 Abs 会解析成真实路径，看不出是「顺手写的点」，
+		// 所以单独按绝对路径再判一次，报错里也说人话。
+		if wd, err := os.Getwd(); err == nil && wd != "" && abs == wd {
+			return fmt.Errorf("upgrade.frontend_dir 不能是进程工作目录 %q：升级会整目录替换它", wd)
+		}
+	}
+
+	sd := strings.TrimSpace(c.Upgrade.StagingDir)
+	if sd != "" {
+		sabs, err := filepath.Abs(filepath.Clean(sd))
+		if err != nil {
+			return fmt.Errorf("upgrade.staging_dir 解析失败 %q: %w", sd, err)
+		}
+		if isRootPath(sabs) {
+			return fmt.Errorf("upgrade.staging_dir 不能是文件系统根 %q", sd)
+		}
+	}
+	return nil
+}
+
+// isRootPath 判断是否为盘符根（Windows）或 / （Unix）。
+func isRootPath(abs string) bool {
+	if abs == string(filepath.Separator) {
+		return true
+	}
+	if vol := filepath.VolumeName(abs); vol != "" {
+		return abs == vol+string(filepath.Separator)
+	}
+	return false
+}
+
+// isAncestorOf 判断 parent 是否为 child 的祖先目录（含等于已在调用处判过）。
+func isAncestorOf(parent, child string) bool {
+	rel, err := filepath.Rel(parent, child)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// executableDir 返回当前可执行文件所在目录；取不到时返回空（不因此阻断启动）。
+func executableDir() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(exe), nil
 }
 
 func applyDefaults(c *Config) {

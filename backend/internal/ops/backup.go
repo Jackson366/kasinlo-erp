@@ -95,6 +95,22 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 
 	name := fmt.Sprintf("%s-%s%s", dbc.DBName, opt.Now.Format("20060102-150405"), backupFileSuffix)
 	target := filepath.Join(dir, name)
+	// 文件名只到秒，两次备份落在同一秒就会写同一个 target：
+	// 两个 pg_dump 交替截断同一个文件，最终留下的是一份**看起来存在、
+	// 恢复时才发现是坏的**备份 —— 比没有备份更危险（没人会去补做）。
+	// 用 O_EXCL 原子占位：抢不到就明确报错，而不是默默覆盖。
+	if err := reserveBackupFile(target); err != nil {
+		return nil, err
+	}
+	// 占位之后任何一步失败，都要把这个空壳删掉：一个 0 字节的 .dump
+	// 会照常出现在备份列表里，看着像「备份过」，真要恢复时才发现是空的。
+	// 半截文件同理 —— 比没有文件更危险。
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.Remove(target)
+		}
+	}()
 
 	stats, err := collectStats(db)
 	if err != nil {
@@ -122,7 +138,7 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 	out, err := cmd.CombinedOutput()
 	duration := time.Since(started)
 	if err != nil {
-		_ = os.Remove(target) // 半截文件比没有文件更危险：看起来像备份
+		// 空壳文件由上面的 defer 统一清理
 		return nil, fmt.Errorf("pg_dump 失败: %w\n%s", err, strings.TrimSpace(string(out)))
 	}
 
@@ -148,6 +164,7 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 	if err := writeSidecars(target, meta); err != nil {
 		return nil, err
 	}
+	committed = true // dump、校验、摘要、元数据都齐了，这份备份才算成立
 
 	res := &BackupResult{
 		Path: target, Size: size, SHA256: sum, Duration: duration, Stats: stats, Meta: meta,
@@ -162,6 +179,23 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 		res.Removed = removed
 	}
 	return res, nil
+}
+
+// reserveBackupFile 以 O_EXCL 原子占位备份文件。
+//
+// 选「占位 + 报错」而不是「自动改名 / 等一秒重试」：
+// 备份是低频人工动作，撞名意味着有人在并发触发（页面连点、CLI 与服务同时跑），
+// 这种时候让后一次**失败并说清楚**比悄悄产出第二份文件更可控 ——
+// 后者会让保留策略里的「最近 N 份」失去意义。
+func reserveBackupFile(path string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
+	if err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("备份文件 %s 已存在：同一秒内已有备份在生成，请稍后重试", filepath.Base(path))
+		}
+		return fmt.Errorf("创建备份文件失败: %s: %w", path, err)
+	}
+	return f.Close()
 }
 
 // collectStats 采集恢复后用于比对的锚点。

@@ -34,6 +34,10 @@ function shortSha(sha: string): string {
   return sha.length > 14 ? `${sha.slice(0, 6)}…${sha.slice(-6)}` : sha
 }
 
+/** 升级包大小上限，与后端一致（512 MB）。改这里时记得同步后端 maxPackageBytes */
+const MAX_PACKAGE_MB = 512
+const MAX_PACKAGE_BYTES = MAX_PACKAGE_MB * 1024 * 1024
+
 const activeTab = ref('backup')
 
 // ── 备份管理 ────────────────────────────────────────────
@@ -331,6 +335,12 @@ async function onPackageChange(file: { raw: File } | undefined): Promise<void> {
   if (!raw) return
   if (!raw.name.toLowerCase().endsWith('.zip')) {
     ElMessage.warning('升级包必须是 .zip 文件')
+    return
+  }
+  // 先在本地量一下：超过后端上限的包传上去也是被拒，白白占几百 MB 上行。
+  // 阈值与后端一致（512 MB），后端仍会再卡一次——前端校验只是省一次白传。
+  if (raw.size > MAX_PACKAGE_BYTES) {
+    ElMessage.warning(`升级包不能超过 ${MAX_PACKAGE_MB} MB，当前 ${(raw.size / 1024 / 1024).toFixed(1)} MB`)
     return
   }
   uploadRunning.value = true

@@ -1,8 +1,10 @@
 package ops
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"path/filepath"
 
 	"github.com/gin-gonic/gin"
@@ -228,21 +230,39 @@ func (h *Handler) UpgradeRecords(c *gin.Context) {
 // @Failure      403   {object}  response.Body  "缺少 ops:upgrade 权限"
 // @Router       /ops/upgrade/package [post]
 func (h *Handler) UploadPackage(c *gin.Context) {
+	// 第一道防线：在 gin 解析 multipart **之前**把请求体卡住。
+	// c.FormFile 内部会 ParseMultipartForm，超过 32 MB 的部分会先落到临时文件，
+	// 也就是说「事后用 LimitReader 统计长度」只能发现超限，
+	// 磁盘和内存已经被吃掉一次了 —— 一个声明很小、实际一直发的客户端
+	// 足以把临时目录写满。MaxBytesReader 让超限在读的阶段就断掉。
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxPackageBytes+maxMultipartSlack)
 	fh, err := c.FormFile("file")
 	if err != nil {
+		if isBodyTooLarge(err) {
+			response.Fail(c, fmt.Errorf("升级包超过 %d MB", maxPackageBytes>>20))
+			return
+		}
 		response.Fail(c, fmt.Errorf("读取上传文件失败：%w", err))
 		return
 	}
 	f, err := fh.Open()
 	if err != nil {
+		if isBodyTooLarge(err) {
+			response.Fail(c, fmt.Errorf("升级包超过 %d MB", maxPackageBytes>>20))
+			return
+		}
 		response.Fail(c, fmt.Errorf("打开上传文件失败：%w", err))
 		return
 	}
 	defer func() { _ = f.Close() }()
-	// 边读边限长：先信 ContentLength 只能防住「声明了大小」的客户端，
-	// 而 LimitReader 能防住「声明很小、实际一直发」的那种。
+	// 第二道防线：请求体里的其它字段（boundary 之外没有，但自定义客户端可能塞）
+	// 不被 MaxBytesReader 之外的路径覆盖时，这里再兜一次底。
 	data, err := io.ReadAll(io.LimitReader(f, maxPackageBytes+1))
 	if err != nil {
+		if isBodyTooLarge(err) {
+			response.Fail(c, fmt.Errorf("升级包超过 %d MB", maxPackageBytes>>20))
+			return
+		}
 		response.Fail(c, fmt.Errorf("读取上传文件失败：%w", err))
 		return
 	}
@@ -310,6 +330,20 @@ func (h *Handler) ApplyUpgrade(c *gin.Context) {
 
 // maxPackageBytes 升级包大小上限（512 MB），与 service 里的限制保持一致。
 const maxPackageBytes = 512 << 20
+
+// maxMultipartSlack 是给 multipart 边界、其它表单字段留的余量。
+// MaxBytesReader 卡的是整个请求体，不是文件本身，不留余量会让
+// 「刚好 512 MB 的包」因为多了几行 boundary 而被拒。
+const maxMultipartSlack = 4 << 20
+
+// isBodyTooLarge 判断错误是否来自请求体超限。
+//
+// 只看 *http.MaxBytesError 而不做字符串匹配：超限的判定权交给标准库，
+// 免得把「磁盘满」「连接中断」这些同样带 too large 字样的错误误判成超限。
+func isBodyTooLarge(err error) bool {
+	var mbe *http.MaxBytesError
+	return errors.As(err, &mbe)
+}
 
 // BizScopes 清理范围与行数预览
 // @Summary      业务清理范围预览

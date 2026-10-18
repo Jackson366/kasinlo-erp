@@ -19,6 +19,15 @@ import (
 // 确认口令每档不同，且调用方必须先有 24 小时内的备份（闸门在模块层，
 // 见 module/ops 的 BusinessCleanup）。
 
+// 清理范围标识。写成常量而不是散落的字符串：范围 key 同时出现在
+// 接口参数、确认口令映射、表白名单校验三处，拼错一个字母就变成
+// 「校验放行了本档不该碰的表」。
+const (
+	ScopeInvDocuments = "inv_documents" // 只清单据
+	ScopeInvAll       = "inv_all"       // 清全部进销存
+	ScopeDatabase     = "database"      // 清全部进销存 + 日志 + 幂等键
+)
+
 // frameworkTables 是**任何业务清理都不许碰**的表。
 //
 // 它们不是「业务数据」而是「系统本身」：删掉账号/角色/菜单/权限之后，
@@ -68,7 +77,7 @@ type BizCleanupScope struct {
 func BizCleanupScopes() []BizCleanupScope {
 	return []BizCleanupScope{
 		{
-			Key:            "inv_documents",
+			Key:            ScopeInvDocuments,
 			Title:          "进销存单据",
 			Desc:           "删采购/销售/出入库单据与明细、收付款记录，商品与往来单位档案全部保留",
 			Keep:           "商品、规格、单位、分类、客户、供应商、打印模板、系统框架",
@@ -81,7 +90,7 @@ func BizCleanupScopes() []BizCleanupScope {
 			},
 		},
 		{
-			Key:     "inv_all",
+			Key:     ScopeInvAll,
 			Title:   "进销存全部数据",
 			Desc:    "删全部进销存业务表，包括商品、规格、单位、分类、客户、供应商与打印模板",
 			Keep:    "系统框架（账号、角色、菜单、权限、部门、结构版本、升级记录）",
@@ -97,7 +106,7 @@ func BizCleanupScopes() []BizCleanupScope {
 			},
 		},
 		{
-			Key:     "database",
+			Key:     ScopeDatabase,
 			Title:   "数据库重置",
 			Desc:    "清空全部进销存业务表 + 日志 + 幂等键，相当于把系统交还给下一个使用者",
 			Keep:    "系统框架（账号、角色、菜单、权限、部门、结构版本、升级记录）",
@@ -171,7 +180,7 @@ func BizCleanup(db *gorm.DB, opt BizCleanupOptions) (*BizCleanupReport, error) {
 		return nil, err
 	}
 	for _, t := range scope.Tables {
-		if !isAllowedBizTable(t) {
+		if !isAllowedBizTable(t, scope.Key) {
 			// 正常情况走不到：范围表是代码里写死的。这是给将来改表的人兜底的。
 			return nil, fmt.Errorf("范围 %s 包含受保护的表 %s，已拒绝执行", scope.Key, t)
 		}
@@ -243,13 +252,17 @@ func BizCleanup(db *gorm.DB, opt BizCleanupOptions) (*BizCleanupReport, error) {
 	return rep, nil
 }
 
-// isAllowedBizTable 判断一张表是否允许被业务清理删除。
-// 框架表一律不允许；日志表只允许出现在 database 档（调用方已按范围校验）。
-func isAllowedBizTable(table string) bool {
-	if frameworkTables[table] && !scopeLogTables[table] {
-		return false
+// isAllowedBizTable 判断一张表在**给定范围**下是否允许被整表清空。
+//
+// 必须带 scope：日志表只在 database 档放行。之前这里只看「是不是框架表」，
+// 于是「日志表属于 scopeLogTables」被当成豁免条件放行了任何档 ——
+// 意味着「只清单据」这档如果哪天有人把日志表加进 Tables，校验也会点头。
+// 白名单的意义就是**不给档位之间留错位的口子**，所以判据要连档位一起看。
+func isAllowedBizTable(table string, scope string) bool {
+	if scopeLogTables[table] {
+		return scope == ScopeDatabase
 	}
-	return true
+	return !frameworkTables[table]
 }
 
 func containsTable(tables []string, name string) bool {
