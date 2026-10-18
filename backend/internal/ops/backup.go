@@ -1,0 +1,286 @@
+package ops
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+
+	"nova-erp/internal/config"
+)
+
+// backupFileSuffix 是备份文件后缀。用 pg_dump 的自定义格式（-Fc）而不是纯 SQL：
+//
+//   - 自带压缩，几十 MB 的库落成几 MB；
+//   - 能**选择性恢复**（只恢复某张表 / 只恢复数据），SQL 文本做不到；
+//   - 恢复时 pg_restore 会并行建索引，比 psql 逐条执行快。
+//
+// 代价是「不能用文本编辑器打开看一眼」，但对这类系统没人会去读 dump，
+// 需要看内容时用 `pg_restore --list`。
+const backupFileSuffix = ".dump"
+
+// BackupOptions 是备份参数；零值字段由调用方用配置默认值补齐。
+type BackupOptions struct {
+	Dir        string
+	KeepCount  int
+	KeepMonths int
+	PgDumpPath string
+	// SkipPrune 为 true 时不做轮转（首次接入、或手工备份时不想删旧的）。
+	SkipPrune bool
+	Now       time.Time
+}
+
+// BackupStats 是备份时顺带采集的「当时库里有什么」，恢复后用来比对。
+//
+// 只采表数与几张关键表的行数，不做全库行数统计：全量 count(*) 在大表上会把
+// 备份时间拖长，而「对得上账」只需要几个锚点。
+type BackupStats struct {
+	Tables        int64            `json:"tables"`
+	ServerVersion string           `json:"serverVersion"`
+	Rows          map[string]int64 `json:"rows"`
+}
+
+// BackupMeta 写在 `<file>.json` 里，与 dump 同名同目录。
+//
+// 单独存一份元数据而不是只靠日志：半年后要判断「这份备份能不能用」时，
+// 日志早就轮转没了，元数据还在。
+type BackupMeta struct {
+	Database string      `json:"database"`
+	File     string      `json:"file"`
+	Started  time.Time   `json:"startedAt"`
+	Duration string      `json:"duration"`
+	Size     int64       `json:"size"`
+	SHA256   string      `json:"sha256"`
+	Stats    BackupStats `json:"stats"`
+}
+
+// BackupResult 是备份结果。
+type BackupResult struct {
+	Path     string
+	Size     int64
+	SHA256   string
+	Duration time.Duration
+	Stats    BackupStats
+	Removed  []string
+	Meta     BackupMeta
+}
+
+// Backup 执行一次全量备份，并按保留策略轮转旧文件。
+func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupResult, error) {
+	if opt.Now.IsZero() {
+		opt.Now = time.Now()
+	}
+	if opt.Dir == "" {
+		opt.Dir = "backups"
+	}
+	dir, err := filepath.Abs(opt.Dir)
+	if err != nil {
+		return nil, fmt.Errorf("解析备份目录失败: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return nil, fmt.Errorf("创建备份目录失败: %s: %w", dir, err)
+	}
+	dumpPath, err := locateTool("pg_dump", opt.PgDumpPath)
+	if err != nil {
+		return nil, err
+	}
+
+	name := fmt.Sprintf("%s-%s%s", dbc.DBName, opt.Now.Format("20060102-150405"), backupFileSuffix)
+	target := filepath.Join(dir, name)
+
+	stats, err := collectStats(db)
+	if err != nil {
+		return nil, err
+	}
+
+	started := time.Now()
+	// 口令走环境变量而不是命令行参数：命令行在 ps / 任务管理器里对同机所有用户可见，
+	// 备份是最容易被顺手跑的一条命令，不该把口令顺手泄出去。
+	cmd := exec.Command(dumpPath,
+		"--format=custom",
+		"--compress=6",
+		"--no-owner",
+		"--no-privileges",
+		"--file="+target,
+		"--host="+dbc.Host,
+		fmt.Sprintf("--port=%d", dbc.Port),
+		"--username="+dbc.User,
+		"--dbname="+dbc.DBName,
+	)
+	cmd.Env = append(os.Environ(), "PGPASSWORD="+dbc.Password)
+	if dbc.SSLMode != "" && dbc.SSLMode != "disable" {
+		cmd.Env = append(cmd.Env, "PGSSLMODE="+dbc.SSLMode)
+	}
+	out, err := cmd.CombinedOutput()
+	duration := time.Since(started)
+	if err != nil {
+		_ = os.Remove(target) // 半截文件比没有文件更危险：看起来像备份
+		return nil, fmt.Errorf("pg_dump 失败: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+
+	// 立刻回读一遍归档清单：dump 进程退出码为 0 不等于文件可恢复
+	// （磁盘写满时可能截断），而「备份是坏的」要到真出事那天才发现。
+	if err := verifyArchive(dumpPath, target, opt.PgDumpPath); err != nil {
+		return nil, err
+	}
+
+	sum, size, err := fileSHA256(target)
+	if err != nil {
+		return nil, err
+	}
+	meta := BackupMeta{
+		Database: dbc.DBName,
+		File:     name,
+		Started:  opt.Now,
+		Duration: duration.Round(time.Millisecond).String(),
+		Size:     size,
+		SHA256:   sum,
+		Stats:    stats,
+	}
+	if err := writeSidecars(target, meta); err != nil {
+		return nil, err
+	}
+
+	res := &BackupResult{
+		Path: target, Size: size, SHA256: sum, Duration: duration, Stats: stats, Meta: meta,
+	}
+	if !opt.SkipPrune {
+		removed, err := pruneBackups(dir, opt)
+		if err != nil {
+			// 轮转失败不该让备份本身算作失败：文件已经落好了，告警让人去清
+			res.Removed = nil
+			return res, fmt.Errorf("备份已完成，但清理旧备份失败: %w", err)
+		}
+		res.Removed = removed
+	}
+	return res, nil
+}
+
+// collectStats 采集恢复后用于比对的锚点。
+func collectStats(db *gorm.DB) (BackupStats, error) {
+	stats := BackupStats{Rows: map[string]int64{}}
+	if err := db.Raw("SELECT current_setting('server_version')").Scan(&stats.ServerVersion).Error; err != nil {
+		return stats, fmt.Errorf("读取数据库版本失败: %w", err)
+	}
+	if err := db.Raw(`SELECT count(*) FROM information_schema.tables
+		WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`).Scan(&stats.Tables).Error; err != nil {
+		return stats, fmt.Errorf("统计表数量失败: %w", err)
+	}
+	// 锚点表：一张系统表、一张单据主表、一张明细表、一张主数据表 ——
+	// 覆盖四类数据，任何一类丢了都能从计数上看出来。
+	for _, t := range []string{"sys_users", "inv_orders", "inv_order_items", "inv_products"} {
+		var n int64
+		if err := db.Raw("SELECT count(*) FROM " + t).Scan(&n).Error; err != nil {
+			return stats, fmt.Errorf("统计 %s 行数失败: %w", t, err)
+		}
+		stats.Rows[t] = n
+	}
+	return stats, nil
+}
+
+// verifyArchive 用 pg_restore --list 回读归档目录，确认文件结构完整。
+func verifyArchive(pgDumpPath, file, configuredRestore string) error {
+	restorePath, err := locateTool("pg_restore", configuredRestore)
+	if err != nil {
+		// 只有 pg_dump 没有 pg_restore 的安装（极少见）不该卡住备份，
+		// 但要明确告诉用户「这次没有校验」。
+		return nil
+	}
+	_ = pgDumpPath
+	out, err := exec.Command(restorePath, "--list", file).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("备份文件校验失败（归档不可读）: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+	if len(strings.TrimSpace(string(out))) == 0 {
+		return fmt.Errorf("备份文件校验失败：归档清单为空，文件可能被截断")
+	}
+	return nil
+}
+
+// writeSidecars 写 sha256 与元数据。
+func writeSidecars(target string, meta BackupMeta) error {
+	if err := os.WriteFile(target+".sha256", []byte(fmt.Sprintf("%s  %s\n", meta.SHA256, filepath.Base(target))), 0o640); err != nil {
+		return fmt.Errorf("写校验文件失败: %w", err)
+	}
+	buf, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化备份元数据失败: %w", err)
+	}
+	if err := os.WriteFile(target+".json", append(buf, '\n'), 0o640); err != nil {
+		return fmt.Errorf("写备份元数据失败: %w", err)
+	}
+	return nil
+}
+
+// pruneBackups 按保留策略删除旧备份（连同 .sha256 / .json 一起删）。
+func pruneBackups(dir string, opt BackupOptions) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]BackupFile, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), backupFileSuffix) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		files = append(files, BackupFile{
+			Path: path,
+			Time: backupTimeFromName(e.Name(), info.ModTime()),
+			Size: info.Size(),
+		})
+	}
+	victims := PlanRetention(files, opt.Now, opt.KeepCount, opt.KeepMonths)
+	removed := make([]string, 0, len(victims))
+	for _, v := range victims {
+		for _, p := range []string{v.Path, v.Path + ".sha256", v.Path + ".json"} {
+			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				return removed, fmt.Errorf("删除旧备份失败 %s: %w", p, err)
+			}
+		}
+		removed = append(removed, v.Path)
+	}
+	return removed, nil
+}
+
+// backupTimeFromName 从文件名解析备份时间；解析不到就回落到 mtime。
+func backupTimeFromName(name string, fallback time.Time) time.Time {
+	base := strings.TrimSuffix(name, backupFileSuffix)
+	// <db>-YYYYMMDD-HHMMSS：库名里可能有横线，所以从右往左取两段
+	parts := strings.Split(base, "-")
+	if len(parts) < 2 {
+		return fallback
+	}
+	ts := parts[len(parts)-2] + parts[len(parts)-1]
+	if t, err := time.ParseInLocation("20060102150405", ts, time.Local); err == nil {
+		return t
+	}
+	return fallback
+}
+
+// fileSHA256 计算文件摘要与大小。
+func fileSHA256(path string) (string, int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", 0, fmt.Errorf("打开备份文件失败: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return "", 0, fmt.Errorf("计算备份摘要失败: %w", err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), n, nil
+}

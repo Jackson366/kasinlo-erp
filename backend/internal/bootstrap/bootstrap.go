@@ -50,6 +50,11 @@ func Init(configPath string, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 迁移前先判断方向：库比程序新就拒绝启动（回滚时最容易踩）。
+	// 必须在 AutoMigrate 之前 —— 它一旦动手就可能按旧代码误改新结构。
+	if _, err := database.CheckSchemaVersion(db); err != nil {
+		return nil, err
+	}
 	if err := database.AutoMigrate(); err != nil {
 		return nil, fmt.Errorf("自动迁移表结构失败: %w", err)
 	}
@@ -59,6 +64,11 @@ func Init(configPath string, opts Options) (*Result, error) {
 	// 结构就位后再修补历史数据：修补语句依赖列已经存在（老库升级时
 	// 列可能是本次 AutoMigrate 才加上或改可空的）。
 	if err := database.PatchData(); err != nil {
+		return nil, err
+	}
+	// 结构就位、数据修补完成之后才把版本推进：中途失败时版本仍停在旧值，
+	// 下次启动会重新走一遍（AutoMigrate 与 PatchData 都是幂等的）。
+	if err := database.RecordSchemaVersion(database.DB()); err != nil {
 		return nil, err
 	}
 

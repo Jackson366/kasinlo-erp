@@ -14,6 +14,9 @@ frontend/dist/
 frontend/.vite/
 *.local
 
+# 数据库备份：含全部业务数据，绝不能进版本库
+backend/backups/
+
 # ── 脚本产物 ──────────────────────────
 scripts/.browser-verify.json
 scripts/p3-result.json

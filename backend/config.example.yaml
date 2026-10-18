@@ -86,3 +86,22 @@ security:
   # 一旦把不受控的地址填进来，客户端就能用 X-Forwarded-For 伪造审计日志的来源 IP。
   # 也可用环境变量覆盖：NOVA_SECURITY_TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8
   trusted_proxies: []
+
+backup:
+  # 备份输出目录。相对路径以可执行文件所在目录为基准。
+  # 该目录**必须**同步到第二块盘 —— 备份和数据同盘等于没有备份。
+  dir: ./backups
+  # 保留最近多少份。与 keep_months 取并集，最新一份永不删除。
+  keep_count: 30
+  # 最近多少个月，每月至少留一份月档。防止长期停更后把唯一的旧档挤掉。
+  keep_months: 6
+  # pg_dump / pg_restore 路径。留空则自动探测（PATH → PostgreSQL 安装目录）。
+  # 客户端版本低于服务器版本会报 server version mismatch，这时要显式指定。
+  pg_dump_path: ""
+  pg_restore_path: ""
+
+maintenance:
+  # 各类数据的保留天数（0 = 用默认值）。清理默认 dry-run，加 --apply 才真删。
+  op_log_days: 180        # 操作日志
+  login_log_days: 180     # 登录日志（实际还会受账号锁定窗口约束，取更早者）
+  idempotency_days: 7     # 幂等键「过期之后」再保留多少天

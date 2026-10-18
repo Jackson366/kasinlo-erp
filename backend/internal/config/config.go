@@ -13,12 +13,46 @@ import (
 
 // Config 是应用的完整配置树。
 type Config struct {
-	App      AppConfig      `yaml:"app"`
-	Database DatabaseConfig `yaml:"database"`
-	JWT      JWTConfig      `yaml:"jwt"`
-	Log      LogConfig      `yaml:"log"`
-	CORS     CORSConfig     `yaml:"cors"`
-	Security SecurityConfig `yaml:"security"`
+	App         AppConfig         `yaml:"app"`
+	Database    DatabaseConfig    `yaml:"database"`
+	JWT         JWTConfig         `yaml:"jwt"`
+	Log         LogConfig         `yaml:"log"`
+	CORS        CORSConfig        `yaml:"cors"`
+	Security    SecurityConfig    `yaml:"security"`
+	Backup      BackupConfig      `yaml:"backup"`
+	Maintenance MaintenanceConfig `yaml:"maintenance"`
+}
+
+// BackupConfig 是备份/恢复的默认参数，由独立命令 nova-ops 读取。
+//
+// 放在配置文件里而不是写死在脚本中：连接参数、库名、pg_dump 路径都跟着
+// 环境走，运维只需要维护一份 config.yaml，不用在两个地方各改一遍口令。
+type BackupConfig struct {
+	// Dir 备份输出目录；相对路径按**进程工作目录**解析（与 log.dir 一致）。
+	Dir string `yaml:"dir"`
+	// KeepCount 保留最近多少份全量备份。
+	KeepCount int `yaml:"keep_count"`
+	// KeepMonths 另外保证每个月至少留一份，覆盖最近多少个月（月档）。
+	KeepMonths int `yaml:"keep_months"`
+	// PgDumpPath / PgRestorePath 留空则依次探测 PATH、Windows 安装目录、
+	// Linux/macOS 常见包管理路径。
+	PgDumpPath    string `yaml:"pg_dump_path"`
+	PgRestorePath string `yaml:"pg_restore_path"`
+}
+
+// MaintenanceConfig 是数据清理的默认保留期，由 nova-ops cleanup 读取。
+//
+// 一律按「保留天数」而不是「删多少行」：按行删会随数据量漂移，
+// 按时间删的语义是「超过这个年限的日志我不需要了」，一眼可读也能审计。
+type MaintenanceConfig struct {
+	// OpLogDays 操作日志保留天数，<=0 走默认 180。
+	OpLogDays int `yaml:"op_log_days"`
+	// LoginLogDays 登录日志保留天数，<=0 走默认 180。
+	// 实际删除时还会叠加账号锁定保护窗口，见 ops.Cleanup。
+	LoginLogDays int `yaml:"login_log_days"`
+	// IdempotencyDays 幂等键**过期之后**再保留多少天，<=0 走默认 7。
+	// 留一段缓冲是为了让「过期前一秒提交、过期后才重试」的请求仍能回放结果。
+	IdempotencyDays int `yaml:"idempotency_days"`
 }
 
 type AppConfig struct {
@@ -223,6 +257,12 @@ func (c *Config) validate() error {
 	if c.JWT.Secret == "" {
 		return fmt.Errorf("jwt.secret 不能为空")
 	}
+	if c.Backup.KeepCount < 0 || c.Backup.KeepMonths < 0 {
+		return fmt.Errorf("backup.keep_count / keep_months 不能为负数（0 表示用默认值）")
+	}
+	if c.Maintenance.OpLogDays < 0 || c.Maintenance.LoginLogDays < 0 || c.Maintenance.IdempotencyDays < 0 {
+		return fmt.Errorf("maintenance.*_days 不能为负数（0 表示用默认值）")
+	}
 	// 代理地址写错会让 ClientIP 取不到真实来源，宁可启动时就报错
 	for _, p := range c.Security.TrustedProxies {
 		p = strings.TrimSpace(p)
@@ -272,6 +312,24 @@ func applyDefaults(c *Config) {
 	}
 	if c.Database.StatementTimeout <= 0 {
 		c.Database.StatementTimeout = 30000
+	}
+	if c.Backup.Dir == "" {
+		c.Backup.Dir = "backups"
+	}
+	if c.Backup.KeepCount == 0 {
+		c.Backup.KeepCount = 30
+	}
+	if c.Backup.KeepMonths == 0 {
+		c.Backup.KeepMonths = 6
+	}
+	if c.Maintenance.OpLogDays == 0 {
+		c.Maintenance.OpLogDays = 180
+	}
+	if c.Maintenance.LoginLogDays == 0 {
+		c.Maintenance.LoginLogDays = 180
+	}
+	if c.Maintenance.IdempotencyDays == 0 {
+		c.Maintenance.IdempotencyDays = 7
 	}
 	if c.Log.Level == "" {
 		c.Log.Level = "info"

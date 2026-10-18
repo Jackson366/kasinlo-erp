@@ -98,6 +98,8 @@ func AutoMigrate() error {
 		&model.InvStockItem{},
 		&model.InvPrintTemplate{},
 		&model.Idempotency{},
+		// 结构版本表：记录库已升到哪一版，供启动闸门判断方向
+		&model.SchemaVersion{},
 	)
 }
 
