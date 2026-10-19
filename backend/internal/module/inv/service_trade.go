@@ -324,7 +324,10 @@ func (s *Service) OrderDelete(id int64, actor *authz.Identity) error {
 		// 删除同样要带状态条件：上面那句状态检查在事务外，审核可能已经把它
 		// 推进成「已审核」并扣了库存，此时删掉单据会留下 source_id 指向空单的
 		// 出入库记录 —— 库存没了、单据也没了，对账时无从追溯。
-		res := tx.Where("id = ? AND status = ?", id, model.InvStatusPending).
+		//
+		// 条件是「不是已审核」而不是「等于待处理」：已取消的单据没有任何库存
+		// 副作用，允许删掉（否则用户取消完就再也清不掉，列表里永远躺着一堆废单）。
+		res := tx.Where("id = ? AND status <> ?", id, model.InvStatusDone).
 			Delete(&model.InvOrder{})
 		if res.Error != nil {
 			return res.Error
