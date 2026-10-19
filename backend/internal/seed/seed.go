@@ -26,6 +26,21 @@ const (
 	DefaultDemoPassword  = "demo123456"
 )
 
+// IsDefaultPassword 判断该账号是否仍在用内置的默认口令。
+//
+// 供登录流程在成功后告警：默认口令是公开的，只要部署者没改密，
+// 任何知道口令的人都能以 admin 登录。代码层面目前没有「首次登录强制改密」，
+// 所以至少要在每次默认口令登录时留一条 WARN，让运维在日志里看得到这个隐患。
+func IsDefaultPassword(username, password string) bool {
+	switch username {
+	case DefaultAdminUser:
+		return password == DefaultAdminPassword
+	case DefaultDemoUser:
+		return password == DefaultDemoPassword
+	}
+	return false
+}
+
 // Run 执行全部种子数据初始化。
 //
 // 前置条件是模块清单已登记（由 bootstrap.Init 里的 module.Build 完成）。

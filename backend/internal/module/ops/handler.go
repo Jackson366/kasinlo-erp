@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"nova-erp/internal/pkg/bind"
+	"nova-erp/internal/pkg/errcode"
 	"nova-erp/internal/pkg/response"
 )
 
@@ -239,7 +240,7 @@ func (h *Handler) UploadPackage(c *gin.Context) {
 	fh, err := c.FormFile("file")
 	if err != nil {
 		if isBodyTooLarge(err) {
-			response.Fail(c, fmt.Errorf("升级包超过 %d MB", maxPackageBytes>>20))
+			response.Fail(c, errcode.Newf(errcode.ErrBadRequest, "升级包超过 %d MB", maxPackageBytes>>20))
 			return
 		}
 		response.Fail(c, fmt.Errorf("读取上传文件失败：%w", err))
@@ -248,7 +249,7 @@ func (h *Handler) UploadPackage(c *gin.Context) {
 	f, err := fh.Open()
 	if err != nil {
 		if isBodyTooLarge(err) {
-			response.Fail(c, fmt.Errorf("升级包超过 %d MB", maxPackageBytes>>20))
+			response.Fail(c, errcode.Newf(errcode.ErrBadRequest, "升级包超过 %d MB", maxPackageBytes>>20))
 			return
 		}
 		response.Fail(c, fmt.Errorf("打开上传文件失败：%w", err))
@@ -260,14 +261,14 @@ func (h *Handler) UploadPackage(c *gin.Context) {
 	data, err := io.ReadAll(io.LimitReader(f, maxPackageBytes+1))
 	if err != nil {
 		if isBodyTooLarge(err) {
-			response.Fail(c, fmt.Errorf("升级包超过 %d MB", maxPackageBytes>>20))
+			response.Fail(c, errcode.Newf(errcode.ErrBadRequest, "升级包超过 %d MB", maxPackageBytes>>20))
 			return
 		}
 		response.Fail(c, fmt.Errorf("读取上传文件失败：%w", err))
 		return
 	}
 	if int64(len(data)) > maxPackageBytes {
-		response.Fail(c, fmt.Errorf("升级包超过 %d MB", maxPackageBytes>>20))
+		response.Fail(c, errcode.Newf(errcode.ErrBadRequest, "升级包超过 %d MB", maxPackageBytes>>20))
 		return
 	}
 	res, err := h.svc.UploadPackage(fh.Filename, data)

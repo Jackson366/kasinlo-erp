@@ -11,7 +11,6 @@ package ops
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +25,7 @@ import (
 	"nova-erp/internal/logger"
 	"nova-erp/internal/model"
 	fwops "nova-erp/internal/ops"
+	"nova-erp/internal/pkg/errcode"
 
 	"go.uber.org/zap"
 )
@@ -160,14 +160,14 @@ func (s *Service) BackupPath(file string) (string, error) {
 func (s *Service) resolveBackupFile(file string) (string, error) {
 	name := filepath.Base(strings.TrimSpace(file))
 	if name == "" || name == "." || name == ".." || name != strings.TrimSpace(file) {
-		return "", errors.New("备份文件名不合法")
+		return "", errcode.New(errcode.ErrBadRequest, "备份文件名不合法")
 	}
 	if !strings.HasSuffix(name, ".dump") {
-		return "", errors.New("只允许操作 .dump 备份文件")
+		return "", errcode.New(errcode.ErrBadRequest, "只允许操作 .dump 备份文件")
 	}
 	full := filepath.Join(s.backupDir(), name)
 	if _, err := os.Stat(full); err != nil {
-		return "", fmt.Errorf("备份文件不存在：%s", name)
+		return "", errcode.Newf(errcode.ErrNotFound, "备份文件不存在：%s", name)
 	}
 	return name, nil
 }
@@ -197,7 +197,7 @@ func (s *Service) Restore(req RestoreReq) (*fwops.RestoreResult, error) {
 	}
 	target := strings.TrimSpace(req.Target)
 	if target != "" && strings.EqualFold(target, s.cfg.Database.DBName) {
-		return nil, errors.New("不允许把备份恢复到生产库；如需覆盖生产库，请停机后用 nova-ops restore --force")
+		return nil, errcode.New(errcode.ErrForbidden, "不允许把备份恢复到生产库；如需覆盖生产库，请停机后用 nova-ops restore --force")
 	}
 	return fwops.Restore(s.cfg, fwops.RestoreOptions{
 		File:          file,
@@ -348,7 +348,7 @@ func (s *Service) recentRecords(limit int) ([]UpgradeRecord, error) {
 func (s *Service) UploadPackage(name string, data []byte) (*fwops.UpgradePackageResult, error) {
 	const maxPackageSize = 512 << 20 // 512 MB：一个后端二进制 + 一份前端产物远小于此
 	if int64(len(data)) > maxPackageSize {
-		return nil, fmt.Errorf("升级包超过 %d MB", maxPackageSize>>20)
+		return nil, errcode.Newf(errcode.ErrBadRequest, "升级包超过 %d MB", maxPackageSize>>20)
 	}
 	return fwops.ParseUpgradePackage(s.db, s.cfg, data, s.cfg.App.Release)
 }
@@ -360,10 +360,10 @@ func (s *Service) UploadPackage(name string, data []byte) (*fwops.UpgradePackage
 func (s *Service) UpgradeBackup(req UpgradeBackupReq) (*BackupItem, error) {
 	var rec model.UpgradeRecord
 	if err := s.db.Where("plan_id = ?", req.PlanID).First(&rec).Error; err != nil {
-		return nil, errors.New("升级计划不存在")
+		return nil, errcode.New(errcode.ErrNotFound, "升级计划不存在")
 	}
 	if rec.Status != model.UpgradePending {
-		return nil, fmt.Errorf("该计划当前状态为「%s」，只有待执行的计划才能留档", upgradeStatusText(rec.Status))
+		return nil, errcode.Newf(errcode.ErrConflict, "该计划当前状态为「%s」，只有待执行的计划才能留档", upgradeStatusText(rec.Status))
 	}
 	item, err := s.RunBackup(RunBackupReq{SkipPrune: true, Note: "升级前留档：" + req.PlanID})
 	if err != nil {
@@ -378,18 +378,18 @@ func (s *Service) UpgradeBackup(req UpgradeBackupReq) (*BackupItem, error) {
 // ApplyUpgrade 执行升级计划。
 func (s *Service) ApplyUpgrade(req ApplyUpgradeReq) (*UpgradeRecord, error) {
 	if strings.TrimSpace(req.Confirm) != confirmUpgrade {
-		return nil, fmt.Errorf("确认口令不正确（需要输入「%s」）", confirmUpgrade)
+		return nil, errcode.Newf(errcode.ErrBadRequest, "确认口令不正确（需要输入「%s」）", confirmUpgrade)
 	}
 	// 硬性前置：升级前必须留过档，且那份备份还在。
 	var rec model.UpgradeRecord
 	if err := s.db.Where("plan_id = ?", req.PlanID).First(&rec).Error; err != nil {
-		return nil, errors.New("升级计划不存在")
+		return nil, errcode.New(errcode.ErrNotFound, "升级计划不存在")
 	}
 	if strings.TrimSpace(rec.BackupPath) == "" {
-		return nil, errors.New("尚未执行升级前备份：请先点「升级前备份」，没有回滚点不允许升级")
+		return nil, errcode.New(errcode.ErrConflict, "尚未执行升级前备份：请先点「升级前备份」，没有回滚点不允许升级")
 	}
 	if _, err := os.Stat(rec.BackupPath); err != nil {
-		return nil, fmt.Errorf("升级前备份文件不存在（%s）：请重新备份", rec.BackupPath)
+		return nil, errcode.Newf(errcode.ErrConflict, "升级前备份文件不存在（%s）：请重新备份", rec.BackupPath)
 	}
 	done, err := fwops.ExecuteUpgradePlan(s.db, s.cfg, req.PlanID)
 	if err != nil {
@@ -526,10 +526,12 @@ func (s *Service) BizScopes() ([]BizScopeView, error) {
 func (s *Service) BusinessCleanup(req BizCleanupReq) (*fwops.BizCleanupReport, error) {
 	scope, err := fwops.FindBizCleanupScope(req.Scope)
 	if err != nil {
-		return nil, err
+		// 「未知范围」是请求参数错误，不能归到 50000「服务器内部错误」：
+		// 报错里带着合法值，用户要能一眼看到该选什么。
+		return nil, errcode.New(errcode.ErrBadRequest, err.Error())
 	}
 	if strings.TrimSpace(req.Confirm) != scope.Confirm {
-		return nil, fmt.Errorf("确认口令不正确（「%s」需要输入「%s」）", scope.Title, scope.Confirm)
+		return nil, errcode.Newf(errcode.ErrBadRequest, "确认口令不正确（「%s」需要输入「%s」）", scope.Title, scope.Confirm)
 	}
 
 	// 闸门一：回滚点。取最近一份备份的时间，不拷文件、不校验内容 ——
@@ -545,7 +547,7 @@ func (s *Service) BusinessCleanup(req BizCleanupReq) (*fwops.BizCleanupReport, e
 		}
 	}
 	if ok, hint := fwops.BizCleanupGate(latest, time.Now(), bizCleanupMaxBackupAge); !ok {
-		return nil, errors.New(hint)
+		return nil, errcode.New(errcode.ErrConflict, hint)
 	}
 
 	rep, err := fwops.BizCleanup(s.db, fwops.BizCleanupOptions{

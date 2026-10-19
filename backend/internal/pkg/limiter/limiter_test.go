@@ -64,3 +64,26 @@ func TestFailLimiterDisabled(t *testing.T) {
 	nilL.Fail("a")
 	nilL.Reset("a")
 }
+
+// 上界满后必须拒绝而不是放行：否则攻击者用海量随机 key 打满 maxKeys，
+// 就能让限流器对后续所有新 key 失效，在最需要的场景（海量来源爆破）下被绕过。
+func TestFailLimiterCapRejectsWhenFull(t *testing.T) {
+	l := NewWithCap(3, time.Minute, 3)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	l.now = func() time.Time { return now }
+
+	// 打满 3 个 key
+	for _, k := range []string{"a", "b", "c"} {
+		if !l.AllowAndConsume(k) {
+			t.Fatalf("上界内新 key %s 应放行", k)
+		}
+	}
+	// 第 4 个 key：上界已满，必须拒绝（放行即等于关掉限流）
+	if l.AllowAndConsume("d") {
+		t.Fatal("上界满后新 key 应被拒绝，而不是放行（否则限流可被绕过）")
+	}
+	keys, evicted := l.Stats()
+	if keys != 3 || evicted < 1 {
+		t.Fatalf("期望 keys=3 evicted>=1，实际 keys=%d evicted=%d", keys, evicted)
+	}
+}

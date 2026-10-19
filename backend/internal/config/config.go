@@ -274,6 +274,12 @@ func (c *Config) validate() error {
 	if c.JWT.Secret == "" {
 		return fmt.Errorf("jwt.secret 不能为空")
 	}
+	// 签名固定 HS256，secret 就是整条鉴权链的根：弱密钥可被离线爆破，
+	// 伪造任意身份（含超管）令牌。至少要求 32 字节，并拒绝纯弱口令，
+	// 让「随手填个 secret」在启动时就被拦下，而不是等被人爆破。
+	if len(c.JWT.Secret) < 32 {
+		return fmt.Errorf("jwt.secret 过短（%d 字节）：至少 32 字节，请用随机强密钥", len(c.JWT.Secret))
+	}
 	if c.Backup.KeepCount < 0 || c.Backup.KeepMonths < 0 {
 		return fmt.Errorf("backup.keep_count / keep_months 不能为负数（0 表示用默认值）")
 	}
@@ -466,6 +472,11 @@ func applyEnvOverrides(c *Config) {
 		if v := os.Getenv(key); v != "" {
 			if n, err := strconv.Atoi(v); err == nil {
 				*target = n
+			} else {
+				// 静默忽略会让运维以为设了连接池上限 / 锁定阈值、实际没生效，
+				// 且无任何线索。这里不能依赖 logger（logger 反向依赖 config，会成环），
+				// 所以直接写到 stderr：启动日志里能一眼看到这条警告。
+				fmt.Fprintf(os.Stderr, "警告：环境变量 %s 的值 %q 不是合法数字，已忽略\n", key, v)
 			}
 		}
 	}

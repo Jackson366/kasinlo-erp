@@ -107,6 +107,25 @@ func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 	if err := authz.EnsurePermissionGrantable(actor, req.Permission); err != nil {
 		return err
 	}
+	// 改 permission 等价于一次「对挂载该菜单的所有角色」的批量授权：
+	// 除了子集校验（上面已做），还得确保这些角色都落在调用者可授予范围。
+	// 否则一个「本部门」管理员能把某个挂在「全部数据」角色上的菜单 permission
+	// 改成自己持有的码，把权限扩散给范围更宽的角色持有者 —— 绕过了
+	// EnsureGrantable 在「把人授给角色」那条路上设的红线。
+	if req.Permission != "" && req.Permission != m.Permission {
+		var roleIDs []int64
+		if err := s.db.Model(&model.RoleMenu{}).Where("menu_id = ?", id).
+			Pluck("role_id", &roleIDs).Error; err != nil {
+			return errcode.Wrap(errcode.ErrDatabase, err)
+		}
+		roles := make([]model.Role, 0, len(roleIDs))
+		for _, rid := range roleIDs {
+			roles = append(roles, model.Role{BaseModel: model.BaseModel{ID: rid}})
+		}
+		if err := authz.EnsureGrantable(actor, roles); err != nil {
+			return err
+		}
+	}
 	if req.ParentID == id {
 		return errcode.New(errcode.ErrBadRequest, "上级菜单不能是自己")
 	}

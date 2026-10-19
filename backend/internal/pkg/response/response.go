@@ -74,7 +74,10 @@ func Fail(c *gin.Context, err error) {
 			)
 		}
 	} else if err != nil {
-		msg = err.Error()
+		// 非业务错误（内部 bug / 数据库 / IO / 文件系统）不把 err.Error() 透给客户端：
+		// 里面可能带文件路径、SQL、底层错误链，既无益于用户判断，也扩大了信息暴露面。
+		// 对外归一到 50000 通用文案，完整错误只进服务端日志（下面已记）。
+		msg = ""
 		logger.Error("请求处理失败",
 			zap.String("traceId", traceOf(c)),
 			zap.String("path", c.Request.URL.Path),

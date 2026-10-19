@@ -18,6 +18,7 @@ import (
 
 	"nova-erp/internal/config"
 	"nova-erp/internal/model"
+	"nova-erp/internal/pkg/errcode"
 )
 
 // 升级包（zip）内部结构约定：
@@ -101,33 +102,33 @@ func StagingRoot(cfg *config.Config) string {
 // 与「包被人改过」必须区分开：前者是网络问题重传即可，后者要停下来查。
 func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersion string) (*UpgradePackageResult, error) {
 	if len(data) == 0 {
-		return nil, errors.New("升级包为空")
+		return nil, errcode.New(errcode.ErrBadRequest, "升级包为空")
 	}
 	sum := sha256.Sum256(data)
 	pkgSHA := hex.EncodeToString(sum[:])
 
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		return nil, fmt.Errorf("升级包不是有效的 zip：%w", err)
+		return nil, errcode.Wrapf(errcode.ErrBadRequest, err, "升级包不是有效的 zip")
 	}
 
 	pkg, err := openPackage(zr)
 	if err != nil {
-		return nil, err
+		return nil, errcode.New(errcode.ErrBadRequest, err.Error())
 	}
 	raw := pkg.manifest
 	if raw == nil {
-		return nil, errors.New("升级包缺少 manifest.json")
+		return nil, errcode.New(errcode.ErrBadRequest, "升级包缺少 manifest.json")
 	}
 	var mf upgradeManifest
 	if err := json.Unmarshal(raw, &mf); err != nil {
-		return nil, fmt.Errorf("manifest.json 解析失败：%w", err)
+		return nil, errcode.Wrapf(errcode.ErrBadRequest, err, "manifest.json 解析失败")
 	}
 	if err := validateManifest(&mf); err != nil {
-		return nil, err
+		return nil, errcode.New(errcode.ErrBadRequest, err.Error())
 	}
 	if mf.Version == fromVersion {
-		return nil, fmt.Errorf("升级包版本 %s 与当前运行版本相同，无需升级", mf.Version)
+		return nil, errcode.Newf(errcode.ErrBadRequest, "升级包版本 %s 与当前运行版本相同，无需升级", mf.Version)
 	}
 
 	// 计划 ID 先算出来：它既是 staging 目录名，也要回给前端，
@@ -140,7 +141,7 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 	var dup model.UpgradeRecord
 	if err := db.Where("package_sha256 = ? AND status = ?", pkgSHA, model.UpgradePending).
 		First(&dup).Error; err == nil {
-		return nil, fmt.Errorf("该升级包已有待执行计划 %s，请先执行或等待，无需重复上传", dup.PlanID)
+		return nil, errcode.Newf(errcode.ErrConflict, "该升级包已有待执行计划 %s，请先执行或等待，无需重复上传", dup.PlanID)
 	}
 
 	plan := &UpgradePlan{
@@ -176,7 +177,7 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 	if mf.Backend != nil {
 		zf, ok := pkg.files[mf.Backend.File]
 		if !ok {
-			return nil, fmt.Errorf("manifest 声明的后端文件 %s 不在包里", mf.Backend.File)
+			return nil, errcode.Newf(errcode.ErrBadRequest, "manifest 声明的后端文件 %s 不在包里", mf.Backend.File)
 		}
 		got, err := writeZipEntry(zf, filepath.Join(staging, mf.Backend.File), 0o755)
 		if err != nil {
@@ -184,7 +185,7 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 		}
 		if !strings.EqualFold(got, mf.Backend.SHA256) {
 			_ = os.Remove(filepath.Join(staging, mf.Backend.File))
-			return nil, fmt.Errorf("后端文件 %s 摘要不匹配（manifest 写 %s，实际 %s）", mf.Backend.File, mf.Backend.SHA256, got)
+			return nil, errcode.Newf(errcode.ErrBadRequest, "后端文件 %s 摘要不匹配（manifest 写 %s，实际 %s）", mf.Backend.File, mf.Backend.SHA256, got)
 		}
 		plan.Actions = append(plan.Actions, UpgradeAction{
 			Key:    "backend",
@@ -195,7 +196,7 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 	if mf.Frontend != nil {
 		zf, ok := pkg.files[mf.Frontend.File]
 		if !ok {
-			return nil, fmt.Errorf("manifest 声明的前端文件 %s 不在包里", mf.Frontend.File)
+			return nil, errcode.Newf(errcode.ErrBadRequest, "manifest 声明的前端文件 %s 不在包里", mf.Frontend.File)
 		}
 		got, err := writeZipEntry(zf, filepath.Join(staging, mf.Frontend.File), 0o755)
 		if err != nil {
@@ -203,7 +204,7 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 		}
 		if !strings.EqualFold(got, mf.Frontend.SHA256) {
 			_ = os.Remove(filepath.Join(staging, mf.Frontend.File))
-			return nil, fmt.Errorf("前端文件 %s 摘要不匹配（manifest 写 %s，实际 %s）", mf.Frontend.File, mf.Frontend.SHA256, got)
+			return nil, errcode.Newf(errcode.ErrBadRequest, "前端文件 %s 摘要不匹配（manifest 写 %s，实际 %s）", mf.Frontend.File, mf.Frontend.SHA256, got)
 		}
 		dir := strings.TrimSpace(cfg.Upgrade.FrontendDir)
 		if dir == "" {
@@ -217,7 +218,7 @@ func ParseUpgradePackage(db *gorm.DB, cfg *config.Config, data []byte, fromVersi
 		}
 	}
 	if len(plan.Actions) == 0 {
-		return nil, errors.New("升级包里既没有后端文件也没有前端文件，无可执行动作")
+		return nil, errcode.New(errcode.ErrBadRequest, "升级包里既没有后端文件也没有前端文件，无可执行动作")
 	}
 
 	// 结构版本门槛：库比包要求的最低版本还旧，说明跳版本了。

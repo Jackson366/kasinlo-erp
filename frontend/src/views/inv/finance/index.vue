@@ -13,6 +13,7 @@ import Pagination from '@/components/Pagination.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import { downloadFile } from '@/utils/download'
 import { formatDay, formatMoney } from '@/utils/format'
+import { useLatestGuard } from '@/composables/useLatestGuard'
 
 defineOptions({ name: 'InvFinance' })
 
@@ -42,7 +43,10 @@ const summaryCards = computed(() => [
   { label: '逾期金额', value: summary.value.overdue, tone: 'red' },
 ])
 
+const guard = useLatestGuard()
+
 async function load(): Promise<void> {
+  const ticket = guard.start()
   loading.value = true
   try {
     const params = {
@@ -55,11 +59,15 @@ async function load(): Promise<void> {
       activeTab.value === 'receivable'
         ? await invApi.receivables(params)
         : await invApi.payables(params)
+    // 快速切 tab / 连续回车时，慢响应不能覆盖新响应
+    if (!guard.isCurrent(ticket)) return
     rows.value = res.list
     total.value = res.total
     summary.value = res.summary
+  } catch {
+    // 失败提示由响应拦截器统一处理
   } finally {
-    loading.value = false
+    if (guard.isCurrent(ticket)) loading.value = false
   }
 }
 

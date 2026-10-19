@@ -77,6 +77,10 @@ const { query, loading, rows, total, load, search, reset } = useTableQuery<Order
 
 // ---------------- 备选数据 ----------------
 const parties = ref<InvPartyRow[]>([])
+/** 往来单位数超过单次上限：下拉里只是一部分，必须说清楚，否则用户以为没这个客户/供应商 */
+const partyTruncated = ref(false)
+/** 往来单位单次拉取上限（与商品下拉的 pickLimit 对齐，避免一次性拉全量） */
+const partyLimit = 200
 /**
  * 商品 → 规格 → 计量单位 的级联选项。
  *
@@ -92,10 +96,11 @@ const pickLimit = 1000
 
 async function loadOptions(): Promise<void> {
   const [partyRes, pickRes] = await Promise.all([
-    isPurchase.value ? invApi.suppliers({ pageSize: 200 }) : invApi.customers({ pageSize: 200 }),
+    isPurchase.value ? invApi.suppliers({ pageSize: partyLimit }) : invApi.customers({ pageSize: partyLimit }),
     invApi.productPick(),
   ])
   parties.value = partyRes.list
+  partyTruncated.value = partyRes.total > partyRes.list.length
   picks.value = pickRes.items
   picksTruncated.value = pickRes.truncated
   applyPickFilter(pickQuery.value)
@@ -596,7 +601,7 @@ onMounted(() => {
         <div class="toolbar__actions">
           <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
           <el-dropdown v-if="selection.length" trigger="click">
-            <el-button :loading="batchRunning">
+            <el-button v-perm="`inv:${bizType}:finish`" :loading="batchRunning">
               批量处理
               <AppIcon name="ArrowDown" />
             </el-button>
@@ -737,6 +742,9 @@ onMounted(() => {
               <el-select v-model="form.partyId" filterable placeholder="请选择" style="width: 100%">
                 <el-option v-for="p in parties" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
+              <div v-if="partyTruncated" class="pick-hint">
+                仅显示前 {{ partyLimit }} 个{{ partyLabel }}，请用关键字搜索其余
+              </div>
             </el-form-item>
           </el-col>
           <el-col :span="6">

@@ -23,6 +23,7 @@ import ReportPrintDialog from '../components/ReportPrintDialog.vue'
 import { formatMoney } from '@/utils/format'
 import { chartPalette } from '@/utils/theme'
 import { useAppStore } from '@/store'
+import { useLatestGuard } from '@/composables/useLatestGuard'
 
 defineOptions({ name: 'InvReport' })
 
@@ -78,8 +79,10 @@ const inventory = ref<InvReportInventory | null>(null)
 
 // ---------------- 各报表区加载 ----------------
 
+const guard = useLatestGuard()
+
 /** 概览区：汇总 + 趋势 + 品类占比 + 客户排行（打印用） */
-async function loadOverview(): Promise<void> {
+async function loadOverview(ticket: number): Promise<void> {
   const p = filterParams()
   const [sm, tr, ct, rk] = await Promise.all([
     invApi.reportSummary(p),
@@ -87,6 +90,9 @@ async function loadOverview(): Promise<void> {
     invApi.reportCategory(p),
     invApi.reportRanking({ ...p, dimension: 'customer', biz: 'sales', limit: 10 }),
   ])
+  // summary / trend 与「采购分析」共享写入：快速切 tab 时，
+  // 后返回的旧 tab 会覆盖新 tab，必须按票据丢弃过期响应。
+  if (!guard.isCurrent(ticket)) return
   summary.value = sm
   trend.value = tr
   categories.value = ct
@@ -94,52 +100,60 @@ async function loadOverview(): Promise<void> {
 }
 
 /** 排行区：按当前维度查销售排行 */
-async function loadRanking(): Promise<void> {
-  ranking.value = await invApi.reportRanking({
+async function loadRanking(ticket: number): Promise<void> {
+  const rk = await invApi.reportRanking({
     ...filterParams(),
     dimension: rankDimension.value,
     biz: 'sales',
     limit: rankLimit.value,
   })
+  if (!guard.isCurrent(ticket)) return
+  ranking.value = rk
 }
 
 /** 采购区：采购汇总 + 采购趋势 + 供应商排行 */
-async function loadPurchase(): Promise<void> {
+async function loadPurchase(ticket: number): Promise<void> {
   const p = filterParams()
   const [sm, tr, rk] = await Promise.all([
     invApi.reportSummary(p),
     invApi.reportTrend({ ...p, days: trendDays.value }),
     invApi.reportRanking({ ...p, dimension: 'customer', biz: 'purchase', limit: 10 }),
   ])
+  if (!guard.isCurrent(ticket)) return
   summary.value = sm
   trend.value = tr
   purchaseRanking.value = rk
 }
 
 /** 库存区：库存分析（共享主数据，不随筛选变化） */
-async function loadInventory(): Promise<void> {
-  inventory.value = await invApi.reportInventory()
+async function loadInventory(ticket: number): Promise<void> {
+  const r = await invApi.reportInventory()
+  if (!guard.isCurrent(ticket)) return
+  inventory.value = r
 }
 
 /** 按当前 tab 加载对应数据 */
 async function loadTab(): Promise<void> {
+  const ticket = guard.start()
   loading.value = true
   try {
     switch (activeTab.value) {
       case 'ranking':
-        await loadRanking()
+        await loadRanking(ticket)
         break
       case 'purchase':
-        await loadPurchase()
+        await loadPurchase(ticket)
         break
       case 'inventory':
-        await loadInventory()
+        await loadInventory(ticket)
         break
       default:
-        await loadOverview()
+        await loadOverview(ticket)
     }
+  } catch {
+    // 失败提示由响应拦截器统一处理
   } finally {
-    loading.value = false
+    if (guard.isCurrent(ticket)) loading.value = false
   }
 }
 

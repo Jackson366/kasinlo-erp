@@ -28,6 +28,7 @@ import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDia
 import { formatDay, formatMoney, formatQty } from '@/utils/format'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useListTools } from '@/composables/useListTools'
+import { useLatestGuard } from '@/composables/useLatestGuard'
 import StockPrintDialog from '../components/StockPrintDialog.vue'
 
 defineOptions({ name: 'InvStock' })
@@ -66,17 +67,28 @@ const {
 const inventory = ref<InvInventoryRow[]>([])
 const inventoryLoading = ref(false)
 const inventoryKeyword = ref('')
+/** 库存行数超过单次上限：页面只显示一部分，库存总值被低估，必须提示 */
+const inventoryTruncated = ref(false)
+/** 库存查询单次上限（与商品/往来单位下拉的截断提示口径一致） */
+const inventoryLimit = 200
+
+const inventoryGuard = useLatestGuard()
 
 async function loadInventory(): Promise<void> {
+  const ticket = inventoryGuard.start()
   inventoryLoading.value = true
   try {
     const res = await invApi.inventory({
-      pageSize: 200,
+      pageSize: inventoryLimit,
       keyword: inventoryKeyword.value || undefined,
     })
+    if (!inventoryGuard.isCurrent(ticket)) return
     inventory.value = res.list
+    inventoryTruncated.value = res.total > res.list.length
+  } catch {
+    // 失败提示由响应拦截器统一处理
   } finally {
-    inventoryLoading.value = false
+    if (inventoryGuard.isCurrent(ticket)) inventoryLoading.value = false
   }
 }
 
@@ -435,7 +447,7 @@ onMounted(() => {
               </span>
             </div>
             <div class="toolbar__actions">
-              <el-button v-if="selection.length" :loading="batchRunning" @click="batchVoid">
+              <el-button v-if="selection.length" v-perm="'inv:stock:delete'" :loading="batchRunning" @click="batchVoid">
                 批量作废
               </el-button>
               <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">
@@ -526,6 +538,9 @@ onMounted(() => {
               <h3>库存查询</h3>
               <span class="text-muted">
                 共 {{ inventory.length }} 条规格 · 预警 {{ warnCount }} 项
+              </span>
+              <span v-if="inventoryTruncated" class="text-warning">
+                仅显示前 {{ inventoryLimit }} 条，库存总值被低估，请用关键字搜索其余
               </span>
             </div>
             <div class="toolbar__actions">

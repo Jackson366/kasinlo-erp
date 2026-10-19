@@ -16,6 +16,7 @@ import (
 	"nova-erp/internal/pkg/jwt"
 	"nova-erp/internal/pkg/limiter"
 	"nova-erp/internal/pkg/textutil"
+	"nova-erp/internal/seed"
 )
 
 // Service 认证服务。
@@ -91,6 +92,13 @@ func (s *Service) Login(req LoginReq, ip, ua string) (*LoginResp, error) {
 	}
 	authz.Invalidate(user.ID)
 	s.writeLoginLog(user.ID, user.Username, ip, ua, true, "登录成功")
+
+	// 默认口令告警：内置口令是公开的，部署者忘了改密就等于门户大开。
+	// 每次用默认口令登录都留一条 WARN，让「还没改密」这件事在日志里显眼。
+	if seed.IsDefaultPassword(user.Username, req.Password) {
+		logger.Warn("账号仍在使用内置默认口令，请尽快修改密码",
+			zap.String("username", user.Username))
+	}
 
 	// 先加载身份再签发令牌：令牌里要带上当前的令牌版本号，
 	// 这样改密码 / 重置密码后旧的令牌会在下一次请求时立刻失效。

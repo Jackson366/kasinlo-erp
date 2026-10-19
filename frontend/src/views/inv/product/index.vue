@@ -555,7 +555,10 @@ function openCatEdit(id: number): void {
 }
 
 async function submitCat(): Promise<void> {
-  await catFormRef.value?.validate()
+  // 校验失败时 validate() 会 reject：不接住会变成未捕获 rejection，
+  // 且让函数直接中断。这里把「失败」统一成 false，校验不通过就静默返回。
+  const valid = await catFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   catSubmitting.value = true
   try {
     if (catEditingId.value) {
@@ -789,7 +792,7 @@ onMounted(() => {
           </span>
         </div>
         <div class="toolbar__actions">
-          <el-button v-if="selection.length" :loading="batchRunning" @click="batchDelete">
+          <el-button v-if="selection.length" v-perm="'inv:product:delete'" :loading="batchRunning" @click="batchDelete">
             批量删除
           </el-button>
           <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">

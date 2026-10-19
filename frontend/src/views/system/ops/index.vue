@@ -310,7 +310,7 @@ async function loadCheck(): Promise<void> {
     const res = await opsApi.check()
     checkReport.value = res.report
     checkWarnings.value = res.warnings || []
-    keyTables.value = (res.report as unknown as { keyTables?: typeof keyTables.value }).keyTables || []
+    keyTables.value = res.report.keyTables || []
   } catch {
     // 失败提示由响应拦截器统一处理
   } finally {

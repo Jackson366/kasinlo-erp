@@ -217,13 +217,24 @@ func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 	return nil
 }
 
-// ensureRoleMutable 挡住「非超管改超管角色」与「非超管把角色调得比自己权限更大」。
+// ensureRoleMutable 挡住「非超管改超管角色」与「非超管改比自己范围更宽的角色」。
+//
+// 第二道不止挡「把角色调宽」（那是 Update 里 req.DataScope 的职责）：
+// 目标角色**当前**范围就比调用者更宽时，改名 / 禁用 / 裁剪菜单 / 删除同样该拦 ——
+// 一个「本部门」管理员不该能对「全部数据」范围的角色动手，哪怕只是禁用它，
+// 那等于让更高范围角色的持有者集体失权。
 func ensureRoleMutable(actor *authz.Identity, r model.Role) error {
 	if actor == nil || actor.IsSuper {
 		return nil
 	}
 	if r.Code == authz.SuperRoleCode {
 		return errcode.New(errcode.ErrForbidden, "无权修改「超级管理员」角色")
+	}
+	// 数值越小范围越宽，因此「比调用者更宽」等价于「小于调用者」
+	if actor.DataScope > 0 && r.DataScope > 0 && r.DataScope < actor.DataScope {
+		return errcode.Newf(errcode.ErrForbidden,
+			"无权修改角色「%s」：它的数据范围（%s）比你的（%s）更宽",
+			r.Name, authz.ScopeText(r.DataScope), authz.ScopeText(actor.DataScope))
 	}
 	return nil
 }

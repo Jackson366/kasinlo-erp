@@ -77,6 +77,8 @@ export interface CheckReport {
   latestBackup: string
   latestBackupAt: string
   checkedAt: string
+  /** 关键表逐张统计（巡检页） */
+  keyTables?: TableStat[]
 }
 
 /** 表统计 */

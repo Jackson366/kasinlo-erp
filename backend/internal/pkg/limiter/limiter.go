@@ -17,9 +17,9 @@ import (
 // 限制：状态在进程内存里，多实例部署时各自计数。
 //
 // 内存上界由 maxKeys 控制：恶意使用海量不同 key 时，map 的规模不会超过
-// maxKeys（超过后新 key 不再记录，视为「未失败」直接放行），而不是
-// 「攻击速率 × 窗口时长」那样无界增长。超出上界的失败会被计入 Evicted，
-// 可通过监控观察是否有人在校准防护阈值。
+// maxKeys。上界被打满后，新 key 在 AllowAndConsume 里会被**拒绝**（而不是放行）——
+// 否则攻击者用随机 key 刷满上界，就能让限流器对后续所有来源失效。
+// 被挡掉的次数计入 Evicted，可通过监控观察是否有人在校准防护阈值。
 type FailLimiter struct {
 	mu      sync.Mutex
 	max     int
@@ -100,7 +100,11 @@ func (l *FailLimiter) AllowAndConsume(key string) bool {
 		// 新 key：先看有没有空位，有则建立条目
 		if len(l.items) >= l.maxKeys {
 			l.evicted++
-			return true // 上界已满，本次不记录、也不拦截
+			// 上界已满：拒绝而不是放行。之前这里是 return true（放行），
+			// 于是攻击者用 10000 个随机 key 打满上界后，所有新 key 都无限放行 ——
+			// 限流器在最需要的场景（海量来源爆破）下被完整绕过。宁可误拒，
+			// 也不能给爆破留一条「打满即可关掉限流」的路。
+			return false
 		}
 		e = &entry{}
 		l.items[key] = e

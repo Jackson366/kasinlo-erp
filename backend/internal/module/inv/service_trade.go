@@ -276,12 +276,22 @@ func (s *Service) OrderUpdate(id int64, req OrderReq, actor *authz.Identity) err
 		return err
 	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.InvOrder{}).Where("id = ?", id).Updates(map[string]any{
-			"party_id": req.PartyID, "party_name": partyName, "order_date": orderDate,
-			"due_date": dueDate, "total_amount": total, "remark": req.Remark,
-			"salesman": req.Salesman,
-		}).Error; err != nil {
-			return err
+		// 事务外的状态检查只是快速失败，真正的防线在条件更新：
+		// 「修改」与「审核」并发时，审核可能在本事务提交前把状态推进成已审核，
+		// 若这里不带 status 条件，就会把已审核单据的明细覆盖成新值 ——
+		// 单据已是已审核、明细却是新的，库存却按旧明细扣减，账实不符。
+		res := tx.Model(&model.InvOrder{}).
+			Where("id = ? AND status = ?", id, model.InvStatusPending).
+			Updates(map[string]any{
+				"party_id": req.PartyID, "party_name": partyName, "order_date": orderDate,
+				"due_date": dueDate, "total_amount": total, "remark": req.Remark,
+				"salesman": req.Salesman,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errcode.New(errcode.ErrConflict, "单据已被审核，不可修改")
 		}
 		if err := tx.Where("order_id = ?", id).Delete(&model.InvOrderItem{}).Error; err != nil {
 			return err
@@ -346,11 +356,11 @@ func (s *Service) OrderChangeStatus(id int64, status int16, actor *authz.Identit
 			Update("status", status).Error)
 	}
 
-	// 审核通过：生成出入库单 + 调整库存
-	var items []model.InvOrderItem
-	if err := s.db.Where("order_id = ?", id).Find(&items).Error; err != nil {
-		return errcode.Wrap(errcode.ErrDatabase, err)
-	}
+	// 审核通过：生成出入库单 + 调整库存。
+	// 明细读取、出入库生成、库存扣减、状态推进必须在**同一个事务**里：
+	// 之前明细在事务外读，「修改与审核」并发时审核会拿着旧明细快照生成出入库、
+	// 扣库存，而单据明细已被并发修改覆盖 —— 账实不符。移入事务后，
+	// 读到的明细与随后扣减的库存一定来自同一份数据。
 	direction := model.InvStockIn
 	if o.BizType == model.InvBizSales {
 		direction = model.InvStockOut
@@ -359,20 +369,24 @@ func (s *Service) OrderChangeStatus(id int64, status int16, actor *authz.Identit
 	if o.BizType == model.InvBizSales {
 		sourceType = model.InvSourceSales
 	}
-	stockNo, err := s.nextNo("inv_stock_orders", "CK")
-	if err != nil {
-		return err
-	}
-	stockItems := make([]model.InvStockItem, 0, len(items))
-	for _, it := range items {
-		stockItems = append(stockItems, model.InvStockItem{
-			ProductID: it.ProductID, ProductName: it.ProductName,
-			SpecID: it.SpecID, Spec: it.Spec,
-			UnitID: it.UnitID, Unit: it.Unit, Rate: it.Rate,
-			Qty: it.Qty, QtyBase: it.QtyBase,
-		})
-	}
 	return saveErr(s.db.Transaction(func(tx *gorm.DB) error {
+		var items []model.InvOrderItem
+		if err := tx.Where("order_id = ?", id).Find(&items).Error; err != nil {
+			return err
+		}
+		stockNo, err := s.nextNo("inv_stock_orders", "CK")
+		if err != nil {
+			return err
+		}
+		stockItems := make([]model.InvStockItem, 0, len(items))
+		for _, it := range items {
+			stockItems = append(stockItems, model.InvStockItem{
+				ProductID: it.ProductID, ProductName: it.ProductName,
+				SpecID: it.SpecID, Spec: it.Spec,
+				UnitID: it.UnitID, Unit: it.Unit, Rate: it.Rate,
+				Qty: it.Qty, QtyBase: it.QtyBase,
+			})
+		}
 		so := model.InvStockOrder{
 			OrderNo: stockNo, Direction: direction, SourceType: sourceType, SourceID: o.ID,
 			OrderDate: o.OrderDate, Status: 1,
