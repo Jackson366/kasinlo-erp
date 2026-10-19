@@ -28,6 +28,29 @@
 缺的是**让这件事被看见**——已在本次发布核查中修复本地库记录，并确认接口侧
 `PUT /orders/:id` 采用「采购或销售任一编辑权限」的双通道，单点缺失不会误伤正常编辑。
 
+### 二十九、交付包 start.bat 编码问题与开箱配置
+
+交付包 `start.bat` 原先含中文且以 UTF-8 无 BOM 写入。中文 Windows 的 cmd 会按
+GBK 读取批处理文件，导致中文（尤其全角括号 `（）`）被误读成半个 `)`，把 `if`
+代码块提前闭合，后续整段 `echo` 文案被当成命令执行，报出一堆
+`'xxx' 不是内部或外部命令` 的乱码。
+
+#### Fixed
+
+- `start.bat` 改为**纯 ASCII 英文**，彻底规避 GBK 误读；配置生成从「bat 内嵌
+  PowerShell 替换 jwt.secret」改为**打包阶段由 Node 完成**；
+- 打包时直接生成一份已填好随机 `jwt.secret` 的 `config.yaml` 随包发出，用户只需把
+  `database.password` 的 `CHANGE_ME` 改成自己的 PostgreSQL 口令即可启动；
+- `start.bat` 增加两道守卫：缺 `config.yaml` 时自动从模板复制；`database.password`
+  仍是占位串时拒绝启动并给出清晰英文提示；
+- 重新打包发布（仍为 v1.1.1，二进制不变，仅交付件修正），旧 zip 可直接覆盖。
+
+#### 用户侧验证
+
+- 解压后 `start.bat` 双击：口令仍是 `CHANGE_ME` 时会提示
+  `[ERROR] database.password is still the template placeholder`，不会误启服务；
+- 改完口令再运行，出现 `HTTP 服务已启动` 即成功。
+
 ---
 
 ## [1.1.0] - 2026-10-19

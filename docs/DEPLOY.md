@@ -13,10 +13,14 @@
 ```
 nova-erp-server.exe     主程序（API + 前端静态托管）
 nova-ops.exe            运维命令行（备份 / 恢复 / 清理 / 巡检）
-config.example.yaml     配置模板（复制成 config.yaml 再改）
+config.yaml             配置文件（已生成随机 jwt.secret，**只需改 database.password**）
+config.example.yaml     配置模板（参考用，不动它）
 web/                    前端产物（index.html + assets/）
-start.bat               前台启动（带配置文件检查）
+start.bat               前台启动（纯 ASCII，带配置检查）
 DEPLOY.md               本文件
+
+> start.bat 全程纯 ASCII 英文，避开中文 Windows 把中文批处理按 GBK 误读、
+> 把 echo 文案当成命令执行的坑。如仍想看中文提示，去看本文件即可。
 ```
 
 ---
@@ -54,17 +58,30 @@ DEPLOY.md               本文件
 
 ## 3. 写配置
 
+交付包里已经有一份 `config.yaml`，且 `jwt.secret` 已在打包时填好随机串，
+**唯一要改的就是数据库口令**：
+
 ```bat
-copy config.example.yaml config.yaml
 notepad config.yaml
 ```
 
-必须改这两项，其余可保持默认：
+把这一行的 `CHANGE_ME` 换成你的 PostgreSQL 口令（其余保持默认）：
+
+```yaml
+database:
+  password: CHANGE_ME     # ← 改成你本机 PostgreSQL 的口令
+```
+
+> 如果 `config.yaml` 被误删，直接再 `copy config.example.yaml config.yaml` 也行；
+> 但那样 `jwt.secret` 会是占位串，启动会被拦下并提示你去换（见第 9 节）。
+> 正常随包附带的 `config.yaml` 不会出现这个问题。
+
+其余可保持默认：
 
 | 配置 | 说明 |
 | --- | --- |
-| `database.password` | 上一步的 PostgreSQL 口令 |
-| `jwt.secret` | **必须换掉**。模板里的 `CHANGE_ME_...` 是故意让启动失败的：照抄等于用公开密钥签发超管令牌。生成一个：`openssl rand -base64 48`（没有 openssl 就随便敲 48 位以上随机字符） |
+| `database.password` | 上一步的 PostgreSQL 口令（**必改**） |
+| `jwt.secret` | 随包已填随机串，**不用动**；若自己从模板复制才需要换（见上） |
 
 出厂默认值已经是交付形态，确认这几项没被改回去：
 
@@ -180,8 +197,9 @@ nova-ops.exe check
 
 | 现象 | 原因与处理 |
 | --- | --- |
-| 启动报「读取配置文件失败」 | 没有 `config.yaml`，或用了 `-config` 指到别的路径。默认找 exe 同目录下的 `config.yaml` |
-| 启动报 `jwt.secret 仍是占位值` | 模板没改。按提示换随机串 |
+| 启动报「读取配置文件失败」 | 没有 `config.yaml`，或用了 `-config` 指到别的路径。默认找 exe 同目录下的 `config.yaml`（随包已带，除非被删） |
+| 启动报 `jwt.secret 仍是占位值` | 只有自己从 `config.example.yaml` 手动 `copy` 成 `config.yaml` 才会出现（随包那份不会）。按提示换随机串：`openssl rand -base64 48` |
+| `start.bat` 弹出一堆 `'xxx' 不是内部或外部命令` 乱码 | 旧版 `start.bat` 含中文、被中文 Windows 按 GBK 误读破坏了批处理结构。升级到 v1.1.1 起的纯 ASCII `start.bat` 即可解决；或自己用纯英文重写启动脚本 |
 | 启动报 `new encoding (UTF8) is incompatible ... (GBK)` | 老版本程序在中文 Windows 上建库的问题。当前版本已显式用 `template0`；若仍报错，手工建库：`CREATE DATABASE nova_inv_v5 WITH ENCODING 'UTF8' TEMPLATE template0;` |
 | 启动报「连接数据库失败」 | 检查 host/port/口令；确认 PostgreSQL 服务已启动。程序只做一次连接，失败即退出 |
 | 打开页面是 JSON 404 | `web\` 目录不在 exe 旁边，或里面没有 `index.html`。日志里没有「已启用前端静态托管」就是没找到 |

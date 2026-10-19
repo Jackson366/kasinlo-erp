@@ -19,7 +19,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -126,25 +126,42 @@ function cleanParked() {
   }
 }
 
-/** 启动脚本：检查配置存在，前台运行，退出时停住好让人看到报错 */
+/**
+ * 启动脚本（纯 ASCII，避免中文 Windows 把 UTF-8 批处理按 GBK 误读导致中文/全角括号
+ * 破坏 if 代码块、把 echo 文案当成命令执行）。
+ * 配置生成在打包阶段由 Node 完成（已填随机 jwt.secret 的 config.yaml 随包发出），
+ * 这里只负责：缺配置则从模板复制、口令仍是占位串则拒绝启动并给清晰英文提示。
+ */
 const START_BAT = `@echo off
-chcp 65001 >nul
 cd /d "%~dp0"
 
+REM Create config.yaml from the template if it does not exist yet.
 if not exist config.yaml (
-  echo.
-  echo [错误] 缺少 config.yaml
-  echo   请先执行：copy config.example.yaml config.yaml
-  echo   然后修改 database.password 与 jwt.secret
-  echo.
+  if exist config.example.yaml (
+    copy /Y config.example.yaml config.yaml >nul
+    echo [NOTE] config.yaml was created from config.example.yaml.
+    echo        Edit database.password to your PostgreSQL password, then run again.
+  ) else (
+    echo [ERROR] Neither config.yaml nor config.example.yaml was found.
+    pause
+    exit /b 1
+  )
+)
+
+REM Refuse to start while the database password is still the template placeholder.
+findstr /C:"password: CHANGE_ME" config.yaml >nul
+if %ERRORLEVEL%==0 (
+  echo [ERROR] database.password is still the template placeholder "CHANGE_ME".
+  echo         Open config.yaml in Notepad and set it to your PostgreSQL password.
+  echo         Then run start.bat again.
   pause
   exit /b 1
 )
 
-echo 正在启动 Nova ERP（关闭本窗口即停止服务）...
+echo Nova ERP starting... (close this window to stop the service)
 nova-erp-server.exe
 echo.
-echo 服务已退出，退出码 %ERRORLEVEL%
+echo Server stopped with exit code %ERRORLEVEL%.
 pause
 `
 
@@ -193,6 +210,23 @@ function main() {
 
   // ---- 配置模板与文档 ----
   fs.copyFileSync(path.join(BACKEND_DIR, 'config.example.yaml'), path.join(stageRoot, 'config.example.yaml'))
+
+  // 生成一份已填好随机 jwt.secret 的 config.yaml（用户只需改数据库口令），
+  // 避免把「占位 secret」带上线，也省掉 .bat 里脆弱的 PowerShell 自动替换。
+  const exampleSrc = path.join(BACKEND_DIR, 'config.example.yaml')
+  const exampleTxt = fs.readFileSync(exampleSrc, 'utf8')
+  const SECRET_PLACEHOLDER = 'CHANGE_ME_USE_A_RANDOM_LONG_STRING'
+  if (!exampleTxt.includes(SECRET_PLACEHOLDER)) {
+    throw new Error('config.example.yaml 缺少 jwt.secret 占位串，无法自动生成 config.yaml')
+  }
+  const generatedSecret = randomBytes(48).toString('base64')
+  fs.writeFileSync(
+    path.join(stageRoot, 'config.yaml'),
+    exampleTxt.replace(SECRET_PLACEHOLDER, generatedSecret),
+    'utf8',
+  )
+  console.log('  config.yaml  (随机 jwt.secret 已生成，只需改 database.password)')
+
   fs.copyFileSync(path.join(ROOT, 'docs', 'DEPLOY.md'), path.join(stageRoot, 'DEPLOY.md'))
   fs.writeFileSync(path.join(stageRoot, 'start.bat'), START_BAT, 'utf8')
 
