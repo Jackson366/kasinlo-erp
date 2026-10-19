@@ -1,6 +1,6 @@
 // 清理冒烟测试残留数据：上一轮在「登出吊销令牌」加固上线后，清理阶段拿到 40105，
 // 于是 smoke_user / smoke_role 留在库里，导致后续每一轮都在「新增」步骤撞 40900。
-const API = 'http://127.0.0.1:6802/api/v1'
+const API = 'http://127.0.0.1:6082/api/v1'
 
 async function req(method, path, token, body) {
   const res = await fetch(`${API}${path}`, {

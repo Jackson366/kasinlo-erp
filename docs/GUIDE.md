@@ -521,7 +521,7 @@ database:
   password: CHANGE_ME      # ← 改成你本机的口令
   dbname: nova_inv_v5
 app:
-  port: 6802
+  port: 6082
 ```
 
 > `config.yaml` 含口令，**已在 `.gitignore` 中，不会进版本库**。
@@ -541,13 +541,13 @@ go run ./cmd/server -config config.yaml
 
 ```
 数据库连接成功    {"database": "nova_inv_v5"}
-HTTP 服务已启动   {"addr": "0.0.0.0:6802", "basePath": "/api/v1"}
+HTTP 服务已启动   {"addr": "0.0.0.0:6082", "basePath": "/api/v1"}
 ```
 
 验证：
 
 ```bash
-curl http://127.0.0.1:6802/health
+curl http://127.0.0.1:6082/health
 # {"app":"nova-erp","status":"ok","version":"v1"}
 ```
 
@@ -559,7 +559,7 @@ npm install
 npm run dev
 ```
 
-打开 `http://localhost:6801`。Vite 已把 `/api` 代理到 `http://127.0.0.1:6802`，无需处理跨域。
+打开 `http://localhost:6083`。Vite 已把 `/api` 代理到 `http://127.0.0.1:6082`，无需处理跨域。
 
 ### 第 4 步：准备测试配置（跑测试前必做）
 
@@ -1029,7 +1029,7 @@ app:
   name: nova-erp          # 应用名
   mode: debug               # debug | release
   host: 0.0.0.0
-  port: 6802
+  port: 6082
   prefix: /api              # 路由统一前缀
   version: v1               # API 版本段，最终拼接为 /api/v1
   swagger: true             # 是否挂载 /swagger 在线文档；不写则跟随 mode（debug 开、release 关）
@@ -1125,13 +1125,13 @@ go test ./test/... -count=1                  # 全部测试
 
 # ── 前端 ──────────────────────────────────
 cd frontend
-npm run dev          # 开发服务器 http://localhost:6801
+npm run dev          # 开发服务器 http://localhost:6083
 npm run typecheck    # vue-tsc --noEmit
 npm run build        # 类型检查 + 产出 dist/
 npm run preview      # 预览生产产物（已配置 /api 代理）
 
 # ── 端到端（需要服务已在运行）──────────────
-node scripts/api-smoke.mjs                    # 默认 http://127.0.0.1:6802
+node scripts/api-smoke.mjs                    # 默认 http://127.0.0.1:6082
 node scripts/api-smoke.mjs http://host:port   # 指定实例
 node scripts/browser-verify.mjs               # 需后端 + 前端都启动
 APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产物
@@ -1171,8 +1171,8 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产
 | --- | --- | --- |
 | `连接 PostgreSQL 失败` | 口令 / 端口 / 服务未启动 | 核对 `config.yaml` 的 `database` 段；`psql -U postgres -c 'select 1'` |
 | 启动报 `自动迁移表结构失败` | 老库缺列 / 权限不足 | 见 §3.3；`23502` 类错误是「新增 NOT NULL 列没带默认值」 |
-| 端口被占用 | 有旧进程还在跑 | `netstat -ano \| grep :6802` 找 PID 后 `taskkill //PID <pid> //F` |
-| 前端 404 / 接口报跨域 | 后端没起来或代理目标不对 | 确认 6802 在监听；检查 `.env.development` 的 `VITE_PROXY_TARGET` |
+| 端口被占用 | 有旧进程还在跑 | `netstat -ano \| grep :6082` 找 PID 后 `taskkill //PID <pid> //F` |
+| 前端 404 / 接口报跨域 | 后端没起来或代理目标不对 | 确认 6082 在监听；检查 `.env.development` 的 `VITE_PROXY_TARGET` |
 | 登录后被立刻弹回登录页 | 令牌没读到 | 令牌必须走 `utils/auth.ts`，不要在 `computed` 里直接读 `localStorage` |
 | 刷新页面落 404 | 动态路由注入被 redirect 抢先 | 检查静态路由里是否出现了 `redirect` |
 | 页面切换后状态没保留 | `keep-alive` 未命中 | 页面 `defineOptions({ name })` 必须与菜单 `name` 完全一致 |

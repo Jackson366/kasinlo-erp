@@ -128,6 +128,33 @@ func (h *Handler) Restore(c *gin.Context) {
 	response.OK(c, res)
 }
 
+// RestoreInPlace 原地恢复：把选定备份直接覆盖当前库
+//
+// @Summary      恢复当前库
+// @Description  恢复前自动对当前库做一次备份；确认口令为「确认恢复」。
+// @Description  恢复期间服务短暂不可用，完成后刷新页面即可，无需重启服务。
+// @Tags         系统运维
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      RestoreInPlaceReq  true  "备份文件名与确认口令"
+// @Success      200   {object}  response.Body
+// @Failure      403   {object}  response.Body  "缺少 ops:restore 权限"
+// @Router       /ops/restore/in-place [post]
+func (h *Handler) RestoreInPlace(c *gin.Context) {
+	var req RestoreInPlaceReq
+	if err := bind.JSON(c, &req); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	res, err := h.svc.RestoreInPlace(req)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
 // CleanupPreview 清理预演
 // @Summary      数据清理预演
 // @Tags         系统运维

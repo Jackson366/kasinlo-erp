@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"nova-erp/internal/config"
+	"nova-erp/internal/pkg/errcode"
 )
 
 // dbNamePattern 限定目标库名。库名要拼进 `CREATE DATABASE "x"` 的标识符位置，
@@ -58,17 +59,17 @@ func Restore(cfg *config.Config, opt RestoreOptions) (*RestoreResult, error) {
 		opt.Now = time.Now()
 	}
 	if !opt.Yes {
-		return nil, fmt.Errorf("恢复会写入一个数据库，请确认后加 --yes 再执行")
+		return nil, errcode.New(errcode.ErrBadRequest, "恢复会写入一个数据库，请确认后加 --yes 再执行")
 	}
 	if len(opt.AnchorTables) == 0 {
 		opt.AnchorTables = []string{"sys_users"}
 	}
 	file, err := filepath.Abs(opt.File)
 	if err != nil {
-		return nil, fmt.Errorf("解析备份文件路径失败: %w", err)
+		return nil, errcode.Newf(errcode.ErrBadRequest, "解析备份文件路径失败: %v", err)
 	}
 	if _, err := os.Stat(file); err != nil {
-		return nil, fmt.Errorf("备份文件不可用: %s: %w", file, err)
+		return nil, errcode.Newf(errcode.ErrBadRequest, "备份文件不可用: %s: %v", file, err)
 	}
 	if err := verifySHA256(file); err != nil {
 		return nil, err
@@ -79,10 +80,10 @@ func Restore(cfg *config.Config, opt RestoreOptions) (*RestoreResult, error) {
 		target = fmt.Sprintf("%s_restore_%s", cfg.Database.DBName, opt.Now.Format("20060102_150405"))
 	}
 	if !dbNamePattern.MatchString(target) {
-		return nil, fmt.Errorf("目标库名非法: %q（只允许字母数字下划线，且以字母或下划线开头）", target)
+		return nil, errcode.Newf(errcode.ErrBadRequest, "目标库名非法: %q（只允许字母数字下划线，且以字母或下划线开头）", target)
 	}
 	if target == cfg.Database.DBName && !opt.Force {
-		return nil, fmt.Errorf("目标库 %s 就是生产库，拒绝覆盖；确需覆盖请加 --force（并先停服务）", target)
+		return nil, errcode.New(errcode.ErrForbidden, "目标库就是生产库，拒绝覆盖；确需覆盖请停服务后用 nova-ops restore --force")
 	}
 
 	restorePath, err := locateTool("pg_restore", opt.PgRestorePath)
@@ -113,7 +114,7 @@ func Restore(cfg *config.Config, opt RestoreOptions) (*RestoreResult, error) {
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("pg_restore 失败（目标库 %s 已创建，可保留排查）: %w\n%s", target, err, strings.TrimSpace(string(out)))
+		return nil, errcode.Newf(errcode.ErrBadRequest, "pg_restore 恢复失败（目标库 %s 已创建，可保留排查）: %v\n%s", target, err, strings.TrimSpace(string(out)))
 	}
 	duration := time.Since(started)
 
@@ -139,24 +140,139 @@ func Restore(cfg *config.Config, opt RestoreOptions) (*RestoreResult, error) {
 	return res, nil
 }
 
+// RestoreInPlace 把备份恢复到**当前正在使用的库**（原地覆盖）。
+//
+// 与 Restore（恢复到新库）的区别：不建库、不删库，而是先断开目标库的其它连接，
+// 再用 pg_restore --clean --if-exists 把备份里的对象逐个替换进当前库。
+// 适用于「误删数据找回来」「把演练确认过的数据搬回正式库」这类在线恢复场景。
+//
+// 安全边界（调用方必须配合）：
+//
+//  1. 目标库**永远是当前配置库**，不接收外部传入的库名 —— 页面上没有
+//     「恢复到任意库」这个入口，也就没有把别人的库覆盖掉的口子；
+//  2. 调用方必须先做确认口令校验（module/ops 里是输入「确认恢复」），
+//     并**先自动做一次备份**：恢复前的现状兜进备份目录，恢复错了还能退回来；
+//  3. 恢复期间其它连接被 pg_terminate_backend 断开，服务的连接池会自动重连，
+//     期间 API 短暂不可用属预期行为，不需要重启服务。
+func RestoreInPlace(cfg *config.Config, opt RestoreOptions) (*RestoreResult, error) {
+	if opt.Now.IsZero() {
+		opt.Now = time.Now()
+	}
+	if !opt.Yes {
+		return nil, errcode.New(errcode.ErrBadRequest, "恢复会覆盖当前数据库，请显式确认后执行")
+	}
+	file, err := filepath.Abs(opt.File)
+	if err != nil {
+		return nil, errcode.Newf(errcode.ErrBadRequest, "解析备份文件路径失败: %v", err)
+	}
+	if _, err := os.Stat(file); err != nil {
+		return nil, errcode.Newf(errcode.ErrBadRequest, "备份文件不可用: %s: %v", file, err)
+	}
+	if err := verifySHA256(file); err != nil {
+		return nil, err
+	}
+	// 目标锁定为当前库：InPlace 的语义就是「覆盖现在这个」，不认第二个名字
+	target := cfg.Database.DBName
+
+	restorePath, err := locateTool("pg_restore", opt.PgRestorePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// 1) 断开目标库的其它连接。连维护库（postgres）执行，避免自己的连接
+	//    被自己 terminate；恢复期间若有请求打进来，连接池自动重连，
+	//    新连接会落在「正在被替换」的库上 —— 读到恢复前/后的数据都可能，
+	//    由调用方在响应里提示用户恢复完成后刷新页面。
+	if err := terminateBackends(cfg.Database, target); err != nil {
+		return nil, err
+	}
+
+	// 2) 原地恢复：--clean 先删后建每个对象，--if-exists 容忍对象不存在。
+	//    不 DROP 整个库 —— 服务自己还连着它，删库等于把连接一起炸掉。
+	started := time.Now()
+	cmd := exec.Command(restorePath,
+		"--clean",
+		"--if-exists",
+		"--no-owner",
+		"--no-privileges",
+		"--exit-on-error",
+		"--dbname="+target,
+		"--host="+cfg.Database.Host,
+		fmt.Sprintf("--port=%d", cfg.Database.Port),
+		"--username="+cfg.Database.User,
+		file,
+	)
+	cmd.Env = append(os.Environ(), "PGPASSWORD="+cfg.Database.Password)
+	if cfg.Database.SSLMode != "" && cfg.Database.SSLMode != "disable" {
+		cmd.Env = append(cmd.Env, "PGSSLMODE="+cfg.Database.SSLMode)
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, errcode.Newf(errcode.ErrBadRequest,
+			"pg_restore 原地恢复失败（当前库 %s 可能处于部分恢复状态，请用刚才自动生成的恢复前备份回退）: %v\n%s",
+			target, err, strings.TrimSpace(string(out)))
+	}
+	duration := time.Since(started)
+
+	// 3) 核对：表数与锚点行数
+	tables, rows, err := queryCounts(cfg.Database, target, opt.AnchorTables)
+	if err != nil {
+		return nil, err
+	}
+	res := &RestoreResult{Target: target, Tables: tables, Rows: rows, Duration: duration}
+	if meta, err := readMeta(file + ".json"); err == nil {
+		if meta.Stats.Tables > 0 && meta.Stats.Tables != tables {
+			res.Warn = append(res.Warn,
+				fmt.Sprintf("表数不一致：备份时 %d 张，恢复后 %d 张", meta.Stats.Tables, tables))
+		}
+		for name, want := range meta.Stats.Rows {
+			if got := rows[name]; got != want {
+				res.Warn = append(res.Warn,
+					fmt.Sprintf("%s 行数不一致：备份时 %d，恢复后 %d", name, want, got))
+			}
+		}
+	}
+	return res, nil
+}
+
+// terminateBackends 断开 dbName 库上的所有其它连接。
+//
+// 连维护库执行（pg_backend_pid 是维护库连接的进程，不会被误伤）；
+// 恢复的前提是没人占着对象 —— pg_restore --clean 的 DROP 会因为
+// 「有连接在使用」而失败，而 Web 服务自己就常年连着当前库。
+func terminateBackends(dbc config.DatabaseConfig, dbName string) error {
+	admin, err := sql.Open("pgx", dbc.AdminDSN())
+	if err != nil {
+		return errcode.Newf(errcode.ErrBadRequest, "连接维护库失败: %v", err)
+	}
+	defer func() { _ = admin.Close() }()
+	if _, err := admin.Exec(
+		`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+		dbName,
+	); err != nil {
+		return errcode.Newf(errcode.ErrBadRequest, "断开 %s 的现有连接失败: %v", dbName, err)
+	}
+	return nil
+}
+
 // createDatabase 在维护库里建目标库；已存在则报错（不自动删除）。
 func createDatabase(dbc config.DatabaseConfig, name string) error {
 	admin, err := sql.Open("pgx", dbc.AdminDSN())
 	if err != nil {
-		return fmt.Errorf("连接维护库失败: %w", err)
+		return errcode.Newf(errcode.ErrBadRequest, "连接维护库失败: %v", err)
 	}
 	defer func() { _ = admin.Close() }()
 
 	var exists bool
 	if err := admin.QueryRow(`SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, name).Scan(&exists); err != nil {
-		return fmt.Errorf("检查目标库是否存在失败: %w", err)
+		return errcode.Newf(errcode.ErrBadRequest, "检查目标库是否存在失败: %v", err)
 	}
 	if exists {
-		return fmt.Errorf("目标库 %s 已存在：请换一个库名，或先手工确认后删除它（本命令不会自动删库）", name)
+		return errcode.Newf(errcode.ErrConflict, "目标库 %s 已存在：请换一个库名，或先手工确认后删除它（本命令不会自动删库）", name)
 	}
 	// name 已通过 dbNamePattern 校验，可以安全地作为标识符拼进语句
 	if _, err := admin.Exec(`CREATE DATABASE "` + name + `"`); err != nil {
-		return fmt.Errorf("创建目标库 %s 失败: %w", name, err)
+		return errcode.Newf(errcode.ErrBadRequest, "创建目标库 %s 失败: %v", name, err)
 	}
 	return nil
 }

@@ -2,7 +2,7 @@
  * Nova Admin 后端接口自测脚本（零依赖，Node 18+ 内置 fetch）
  * 用法：node scripts/api-smoke.mjs [baseUrl]
  */
-const BASE = process.argv[2] || 'http://127.0.0.1:6802'
+const BASE = process.argv[2] || 'http://127.0.0.1:6082'
 const API = `${BASE}/api/v1`
 
 // 同步落盘，便于在进程被外部终止时仍能查到执行进度

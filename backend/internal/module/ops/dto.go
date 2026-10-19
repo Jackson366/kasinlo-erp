@@ -28,6 +28,14 @@ type RestoreReq struct {
 	Target string `json:"target" label:"目标库名"`
 }
 
+// RestoreInPlaceReq 原地恢复请求：把选定备份直接覆盖当前库。
+type RestoreInPlaceReq struct {
+	File string `json:"file" label:"备份文件名" binding:"required"`
+	// Confirm 必须正好等于「确认恢复」。原地恢复不可逆，
+	// 服务端会先自动做一次恢复前备份，但这四个字仍是一道闸门。
+	Confirm string `json:"confirm" label:"确认口令" binding:"required"`
+}
+
 // CleanupApplyReq 真删请求。
 type CleanupApplyReq struct {
 	// Confirm 必须正好等于「确认清理」。清理不可逆，多打四个字换一道闸门。

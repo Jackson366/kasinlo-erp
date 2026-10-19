@@ -30,11 +30,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// 真删 / 真升级的确认口令。故意是中文短句而不是 YES：
+// 真删 / 真升级 / 真恢复的确认口令。故意是中文短句而不是 YES：
 // 命令行里 YES 是惯例，但界面里要的是「看清楚自己在确认什么」。
 const (
 	confirmCleanup = "确认清理"
 	confirmUpgrade = "确认升级"
+	confirmRestore = "确认恢复"
 )
 
 // bizAnchorTables 是巡检与备份锚点关心的业务表。
@@ -197,7 +198,7 @@ func (s *Service) Restore(req RestoreReq) (*fwops.RestoreResult, error) {
 	}
 	target := strings.TrimSpace(req.Target)
 	if target != "" && strings.EqualFold(target, s.cfg.Database.DBName) {
-		return nil, errcode.New(errcode.ErrForbidden, "不允许把备份恢复到生产库；如需覆盖生产库，请停机后用 nova-ops restore --force")
+		return nil, errcode.New(errcode.ErrForbidden, "不允许把备份恢复到生产库；如需覆盖生产库，请用备份列表里的「恢复」功能（原地恢复，自动先备份）")
 	}
 	return fwops.Restore(s.cfg, fwops.RestoreOptions{
 		File:          file,
@@ -207,6 +208,41 @@ func (s *Service) Restore(req RestoreReq) (*fwops.RestoreResult, error) {
 		PgRestorePath: s.cfg.Backup.PgRestorePath,
 		AnchorTables:  append([]string{"sys_users"}, bizAnchorTables...),
 	})
+}
+
+// RestoreInPlace 原地恢复：把选定备份直接覆盖当前库。
+//
+// 恢复前**自动**对当前库做一次全量备份 —— 原地恢复不可逆，
+// 恢复前的那份现状是唯一的退路，不该指望操作者记得先手动备份。
+// 确认口令不匹配时直接拒绝，什么都不做。
+func (s *Service) RestoreInPlace(req RestoreInPlaceReq) (*fwops.RestoreResult, error) {
+	if strings.TrimSpace(req.Confirm) != confirmRestore {
+		return nil, errcode.Newf(errcode.ErrBadRequest, "确认口令不正确（需要输入「%s」），未执行任何操作", confirmRestore)
+	}
+	file, err := s.BackupPath(req.File)
+	if err != nil {
+		return nil, err
+	}
+	safe, err := fwops.Backup(s.db, s.cfg.Database, fwops.BackupOptions{
+		Dir:          s.backupDir(),
+		KeepCount:    s.cfg.Backup.KeepCount,
+		KeepMonths:   s.cfg.Backup.KeepMonths,
+		PgDumpPath:   s.cfg.Backup.PgDumpPath,
+		AnchorTables: append([]string{"sys_users"}, bizAnchorTables...),
+	})
+	if err != nil {
+		return nil, errcode.Wrapf(errcode.ErrBadRequest, err, "恢复前自动备份失败，已取消本次恢复；先解决备份问题（pg_dump）再重试")
+	}
+	res, err := fwops.RestoreInPlace(s.cfg, fwops.RestoreOptions{
+		File:          file,
+		Yes:           true,
+		PgRestorePath: s.cfg.Backup.PgRestorePath,
+		AnchorTables:  append([]string{"sys_users"}, bizAnchorTables...),
+	})
+	if res != nil {
+		res.Warn = append([]string{"恢复前已自动备份当前库：" + filepath.Base(safe.Path)}, res.Warn...)
+	}
+	return res, err
 }
 
 // ── 清理 ────────────────────────────────────────────────

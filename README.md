@@ -74,20 +74,20 @@ go run ./cmd/server -config config.yaml -seed    # 强制重跑种子数据（�
 
 启动后：
 
-- 服务地址：`http://127.0.0.1:6802`
+- 服务地址：`http://127.0.0.1:6082`
 - 接口前缀：`/api/v1`
-- 健康检查：`GET http://127.0.0.1:6802/health`
+- 健康检查：`GET http://127.0.0.1:6082/health`
 
 ### 4. 启动前端
 
 ```bash
 cd frontend
 npm install
-npm run dev            # http://localhost:6801
+npm run dev            # http://localhost:6083
 ```
 
-Vite 已把 `/api` 与 `/swagger` 代理到 `http://127.0.0.1:6802`，无需处理跨域；
-在线接口文档在开发时可直接访问 `http://localhost:6801/swagger/index.html`。
+Vite 已把 `/api` 与 `/swagger` 代理到 `http://127.0.0.1:6082`，无需处理跨域；
+在线接口文档在开发时可直接访问 `http://localhost:6083/swagger/index.html`。
 
 ### 5. 切换主题
 
@@ -228,7 +228,7 @@ cp test/testdata/config.example.yaml test/testdata/config.yaml
 ### 后端：对运行实例的接口冒烟
 
 ```bash
-node scripts/api-smoke.mjs                      # 默认 http://127.0.0.1:6802
+node scripts/api-smoke.mjs                      # 默认 http://127.0.0.1:6082
 node scripts/api-smoke.mjs http://host:port     # 指定实例
 ```
 

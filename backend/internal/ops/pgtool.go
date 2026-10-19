@@ -1,7 +1,6 @@
 package ops
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"nova-erp/internal/pkg/errcode"
 )
 
 // locateTool 找到 pg_dump / pg_restore 的可执行文件。
@@ -23,7 +24,7 @@ import (
 func locateTool(name, configured string) (string, error) {
 	if configured != "" {
 		if _, err := os.Stat(configured); err != nil {
-			return "", fmt.Errorf("配置的 %s 路径不可用: %s: %w", name, configured, err)
+			return "", errcode.Newf(errcode.ErrBadRequest, "配置的 %s 路径不可用: %s: %v", name, configured, err)
 		}
 		return configured, nil
 	}
@@ -58,7 +59,9 @@ func locateTool(name, configured string) (string, error) {
 		}
 	}
 	if len(found) == 0 {
-		return "", fmt.Errorf("找不到 %s：请安装 PostgreSQL 客户端，或把 backup.%s_path 配成绝对路径", name, strings.ReplaceAll(name, "_", ""))
+		return "", errcode.Newf(errcode.ErrBadRequest,
+			"找不到 %s：本机没有安装 PostgreSQL 客户端，或安装路径未被识别。请安装 PostgreSQL，或在 config.yaml 的 backup.%s_path 填写 pg_dump/pg_restore 的绝对路径",
+			name, strings.ReplaceAll(name, "_", ""))
 	}
 	sort.Slice(found, func(i, j int) bool { return versionLess(found[j], found[i]) })
 	return found[0], nil

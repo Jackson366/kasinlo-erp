@@ -113,7 +113,7 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 		return nil, fmt.Errorf("解析备份目录失败: %w", err)
 	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return nil, fmt.Errorf("创建备份目录失败: %s: %w", dir, err)
+		return nil, errcode.Newf(errcode.ErrBadRequest, "创建备份目录失败: %s: %v（检查磁盘与目录权限）", dir, err)
 	}
 	dumpPath, err := locateTool("pg_dump", opt.PgDumpPath)
 	if err != nil {
@@ -165,8 +165,10 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 	out, err := cmd.CombinedOutput()
 	duration := time.Since(started)
 	if err != nil {
-		// 空壳文件由上面的 defer 统一清理
-		return nil, fmt.Errorf("pg_dump 失败: %w\n%s", err, strings.TrimSpace(string(out)))
+		// 空壳文件由上面的 defer 统一清理。
+		// 用业务错误透出：pg_dump 失败几乎都是环境问题（口令不对、版本不匹配、连接拒绝），
+		// 用户必须看到 pg_dump 自己的报错才能处理，不能被归一成「服务器内部错误」。
+		return nil, errcode.Newf(errcode.ErrBadRequest, "pg_dump 备份失败: %v\n%s", err, strings.TrimSpace(string(out)))
 	}
 
 	// 立刻回读一遍归档清单：dump 进程退出码为 0 不等于文件可恢复
@@ -224,9 +226,9 @@ func reserveBackupFile(path string) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
 	if err != nil {
 		if os.IsExist(err) {
-			return fmt.Errorf("备份文件 %s 已存在：同一秒内已有备份在生成，请稍后重试", filepath.Base(path))
+			return errcode.Newf(errcode.ErrConflict, "备份文件 %s 已存在：同一秒内已有备份在生成，请稍后重试", filepath.Base(path))
 		}
-		return fmt.Errorf("创建备份文件失败: %s: %w", path, err)
+		return errcode.Newf(errcode.ErrBadRequest, "创建备份文件失败: %s: %v", path, err)
 	}
 	return f.Close()
 }
@@ -278,10 +280,10 @@ func verifyArchive(pgDumpPath, file, configuredRestore string) (bool, error) {
 	_ = pgDumpPath
 	out, err := exec.Command(restorePath, "--list", file).CombinedOutput()
 	if err != nil {
-		return false, fmt.Errorf("备份文件校验失败（归档不可读）: %w\n%s", err, strings.TrimSpace(string(out)))
+		return false, errcode.Newf(errcode.ErrBadRequest, "备份文件校验失败（归档不可读）: %v\n%s", err, strings.TrimSpace(string(out)))
 	}
 	if len(strings.TrimSpace(string(out))) == 0 {
-		return false, fmt.Errorf("备份文件校验失败：归档清单为空，文件可能被截断")
+		return false, errcode.New(errcode.ErrBadRequest, "备份文件校验失败：归档清单为空，文件可能被截断")
 	}
 	return true, nil
 }

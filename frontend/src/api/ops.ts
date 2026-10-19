@@ -218,6 +218,14 @@ export const opsApi = {
     )
   },
 
+  /** 原地恢复：把选定备份覆盖当前库（服务端先自动备份）；confirm 必须正好是「确认恢复」 */
+  restoreInPlace(file: string, confirm: string) {
+    return postIdempotent<{ Target: string; Tables: number; Rows: Record<string, number>; Warn: string[] }>(
+      '/ops/restore/in-place',
+      { file, confirm },
+    )
+  },
+
   /** 清理预演（只统计不删） */
   cleanupPreview() {
     return http.get<CleanupView>('/ops/cleanup/preview')

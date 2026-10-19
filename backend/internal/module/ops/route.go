@@ -37,6 +37,8 @@ func Register(rg *gin.RouterGroup, cfg *config.Config) {
 		g.GET("/backups/download", middleware.RequirePerm("ops:backup"), h.DownloadBackup)
 
 		g.POST("/restore", idem, middleware.RequirePerm("ops:restore"), h.Restore)
+		// 原地恢复（覆盖当前库）：与恢复演练同一把权限钥匙，但多一道确认口令
+		g.POST("/restore/in-place", idem, middleware.RequirePerm("ops:restore"), h.RestoreInPlace)
 
 		g.GET("/cleanup/preview", middleware.RequirePerm("ops:list"), h.CleanupPreview)
 		g.POST("/cleanup/apply", idem, middleware.RequirePerm("ops:cleanup"), h.CleanupApply)

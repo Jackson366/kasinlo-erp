@@ -2521,7 +2521,7 @@ APP_URL=http://localhost:4173 node scripts/interaction-verify.mjs   # 验证生�
 
 **用生产产物跑时第 6 项会显式跳过**（它靠 `import('/src/api/user.ts')` 注入坏令牌，
 而 `vite preview` 只发 dist、没有 `/src/*`）。跳过与通过分开计数并打印原因——
-把它算成通过等于谎报「已验证」，算成失败则是假失败。要覆盖它就用 dev server（默认 6801）。
+把它算成通过等于谎报「已验证」，算成失败则是假失败。要覆盖它就用 dev server（默认 6083）。
 
 两个脚本的分工：`browser-verify.mjs` 管**结构性**问题（权限指令、部门树、请求层、
 keep-alive、主题对比度），`interaction-verify.mjs` 管**受控组件交互正确性**。

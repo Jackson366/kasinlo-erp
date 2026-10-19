@@ -119,6 +119,10 @@ function backupActions(row: BackupItem): BackupAction[] {
       onClick: () => openRestore(row),
     },
     {
+      key: 'restore-here', label: '恢复', perm: 'ops:restore', type: 'danger', loading: restoreInPlaceRunning.value,
+      onClick: () => openRestoreInPlace(row),
+    },
+    {
       key: 'delete', label: '删除', perm: 'ops:backup', type: 'danger', loading: false,
       onClick: () => { void deleteBackup(row) },
     },
@@ -154,6 +158,36 @@ async function doRestore(): Promise<void> {
     // 失败提示由响应拦截器统一处理
   } finally {
     restoreRunning.value = false
+  }
+}
+
+/** 原地恢复：把选定备份直接覆盖当前库。服务端会先自动做一次恢复前备份。 */
+const restoreInPlaceVisible = ref(false)
+const restoreInPlaceFile = ref('')
+const restoreInPlaceConfirm = ref('')
+const restoreInPlaceRunning = ref(false)
+const restoreInPlaceResult = ref<RestoreResult | null>(null)
+
+function openRestoreInPlace(row: BackupItem): void {
+  restoreInPlaceFile.value = row.name
+  restoreInPlaceConfirm.value = ''
+  restoreInPlaceResult.value = null
+  restoreInPlaceVisible.value = true
+}
+
+async function doRestoreInPlace(): Promise<void> {
+  if (restoreInPlaceConfirm.value.trim() !== '确认恢复') {
+    ElMessage.warning('请输入「确认恢复」以执行原地恢复')
+    return
+  }
+  restoreInPlaceRunning.value = true
+  try {
+    restoreInPlaceResult.value = await opsApi.restoreInPlace(restoreInPlaceFile.value, restoreInPlaceConfirm.value.trim())
+    ElMessage.success('恢复完成，页面数据可能有延迟，请刷新后核对')
+  } catch {
+    // 失败提示由响应拦截器统一处理（含 pg_restore 的具体原因）
+  } finally {
+    restoreInPlaceRunning.value = false
   }
 }
 
@@ -1022,6 +1056,40 @@ onMounted(async () => {
         <el-button @click="restoreVisible = false">关闭</el-button>
         <el-button v-perm="'ops:restore'" type="primary" :loading="restoreRunning" @click="doRestore">
           开始恢复
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="restoreInPlaceVisible" title="恢复当前库" width="560px">
+      <el-alert type="error" :closable="false" show-icon class="ops-alert"
+        title="选定备份将直接覆盖当前数据库的全部数据。服务端会先自动备份当前库（作为恢复前退路），恢复期间服务会短暂不可用，完成后刷新页面即可，无需重启服务。" />
+      <el-form label-width="100px">
+        <el-form-item label="备份文件">
+          <span class="mono">{{ restoreInPlaceFile }}</span>
+        </el-form-item>
+        <el-form-item label="确认口令">
+          <el-input v-model="restoreInPlaceConfirm" placeholder="输入「确认恢复」后才能执行" maxlength="10" />
+        </el-form-item>
+      </el-form>
+
+      <div v-if="restoreInPlaceResult" class="ops-restore-result">
+        <p>已把 <b class="mono">{{ restoreInPlaceFile }}</b> 恢复到当前库，共 {{ restoreInPlaceResult.Tables }} 张表。</p>
+        <p v-for="(v, k) in restoreInPlaceResult.Rows" :key="k">{{ k }}：{{ v }} 行</p>
+        <el-alert
+          v-for="(w, i) in restoreInPlaceResult.Warn"
+          :key="i"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="ops-alert"
+          :title="w"
+        />
+      </div>
+
+      <template #footer>
+        <el-button @click="restoreInPlaceVisible = false">关闭</el-button>
+        <el-button v-perm="'ops:restore'" type="danger" :loading="restoreInPlaceRunning" @click="doRestoreInPlace">
+          覆盖恢复
         </el-button>
       </template>
     </el-dialog>

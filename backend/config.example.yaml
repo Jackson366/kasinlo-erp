@@ -24,7 +24,7 @@ app:
   name: nova-erp
   mode: release           # release | debug。本地开发可改 debug（会打开 swagger、gin 详细日志）
   host: 0.0.0.0           # 只允许本机访问可改 127.0.0.1；局域网访问保持 0.0.0.0 并配好防火墙
-  port: 6802
+  port: 6082
   prefix: /api            # 路由统一前缀
   version: v1             # API 版本段，最终前缀为 /api/v1
   # 程序发布版本号（如 1.1.0），与上面的 version（API 版本段）是两件事。
