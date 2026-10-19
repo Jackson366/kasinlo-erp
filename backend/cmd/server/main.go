@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -40,14 +42,32 @@ import (
 // @name                       Authorization
 // @description                填写 "Bearer <accessToken>"，注意 Bearer 与令牌之间有一个空格
 func main() {
-	configPath := flag.String("config", "config.yaml", "配置文件路径")
+	configPath := flag.String("config", "", "配置文件路径（默认 <程序所在目录>/config.yaml）")
 	seedOnly := flag.Bool("seed", false, "仅执行数据库迁移与种子数据初始化后退出")
 	flag.Parse()
 
-	if err := run(*configPath, *seedOnly); err != nil {
+	// 默认配置文件钉在 exe 同级目录，而不是进程工作目录：
+	// 以 Windows 服务 / 计划任务启动时 CWD 是 C:\Windows\System32，
+	// 按 CWD 找 config.yaml 会直接「配置文件不存在」，而现场往往
+	// 只看到一句启动失败，不知道是工作目录的问题。
+	path := strings.TrimSpace(*configPath)
+	if path == "" {
+		path = defaultConfigPath()
+	}
+
+	if err := run(path, *seedOnly); err != nil {
 		fmt.Fprintf(os.Stderr, "服务启动失败: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// defaultConfigPath 返回 <可执行文件所在目录>/config.yaml。
+func defaultConfigPath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "config.yaml"
+	}
+	return filepath.Join(filepath.Dir(exe), "config.yaml")
 }
 
 func run(configPath string, seedOnly bool) error {

@@ -29,12 +29,17 @@ const props = defineProps<{
   balanceLabel: string
 }>()
 
+// 权限码前缀与接口路径同源：客户是 inv:customer:*，供应商是 inv:supplier:*。
+// 之前误用了业务线前缀（inv:sales / inv:purchase），后果是双输：
+// 按后端权限码授权的「客户管理员」看不到新增/编辑/删除按钮，
+// 而只有开单权限的人反而看到按钮，点了必然 403。
+const partyPerm = computed(() => (props.bizType === 'purchase' ? 'supplier' : 'customer'))
+
 interface PartyQuery {
   page?: number
   pageSize?: number
   keyword?: string
-  status?: Status
-}
+  status?: Status}
 
 const {
   query,
@@ -248,14 +253,14 @@ onMounted(load)
           </span>
         </div>
         <div class="toolbar__actions">
-          <el-button v-if="selection.length" :loading="batchRunning" @click="batchDelete">
+          <el-button v-if="selection.length" v-perm="`inv:${partyPerm}:delete`" :loading="batchRunning" @click="batchDelete">
             批量删除
           </el-button>
           <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">
             导出{{ selection.length ? '选中' : '' }}
           </el-button>
           <el-button @click="printVisible = true">打印</el-button>
-          <el-button v-perm="`inv:${bizType}:create`" type="primary" @click="openCreate">
+          <el-button v-perm="`inv:${partyPerm}:create`" type="primary" @click="openCreate">
             <AppIcon name="Plus" />
             <span>{{ createText }}</span>
           </el-button>
@@ -298,10 +303,10 @@ onMounted(load)
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button v-perm="`inv:${bizType}:update`" link type="primary" @click="openEdit(row as InvPartyRow)">
+            <el-button v-perm="`inv:${partyPerm}:update`" link type="primary" @click="openEdit(row as InvPartyRow)">
               编辑
             </el-button>
-            <el-button v-perm="`inv:${bizType}:delete`" link type="danger" @click="removeRow(row as InvPartyRow)">
+            <el-button v-perm="`inv:${partyPerm}:delete`" link type="danger" @click="removeRow(row as InvPartyRow)">
               删除
             </el-button>
           </template>

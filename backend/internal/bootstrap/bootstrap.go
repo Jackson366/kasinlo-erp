@@ -87,7 +87,10 @@ func Init(configPath string, opts Options) (*Result, error) {
 		}
 	}
 	if opts.SeedData {
-		if err := seed.Run(); err != nil {
+		// 演示业务数据由配置决定：SeedData 控制「要不要执行播种」，
+		// app.demo_data 控制「要不要写示例客户/商品/单据」。
+		// 交付真实客户时把 demo_data 设 false，系统骨架照样齐全。
+		if err := seed.Run(seed.Options{DemoData: cfg.App.DemoDataEnabled()}); err != nil {
 			return nil, err
 		}
 	}

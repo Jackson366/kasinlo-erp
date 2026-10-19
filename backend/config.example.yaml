@@ -7,38 +7,55 @@
 #   它包含数据库口令。真实口令一旦提交就会永久留在 git 历史里，
 #   即使后续改回来也能从历史中读到。
 #
-# 所有配置项均可用环境变量覆盖，规则：NOVA_<SECTION>_<KEY>，例如 NOVA_DATABASE_PASSWORD。
-# 因此 CI / 容器里可以完全不落盘口令，直接靠环境变量注入。
+# 相对路径的基准：**可执行文件所在目录**（不是启动时的工作目录）。
+#   这样用计划任务 / Windows 服务启动时，日志、备份、前端产物不会落到
+#   C:\Windows\System32 里。绝对路径（如 D:/backup）则原样使用。
+#
+# 环境变量覆盖：并非全部字段都支持，目前支持下面这些（NOVA_<SECTION>_<KEY>）：
+#   NOVA_APP_NAME / MODE / HOST / PORT / PREFIX / VERSION / RELEASE / SWAGGER
+#   NOVA_APP_METRICS / METRICS_TOKEN / WEB_DIR / DEMO_DATA
+#   NOVA_DATABASE_HOST / PORT / USER / PASSWORD / DBNAME / SSLMODE / TIMEZONE
+#   NOVA_DATABASE_MAX_IDLE_CONNS / MAX_OPEN_CONNS / LOG_LEVEL
+#   NOVA_JWT_SECRET / ISSUER / ACCESS_EXPIRE / REFRESH_EXPIRE
+#   NOVA_LOG_LEVEL / FORMAT / DIR / FILE
+#   NOVA_SECURITY_MAX_LOGIN_FAIL / LOGIN_LOCK_SECONDS / TRUSTED_PROXIES
+# cors / backup / maintenance / upgrade 四段只能用配置文件，没有环境变量。
 app:
-  name: nova-erp        # 应用名
-  mode: debug             # debug | release
-  host: 0.0.0.0
+  name: nova-erp
+  mode: release           # release | debug。本地开发可改 debug（会打开 swagger、gin 详细日志）
+  host: 0.0.0.0           # 只允许本机访问可改 127.0.0.1；局域网访问保持 0.0.0.0 并配好防火墙
   port: 6802
   prefix: /api            # 路由统一前缀
   version: v1             # API 版本段，最终前缀为 /api/v1
-  # 程序发布版本号（如 1.2.0），与上面的 version（API 版本段）是两件事。
+  # 程序发布版本号（如 1.1.0），与上面的 version（API 版本段）是两件事。
   # 升级包校验、升级记录、启动后的「升级是否生效」核对都读它。
-  # 建议由构建脚本注入：-ldflags "-X nova-erp/internal/config.appRelease=1.2.0"，
-  # 缺省 dev —— 为 dev 时升级后无法自动确认生效，记录会一直停在「已执行」。
-  release: dev
+  # 优先级：本配置 > 构建注入（-ldflags "-X nova-erp/internal/config.appRelease=1.1.0"）> dev。
+  # 为 dev 时升级后无法自动确认生效，记录会一直停在「已执行」。
+  release: 1.1.0
+  # 前端静态产物目录：目录里有 index.html 时由后端直接托管（含 SPA 深链回退），
+  # 此时不需要额外架 Nginx；留空或不放产物则保持纯 API 形态。
+  web_dir: web
   # 是否挂载在线接口文档（/swagger/index.html）。
-  # 不写则跟随 mode：debug 打开、release 关闭 —— 接口文档会暴露全部路由与参数结构，
-  # 生产环境默认不该对外可见。需要时可用 NOVA_APP_SWAGGER=true 覆盖。
-  swagger: true
-  # 是否挂载 /metrics 监控端点（Prometheus 文本格式）。
-  # 默认**关闭**：该端点会暴露路由表、请求量与状态码分布，不该像 swagger 那样
-  # 随 mode 自动放开。接入 Prometheus 时才打开，并建议同时配置 metrics_token。
+  # 它会暴露全部路由与参数结构，生产环境保持关闭；需要时临时开。
+  swagger: false
+  # 首次初始化是否灌入演示业务数据（示例客户 / 供应商 / 商品 / 单据 / demo 账号）。
+  # 本地开发、演示环境设 true 开箱可用；**交付真实客户必须 false**，
+  # 否则对方第一次登录看到的是别人的假单据。
+  demo_data: false
+  # 是否挂载 /metrics 监控端点（Prometheus 文本格式）。默认关闭：
+  # 该端点会暴露路由表、请求量与状态码分布。接入 Prometheus 时才打开。
   metrics: false
   # 非空时，抓取 /metrics 必须带 Authorization: Bearer <token>。
-  # 也可以用 NOVA_APP_METRICS_TOKEN 注入，避免把令牌落到配置文件里。
   metrics_token: ""
 
 database:
   host: 127.0.0.1
   port: 5432
+  # 建议给本系统单独建一个账号并授予该库的全部权限，而不是直接用 postgres。
+  # 自动建库需要账号具备 CREATEDB；库已存在时普通权限即可。
   user: postgres
   password: CHANGE_ME     # ← 改成你本机 PostgreSQL 的口令
-  dbname: nova_inv_v5      # 库不存在时会自动创建
+  dbname: nova_inv_v5      # 库不存在时会自动创建（显式用 template0，中文 Windows 也能建 UTF8 库）
   sslmode: disable
   timezone: Asia/Shanghai
   max_idle_conns: 10
@@ -51,7 +68,9 @@ database:
   statement_timeout: 30000
 
 jwt:
-  # ← 上线前务必换成随机长字符串，否则任何人都能用这个公开值伪造令牌
+  # 下面这个占位值是**故意让启动失败**的保护：照抄模板直接上线，等于用公开密钥
+  # 签发超管令牌（任何拿到模板的人都能伪造登录）。启动时会明确拒绝并提示替换。
+  # 生成一个：openssl rand -base64 48
   secret: CHANGE_ME_USE_A_RANDOM_LONG_STRING
   issuer: nova-erp
   access_expire: 7200       # 访问令牌有效期（秒），默认 2 小时
@@ -60,7 +79,7 @@ jwt:
 log:
   level: info               # debug | info | warn | error
   format: console           # console | json
-  dir: ./logs               # 留空则不落盘，只输出到 stdout
+  dir: ./logs               # 相对可执行文件目录；留空则不落盘，只输出到 stdout
   file: app.log
   # 落盘轮转：单文件超限切分，保留 N 个备份，超龄清理。三项都可不写（走默认 100 / 7 / 30）。
   # 不配轮转的话，长时间运行的单个日志文件会一直增长直到吃满磁盘。
@@ -69,9 +88,11 @@ log:
   max_age_days: 30          # 历史文件保留天数
 
 cors:
-  # 生产环境请改成具体域名，`*` 仅适合本地开发
-  allow_origins:
-    - "*"
+  # 前后端同源（后端托管前端产物）时**留空**，一个头都不需要发。
+  # 只有前端单独部署在别的域名/端口时才填具体来源，例如：
+  #   allow_origins: ["https://erp.example.com"]
+  # 不要填 "*"：那等于允许任意站点代发请求。
+  allow_origins: []
 
 security:
   # 登录失败连续锁定阈值（按「账号 + 来源 IP」计数）
@@ -93,8 +114,8 @@ security:
   trusted_proxies: []
 
 backup:
-  # 备份输出目录。相对路径以可执行文件所在目录为基准。
-  # 该目录**必须**同步到第二块盘 —— 备份和数据同盘等于没有备份。
+  # 备份输出目录（相对可执行文件目录）。该目录**必须**同步到第二块盘：
+  # 备份和数据同盘等于没有备份。也可以直接写绝对路径指向另一块盘。
   dir: ./backups
   # 保留最近多少份。与 keep_months 取并集，最新一份永不删除。
   keep_count: 30
@@ -114,7 +135,8 @@ maintenance:
 upgrade:
   # 前端产物目录（vite build 输出）。升级包里带前端部分时，会原子替换这个目录，
   # 旧目录保留为 <dir>.old.<时间戳> 以便回滚。留空表示「本次只升后端」。
-  frontend_dir: ../frontend/dist
+  # 默认与 app.web_dir 指向同一处：后端托管的那份就是升级要换的那份。
+  frontend_dir: web
   # 升级包暂存目录。留空取 <可执行文件所在目录>/upgrade/staging。
   # 放在可执行文件旁边而不是系统临时目录：升级是跨重启的动作，
   # 计划生成后要等人点「执行」，期间重启或清理临时目录都会让它丢掉。

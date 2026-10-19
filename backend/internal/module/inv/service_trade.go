@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"nova-erp/internal/authz"
 	"nova-erp/internal/model"
@@ -320,10 +321,21 @@ func (s *Service) OrderDelete(id int64, actor *authz.Identity) error {
 		return errcode.New(errcode.ErrConflict, "已审核单据不可删除，请先作废对应的出入库单")
 	}
 	return saveErr(s.db.Transaction(func(tx *gorm.DB) error {
+		// 删除同样要带状态条件：上面那句状态检查在事务外，审核可能已经把它
+		// 推进成「已审核」并扣了库存，此时删掉单据会留下 source_id 指向空单的
+		// 出入库记录 —— 库存没了、单据也没了，对账时无从追溯。
+		res := tx.Where("id = ? AND status = ?", id, model.InvStatusPending).
+			Delete(&model.InvOrder{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errcode.New(errcode.ErrConflict, "单据已被审核，不可删除")
+		}
 		if err := tx.Where("order_id = ?", id).Delete(&model.InvOrderItem{}).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&model.InvOrder{}, id).Error
+		return nil
 	}))
 }
 
@@ -352,8 +364,25 @@ func (s *Service) OrderChangeStatus(id int64, status int16, actor *authz.Identit
 		return errcode.New(errcode.ErrConflict, "只有待处理的单据才能审核")
 	}
 	if status != model.InvStatusDone {
-		return saveErr(s.db.Model(&model.InvOrder{}).Where("id = ?", id).
-			Update("status", status).Error)
+		// 取消只允许从「待处理」出发，恢复只允许从「已取消」出发。
+		//
+		// 原来是无条件 UPDATE：并发审核刚把单据推进到「已审核」并扣完库存，
+		// 这条取消请求会把状态直接覆盖成「已取消」—— 库存扣了、出入库单还在，
+		// 单据却显示取消。现场表现就是「点了取消，库存没回来」。
+		from := model.InvStatusPending
+		if status == model.InvStatusPending {
+			from = model.InvStatusCanceled
+		}
+		res := s.db.Model(&model.InvOrder{}).
+			Where("id = ? AND status = ?", id, from).
+			Update("status", status)
+		if res.Error != nil {
+			return saveErr(res.Error)
+		}
+		if res.RowsAffected == 0 {
+			return errcode.New(errcode.ErrConflict, "单据状态已变更（可能已被审核），请刷新后重试")
+		}
+		return nil
 	}
 
 	// 审核通过：生成出入库单 + 调整库存。
@@ -370,6 +399,23 @@ func (s *Service) OrderChangeStatus(id int64, status int16, actor *authz.Identit
 		sourceType = model.InvSourceSales
 	}
 	return saveErr(s.db.Transaction(func(tx *gorm.DB) error {
+		// 先锁订单行、再读明细。
+		//
+		// 只靠最后那条条件更新不够：并发「修改」可能在本事务读到旧明细之后、
+		// 条件更新之前提交，于是审核按旧明细扣库存，而单据展示的已是新明细。
+		// 行锁把两者强制串行 —— 修改方的条件 UPDATE 会阻塞在这里，等本事务
+		// 提交后它命中 status=已审核 而失败（或反之，本事务读到已改后的明细）。
+		var locked model.InvOrder
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errcode.New(errcode.ErrNotFound, "单据不存在")
+			}
+			return err
+		}
+		if locked.Status != model.InvStatusPending {
+			return errcode.New(errcode.ErrConflict, "单据状态已变更（可能已被审核或取消），请刷新后重试")
+		}
+
 		var items []model.InvOrderItem
 		if err := tx.Where("order_id = ?", id).Find(&items).Error; err != nil {
 			return err
@@ -388,10 +434,10 @@ func (s *Service) OrderChangeStatus(id int64, status int16, actor *authz.Identit
 			})
 		}
 		so := model.InvStockOrder{
-			OrderNo: stockNo, Direction: direction, SourceType: sourceType, SourceID: o.ID,
-			OrderDate: o.OrderDate, Status: 1,
+			OrderNo: stockNo, Direction: direction, SourceType: sourceType, SourceID: locked.ID,
+			OrderDate: locked.OrderDate, Status: 1,
 			// 业务员随来单一起带到出入库单：仓管在出入库列表里要能看出这批货是谁的
-			Salesman: o.Salesman, CreatedBy: actorUID(actor),
+			Salesman: locked.Salesman, CreatedBy: actorUID(actor),
 		}
 		if err := tx.Create(&so).Error; err != nil {
 			return err
@@ -405,12 +451,10 @@ func (s *Service) OrderChangeStatus(id int64, status int16, actor *authz.Identit
 		if err := s.applyStock(tx, direction, stockItems); err != nil {
 			return err
 		}
-		// 状态推进放在最后、且带条件：上面那句 o.Status 是在事务外读的，
-		// 两次并发审核都会读到「待处理」，于是生成两张出入库单、扣两次库存。
-		// 用「status <> 已审核」的条件更新把第二次挡在数据库层 ——
-		// 影响 0 行就回滚整个事务，库存与出入库单一起撤销。
+		// 兜底：条件里明确「从待处理出发」。行锁之下这一条不会失败，
+		// 但把状态机写死在 SQL 里，后续若有人去掉锁也不会静默走错。
 		res := tx.Model(&model.InvOrder{}).
-			Where("id = ? AND status <> ?", o.ID, model.InvStatusDone).
+			Where("id = ? AND status = ?", locked.ID, model.InvStatusPending).
 			Update("status", model.InvStatusDone)
 		if res.Error != nil {
 			return res.Error
@@ -495,8 +539,13 @@ func (s *Service) OrderReverse(id int64, actor *authz.Identity) error {
 
 		// 状态推进带条件且放最后：并发点两次反审核都读到「已审核」时，
 		// 第二次会被这一句挡在数据库层（影响 0 行即回滚整个事务）。
+		//
+		// 同时带上 settled_amount <= 0：并发「登记收付款」可能在事务外的
+		// 金额检查之后、本事务提交之前把结算写进去。没有这个条件，
+		// 单据会被退回待处理，而它名下已经挂着一笔收付款。
 		res := tx.Model(&model.InvOrder{}).
-			Where("id = ? AND status = ?", o.ID, model.InvStatusDone).
+			Where("id = ? AND status = ? AND settled_amount <= ?",
+				o.ID, model.InvStatusDone, settleEpsilon).
 			Update("status", model.InvStatusPending)
 		if res.Error != nil {
 			return res.Error

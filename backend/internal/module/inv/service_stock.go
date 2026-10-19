@@ -150,6 +150,15 @@ func (s *Service) StockOrderVoid(id int64, actor *authz.Identity) error {
 	if o.Status != 1 {
 		return errcode.New(errcode.ErrConflict, "单据已作废")
 	}
+	// 采购/销售审核自动生成的出入库单不允许直接作废。
+	//
+	// 作废会反向回滚库存，但源单据的状态仍是「已审核」：它照样计入应收应付、
+	// 报表和毛利，而库存已经退回去了。现场表现是「账上还有这笔货，仓库里没有」。
+	// 正确路径是先反审核源单，由它统一撤销出入库与库存。
+	if o.SourceType == model.InvSourcePurchase || o.SourceType == model.InvSourceSales {
+		return errcode.New(errcode.ErrConflict,
+			"该出入库单由采购/销售单审核自动生成，请在原单据上「反审核」，不要直接作废")
+	}
 	var items []model.InvStockItem
 	if err := s.db.Where("stock_order_id = ?", id).Find(&items).Error; err != nil {
 		return errcode.Wrap(errcode.ErrDatabase, err)

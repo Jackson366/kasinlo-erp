@@ -32,7 +32,10 @@ func (s *Service) partyStats(bizType string, actor *authz.Identity) (map[int64]p
 	var rows []row
 	tx := s.db.Model(&model.InvOrder{}).
 		Select("party_id, COALESCE(SUM(total_amount - settled_amount), 0) AS bal, COUNT(*) AS cnt").
-		Where("biz_type = ? AND status <> ?", bizType, model.InvStatusCanceled)
+		// 只统计「已审核」单据，与应收应付列表同口径。
+		// 之前用 status <> 已取消（把待处理也算了进来），于是客户列表里的余额
+		// 与点进去看到的应收明细合计对不上 —— 现场对账第一句就是「你这数不对」。
+		Where("biz_type = ? AND status = ?", bizType, model.InvStatusDone)
 	tx = s.applyCreator(tx, actor)
 	if err := tx.Group("party_id").Scan(&rows).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)

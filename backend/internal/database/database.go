@@ -7,6 +7,13 @@ import (
 	"fmt"
 	"regexp"
 	"time"
+	// 内嵌 IANA 时区库（约 450 KB）。
+	//
+	// 不引它的话，time.LoadLocation("Asia/Shanghai") 依赖操作系统时区数据：
+	// 精简版 Windows / Server Core / 某些容器里没有，于是 pgx 解析 DSN 里的
+	// TimeZone 参数时报 `unknown time zone Asia/Shanghai`，表现却是
+	// 「数据库连接失败」—— 现场很难想到根因是时区库缺失。
+	_ "time/tzdata"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // 注册 "pgx" database/sql 驱动
 	"go.uber.org/zap"
@@ -40,6 +47,27 @@ func Location() *time.Location {
 	return loc
 }
 
+// zoneName 返回 Go 与 PostgreSQL 都认的时区名。
+//
+// time.Local.String() 在 Windows 上返回 "Local"，PostgreSQL 不认识这个名字；
+// 此时改用当前偏移量（+08:00 这种形式），SQL 侧按同一偏移分桶，结果一致。
+func zoneName(l *time.Location) string {
+	if l == nil {
+		return "UTC"
+	}
+	name := l.String()
+	if name != "" && name != "Local" {
+		return name
+	}
+	_, off := time.Now().In(l).Zone()
+	sign := "+"
+	if off < 0 {
+		sign = "-"
+		off = -off
+	}
+	return fmt.Sprintf("%s%02d:%02d", sign, off/3600, (off%3600)/60)
+}
+
 // DB 返回全局数据库句柄。
 func DB() *gorm.DB { return db }
 
@@ -47,8 +75,14 @@ func DB() *gorm.DB { return db }
 func Init(cfg config.DatabaseConfig) (*gorm.DB, error) {
 	if l, err := time.LoadLocation(cfg.TimeZone); err == nil {
 		loc = l
+		// 归一写法（asia/shanghai → Asia/Shanghai），Go 与 PostgreSQL 共用同一个名字
+		cfg.TimeZone = zoneName(l)
 	} else {
 		loc = time.Local
+		// 回退时**不能**把非法值继续传给 PostgreSQL：DSN 里带一个 PG 不认识的
+		// 时区会让连接直接失败，而真正的问题只是「配置写错了」。
+		// 用本地时区的固定偏移代替，PG 一定认识。
+		cfg.TimeZone = zoneName(time.Local)
 		logger.Warn("时区配置无效，回退使用服务器本地时区",
 			zap.String("timezone", cfg.TimeZone), zap.Error(err))
 	}
@@ -370,7 +404,11 @@ func ensureDatabase(cfg config.DatabaseConfig) error {
 	if !dbNamePattern.MatchString(cfg.DBName) {
 		return fmt.Errorf("database.dbname %q 不是合法库名（只允许字母数字下划线，且以字母或下划线开头）", cfg.DBName)
 	}
-	stmt := fmt.Sprintf(`CREATE DATABASE "%s" ENCODING 'UTF8'`, cfg.DBName)
+	// 必须显式指定 TEMPLATE template0：中文 Windows 上 initdb 生成的
+	// template1 常是 GBK/WIN936，此时「UTF8 建库」会直接失败并报
+	// new encoding (UTF8) is incompatible with the encoding of the template database (GBK)。
+	// template0 恒为 SQL_ASCII/UTF8 可复制模板，是这个场景的标准解法。
+	stmt := fmt.Sprintf(`CREATE DATABASE "%s" WITH ENCODING 'UTF8' TEMPLATE template0`, cfg.DBName)
 	if _, err := admin.Exec(stmt); err != nil {
 		return fmt.Errorf("创建数据库 %s 失败: %w", cfg.DBName, err)
 	}

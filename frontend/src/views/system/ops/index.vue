@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { UploadInstance } from 'element-plus'
 import { opsApi } from '@/api/ops'
 import type {
   BackupItem,
@@ -354,6 +355,7 @@ async function loadCheck(silent = true): Promise<void> {
 const upgradeLoading = ref(false)
 const upgrade = ref<UpgradeStatus | null>(null)
 const uploadRunning = ref(false)
+const uploadRef = ref<UploadInstance>()
 const plan = ref<UpgradePlan | null>(null)
 const planRecord = ref<UpgradeRecord | null>(null)
 const upgradeBackupRunning = ref(false)
@@ -373,18 +375,18 @@ async function loadUpgrade(): Promise<void> {
 async function onPackageChange(file: { raw: File } | undefined): Promise<void> {
   const raw = file?.raw
   if (!raw) return
-  if (!raw.name.toLowerCase().endsWith('.zip')) {
-    ElMessage.warning('升级包必须是 .zip 文件')
-    return
-  }
-  // 先在本地量一下：超过后端上限的包传上去也是被拒，白白占几百 MB 上行。
-  // 阈值与后端一致（512 MB），后端仍会再卡一次——前端校验只是省一次白传。
-  if (raw.size > MAX_PACKAGE_BYTES) {
-    ElMessage.warning(`升级包不能超过 ${MAX_PACKAGE_MB} MB，当前 ${(raw.size / 1024 / 1024).toFixed(1)} MB`)
-    return
-  }
-  uploadRunning.value = true
   try {
+    if (!raw.name.toLowerCase().endsWith('.zip')) {
+      ElMessage.warning('升级包必须是 .zip 文件')
+      return
+    }
+    // 先在本地量一下：超过后端上限的包传上去也是被拒，白白占几百 MB 上行。
+    // 阈值与后端一致（512 MB），后端仍会再卡一次——前端校验只是省一次白传。
+    if (raw.size > MAX_PACKAGE_BYTES) {
+      ElMessage.warning(`升级包不能超过 ${MAX_PACKAGE_MB} MB，当前 ${(raw.size / 1024 / 1024).toFixed(1)} MB`)
+      return
+    }
+    uploadRunning.value = true
     const res = await opsApi.uploadPackage(raw)
     plan.value = res.plan
     planRecord.value = res.record
@@ -394,6 +396,9 @@ async function onPackageChange(file: { raw: File } | undefined): Promise<void> {
     // 失败提示由响应拦截器统一处理
   } finally {
     uploadRunning.value = false
+    // 必须清掉内部文件列表：:limit="1" 下不清，选错一次后就再也选不了第二个包，
+    // 只能刷新页面 —— 而刷新会丢掉当前的升级计划，等于白传。
+    uploadRef.value?.clearFiles()
   }
 }
 
@@ -670,7 +675,7 @@ onMounted(async () => {
                 <span class="text-muted">回滚点：{{ bizBackupAge || '读取中…' }}（要求 24 小时内）</span>
               </span>
               <span class="biz-actions__btns">
-                <el-button :loading="bizBackupRunning" @click="runBizBackup">
+                <el-button v-perm="'ops:backup'" :loading="bizBackupRunning" @click="runBizBackup">
                   <AppIcon name="Download" /><span>先备份</span>
                 </el-button>
                 <el-button
@@ -847,6 +852,7 @@ onMounted(async () => {
               <span class="text-muted">zip，内含 manifest.json 与后端二进制 / 前端产物</span>
             </div>
             <el-upload
+              ref="uploadRef"
               v-perm="'ops:upgrade'"
               :auto-upload="true"
               :show-file-list="false"

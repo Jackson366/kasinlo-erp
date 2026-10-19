@@ -76,9 +76,22 @@ type AppConfig struct {
 	Version string `yaml:"version"`
 	// Release 是**程序发布版本号**（如 1.2.0），与 Version（API 版本段 /api/v1）
 	// 是两件事：API 版本段描述接口形状，发布版本号描述这一版程序本身。
-	// 升级包校验、升级记录、启动后的生效核对都读它；建议由构建脚本用
-	// -ldflags "-X ...config.appRelease=1.2.0" 注入，缺省 dev。
+	// 升级包校验、升级记录、启动后的生效核对都读它。
+	//
+	// 取值优先级：配置文件 app.release > 构建注入的 appRelease > dev。
+	// 构建注入写法：go build -ldflags "-X nova-erp/internal/config.appRelease=1.2.0"。
+	// 显式写进配置文件优先，是为了让「改配置就能核对版本」这种现场救急手段生效。
 	Release string `yaml:"release"`
+	// WebDir 是前端静态产物目录。非空且目录里存在 index.html 时，
+	// 后端会直接托管它（含 SPA 深链回退），此时不需要额外的 Nginx。
+	// 留空取 <可执行文件所在目录>/web。
+	WebDir string `yaml:"web_dir"`
+	// DemoData 控制首次初始化时是否灌入演示业务数据（示例客户/商品/单据）。
+	//
+	// 默认 true 是为了本地开发、冒烟与演示开箱可用；**交付真实客户时务必设 false**，
+	// 否则对方第一次登录看到的是「华东制造」「远大贸易」和一堆不属于自己的单据。
+	// 用指针区分「没配」与「显式关掉」。
+	DemoData *bool `yaml:"demo_data"`
 	// Swagger 控制是否挂载 /swagger 在线接口文档。
 	//
 	// 默认跟随 mode：debug 打开，release 关闭 —— 接口文档会把全部路由与参数结构
@@ -122,6 +135,19 @@ func (a AppConfig) SwaggerEnabled() bool {
 func (a AppConfig) MetricsEnabled() bool {
 	return a.Metrics != nil && *a.Metrics
 }
+
+// DemoDataEnabled 返回是否灌入演示业务数据（默认开，交付时关掉）。
+func (a AppConfig) DemoDataEnabled() bool {
+	return a.DemoData == nil || *a.DemoData
+}
+
+// appRelease 是构建期注入的发布版本号，缺省 dev。
+//
+// 单独放一个包级变量而不是只读 yaml：现场只需要一条
+// -ldflags "-X nova-erp/internal/config.appRelease=1.2.0" 就能得到
+// 「程序自带版本号」，不必在每台机器上改配置文件 —— 配置文件漏改正是
+// 升级后核对不通过最常见的原因。
+var appRelease = "dev"
 
 type DatabaseConfig struct {
 	Host            string `yaml:"host"`
@@ -257,6 +283,7 @@ func Load(path string) (*Config, error) {
 	}
 	applyEnvOverrides(&cfg)
 	applyDefaults(&cfg)
+	cfg.resolvePaths()
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -279,6 +306,11 @@ func (c *Config) validate() error {
 	// 让「随手填个 secret」在启动时就被拦下，而不是等被人爆破。
 	if len(c.JWT.Secret) < 32 {
 		return fmt.Errorf("jwt.secret 过短（%d 字节）：至少 32 字节，请用随机强密钥", len(c.JWT.Secret))
+	}
+	// 占位串必须硬拒：模板里的 CHANGE_ME_XXX 恰好超过 32 字节，
+	// 只校验长度的话，「照抄模板即可启动」等于用一个公开密钥签发超管令牌。
+	if looksLikePlaceholder(c.JWT.Secret) {
+		return fmt.Errorf("jwt.secret 仍是占位值：请改成随机强密钥（例：openssl rand -base64 48）")
 	}
 	if c.Backup.KeepCount < 0 || c.Backup.KeepMonths < 0 {
 		return fmt.Errorf("backup.keep_count / keep_months 不能为负数（0 表示用默认值）")
@@ -380,6 +412,51 @@ func executableDir() (string, error) {
 	return filepath.Dir(exe), nil
 }
 
+// looksLikePlaceholder 判断密钥是否还是模板里的占位串。
+//
+// 只查关键词不查熵：目的是拦住「照抄模板直接上线」，而不是做密码强度评分
+// （那会把现场自己定的可读密钥也误杀）。
+func looksLikePlaceholder(secret string) bool {
+	s := strings.ToLower(strings.TrimSpace(secret))
+	for _, bad := range []string{"change_me", "change-me", "changeme", "please-change", "please_change", "replace_me", "your-secret", "your_secret"} {
+		if strings.Contains(s, bad) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolvePaths 把配置里的相对路径统一钉到**可执行文件所在目录**。
+//
+// 为什么不按进程工作目录：以 Windows 服务 / 计划任务方式启动时 CWD 是
+// C:\Windows\System32，配置里的 "./logs"、"backups" 会静默落到系统目录 ——
+// 表现为「日志找不到、备份不知写哪了」，而且不报任何错。
+// 钉在 exe 目录后，从哪个目录启动，读写位置都一样。
+//
+// 绝对路径一律不动：现场常把备份放到另一块盘，那是显式意图。
+func (c *Config) resolvePaths() {
+	base, err := executableDir()
+	if err != nil || base == "" {
+		// 取不到 exe 目录（极少见）就保持原样，仍按 CWD 解析，不阻断启动
+		return
+	}
+	abs := func(p string) string {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return p
+		}
+		if filepath.IsAbs(p) {
+			return filepath.Clean(p)
+		}
+		return filepath.Join(base, p)
+	}
+	c.Log.Dir = abs(c.Log.Dir)
+	c.Backup.Dir = abs(c.Backup.Dir)
+	c.App.WebDir = abs(c.App.WebDir)
+	c.Upgrade.FrontendDir = abs(c.Upgrade.FrontendDir)
+	c.Upgrade.StagingDir = abs(c.Upgrade.StagingDir)
+}
+
 func applyDefaults(c *Config) {
 	if c.App.Prefix == "" {
 		c.App.Prefix = "/api"
@@ -435,9 +512,10 @@ func applyDefaults(c *Config) {
 	if c.Log.Format == "" {
 		c.Log.Format = "console"
 	}
-	if len(c.CORS.AllowOrigins) == 0 {
-		c.CORS.AllowOrigins = []string{"*"}
-	}
+	// CORS 默认**留空**（同源部署不需要跨域头）。
+	// 之前默认 "*" 是「任何网页都能代发请求」的出厂态：虽然身份走
+	// Authorization 头而非 Cookie，但配上宽松的 allow_headers 就等于
+	// 把接口暴露给任意站点。需要前后端分域部署时显式列域名。
 	if c.Security.MaxLoginFail <= 0 {
 		c.Security.MaxLoginFail = 5
 	}
@@ -453,11 +531,18 @@ func applyDefaults(c *Config) {
 		def := 120
 		c.Security.RefreshRateLimit = &def
 	}
-	// 发布版本号缺省 dev。升级核对拿它和升级包里的目标版本比，
-	// 没注入时的表现是「升级后版本没变」→ 升级记录停在 applied，
-	// 这是有意让它显眼，而不是静默显示成功。
+	// 发布版本号：配置文件显式写的优先，其次构建注入值，最后 dev。
+	// 升级核对拿它和升级包里的目标版本比，都没注入时停在 dev ——
+	// 「升级后版本没变」是刻意显眼的信号，而不是静默显示成功。
 	if strings.TrimSpace(c.App.Release) == "" {
-		c.App.Release = "dev"
+		if strings.TrimSpace(appRelease) != "" {
+			c.App.Release = appRelease
+		} else {
+			c.App.Release = "dev"
+		}
+	}
+	if strings.TrimSpace(c.App.WebDir) == "" {
+		c.App.WebDir = "web"
 	}
 }
 

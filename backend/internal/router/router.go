@@ -52,7 +52,17 @@ func New(cfg *config.Config) *gin.Engine {
 		middleware.Recovery(),
 		middleware.CORS(cfg.CORS.AllowOrigins),
 	)
-	engine.NoRoute(middleware.NoRoute())
+	// 前端静态托管：配了 web_dir 且目录里有 index.html 就由后端直接服务，
+	// 没有就保持原来的 JSON 404 —— 单机交付不需要额外架 Nginx。
+	if staticHandler := Static(cfg.App.WebDir); staticHandler != nil {
+		engine.NoRoute(staticHandler)
+		logger.Info("已启用前端静态托管",
+			zap.String("dir", cfg.App.WebDir),
+			zap.String("hint", "未命中静态文件且非 /api 前缀的 GET 请求将回退 index.html"),
+		)
+	} else {
+		engine.NoRoute(middleware.NoRoute())
+	}
 
 	// 指标采集只在 /metrics 启用时装配：关闭态下它没有任何消费者，
 	// 装配上去只是白白给每个请求多加一次打点与加锁。

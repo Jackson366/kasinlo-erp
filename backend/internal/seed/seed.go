@@ -41,28 +41,45 @@ func IsDefaultPassword(username, password string) bool {
 	return false
 }
 
+// Options 是种子数据选项。
+type Options struct {
+	// DemoData 为 false 时只建系统骨架：部门、菜单、角色、管理员账号。
+	// 不写示例客户/供应商/商品/单据，也不建 demo 只读账号 ——
+	// 交付真实客户时必须关掉，否则对方第一次登录看到的是别人的假单据。
+	DemoData bool
+}
+
+// seedStep 是初始化流水线上的一步。
+type seedStep struct {
+	name string
+	fn   func(*gorm.DB) error
+}
+
 // Run 执行全部种子数据初始化。
 //
 // 前置条件是模块清单已登记（由 bootstrap.Init 里的 module.Build 完成）。
 // 登记表为空时直接报错而不是静默跳过：静默跳过只会写出一张空菜单表，
 // 而服务照样能起来，问题要等到「侧边栏什么都没有」时才被发现。
-func Run() error {
+//
+// 幂等：每一步都先看「该表是否已有数据」，已有的整体跳过。
+func Run(opts Options) error {
 	if len(module.All()) == 0 {
 		return fmt.Errorf("模块登记表为空：请先经 bootstrap.Init（会调用 module.Build）再播种")
 	}
 	db := database.DB()
-	steps := []struct {
-		name string
-		fn   func(*gorm.DB) error
-	}{
+	steps := []seedStep{
 		{"部门", seedDepts},
 		{"菜单", seedMenus},
 		{"角色", seedRoles},
-		{"用户", seedUsers},
-		{"进销存", seedInv},
-		// 演示档案补齐：老库由单规格结构迁移而来，多计量单位示例需要单独补，
-		// 只补缺、不覆盖（见 seedInvProductTopUp 的说明）
-		{"进销存档案补齐", seedInvProductTopUp},
+		{"用户", func(db *gorm.DB) error { return seedUsers(db, opts.DemoData) }},
+	}
+	if opts.DemoData {
+		steps = append(steps,
+			seedStep{"进销存", seedInv},
+			// 演示档案补齐：老库由单规格结构迁移而来，多计量单位示例需要单独补，
+			// 只补缺、不覆盖（见 seedInvProductTopUp 的说明）
+			seedStep{"进销存档案补齐", seedInvProductTopUp},
+		)
 	}
 	for _, s := range steps {
 		if err := s.fn(db); err != nil {
@@ -673,7 +690,7 @@ func syncBuiltinRoleMenus(db *gorm.DB) error {
 	return nil
 }
 
-func seedUsers(db *gorm.DB) error {
+func seedUsers(db *gorm.DB, withDemo bool) error {
 	var count int64
 	if err := db.Model(&model.User{}).Count(&count).Error; err != nil {
 		return err
@@ -686,10 +703,6 @@ func seedUsers(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-	demoPwd, err := hash.Password(DefaultDemoPassword)
-	if err != nil {
-		return err
-	}
 	dept1, dept2 := int64(1), int64(2)
 
 	users := []model.User{
@@ -698,15 +711,21 @@ func seedUsers(db *gorm.DB) error {
 			Nickname: "超级管理员", Email: "admin@example.com", DeptID: &dept1,
 			Status: model.StatusEnabled, Remark: "系统内置管理员",
 		},
-		{
-			BaseModel: model.BaseModel{ID: 2}, Username: DefaultDemoUser, Password: demoPwd,
-			Nickname: "演示账号", Email: "demo@example.com", DeptID: &dept2,
-			Status: model.StatusEnabled, Remark: "只读演示账号",
-		},
 	}
 	links := []model.UserRole{
 		{UserID: 1, RoleID: 1},
-		{UserID: 2, RoleID: 3},
+	}
+	if withDemo {
+		demoPwd, err := hash.Password(DefaultDemoPassword)
+		if err != nil {
+			return err
+		}
+		users = append(users, model.User{
+			BaseModel: model.BaseModel{ID: 2}, Username: DefaultDemoUser, Password: demoPwd,
+			Nickname: "演示账号", Email: "demo@example.com", DeptID: &dept2,
+			Status: model.StatusEnabled, Remark: "只读演示账号",
+		})
+		links = append(links, model.UserRole{UserID: 2, RoleID: 3})
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
@@ -716,10 +735,11 @@ func seedUsers(db *gorm.DB) error {
 		if err := tx.Create(&links).Error; err != nil {
 			return err
 		}
-		logger.Info("已初始化用户数据",
-			zap.String("admin", DefaultAdminUser),
-			zap.String("demo", DefaultDemoUser),
-		)
+		fields := []zap.Field{zap.String("admin", DefaultAdminUser)}
+		if withDemo {
+			fields = append(fields, zap.String("demo", DefaultDemoUser))
+		}
+		logger.Info("已初始化用户数据", fields...)
 		return nil
 	})
 }

@@ -30,7 +30,7 @@
 
 | 组件 | 版本 | 说明 |
 | --- | --- | --- |
-| Go | 1.25+ | 实测 go1.26.4 |
+| Go | 1.26+ | 与 `go.mod` 一致，实测 go1.26.4 |
 | Node.js | 18+ | 实测 v22 |
 | PostgreSQL | 13+ | 实测 17.6，监听 `127.0.0.1:5432` |
 
@@ -242,6 +242,24 @@ npm run typecheck      # vue-tsc --noEmit
 npm run build          # 类型检查 + 产出 dist/
 npm run preview        # 本地预览生产产物（已配置 /api 代理）
 ```
+
+### 打包交付
+
+```bash
+# 整机交付包（首次部署）：server.exe + ops.exe + web/ + 配置模板 + 启动脚本 + 部署手册
+node scripts/build-release.mjs --version 1.1.0
+#   → build/release/nova-erp-1.1.0-win64.zip
+
+# 升级包（已部署环境的增量）：由管理页「系统运维 → 系统升级」上传
+node scripts/build-upgrade-package.mjs --version 1.2.0
+#   → build/upgrade/nova-erp-1.2.0.zip
+```
+
+生产部署（Windows 单机、无需 Nginx —— 后端自带前端静态托管）见
+**[docs/DEPLOY.md](docs/DEPLOY.md)**：装 PostgreSQL → 改 `config.yaml` → `start.bat` → 改密。
+
+> 交付前务必确认 `app.demo_data: false`（否则空库会灌入示例客户/商品/单据），
+> 并把 `jwt.secret` 换成随机串（模板里的占位值会让启动直接失败）。
 
 ### 前端：真实浏览器运行时验证
 

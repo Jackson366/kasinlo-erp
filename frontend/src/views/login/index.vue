@@ -70,6 +70,9 @@ async function handleLogin(): Promise<void> {
   }
 }
 
+/** 演示账号入口只在开发构建可见 */
+const showDemo = import.meta.env.DEV
+
 /** 一键填入演示账号 */
 function fillDemo(): void {
   form.username = 'demo'
@@ -179,7 +182,8 @@ function focusFirstInvalidField(): void {
           </el-form-item>
         </el-form>
 
-        <div class="login__hint">
+        <!-- 演示账号只在开发构建里出现：生产构建带出去等于把默认凭据印在登录页上 -->
+        <div v-if="showDemo" class="login__hint">
           <span class="text-muted">演示账号</span>
           <el-tag size="small" type="info" effect="plain">demo / demo123456</el-tag>
           <el-button link type="primary" size="small" @click="fillDemo">一键填入</el-button>

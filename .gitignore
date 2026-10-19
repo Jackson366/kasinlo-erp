@@ -22,6 +22,7 @@ backend/backups/
 backend/upgrade/
 *.new
 frontend/dist.old.*/
+frontend/dist.old-*/
 
 # 升级包构建产物（脚本 scripts/build-upgrade-package.mjs 生成，含完整可执行程序）
 build/

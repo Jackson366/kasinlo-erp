@@ -4,11 +4,11 @@ import "nova-erp/internal/module"
 
 // Module 返回进销存模块的自描述清单。
 //
-// 导航结构与画布设计一致，共 11 个页面。其中「数据概览」是**顶级菜单**而不是
+// 导航结构与画布设计一致，共 12 个页面。其中「数据概览」是**顶级菜单**而不是
 // 「进销存」目录的子项：登录后的落地页由前端按菜单树第一个叶子推导
 // （AGENTS.md §5.62），顶级叶子才能稳定当首页；放在目录下的话，
 // 落地页会变成目录的 Redirect，语义上「首页 = 一个跳转」也不对。
-// 其余 10 个页面归「进销存」目录：先业务流程（采购 → 销售 → 库存 → 应收应付
+// 其余 11 个页面归「进销存」目录：先业务流程（采购 → 销售 → 库存 → 应收应付
 // → 报表 → 打印模板），再基础资料（商品 → 商品分类 → 客户 → 供应商）。
 //
 // 权限命名空间统一为 inv。菜单权限码与 route.go 里 RequirePerm 用的是同一批字符串，
@@ -47,6 +47,19 @@ func Module() module.Module {
 							{Name: "InvSalesUpdate", Title: "修改销售单", Type: module.TypeButton, Permission: "inv:sales:update"},
 							{Name: "InvSalesDelete", Title: "删除销售单", Type: module.TypeButton, Permission: "inv:sales:delete"},
 							{Name: "InvSalesFinish", Title: "销售审核", Type: module.TypeButton, Permission: "inv:sales:finish"},
+						},
+					},
+					{
+						// 出入库是采购/销售审核后的产物，也支持手工单据。
+						// 菜单漏了它的话，权限码 inv:stock:* 根本挂不到任何节点上：
+						// 角色授权树里勾不到，前端也就拿不到 /inv/stock 的动态路由 —— 
+						// 页面文件在、接口也在，唯独没人能进。
+						Name: "InvStock", Title: "出入库", Icon: "Box",
+						Path: "/inv/stock", Component: "inv/stock/index",
+						Permission: "inv:stock:list", KeepAlive: true,
+						Children: []module.MenuNode{
+							{Name: "InvStockCreate", Title: "新增出入库", Type: module.TypeButton, Permission: "inv:stock:create"},
+							{Name: "InvStockDelete", Title: "作废出入库", Type: module.TypeButton, Permission: "inv:stock:delete"},
 						},
 					},
 					{

@@ -163,8 +163,13 @@ func (s *Service) Settle(req SettleReq, actor *authz.Identity) error {
 		// 条件更新：把「结算后不能超过总额」放进 WHERE。并发时第二个事务的
 		// UPDATE 会等第一个提交后按最新 settled_amount 重新评估条件，
 		// 超限则 0 行 → 回滚整个事务（结算记录也一起撤销）。
+		//
+		// 同时带上 status = 已审核：反审核并发跑时，单据会被退回待处理，
+		// 而这里若只校验金额，就会给一张「待处理」单据记上一笔收付款 ——
+		// 应收列表按已审核过滤，这笔钱从账上消失，流水却还在。
 		res := tx.Model(&model.InvOrder{}).
-			Where("id = ? AND settled_amount + ? <= total_amount + ?", o.ID, amount, settleEpsilon).
+			Where("id = ? AND status = ? AND settled_amount + ? <= total_amount + ?",
+				o.ID, model.InvStatusDone, amount, settleEpsilon).
 			UpdateColumn("settled_amount", gorm.Expr("settled_amount + ?", amount))
 		if res.Error != nil {
 			return res.Error

@@ -120,7 +120,7 @@ func TestUpgradeRepairsLegacyRoleDataScope(t *testing.T) {
 	}
 
 	// 走真实的启动路径
-	if err := seed.Run(); err != nil {
+	if err := seed.Run(seed.Options{DemoData: true}); err != nil {
 		t.Fatalf("启动升级失败: %v", err)
 	}
 
@@ -130,7 +130,7 @@ func TestUpgradeRepairsLegacyRoleDataScope(t *testing.T) {
 	}
 
 	// 幂等：再跑一次不应出错，值也不变
-	if err := seed.Run(); err != nil {
+	if err := seed.Run(seed.Options{DemoData: true}); err != nil {
 		t.Fatalf("重复启动升级失败（应幂等）: %v", err)
 	}
 	if got := viewerDataScope(t); got != model.DataScopeAll {
@@ -158,7 +158,7 @@ func TestUpgradeKeepsDeliberateRoleDataScope(t *testing.T) {
 		t.Fatalf("设置 viewer 数据范围失败: %v", err)
 	}
 
-	if err := seed.Run(); err != nil {
+	if err := seed.Run(seed.Options{DemoData: true}); err != nil {
 		t.Fatalf("启动升级失败: %v", err)
 	}
 
@@ -198,7 +198,7 @@ func TestUpgradeKeepsDisabledUserLockedOut(t *testing.T) {
 	}
 
 	// 升级流程
-	if err := seed.Run(); err != nil {
+	if err := seed.Run(seed.Options{DemoData: true}); err != nil {
 		t.Fatalf("启动升级失败: %v", err)
 	}
 

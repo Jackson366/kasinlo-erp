@@ -5,6 +5,86 @@
 
 ---
 
+## [1.1.0] - 2026-10-19
+
+### 二十六、交付就绪：内置前端托管、演示数据开关、单据状态机加固
+
+这一版的目标只有一个：**把「开发机能跑」变成「交付给客户能跑」**。
+之前的形态要求现场自己架 Nginx、自己清演示数据、自己保证不会用服务方式启动时
+把日志写进 System32 —— 每一条都是交付现场的真实翻车点。
+
+#### Added
+
+- **后端内置前端静态托管**（`app.web_dir`，默认 `<exe目录>/web`）：
+  命中真实文件直出，`/assets/` 下的带 hash 文件给一年 immutable 缓存，
+  index.html 不缓存；未命中且非 `/api`、`/swagger`、`/health`、`/metrics` 的
+  GET 请求回退 index.html。目录不存在或没有 index.html 时不托管、保持 JSON 404 ——
+  前端产物放错位置不该让后端起不来。
+- **`scripts/build-release.mjs`**：一条命令打整机交付包
+  （server.exe + ops.exe + web/ + 配置模板 + start.bat + DEPLOY.md，打成 zip），
+  版本同时用 `-ldflags` 注入两个 exe。
+- **`docs/DEPLOY.md`**：从装 PostgreSQL 到改密验收的完整 Windows 单机部署手册
+  （含开机自启、备份恢复、常见报错对照）。
+- **`app.demo_data` 开关**：控制首次初始化是否灌演示客户/商品/单据与 demo 账号。
+  默认 true 保本地开发开箱可用，`config.example.yaml` 里设 false。
+- **`config.appRelease` 构建注入变量**：文档承诺的 `-ldflags -X` 之前指向一个
+  不存在的符号，注入被静默忽略；现在真的生效，优先级为 配置文件 > 构建注入 > dev。
+- **出入库菜单节点 `InvStock`**：`inv:stock:*` 三个权限码之前挂不到任何菜单上，
+  新库播种后角色授权树里勾不到、前端也拿不到 `/inv/stock` 路由 —— 页面在、接口在，
+  唯独没人能进。
+
+#### Fixed
+
+- **时区库缺失导致连不上数据库（交付级）**：`time.LoadLocation("Asia/Shanghai")`
+  依赖操作系统时区数据，精简版 Windows / Server Core 上没有，pgx 解析 DSN 的
+  TimeZone 参数时报 `unknown time zone Asia/Shanghai`，现场表现为「数据库连接失败」。
+  内嵌 `time/tzdata`，并把 DSN 的时区值归一（`Local` 转成 `+08:00`），
+  配置写错时也只会退到本地时区而不是连不上。
+- **中文 Windows 自动建库失败**：`CREATE DATABASE ... ENCODING 'UTF8'` 在
+  template1 为 GBK 时直接报编码不兼容。显式 `TEMPLATE template0`。
+- **审核与修改的竞态没真正封死**：上一轮只把明细读进事务，但行锁在最后一步才拿，
+  并发修改仍可能在「读明细」之后提交。改为事务开头 `SELECT ... FOR UPDATE` 锁行
+  并复核状态，再读明细；状态推进条件由 `status <> 2` 收紧为 `status = 1`。
+- **取消/恢复是无条件 UPDATE**：并发审核把单据推到「已审核」后，取消请求会覆盖成
+  「已取消」—— 库存扣了、出入库单还在。改为只允许 待处理→取消、已取消→待处理。
+- **删除单据无状态条件**：审核提交后删除仍会成功，留下 source_id 指向空单的
+  出入库记录。改为事务内 `WHERE status = 待处理`，0 行即拒绝。
+- **作废自动生成的出入库单**：会反向回滚库存，但源单据仍是「已审核」，
+  照样计入应收应付与毛利。现在直接拒绝并提示去原单反审核。
+- **结算/反审核并发**：结算条件更新补 `status = 已审核`；反审核条件更新补
+  `settled_amount <= 0`，不再产生「待处理单上挂着一笔收付款」。
+- **客户/供应商余额口径**：`partyStats` 之前按 `status <> 已取消` 聚合（含待处理），
+  与应收应付列表对不上。改为只统计已审核。
+- **路径基准统一到可执行文件目录**：`config.yaml` 默认路径、`log.dir`、`backup.dir`、
+  `web_dir`、升级目录全部按 exe 目录解析。以服务/计划任务启动时 CWD 是 System32，
+  之前日志和备份会静默写进系统目录。
+- **`jwt.secret` 占位串硬拒**：模板里的 `CHANGE_ME_...` 恰好超过 32 字节、能通过长度校验，
+  等于「照抄模板即可上线」使用公开密钥。现在启动直接拒绝并提示生成方法。
+- **CORS 默认留空**：之前默认 `*`（反射任意 Origin），同源部署根本不需要。
+- **前端客户/供应商按钮权限码用错前缀**：用了业务线 `inv:sales/purchase:*`，
+  后端要的是 `inv:customer/supplier:*`。按后端权限码授权的客户管理员看不到按钮，
+  只有开单权限的人反而看到、点了必 403。批量删除还缺 `v-perm`。
+- **登录页演示账号在生产构建里可见**：改为仅 `import.meta.env.DEV` 显示。
+- **升级包选错后无法重选**：`:limit="1"` 且未 `clearFiles()`，选错一次只能刷新页面
+  （刷新会丢掉当前升级计划）。改为每次上传结束都清空内部文件列表。
+
+#### Changed
+
+- `config.example.yaml` 出厂值改为交付形态：`mode: release`、`swagger: false`、
+  `demo_data: false`、`cors.allow_origins: []`、`web_dir: web`、`release: 1.1.0`；
+  并修正两处失实注释（环境变量覆盖范围、备份目录基准）。
+- 版本号统一到 **1.1.0**（backend config、frontend package.json、本文件）。
+- README 部署段指向 `docs/DEPLOY.md`，Go 版本要求改为 1.26+（与 go.mod 一致）。
+
+#### 测试
+
+- **交付包首次启动实测**（独立库 `nova_inv_v5_reltest` + 独立端口 6803）：
+  自动建库成功（template0）、无演示客户/商品/单据（全部 0 条）、demo 账号不存在、
+  菜单下发含 `/inv/stock` 与 `inv:stock:list`、
+  `GET /` 返回 index.html、`/assets/*.js` 带 immutable、
+  `/api/v1/nope` 返回 JSON 404 而不是被 SPA 回退吞掉、`/health` 正常。
+- `go test ./...` 全绿；`vue-tsc` 无错。
+
 ## [Unreleased]
 
 两轮改动：**第一轮**补齐商品管理页与到期日收敛（商品档案此前只能靠种子数据存在）；
