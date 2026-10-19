@@ -247,8 +247,8 @@ npm run preview        # 本地预览生产产物（已配置 /api 代理）
 
 ```bash
 # 整机交付包（首次部署）：server.exe + ops.exe + web/ + 配置模板 + 启动脚本 + 部署手册
-node scripts/build-release.mjs --version 1.1.0
-#   → build/release/nova-erp-1.1.0-win64.zip
+node scripts/build-release.mjs --version 1.1.1
+#   → build/release/nova-erp-1.1.1-win64.zip
 
 # 升级包（已部署环境的增量）：由管理页「系统运维 → 系统升级」上传
 node scripts/build-upgrade-package.mjs --version 1.2.0
