@@ -407,6 +407,36 @@
   已审核行有「反审核」入口、待处理行不显示「反审核」。
 - `go test ./...` / `gofmt` / `vet` 全绿；交互 8/8；swagger 已重生成。
 
+### 二十五、体检按钮的反馈 + 升级包一键打包
+
+#### Fixed
+
+- **「重新体检」点了像没点**：接口 50 ms 就回来了，按钮上的 loading 一闪而过，
+  数据又是同一秒的数字，界面没有任何变化。改为：工具栏显示「上次体检 HH:mm:ss」
+  （时间会变），主动点击时补一句「体检完成」提示；进页面与清理后的自动刷新仍静默，
+  不打扰。
+
+#### Added
+
+- **`scripts/build-upgrade-package.mjs`**：一条命令打出系统升级能吃的 zip。
+  ```bash
+  node scripts/build-upgrade-package.mjs --version 1.3.0
+  ```
+  自动做四件事：构建后端二进制（`go build -trimpath`）、构建前端并压成 `dist.zip`
+  （顶层直接是 `index.html`，不是再套一层 `dist/`）、逐个算 sha256、生成 `manifest.json`
+  并打成单层 zip。支持 `--backend-only` / `--frontend-only` / `--min-schema` / `--notes`。
+  脚本还会检查两个最容易漏的配置并告警：`app.release` 与包版本不一致（重启核对必挂）、
+  没配 `upgrade.frontend_dir`（前端会被静默跳过）。
+- 文档补打包章节：`UPGRADE.md §6.2.1`（结构、参数、必配项、报错对照）、
+  `OPS.md §4.7`（指向脚本）。
+
+#### 实现备忘
+
+- zip 用 Node 直写（store 模式 + UTF-8 文件名标志 + 自实现 CRC32）：项目没有 zip 依赖，
+  Windows 也未必有 zip/7z。升级包不追求压缩率，store 足够。
+- 构建前端前把旧 `dist` 改名移出（停在同盘，跨盘 `rename` 会 EXDEV）：
+  直接让 vite 清空 outDir，在带「批量删除保护」的环境里会被拦下，构建当场失败。
+
 ### 二十四、运维页布局纠偏 + 数据清理简化
 
 两件事，一件是缺陷、一件是易用性。

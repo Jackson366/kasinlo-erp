@@ -485,9 +485,9 @@ mv frontend/dist frontend/dist.bak.20261018 && cp -r frontend/dist.old frontend/
 **升级包是一个 zip**，结构如下（文件名写在 manifest 里，不写死）：
 
 ```
-manifest.json      # 必填：版本、结构版本门槛、文件清单与摘要
-nova-erp.exe       # 后端二进制（名字随平台，.exe / 无后缀）
-dist.zip           # 可选：前端产物压缩包
+manifest.json          # 必填：版本、结构版本门槛、文件清单与摘要
+nova-erp-server.exe    # 后端二进制（名字随平台；不必与线上同名，执行时落位为 <当前exe>.new）
+dist.zip               # 可选：前端产物压缩包（zip 顶层必须直接是 index.html）
 ```
 
 ```json
@@ -495,14 +495,27 @@ dist.zip           # 可选：前端产物压缩包
   "version": "1.3.0",
   "minSchemaVersion": 1,
   "notes": "本次升级说明，会带进升级记录",
-  "backend":  { "file": "nova-erp.exe", "sha256": "…" },
-  "frontend": { "file": "dist.zip",      "sha256": "…" }
+  "backend":  { "file": "nova-erp-server.exe", "sha256": "…" },
+  "frontend": { "file": "dist.zip",            "sha256": "…" }
 }
 ```
 
 上传时会逐项校验：zip 结构（不许嵌套目录）、manifest 必填项、**文件名必须是纯 basename**
 （带路径就能越出暂存目录写文件）、以及每个文件的 sha256。摘要对不上直接拒绝 ——
 「包在传输中半截」和「包被人改过」必须区分开。
+
+**怎么打这个包**：不要手搓 zip 和摘要，用脚本一条命令生成（自动构建后端与前端、
+逐个算 sha256、写 manifest）：
+
+```bash
+node scripts/build-upgrade-package.mjs --version 1.3.0
+# 只发后端：  --backend-only
+# 只发前端：  --frontend-only
+# 带上结构版本门槛与说明：--min-schema 3 --notes "修复报表导出"
+```
+
+细节（含两条必须提前对齐的配置 `app.release` / `upgrade.frontend_dir`、
+以及常见报错对照）见 [UPGRADE.md §6.2.1](./UPGRADE.md)。
 
 请求体上限 512 MB，而且是在**读取阶段**就把连接掐断，不是收完再统计：
 先 `FormFile` 再 `LimitReader` 的写法会让 gin 先把超过 32 MB 的部分落到临时文件，

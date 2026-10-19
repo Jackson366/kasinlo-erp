@@ -328,13 +328,21 @@ const checkReport = ref<CheckReport | null>(null)
 const checkWarnings = ref<string[]>([])
 const keyTables = ref<{ name: string; rows: number; softDeleted: number; sizeBytes: number }[]>([])
 
-async function loadCheck(): Promise<void> {
+/**
+ * 拉一次体检。
+ *
+ * silent 用于「顺手刷新」（进页面、清理完自动刷新）：那些场景不该弹提示；
+ * 用户主动点「重新体检」时才给一句明确反馈 —— 接口 50ms 就回来了，
+ * 按钮上的 loading 一闪而过，没有提示的话点完和没点一模一样。
+ */
+async function loadCheck(silent = true): Promise<void> {
   checkLoading.value = true
   try {
     const res = await opsApi.check()
     checkReport.value = res.report
     checkWarnings.value = res.warnings || []
     keyTables.value = res.report.keyTables || []
+    if (!silent) ElMessage.success('体检完成')
   } catch {
     // 失败提示由响应拦截器统一处理
   } finally {
@@ -709,7 +717,8 @@ onMounted(async () => {
               <span class="text-muted">只读检查、不改数据：结构版本是否对得上、库有多大、日志与备份是否该处理了</span>
             </div>
             <div class="toolbar__actions">
-              <el-button :loading="checkLoading" @click="loadCheck">
+              <span v-if="checkReport" class="text-muted">上次体检 {{ formatDateTime(checkReport.checkedAt) }}</span>
+              <el-button :loading="checkLoading" @click="loadCheck(false)">
                 <AppIcon name="Refresh" /><span>重新体检</span>
               </el-button>
             </div>

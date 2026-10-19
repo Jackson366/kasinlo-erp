@@ -273,9 +273,83 @@ PATCH = 修复。MAJOR 的节拍就是业务痛苦的节拍，能用 MINOR 演�
    b. 部署后端：启动时自动完成 AutoMigrate + seed 幂等补齐，
       日志确认「已补齐缺失的内置菜单」「已为内置角色补齐菜单授权」
    c. 前端 npm run build，替换静态产物
+   ——— 也可以走在线升级（§6.2.1），让管理页自己做「备份 → 换程序 → 换前端 → 重启核对」
 5. 三层验证（§6.3）
 6. 写 CHANGELOG → 打 tag → 合并
 ```
+
+### 6.2.1 在线升级包：一条命令打出来
+
+管理页的「系统运维 → 系统升级」吃的是一个 zip。打包不用手搓：
+
+```bash
+# 在仓库根目录执行（用当前分支的代码构建后端 + 前端）
+node scripts/build-upgrade-package.mjs --version 1.3.0
+
+# 只发后端（比如只改了 Go）
+node scripts/build-upgrade-package.mjs --version 1.3.0 --backend-only
+
+# 只发前端（纯前端修复，不需要重启）
+node scripts/build-upgrade-package.mjs --version 1.3.0 --frontend-only
+
+# 带上要求的最低结构版本与升级说明
+node scripts/build-upgrade-package.mjs --version 1.3.0 --min-schema 3 --notes "修复报表导出"
+```
+
+产物：`build/upgrade/nova-erp-<version>.zip`（已 gitignore）。
+
+**包结构（只有一层，嵌套目录会被后端直接拒绝）**
+
+```
+manifest.json            # 版本 / 最低结构版本 / 说明 / 两个文件的 sha256
+nova-erp-server.exe      # 后端二进制（--backend-only 或默认都有）
+dist.zip                 # 前端产物，zip 内顶层就是 index.html 与 assets/
+```
+
+`manifest.json` 长这样（脚本自动生成，不用手写）：
+
+```json
+{
+  "version": "1.3.0",
+  "minSchemaVersion": 3,
+  "notes": "修复报表导出",
+  "backend":  { "file": "nova-erp-server.exe", "sha256": "0c9f66…" },
+  "frontend": { "file": "dist.zip",            "sha256": "366169…" }
+}
+```
+
+后端只认「`file` 是纯文件名 + `sha256` 对得上」，文件名不必和线上二进制同名 ——
+执行时它会落位成当前 exe 的 `.new`。
+
+**打包前必须对齐的两个配置**（脚本会检查并打印告警，但不替你改）：
+
+| 配置 | 为什么必须对 | 不对会怎样 |
+| --- | --- | --- |
+| `app.release: 1.3.0` | 重启后 `FinalizeUpgrades` 拿**新程序读到的**这个值去比对目标版本 | 为 `dev` 或旧值时，升级永远停在「未生效」 |
+| `upgrade.frontend_dir` | 前端 zip 解压到这个目录 | 不配则只换后端，`dist.zip` 被静默忽略（有 warning） |
+
+```yaml
+app:
+  release: 1.3.0        # 与升级包 version 一致；也可用 NOVA_APP_RELEASE 覆盖
+
+upgrade:
+  frontend_dir: "D:/go/nova-erp/frontend/dist"   # 线上真正被 Nginx/静态服务读到的目录
+  # staging_dir: "D:/go/nova-erp/backend/upgrade/staging"  # 可选，默认 <exe目录>/upgrade/staging
+```
+
+**投放流程**：系统运维 → 系统升级 → 上传 zip（自动校验结构与摘要）→ 升级前备份 →
+执行升级 → 重启服务 → 启动日志里核对「升级已生效」。
+
+**常见报错对照**
+
+| 提示 | 原因 |
+| --- | --- |
+| 升级包版本 x 与当前运行版本相同，无需升级 | 包版本 = 当前 `app.release`；改版本号或先改配置 |
+| 后端文件 … 摘要不匹配 | 包在传输中被改过，或 manifest 不是脚本生成的 |
+| 升级包不允许嵌套目录 | zip 里套了一层文件夹；用脚本打，别手工压 |
+| 未配置 upgrade.frontend_dir | 见上表，前端不会替换 |
+| 该升级包已有待执行计划 | 同一个包 + 同一个 sha256 已经传过，去记录里继续执行或等它失效 |
+
 
 ### 6.3 三层验证清单（缺一层不发布）
 
