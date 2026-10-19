@@ -11,7 +11,7 @@ import { invApi } from '@/api'
 import type { InvOrderDetail, InvOrderRow, InvPrintTemplateRow } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import { parseContent, type PrintContentConfig } from './printConfig'
-import OrderSheet from './OrderSheet.vue'
+import PrintSheet from './PrintSheet.vue'
 
 defineOptions({ name: 'OrderPrintDialog' })
 
@@ -108,7 +108,8 @@ defineExpose({ open })
       </div>
 
       <div v-if="detail" class="print-body__preview">
-        <OrderSheet
+        <PrintSheet
+          mode="order"
           :detail="detail"
           :cfg="cfg"
           :title="title"
@@ -166,16 +167,14 @@ defineExpose({ open })
     left: 0;
     top: 0;
     width: auto !important;
+    /* 页边距已由模板注入 @page（毫米），纸面自身留白归零，避免双重边距 */
+    padding: 0 !important;
     box-shadow: none;
   }
 
   body.printing .sheet,
   body.printing .sheet * {
     visibility: visible !important;
-  }
-
-  @page {
-    margin: 12mm;
   }
 }
 </style>

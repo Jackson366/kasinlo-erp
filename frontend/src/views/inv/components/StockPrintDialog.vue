@@ -13,7 +13,7 @@ import { invApi } from '@/api'
 import type { InvStockOrderDetail, InvStockOrderRow, InvPrintTemplateRow } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import { parseContent, type PrintContentConfig } from './printConfig'
-import StockSheet from './StockSheet.vue'
+import PrintSheet from './PrintSheet.vue'
 
 defineOptions({ name: 'StockPrintDialog' })
 
@@ -106,7 +106,7 @@ defineExpose({ open })
       </div>
 
       <div v-if="detail" class="print-body__preview">
-        <StockSheet :detail="detail" :cfg="cfg" :title="title" :paper="paper" />
+        <PrintSheet mode="stock" :detail="detail" :cfg="cfg" :title="title" :paper="paper" />
       </div>
     </div>
   </el-dialog>
@@ -158,18 +158,14 @@ defineExpose({ open })
     left: 0;
     top: 0;
     width: auto !important;
+    /* 页边距已由模板注入 @page（毫米），纸面自身留白归零，避免双重边距 */
+    padding: 0 !important;
     box-shadow: none;
   }
 
   body.printing .sheet,
   body.printing .sheet * {
     visibility: visible !important;
-  }
-}
-
-@media print {
-  @page {
-    margin: 12mm;
   }
 }
 </style>

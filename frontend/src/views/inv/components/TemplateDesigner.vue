@@ -3,34 +3,37 @@
  * 打印模板设计器（自包含弹窗）。
  *
  * 左侧编辑版式，右侧用示例数据实时预览；保存时把配置序列化成 JSON
- * 写进模板的 content 字段。设计器分四组，对应四类可调项：
+ * 写进模板的 content 字段。设计器分四组：
  *
- *   1. 单据与纸张   标题、纸张规格、标题是否显示
+ *   1. 纸张与标题   标题、纸张规格（A4/A5 竖版）、标题是否显示
  *   2. 公司信息     公司名 / Logo / 地址 / 电话 / 开户行（纸面表头区）
- *   3. 明细列       显隐、列标题可改、对齐方式、可上下移动调顺序
- *   4. 页面与底部   页边距 / 行高 / 正文字号 / 标题字号 / 表头底色；
- *                  签收栏 / 备注 / 合计大写 / 页脚与附加文字
+ *   3. 信息条       单据编号 / 日期 / 往来单位等字段：可改名、显隐、排序
+ *   4. 明细列       显隐、列标题可改、对齐方式、可上下移动调顺序
+ *                  （序号 / 基本数量 / 换算率都在列池里，可自由组合）
+ *   5. 页面与底部   页边距（毫米，直接驱动打印 @page）/ 行高 / 字号 /
+ *                  表头底色；签收栏项目可自定义、备注 / 大写 / 页脚
  *
- * 明细列支持增删改排序：旧版只能勾选预设列，客户想加一列「批次号」
- * 或者把「规格」挪到「名称」前面都做不到。列的渲染统一收在
- * printConfig 的 ColumnKey 里，新增一列要在 OrderSheet / StockSheet
- * 的 cell() 里补一个 case —— 两处都改，纸面才会跟着变。
+ * 页边距单位是毫米并与打印 @page 同源（PrintSheet 挂载时注入），
+ * 预览按同一数值模拟 —— 设计器里看到多宽的留白，打印出来就是多宽。
  *
- * 模板的单据类型指向采购 / 销售单时，预览自动切换到带单价金额的对应版式。
+ * 纸面渲染统一收在 PrintSheet（采购销售 / 出入库共用），新增数据列只需
+ * 在 printConfig 的 ALL_COLUMNS 加一项并在 PrintSheet.cell() 补一个取值。
  */
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { invApi } from '@/api'
 import type { InvOrderDetail, InvPrintTemplateRow, InvStockOrderDetail } from '@/types/api'
 import {
-  DEFAULT_COLUMNS,
+  ALL_COLUMNS,
+  defaultMetaFields,
+  defaultSignItems,
   parseContent,
   type ColumnKey,
   type PrintColumn,
   type PrintContentConfig,
+  type SheetMode,
 } from './printConfig'
-import StockSheet from './StockSheet.vue'
-import OrderSheet from './OrderSheet.vue'
+import PrintSheet from './PrintSheet.vue'
 
 defineOptions({ name: 'TemplateDesigner' })
 
@@ -93,6 +96,7 @@ const sampleOrder: InvOrderDetail = {
 
 /** 模板的单据类型指向采购 / 销售单时，预览切换到对应的纸面版式 */
 const isOrderDoc = computed(() => /采购|销售/.test(row.value?.docType || ''))
+const mode = computed<SheetMode>(() => (isOrderDoc.value ? 'order' : 'stock'))
 const orderPartyLabel = computed(() =>
   /销售/.test(row.value?.docType || '') ? '客户' : '供应商',
 )
@@ -101,6 +105,10 @@ function open(r: InvPrintTemplateRow): void {
   row.value = r
   paper.value = r.paper === 'A5' ? 'A5' : 'A4'
   Object.assign(cfg, parseContent(r.content))
+  // 信息条没配置过（老模板）就按当前单据类型初始化，保存后固化
+  if (!cfg.meta.length) {
+    cfg.meta = defaultMetaFields(mode.value, orderPartyLabel.value)
+  }
   visible.value = true
 }
 
@@ -110,28 +118,29 @@ const previewTitle = computed(() => {
   return sample.direction === 'in' ? '入库单' : '出库单'
 })
 
+/** 列表项上下移（明细列与信息条共用） */
+function moveItem<T>(arr: T[], index: number, dir: -1 | 1): void {
+  const to = index + dir
+  if (to < 0 || to >= arr.length) return
+  const [it] = arr.splice(index, 1)
+  arr.splice(to, 0, it)
+}
+
 // ---------------- 明细列编辑 ----------------
 /**
  * 可添加的列池。出入库单没有单价 / 金额（成本不归仓管看），
  * 所以那两个键在库存单据下不进池子 —— 加进去纸面也没有数据可渲染。
  */
 const columnPool = computed<PrintColumn[]>(() =>
-  DEFAULT_COLUMNS.filter((c) => (isOrderDoc.value ? c.key !== 'price' && c.key !== 'amount' : true)),
+  ALL_COLUMNS.filter(
+    (c) =>
+      !(mode.value === 'stock' && (c.key === 'price' || c.key === 'amount')) &&
+      !cfg.columns.some((x) => x.key === c.key),
+  ),
 )
 
-function moveCol(index: number, dir: -1 | 1): void {
-  const to = index + dir
-  if (to < 0 || to >= cfg.columns.length) return
-  const [it] = cfg.columns.splice(index, 1)
-  cfg.columns.splice(to, 0, it)
-}
-
 function addColumn(key: ColumnKey): void {
-  if (cfg.columns.some((c) => c.key === key)) {
-    ElMessage.warning('这一列已经在表里了')
-    return
-  }
-  const tpl = DEFAULT_COLUMNS.find((c) => c.key === key)
+  const tpl = ALL_COLUMNS.find((c) => c.key === key)
   if (tpl) cfg.columns.push({ ...tpl })
 }
 
@@ -147,21 +156,49 @@ function removeCol(index: number): void {
 
 /** 恢复默认列集合：用户改乱了之后的一条退路 */
 function resetColumns(): void {
-  cfg.columns = DEFAULT_COLUMNS.filter((c) => (isOrderDoc.value ? c.key !== 'price' && c.key !== 'amount' : true)).map(
-    (c) => ({ ...c }),
-  )
+  cfg.columns = ALL_COLUMNS.filter(
+    (c) =>
+      !(mode.value === 'stock' && (c.key === 'price' || c.key === 'amount')) &&
+      ['index', 'code', 'name', 'spec', 'unit', 'qty', 'price', 'amount'].includes(c.key),
+  ).map((c) => ({ ...c }))
+}
+
+// ---------------- 信息条编辑 ----------------
+function addMeta(): void {
+  cfg.meta.push({ key: `field${Date.now() % 1000}`, label: '自定义字段', visible: false })
+}
+
+function removeMeta(index: number): void {
+  cfg.meta.splice(index, 1)
+}
+
+// ---------------- 签收栏编辑 ----------------
+/**
+ * 签收栏项目：配置为 null（未自定义）时显示当前单据类型的默认项；
+ * 用户动过就存实际数组，与默认完全一致时归一回 null（跨单据类型仍跟随默认）。
+ */
+const signItemsView = computed<string[]>({
+  get: () => cfg.footer.signItems ?? defaultSignItems(mode.value),
+  set: (v) => {
+    cfg.footer.signItems = v
+  },
+})
+
+function sameSign(a: string[] | null, b: string[]): boolean {
+  return (a ?? []).join('\u0001') === b.join('\u0001')
 }
 
 async function save(): Promise<void> {
   if (!row.value) return
   saving.value = true
   try {
+    const signItems = sameSign(cfg.footer.signItems, defaultSignItems(mode.value)) ? null : signItemsView.value
     await invApi.updatePrintTemplate(row.value.id, {
       code: row.value.code,
       name: row.value.name,
       docType: row.value.docType,
       paper: paper.value,
-      content: JSON.stringify(cfg),
+      content: JSON.stringify({ ...cfg, footer: { ...cfg.footer, signItems } }),
       status: row.value.status,
       remark: row.value.remark,
     })
@@ -189,7 +226,7 @@ defineExpose({ open })
       <div class="designer__panel">
         <el-form label-width="82px" label-position="left" size="small">
           <el-collapse v-model="activeGroup">
-            <el-collapse-item title="单据与纸张" name="doc">
+            <el-collapse-item title="纸张与标题" name="doc">
               <el-form-item label="单据标题">
                 <el-input v-model="cfg.title" placeholder="留空则按单据类型显示默认标题" />
               </el-form-item>
@@ -198,8 +235,8 @@ defineExpose({ open })
               </el-form-item>
               <el-form-item label="纸张规格">
                 <el-radio-group v-model="paper">
-                  <el-radio-button value="A4">A4</el-radio-button>
-                  <el-radio-button value="A5">A5</el-radio-button>
+                  <el-radio-button value="A4">A4 竖版</el-radio-button>
+                  <el-radio-button value="A5">A5 竖版</el-radio-button>
                 </el-radio-group>
               </el-form-item>
             </el-collapse-item>
@@ -222,6 +259,50 @@ defineExpose({ open })
               </el-form-item>
             </el-collapse-item>
 
+            <el-collapse-item title="信息条（单据编号 / 日期等）" name="meta">
+              <div class="col-editor">
+                <div class="col-editor__row col-editor__row--head">
+                  <span class="col-editor__move" />
+                  <span class="col-editor__label">显示文案</span>
+                  <span class="col-editor__show">显示</span>
+                  <span class="col-editor__op" />
+                </div>
+                <div v-for="(m, i) in cfg.meta" :key="m.key + i" class="col-editor__row">
+                  <span class="col-editor__move">
+                    <el-button link size="small" :disabled="i === 0" @click="moveItem(cfg.meta, i, -1)">↑</el-button>
+                    <el-button
+                      link
+                      size="small"
+                      :disabled="i === cfg.meta.length - 1"
+                      @click="moveItem(cfg.meta, i, 1)"
+                    >
+                      ↓
+                    </el-button>
+                  </span>
+                  <span class="col-editor__label">
+                    <el-input v-model="m.label" size="small" />
+                  </span>
+                  <span class="col-editor__show">
+                    <el-checkbox v-model="m.visible" />
+                  </span>
+                  <span class="col-editor__op">
+                    <el-button link type="danger" size="small" @click="removeMeta(i)">删</el-button>
+                  </span>
+                </div>
+              </div>
+              <div class="col-editor__foot">
+                <el-button link type="primary" size="small" @click="addMeta">+ 添加自定义项</el-button>
+                <el-button
+                  link
+                  size="small"
+                  @click="cfg.meta = defaultMetaFields(mode, orderPartyLabel)"
+                >
+                  恢复默认
+                </el-button>
+                <div class="text-muted">空值的项不会打到纸面（如未填业务员的单据）</div>
+              </div>
+            </el-collapse-item>
+
             <el-collapse-item title="明细列（可改名 / 排序）" name="columns">
               <div class="col-editor">
                 <div class="col-editor__row col-editor__row--head">
@@ -233,12 +314,12 @@ defineExpose({ open })
                 </div>
                 <div v-for="(c, i) in cfg.columns" :key="c.key" class="col-editor__row">
                   <span class="col-editor__move">
-                    <el-button link size="small" :disabled="i === 0" @click="moveCol(i, -1)">↑</el-button>
+                    <el-button link size="small" :disabled="i === 0" @click="moveItem(cfg.columns, i, -1)">↑</el-button>
                     <el-button
                       link
                       size="small"
                       :disabled="i === cfg.columns.length - 1"
-                      @click="moveCol(i, 1)"
+                      @click="moveItem(cfg.columns, i, 1)"
                     >
                       ↓
                     </el-button>
@@ -277,10 +358,16 @@ defineExpose({ open })
               </div>
             </el-collapse-item>
 
-            <el-collapse-item title="页面设置" name="page">
+            <el-collapse-item title="页面与底部" name="page">
               <el-form-item label="页边距">
-                <el-input-number v-model="cfg.page.margin" :min="0" :max="60" size="small" controls-position="right" />
-                <span class="unit">px</span>
+                <el-input-number
+                  v-model="cfg.page.marginMm"
+                  :min="0"
+                  :max="30"
+                  size="small"
+                  controls-position="right"
+                />
+                <span class="unit">mm（打印留白，所见即所得）</span>
               </el-form-item>
               <el-form-item label="明细行高">
                 <el-input-number v-model="cfg.page.rowHeight" :min="20" :max="80" size="small" controls-position="right" />
@@ -299,11 +386,19 @@ defineExpose({ open })
               <el-form-item label="表头底色">
                 <el-input v-model="cfg.page.headerBg" size="small" placeholder="如 #f2f2f2，留空为无" />
               </el-form-item>
-            </el-collapse-item>
-
-            <el-collapse-item title="底部区域" name="footer">
               <el-form-item label="签收栏">
                 <el-switch v-model="cfg.footer.showSign" />
+              </el-form-item>
+              <el-form-item v-if="cfg.footer.showSign" label="签收项目">
+                <el-select
+                  v-model="signItemsView"
+                  multiple
+                  filterable
+                  allow-create
+                  default-first-option
+                  placeholder="输入后回车添加"
+                  style="width: 100%"
+                />
               </el-form-item>
               <el-form-item label="单据备注">
                 <el-switch v-model="cfg.footer.showRemark" />
@@ -328,15 +423,14 @@ defineExpose({ open })
       </div>
 
       <div class="designer__preview">
-        <OrderSheet
-          v-if="isOrderDoc"
-          :detail="sampleOrder"
+        <PrintSheet
+          :mode="mode"
+          :detail="isOrderDoc ? sampleOrder : sample"
           :cfg="cfg"
           :title="previewTitle"
           :paper="paper"
           :party-label="orderPartyLabel"
         />
-        <StockSheet v-else :detail="sample" :cfg="cfg" :title="previewTitle" :paper="paper" />
       </div>
     </div>
 
