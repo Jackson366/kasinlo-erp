@@ -1,0 +1,1 @@
+import{aP as u}from"./vue-DgP08rxh.js";import{a,u as n}from"./index-B_di3o29.js";import{u as i}from"./app--fwjWMdc.js";function S(){const o=u(),t=a(),r=n(),s=i();async function e(){await t.logout(),r.reset(),s.clearTags(),await o.push("/login")}return{logout:e}}export{S as u};

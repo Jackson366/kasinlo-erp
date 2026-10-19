@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Cpath d='M9 22V10l7 8 7-8v12' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <title>Nova ERP 管理后台</title>
+
+    <!--
+      主题预处理：必须在样式生效前写好 <html class="dark">，
+      否则暗色用户每次刷新都会先闪一下亮色（FOUC）。
+      与 utils/theme.ts 的 resolveInitialTheme 逻辑保持一致。
+    -->
+    <script>
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('nova_theme')
+          var dark =
+            saved === 'dark' ||
+            (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          if (dark) document.documentElement.classList.add('dark')
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        } catch (e) {
+          /* localStorage 不可用时按亮色处理 */
+        }
+      })()
+    </script>
+
+    <!--
+      首屏关键底色：上面这段脚本只负责改类名，具体的 --app-bg 要等内容样式加载后才生效，
+      这段内联样式用来兜住「脚本已执行、样式还没到」的空档，避免白闪。
+      取值需与 styles/variables.scss 中的 --app-bg 保持一致。
+    -->
+    <style>
+      html {
+        background: #f5f7fb;
+      }
+      html.dark {
+        background: #0f1420;
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-B_di3o29.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vue-DgP08rxh.js">
+    <link rel="modulepreload" crossorigin href="/assets/element-DRcUHiEg.js">
+    <link rel="stylesheet" crossorigin href="/assets/element-B1YDBnH1.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-Ds_PfZIU.css">
+  </head>
+  <body>
+    <div id="app">
+      <!-- 首屏骨架，避免白屏闪烁 -->
+      <div class="app-loading">
+        <div class="app-loading__logo"></div>
+        <div class="app-loading__text">正在加载…</div>
+      </div>
+    </div>
+  </body>
+</html>

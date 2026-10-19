@@ -1,0 +1,1 @@
+import{h as e}from"./index-B_di3o29.js";const p={list(t){return e.get("/system/depts",t)},create(t){return e.post("/system/depts",t)},update(t,s){return e.put(`/system/depts/${t}`,s)},remove(t){return e.delete(`/system/depts/${t}`)}};export{p as d};
