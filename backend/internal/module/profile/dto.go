@@ -21,9 +21,13 @@ type UpdateReq struct {
 }
 
 // ChangePasswordReq 修改密码请求。
+//
+// 原密码只要求非空与长度上限：老账号可能是早期 6 位口令，
+// 这里若跟着新密码一起抬到 8 位，老用户会卡在「原密码不合规」上无法改密。
+// 新密码则统一按 8 位下限。
 type ChangePasswordReq struct {
 	OldPassword string `json:"oldPassword" binding:"required,min=6,max=64" label:"原密码"`
-	NewPassword string `json:"newPassword" binding:"required,min=6,max=64" label:"新密码"`
+	NewPassword string `json:"newPassword" binding:"required,min=8,max=64" label:"新密码"`
 }
 
 // Info 个人信息视图。

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // 注册 "pgx" database/sql 驱动
@@ -19,6 +20,11 @@ import (
 )
 
 var db *gorm.DB
+
+// dbNamePattern 限定库名。库名要拼进 `CREATE DATABASE "x"` 的**标识符**位置，
+// 而标识符不能用 $1 占位符传参 —— 唯一可靠的做法是先严格校验再用。
+// 与 ops.restore 的目标库名校验同一口径：只允许字母数字下划线，长度对齐 PostgreSQL 63 字节上限。
+var dbNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,62}$`)
 
 // loc 是数据库会话时区（配置 database.timezone，默认 Asia/Shanghai）。
 // DSN 里的 TimeZone 决定了 SQL 侧 DATE(created_at) 等按哪个时区分桶，
@@ -359,6 +365,11 @@ func ensureDatabase(cfg config.DatabaseConfig) error {
 	if exists {
 		return nil
 	}
+	// 库名会被拼进标识符位置（CREATE DATABASE 不支持占位符），必须先校验；
+	// 环境变量注入的 DBName 里若含引号，不校验就是一条注入面。
+	if !dbNamePattern.MatchString(cfg.DBName) {
+		return fmt.Errorf("database.dbname %q 不是合法库名（只允许字母数字下划线，且以字母或下划线开头）", cfg.DBName)
+	}
 	stmt := fmt.Sprintf(`CREATE DATABASE "%s" ENCODING 'UTF8'`, cfg.DBName)
 	if _, err := admin.Exec(stmt); err != nil {
 		return fmt.Errorf("创建数据库 %s 失败: %w", cfg.DBName, err)
@@ -413,12 +424,21 @@ func (g gormZap) Error(_ context.Context, msg string, args ...any) {
 	}
 }
 
+// maxTraceSQLLen 是单条 SQL 进日志前的长度上限。
+// IN (?) 展开成上千个参数时，一行 SQL 能有几十 KB，不截断会把日志文件撑爆。
+const maxTraceSQLLen = 4096
+
 func (g gormZap) Trace(_ context.Context, begin time.Time, fc func() (string, int64), err error) {
 	if g.level <= gormlogger.Silent {
 		return
 	}
 	elapsed := time.Since(begin)
 	sqlText, rows := fc()
+	// 约定：敏感值永远不进 SQL 文本（全部走 $1 参数绑定），日志文件才对同机用户安全。
+	// 这里再兜一层长度截断，避免超长 SQL 把日志撑爆。
+	if len(sqlText) > maxTraceSQLLen {
+		sqlText = sqlText[:maxTraceSQLLen] + "...(截断)"
+	}
 	fields := []zap.Field{
 		zap.Duration("elapsed", elapsed),
 		zap.Int64("rows", rows),

@@ -55,15 +55,15 @@ func (s *Service) OrderList(f OrderFilter, q page.Query, actor *authz.Identity) 
 	if f.Status != nil {
 		tx = tx.Where("status = ?", *f.Status)
 	}
-	// 结算状态在 SQL 侧复刻 settleStatus() 的三分支（含 0.001 容差），
+	// 结算状态在 SQL 侧复刻 settleStatus() 的三分支，容差统一取 settleEpsilon，
 	// 口径必须一模一样：否则「筛已结清」会混进 settled 还差几分钱的单子。
 	switch f.Settle {
 	case model.InvSettleUnpaid:
-		tx = tx.Where("settled_amount <= 0")
+		tx = tx.Where("settled_amount <= ?", settleEpsilon)
 	case model.InvSettlePaid:
-		tx = tx.Where("settled_amount + 0.001 >= total_amount")
+		tx = tx.Where("settled_amount + ? >= total_amount", settleEpsilon)
 	case model.InvSettlePartial:
-		tx = tx.Where("settled_amount > 0 AND settled_amount + 0.001 < total_amount")
+		tx = tx.Where("settled_amount > ? AND settled_amount + ? < total_amount", settleEpsilon, settleEpsilon)
 	}
 	if f.Start != nil {
 		tx = tx.Where("order_date >= ?", *f.Start)

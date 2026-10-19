@@ -68,7 +68,7 @@ func (s *Service) Login(req LoginReq, ip, ua string) (*LoginResp, error) {
 
 	// 连续失败锁定校验
 	if s.isLocked(user.Username, ip) {
-		s.writeLoginLog(user.ID, user.Username, ip, ua, false, "账号锁定中")
+		s.writeLoginLog(user.ID, user.Username, ip, ua, false, msgLockedReject)
 		return nil, errcode.New(errcode.ErrAccountLocked, "")
 	}
 
@@ -122,6 +122,12 @@ func (s *Service) Login(req LoginReq, ip, ua string) (*LoginResp, error) {
 }
 
 // Refresh 用刷新令牌换取新的令牌对。
+//
+// 设计取舍：当前是**无状态刷新令牌** —— 同一个 refresh token 在过期前可被重复使用，
+// 吊销依赖 token_epoch（登出 / 改密 / 禁用时 +1，旧令牌立即失效）。
+// 没有做「单次使用 + 轮换」：那需要给 JWT 加 jti 并新增一张黑名单表；
+// 对后台系统而言，epoch 已经覆盖了「令牌被复制后如何止血」的主路径。
+// 若将来威胁模型要求单次使用，再引入 jti 黑名单即可（结构同 sys_idempotencies）。
 func (s *Service) Refresh(refreshToken string) (*LoginResp, error) {
 	claims, err := jwt.M().ParseRefresh(refreshToken)
 	if err != nil {
@@ -185,6 +191,14 @@ func (s *Service) Logout(userID int64) error {
 //     这里刻意**不删除**失败日志（它们是审计证据），而是用时间起点把计数归零。
 //
 // 代价是：分布式（多 IP）撞库不再受此单机锁定约束，需要由网关/WAF 层的全局限流兜底。
+// msgLockedReject 是「因锁定被拒」的登录日志标记。
+//
+// 必须与「密码错误」区分开：isLocked 统计的是**真正的凭据失败**，
+// 若把「锁定中」这条也计入，锁定期内每一次重试都会刷新失败计数，
+// 锁定就永远无法自然到期 —— 攻击者只要一直重试就能把账号永久锁死，
+// 一个「防爆破」机制反而变成了「锁号 DoS」工具。
+const msgLockedReject = "账号锁定中"
+
 func (s *Service) isLocked(username, ip string) bool {
 	windowStart := time.Now().Add(-time.Duration(s.sec.LoginLockSeconds) * time.Second)
 	start := windowStart
@@ -200,7 +214,8 @@ func (s *Service) isLocked(username, ip string) bool {
 
 	var fails int64
 	if err := s.db.Model(&model.LoginLog{}).
-		Where("username = ? AND ip = ? AND success = ? AND created_at >= ?", username, ip, false, start).
+		Where("username = ? AND ip = ? AND success = ? AND created_at >= ? AND message <> ?",
+			username, ip, false, start, msgLockedReject).
 		Count(&fails).Error; err != nil {
 		// 查询本身失败时按「未锁定」放行：后续密码校验与日志写入同样会失败，
 		// 在这里返回 true 只会掩盖真正的数据库故障。

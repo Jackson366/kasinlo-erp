@@ -108,7 +108,7 @@ const rules: FormRules<UserPayload> = {
   nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
   password: [
     { required: true, message: '请输入初始密码', trigger: 'blur' },
-    { min: 6, max: 64, message: '密码长度为 6 ~ 64 个字符', trigger: 'blur' },
+    { min: 8, max: 64, message: '密码长度为 8 ~ 64 个字符', trigger: 'blur' },
   ],
   email: [{ type: 'email', message: '邮箱格式不正确', trigger: 'blur' }],
 }
@@ -578,7 +578,7 @@ onMounted(() => {
                  只是装饰，空密码能直接通过前端校验。编辑模式不渲染此项，
                  el-form 只校验已注册的 form-item，编辑不受影响。 -->
             <el-form-item v-if="dialogMode === 'create'" label="初始密码" prop="password">
-              <el-input v-model="form.password" type="password" show-password placeholder="至少 6 位" />
+              <el-input v-model="form.password" type="password" show-password placeholder="至少 8 位" />
             </el-form-item>
             <el-form-item v-else label="昵称" prop="nickname">
               <el-input v-model="form.nickname" placeholder="显示名称" />

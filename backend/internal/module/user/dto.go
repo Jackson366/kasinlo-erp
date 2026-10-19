@@ -5,7 +5,7 @@ import "time"
 // CreateReq 新增用户请求。
 type CreateReq struct {
 	Username string  `json:"username" binding:"required,min=3,max=64" label:"用户名"`
-	Password string  `json:"password" binding:"required,min=6,max=64" label:"密码"`
+	Password string  `json:"password" binding:"required,min=8,max=64" label:"密码"`
 	Nickname string  `json:"nickname" binding:"required,max=64" label:"昵称"`
 	Email    string  `json:"email" binding:"omitempty,email,max=128" label:"邮箱"`
 	Phone    string  `json:"phone" binding:"omitempty,max=32" label:"手机号"`
@@ -33,7 +33,7 @@ type StatusReq struct {
 
 // ResetPasswordReq 管理员重置密码请求。
 type ResetPasswordReq struct {
-	Password string `json:"password" binding:"required,min=6,max=64" label:"新密码"`
+	Password string `json:"password" binding:"required,min=8,max=64" label:"新密码"`
 }
 
 // ListQuery 用户列表查询条件。

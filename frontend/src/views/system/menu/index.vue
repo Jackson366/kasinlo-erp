@@ -400,6 +400,8 @@ async function handleExport(): Promise<void> {
       keyword: keyword.value || undefined,
       type: typeFilter.value || undefined,
     }, '菜单配置.xlsx')
+  } catch {
+    // 失败提示由下载封装 / 响应拦截器统一处理；这里只保证不产生未捕获 rejection
   } finally {
     exporting.value = false
   }

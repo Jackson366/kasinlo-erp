@@ -254,20 +254,24 @@ func (s *Service) StockOrderDetail(id int64, actor *authz.Identity) (*StockOrder
 
 	return &StockOrderDetail{
 		ID: o.ID, OrderNo: o.OrderNo, Direction: o.Direction, SourceType: o.SourceType,
-		SourceOrderNo: s.sourceOrderNo(o.SourceType, o.SourceID),
+		SourceOrderNo: s.sourceOrderNo(o.SourceType, o.SourceID, actor),
 		OrderDate:     o.OrderDate, Remark: o.Remark, Salesman: o.Salesman,
 		Operator: s.operatorName(o.CreatedBy), TotalQty: round4(total), Items: printItems,
 	}, nil
 }
 
 // sourceOrderNo 查来源采购 / 销售单号；手工单没有来源，返回空。
-func (s *Service) sourceOrderNo(sourceType string, sourceID int64) string {
+//
+// 必须套数据范围：出入库单本身可见，不代表它的来源单据可见 ——
+// 持有出入库权限但只有「仅本人」范围的人，不该从来源单号里看到别人部门的单据编号。
+// 越界时返回空串（与「没有来源」同一表现，不额外暴露「存在但你看不到」）。
+func (s *Service) sourceOrderNo(sourceType string, sourceID int64, actor *authz.Identity) string {
 	if sourceID <= 0 || (sourceType != model.InvSourcePurchase && sourceType != model.InvSourceSales) {
 		return ""
 	}
 	var no string
-	if err := s.db.Model(&model.InvOrder{}).Where("id = ?", sourceID).
-		Pluck("order_no", &no).Error; err != nil || no == "" {
+	tx := s.applyCreator(s.db.Model(&model.InvOrder{}), actor)
+	if err := tx.Where("id = ?", sourceID).Pluck("order_no", &no).Error; err != nil || no == "" {
 		return ""
 	}
 	return no

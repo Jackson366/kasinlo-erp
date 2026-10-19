@@ -252,9 +252,8 @@ func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 	// 超管保护必须放在 status 分支之前：
 	// 禁用一个超管账号与其被摘掉超管角色同级，都是「让某个超管失去控制权」，
 	// 只在 roleIds != nil 时校验的话，不传 roleIds 就能绕过。
-	if err := s.ensureTargetNotSuper(s.db, actor, id); err != nil {
-		return err
-	}
+	// （实际调用在下面的事务里 —— 校验与角色替换必须是同一份快照，
+	// 否则并发把超管角色授给目标后，本请求仍会按「不是超管」放行。）
 
 	// PUT 是全量更新：标量字段按请求值覆写；
 	// 但 dept_id 是指针，nil 表示「请求里没带这个字段」，此时绝不能写进 map ——
@@ -286,6 +285,11 @@ func (s *Service) Update(id int64, req UpdateReq, actor *authz.Identity) error {
 	}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		// 超管保护放在事务内：与下面 replaceRoles 读到的角色集合是同一份快照，
+		// 避免「校验时还不是超管、写入时已被并发授予超管角色」的窗口。
+		if err := s.ensureTargetNotSuper(tx, actor, id); err != nil {
+			return err
+		}
 		if err := tx.Model(&model.User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			return err
 		}

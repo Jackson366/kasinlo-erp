@@ -28,7 +28,12 @@ func NewService() *Service {
 // Info 返回当前用户完整信息（含角色与权限）。
 func (s *Service) Info(id *authz.Identity) (*Info, error) {
 	var u model.User
-	if err := s.db.Preload("Dept").Preload("Roles").First(&u, id.UserID).Error; err != nil {
+	// 只预加载启用角色：禁用角色不参与 authz 权限计算（见 authz.build），
+	// 若在这里照样回显，页面会显示用户「拥有」一个实际不生效的角色，
+	// 与真实权限集对不上。
+	if err := s.db.Preload("Dept").
+		Preload("Roles", "status = ?", model.StatusEnabled).
+		First(&u, id.UserID).Error; err != nil {
 		// 令牌有效但用户已不存在（删除账号后旧令牌仍在有效期内的窗口）。
 		// 按数据库错误返回 500 会把问题描成「服务端故障」；
 		// 按 401 返回前端才会走重新登录，与「账号已被删除」的事实对齐。

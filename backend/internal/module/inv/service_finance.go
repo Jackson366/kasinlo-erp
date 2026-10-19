@@ -74,13 +74,13 @@ func (s *Service) financeList(bizType string, q page.Query, settle string, actor
 	}
 	switch settle {
 	case model.InvSettleUnpaid:
-		tx = tx.Where("settled_amount <= 0.001")
+		tx = tx.Where("settled_amount <= ?", settleEpsilon)
 	case model.InvSettlePaid:
-		tx = tx.Where("settled_amount + 0.001 >= total_amount")
+		tx = tx.Where("settled_amount + ? >= total_amount", settleEpsilon)
 	case model.InvSettlePartial:
-		tx = tx.Where("settled_amount > 0.001 AND settled_amount + 0.001 < total_amount")
+		tx = tx.Where("settled_amount > ? AND settled_amount + ? < total_amount", settleEpsilon, settleEpsilon)
 	case "overdue":
-		tx = tx.Where("total_amount - settled_amount > 0.001 AND "+dueDateOverdueCond+" AND due_date < ?", today)
+		tx = tx.Where("total_amount - settled_amount > ? AND "+dueDateOverdueCond+" AND due_date < ?", settleEpsilon, today)
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
@@ -133,10 +133,10 @@ func (s *Service) Settle(req SettleReq, actor *authz.Identity) error {
 	// 两个并发登记读到同一份 outstanding 都能通过下面的 if，
 	// 各自累加就会把 settled_amount 顶到 total_amount 之上 —— 超额结算。
 	outstanding := round2(o.TotalAmount - o.SettledAmount)
-	if outstanding <= 0 {
+	if outstanding <= settleEpsilon {
 		return errcode.New(errcode.ErrConflict, "该单据已结清")
 	}
-	if req.Amount > outstanding+0.001 {
+	if req.Amount > outstanding+settleEpsilon {
 		return errcode.Newf(errcode.ErrConflict, "结算金额超出未结余额（剩余 %.2f）", outstanding)
 	}
 	settledAt, err := parseDate(req.SettledAt)
@@ -164,7 +164,7 @@ func (s *Service) Settle(req SettleReq, actor *authz.Identity) error {
 		// UPDATE 会等第一个提交后按最新 settled_amount 重新评估条件，
 		// 超限则 0 行 → 回滚整个事务（结算记录也一起撤销）。
 		res := tx.Model(&model.InvOrder{}).
-			Where("id = ? AND settled_amount + ? <= total_amount + 0.001", o.ID, amount).
+			Where("id = ? AND settled_amount + ? <= total_amount + ?", o.ID, amount, settleEpsilon).
 			UpdateColumn("settled_amount", gorm.Expr("settled_amount + ?", amount))
 		if res.Error != nil {
 			return res.Error

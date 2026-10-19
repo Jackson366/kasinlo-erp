@@ -3,6 +3,7 @@ package auth
 import (
 	"github.com/gin-gonic/gin"
 
+	"nova-erp/internal/authz"
 	"nova-erp/internal/middleware"
 	"nova-erp/internal/pkg/bind"
 	"nova-erp/internal/pkg/response"
@@ -41,6 +42,15 @@ func (h *Handler) Login(c *gin.Context) {
 	if err != nil {
 		response.Fail(c, err)
 		return
+	}
+	// 登录接口没有挂 Auth 中间件，身份不会自动进上下文；这里显式写入，
+	// 否则操作日志里那条「登录」记录的 UserID=0、Username 为空，
+	// 审计时看到一条「无主」的动作，分不清是谁登的（登录日志虽然另有一份，
+	// 但运维排查通常只看操作日志）。
+	if id, ok := res.User.(*authz.Identity); ok && id != nil {
+		c.Set(middleware.CtxUserID, id.UserID)
+		c.Set(middleware.CtxUsername, id.Username)
+		c.Set(middleware.CtxIdentity, id)
 	}
 	response.OK(c, res)
 }

@@ -161,21 +161,31 @@ func (s *Service) Delete(id int64, actor *authz.Identity) error {
 		}
 		return errcode.Wrap(errcode.ErrDatabase, err)
 	}
-	var childCount int64
-	if err := s.db.Model(&model.Dept{}).Where("parent_id = ?", id).Count(&childCount).Error; err != nil {
-		return errcode.Wrap(errcode.ErrDatabase, err)
-	}
-	if childCount > 0 {
-		return errcode.Newf(errcode.ErrConflict, "存在 %d 个子部门，请先删除子部门", childCount)
-	}
-	var userCount int64
-	if err := s.db.Model(&model.User{}).Where("dept_id = ?", id).Count(&userCount).Error; err != nil {
-		return errcode.Wrap(errcode.ErrDatabase, err)
-	}
-	if userCount > 0 {
-		return errcode.Newf(errcode.ErrConflict, "该部门下还有 %d 个用户，请先调整用户部门", userCount)
-	}
-	if err := s.db.Delete(&model.Dept{}, id).Error; err != nil {
+	// 子部门 / 用户数检查与删除放在同一个事务：分开做的话，
+	// 并发「把用户建到该部门」会让部门被删掉、用户的 dept_id 悬空，
+	// 之后该用户的数据范围解析就会指向一个不存在的部门。
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var childCount int64
+		if err := tx.Model(&model.Dept{}).Where("parent_id = ?", id).Count(&childCount).Error; err != nil {
+			return err
+		}
+		if childCount > 0 {
+			return errcode.Newf(errcode.ErrConflict, "存在 %d 个子部门，请先删除子部门", childCount)
+		}
+		var userCount int64
+		if err := tx.Model(&model.User{}).Where("dept_id = ?", id).Count(&userCount).Error; err != nil {
+			return err
+		}
+		if userCount > 0 {
+			return errcode.Newf(errcode.ErrConflict, "该部门下还有 %d 个用户，请先调整用户部门", userCount)
+		}
+		return tx.Delete(&model.Dept{}, id).Error
+	})
+	if err != nil {
+		var be *errcode.Error
+		if errors.As(err, &be) {
+			return be
+		}
 		return errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	return nil

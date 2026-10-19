@@ -83,7 +83,11 @@ func (s *Service) Options(actor *authz.Identity) ([]Option, error) {
 }
 
 // Get 查询角色详情，含已授权菜单 ID。
-func (s *Service) Get(id int64) (*VO, error) {
+//
+// actor 用于决定是否回显「超管角色」的菜单清单：超管角色拥有全部权限，
+// 把它的完整 menuIds 摊给低权限管理员，等于公开整张授权拓扑。
+// 非超管查看超管角色时只给角色本身的信息，不给菜单映射。
+func (s *Service) Get(id int64, actor *authz.Identity) (*VO, error) {
 	var r model.Role
 	if err := s.db.First(&r, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -94,6 +98,9 @@ func (s *Service) Get(id int64) (*VO, error) {
 	vo, err := s.toVO(&r)
 	if err != nil {
 		return nil, err
+	}
+	if r.Code == authz.SuperRoleCode && (actor == nil || !actor.IsSuper) {
+		vo.MenuIDs = nil
 	}
 	return &vo, nil
 }
@@ -255,21 +262,32 @@ func (s *Service) Delete(id int64, actor *authz.Identity) error {
 		return err
 	}
 
-	var userCount int64
-	if err := s.db.Model(&model.UserRole{}).Where("role_id = ?", id).Count(&userCount).Error; err != nil {
-		return errcode.Wrap(errcode.ErrDatabase, err)
-	}
-	if userCount > 0 {
-		return errcode.Newf(errcode.ErrConflict, "该角色下还有 %d 个用户，请先解除关联", userCount)
-	}
-
+	// 用户数检查放进事务：与删除动作在同一份快照里，避免「检查时还没人、
+	// 删除时刚被并发授给某用户」留下指向已删角色的孤儿关联。
+	// 事务内再清一次 user_roles 作为第二道防线。
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var userCount int64
+		if err := tx.Model(&model.UserRole{}).Where("role_id = ?", id).Count(&userCount).Error; err != nil {
+			return err
+		}
+		if userCount > 0 {
+			return errcode.Newf(errcode.ErrConflict, "该角色下还有 %d 个用户，请先解除关联", userCount)
+		}
+		if err := tx.Where("role_id = ?", id).Delete(&model.UserRole{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("role_id = ?", id).Delete(&model.RoleMenu{}).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&model.Role{}, id).Error
 	})
 	if err != nil {
+		// 保留事务里的业务错误码（如「角色下还有用户」的 409），
+		// 其余（唯一索引、连接失败）归一到数据库错误。
+		var be *errcode.Error
+		if errors.As(err, &be) {
+			return be
+		}
 		return errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	authz.InvalidateAll()

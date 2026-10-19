@@ -333,8 +333,20 @@ function openCreate(): void {
   dialogVisible.value = true
 }
 
+/** 编辑 / 详情的请求序号：快速点开不同行时，慢响应不能覆盖后点的那一行 */
+const editSeq = ref(0)
+const detailViewSeq = ref(0)
+
 async function openEdit(row: InvOrderRow): Promise<void> {
-  const data = await invApi.orderDetail(row.id)
+  const seq = ++editSeq.value
+  let data: Awaited<ReturnType<typeof invApi.orderDetail>>
+  try {
+    data = await invApi.orderDetail(row.id)
+  } catch {
+    // 失败提示由响应拦截器统一处理；不接住会变成未捕获 rejection
+    return
+  }
+  if (seq !== editSeq.value) return
   // 到期日走 formatDay 归一：历史数据里的 0001-01-01 要当成「未填」，
   // 否则日期选择器会显示一个荒唐的年份，用户一保存就把脏值又写回去
   const due = formatDay(data.dueDate)
@@ -442,9 +454,15 @@ async function reverseOrder(row: InvOrderRow): Promise<void> {
 }
 
 async function openDetail(row: InvOrderRow): Promise<void> {
-  const data = await invApi.orderDetail(row.id)
-  detail.value = { row: data, items: data.items }
-  detailVisible.value = true
+  const seq = ++detailViewSeq.value
+  try {
+    const data = await invApi.orderDetail(row.id)
+    if (seq !== detailViewSeq.value) return
+    detail.value = { row: data, items: data.items }
+    detailVisible.value = true
+  } catch {
+    // 失败提示由响应拦截器统一处理
+  }
 }
 
 // ---------------- 导出 / 打印 / 批量 ----------------

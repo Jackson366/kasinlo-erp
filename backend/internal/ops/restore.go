@@ -178,6 +178,10 @@ func queryCounts(dbc config.DatabaseConfig, dbName string, anchorTables []string
 	}
 	rows := map[string]int64{}
 	for _, t := range anchorTables {
+		if !isValidTableName(t) {
+			rows[t] = -1
+			continue
+		}
 		var n int64
 		if err := conn.QueryRow("SELECT count(*) FROM " + t).Scan(&n); err != nil {
 			// 老备份里可能没有某张表：记 -1 表示缺失，而不是让整个恢复判定为失败

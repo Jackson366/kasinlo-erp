@@ -21,8 +21,10 @@ import (
 const (
 	// maxImportRows 单次导入行数上限。每行都要做 bcrypt 哈希，行数越多越慢
 	maxImportRows = 1000
-	// DefaultImportPassword 是导入时「密码列留空」所使用的默认密码
-	DefaultImportPassword = "123456"
+	// DefaultImportPassword 是导入时「密码列留空」所使用的默认密码。
+	// 取 8 位、含大小写与数字：与新增/改密的 8 位下限一致，
+	// 避免「导入的用户一上来就不满足密码策略」。
+	DefaultImportPassword = "Aa123456"
 )
 
 // 导入模板的列顺序。务必与 buildImportTemplate() 中的列定义保持一致，
@@ -137,7 +139,7 @@ func buildImportTemplate() ([]byte, error) {
 			"【各列填写规则】",
 			"用户名 *：3-64 个字符，只能包含字母、数字、下划线、点、横线；不能与系统中已有用户重复。",
 			"昵称 *　：不超过 64 个字符。",
-			"密码　 ：留空则使用默认密码 "+DefaultImportPassword+"，导入后请提醒用户尽快修改。如填写需 6-64 位。",
+			"密码　 ：留空则使用默认密码 "+DefaultImportPassword+"，导入后请提醒用户尽快修改。如填写需 8-64 位。",
 			"邮箱　 ：选填，填写时必须是合法邮箱格式，例如 zhangsan@example.com。",
 			"手机号：选填，不超过 32 个字符。",
 			"部门　 ：选填，需与「系统管理 - 部门管理」中的部门名称完全一致，否则该行会被拒绝。",
@@ -314,8 +316,8 @@ func (s *Service) validateImportLine(cells []string, ref *importRefs, seen map[s
 	}
 
 	// ---- 密码 ----
-	if password != "" && (len([]rune(password)) < 6 || len([]rune(password)) > 64) {
-		errs = append(errs, "密码长度需为 6-64 个字符")
+	if password != "" && (len([]rune(password)) < 8 || len([]rune(password)) > 64) {
+		errs = append(errs, "密码长度需为 8-64 个字符")
 	}
 
 	// ---- 邮箱 ----

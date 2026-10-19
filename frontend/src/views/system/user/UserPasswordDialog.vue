@@ -37,8 +37,8 @@ const submitting = ref(false)
 
 async function submitResetPassword(): Promise<void> {
   if (!props.target || submitting.value) return
-  if (pwdForm.password.length < 6) {
-    ElMessage.warning('密码长度不能少于 6 位')
+  if (pwdForm.password.length < 8) {
+    ElMessage.warning('密码长度不能少于 8 位')
     return
   }
   submitting.value = true

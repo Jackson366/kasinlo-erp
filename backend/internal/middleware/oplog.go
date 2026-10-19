@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
@@ -136,7 +137,7 @@ func readBody(c *gin.Context) string {
 	if len(raw) > maxCaptureBytes {
 		return fmt.Sprintf("(请求体超过 %d KB，未记录)", maxCaptureBytes>>10)
 	}
-	return sanitize(raw)
+	return sanitize(raw, c.Request.Header.Get("Content-Type"))
 }
 
 // isTextContentType 判断请求体是否值得作为文本记录。
@@ -158,9 +159,25 @@ func isTextContentType(ct string) bool {
 	}
 }
 
-func sanitize(raw []byte) string {
+func sanitize(raw []byte, contentType string) string {
 	var obj any
 	if err := json.Unmarshal(raw, &obj); err != nil {
+		// 表单提交同样要脱敏：application/x-www-form-urlencoded 不是 JSON，
+		// 之前直接截断原样入库，等于把 password=xxx 明文写进审计表。
+		// 解析成 map 后走同一套 redact，与 JSON 口径一致。
+		if isFormContentType(contentType) {
+			if form, ferr := url.ParseQuery(string(raw)); ferr == nil && len(form) > 0 {
+				m := make(map[string]any, len(form))
+				for k, vs := range form {
+					if len(vs) > 0 {
+						m[k] = vs[0]
+					}
+				}
+				if out, merr := json.Marshal(redact(m)); merr == nil {
+					return string(out)
+				}
+			}
+		}
 		// 非 JSON 提交：先剔除非法 UTF-8 字节，再按「字符」截断。
 		// 两处都必要 —— 按字节截断会把多字节中文切成两半，同样造出非法 UTF-8。
 		// 截断逻辑收敛在 textutil，与导出表格、日志落盘同一份实现。
@@ -171,6 +188,14 @@ func sanitize(raw []byte) string {
 		return ""
 	}
 	return string(out)
+}
+
+// isFormContentType 判断是否为表单提交（忽略 charset 等参数）。
+func isFormContentType(ct string) bool {
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	return strings.EqualFold(strings.TrimSpace(ct), "application/x-www-form-urlencoded")
 }
 
 // redact 递归脱敏。

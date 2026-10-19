@@ -11,14 +11,18 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
 	"nova-erp/internal/config"
+	"nova-erp/internal/logger"
 	"nova-erp/internal/model"
 	"nova-erp/internal/pkg/errcode"
+
+	"go.uber.org/zap"
 )
 
 // 升级包（zip）内部结构约定：
@@ -271,7 +275,14 @@ func ExecuteUpgradePlan(db *gorm.DB, cfg *config.Config, planID string) (*model.
 		return nil, fmt.Errorf("占用升级计划失败：%w", claimed.Error)
 	}
 	if claimed.RowsAffected == 0 {
-		return nil, fmt.Errorf("该计划不在待执行状态（当前 %s）：不能重复执行", rec.Status)
+		// 报错里重新查一次当前状态：rec.Status 是最开头读出来的旧值，
+		// 并发下另一路已把它改成 executing/applied，用旧值报错只会误导排查。
+		cur := rec.Status
+		var latest model.UpgradeRecord
+		if err := db.Select("status").Where("plan_id = ?", planID).First(&latest).Error; err == nil {
+			cur = latest.Status
+		}
+		return nil, errcode.Newf(errcode.ErrConflict, "该计划不在待执行状态（当前 %s）：不能重复执行", cur)
 	}
 
 	staging := filepath.Join(StagingRoot(cfg), planID)
@@ -459,6 +470,12 @@ func validateManifest(mf *upgradeManifest) error {
 	if strings.TrimSpace(mf.Version) == "" {
 		return errors.New("manifest.json 缺少 version")
 	}
+	// planID 形如 upg-{version}-{12位摘要}-{14位时间戳}，总长受 PlanID 列宽（64）约束：
+	// 4 + len(version) + 1 + 12 + 1 + 14 = len(version) + 32，故 version 最多 32。
+	// 不限长的话，超长 version 会在落库时被截断或撞唯一索引，生成一个对不上的 planID。
+	if len(mf.Version) > 32 {
+		return errors.New("version 过长（最多 32 个字符）")
+	}
 	if strings.ContainsAny(mf.Version, `/\`) {
 		return errors.New("version 含非法字符")
 	}
@@ -633,7 +650,42 @@ func replaceFrontend(staging string, f *upgradeFile, frontendDir string) error {
 		}
 		return fmt.Errorf("切换到新前端目录失败：%w", err)
 	}
+	// 每次升级都留一份 .old 供回滚，但不轮转的话升级几次就会把磁盘吃掉
+	// （前端产物动辄数百 MB）。只保留最近 N 份足够回滚。
+	pruneOldFrontendDirs(dir, frontendOldKeep)
 	return nil
+}
+
+// frontendOldKeep 是保留的旧前端目录份数。
+const frontendOldKeep = 3
+
+// pruneOldFrontendDirs 清理 <dir>.old.<时间戳> 里较旧的，保留最近 keep 份。
+//
+// 只删「同目录、同 base 名 + .old. + 时间戳」的目录：名字里的时间戳是
+// 20060102150405，字典序即时间序，不需要读目录内容或 mtime。
+func pruneOldFrontendDirs(dir string, keep int) {
+	parent := filepath.Dir(dir)
+	base := filepath.Base(dir)
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return
+	}
+	prefix := base + ".old."
+	var olds []string
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), prefix) {
+			olds = append(olds, filepath.Join(parent, e.Name()))
+		}
+	}
+	if len(olds) <= keep {
+		return
+	}
+	sort.Strings(olds)
+	for _, p := range olds[:len(olds)-keep] {
+		if err := os.RemoveAll(p); err != nil {
+			logger.Warn("清理旧前端目录失败", zap.String("path", p), zap.Error(err))
+		}
+	}
 }
 
 // extractZipFile 解压单个文件到目标目录，带路径穿越防护。

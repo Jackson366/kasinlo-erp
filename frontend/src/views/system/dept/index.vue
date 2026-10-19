@@ -172,6 +172,8 @@ async function handleExport(): Promise<void> {
     await downloadFile('/system/depts/export', {
       keyword: keyword.value || undefined,
     }, '部门.xlsx')
+  } catch {
+    // 失败提示由下载封装 / 响应拦截器统一处理；这里只保证不产生未捕获 rejection
   } finally {
     exporting.value = false
   }

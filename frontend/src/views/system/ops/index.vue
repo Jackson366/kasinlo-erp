@@ -44,6 +44,8 @@ const activeTab = ref('backup')
 const backups = ref<BackupItem[]>([])
 const backupsLoading = ref(false)
 const backupRunning = ref(false)
+/** 删除中的闸门：防止确认框连点导致重复删除 */
+const deletingBackup = ref(false)
 
 async function loadBackups(): Promise<void> {
   backupsLoading.value = true
@@ -70,14 +72,28 @@ async function runBackup(skipPrune = false): Promise<void> {
 }
 
 async function deleteBackup(row: BackupItem): Promise<void> {
-  await ElMessageBox.confirm(
-    `删除后无法恢复，确认删除备份「${row.name}」？`,
-    '删除备份',
-    { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
-  )
-  await opsApi.deleteBackup(row.name)
-  ElMessage.success('已删除')
-  await loadBackups()
+  // 用户点「取消」时 confirm 会 reject：不接住就是一条未捕获 rejection。
+  // 同时加删除中的闸门，避免连点两次发两次删除。
+  if (deletingBackup.value) return
+  try {
+    await ElMessageBox.confirm(
+      `删除后无法恢复，确认删除备份「${row.name}」？`,
+      '删除备份',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  deletingBackup.value = true
+  try {
+    await opsApi.deleteBackup(row.name)
+    ElMessage.success('已删除')
+    await loadBackups()
+  } catch {
+    // 失败提示由响应拦截器统一处理
+  } finally {
+    deletingBackup.value = false
+  }
 }
 
 interface BackupAction {

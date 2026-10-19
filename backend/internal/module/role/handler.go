@@ -76,7 +76,7 @@ func (h *Handler) Detail(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	vo, err := h.svc.Get(id)
+	vo, err := h.svc.Get(id, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return

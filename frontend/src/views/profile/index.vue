@@ -68,7 +68,7 @@ const pwdRules: FormRules<typeof pwdForm> = {
   oldPassword: [{ required: true, message: '请输入原密码', trigger: 'blur' }],
   newPassword: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 6, max: 64, message: '密码长度为 6 ~ 64 个字符', trigger: 'blur' },
+    { min: 8, max: 64, message: '密码长度为 8 ~ 64 个字符', trigger: 'blur' },
   ],
   confirmPassword: [
     { required: true, message: '请再次输入新密码', trigger: 'blur' },

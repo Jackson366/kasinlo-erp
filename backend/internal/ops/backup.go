@@ -17,6 +17,7 @@ import (
 
 	"nova-erp/internal/config"
 	"nova-erp/internal/logger"
+	"nova-erp/internal/pkg/errcode"
 
 	"go.uber.org/zap"
 )
@@ -82,6 +83,10 @@ type BackupResult struct {
 	Stats    BackupStats
 	Verified bool
 	Removed  []string
+	// PruneErr 非空表示「备份本身成功、但轮转旧备份失败」。
+	// 这种情况不能把整次备份判成失败：文件已经落好且校验通过，
+	// 返回 error 会让上层丢掉成功结果、显示「备份失败」，用户重试又多一份。
+	PruneErr string
 	Meta     BackupMeta
 }
 
@@ -95,6 +100,13 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 	}
 	if len(opt.AnchorTables) == 0 {
 		opt.AnchorTables = []string{"sys_users"}
+	}
+	// 库名会进 pg_dump 的 --dbname 与备份文件名：含 / 会改变落盘路径，
+	// 含引号等特殊字符会让命令行为异常。与 restore 的目标库名同一套校验，
+	// 避免「恢复侧校验、备份侧不校验」的口径分裂。
+	if !dbNamePattern.MatchString(dbc.DBName) {
+		return nil, errcode.Newf(errcode.ErrBadRequest,
+			"数据库名 %q 不合法（只允许字母数字下划线，且以字母或下划线开头）", dbc.DBName)
 	}
 	dir, err := filepath.Abs(opt.Dir)
 	if err != nil {
@@ -190,11 +202,14 @@ func Backup(db *gorm.DB, dbc config.DatabaseConfig, opt BackupOptions) (*BackupR
 	if !opt.SkipPrune {
 		removed, err := pruneBackups(dir, opt)
 		if err != nil {
-			// 轮转失败不该让备份本身算作失败：文件已经落好了，告警让人去清
-			res.Removed = nil
-			return res, fmt.Errorf("备份已完成，但清理旧备份失败: %w", err)
+			// 轮转失败不该让「备份」算作失败：dump 已落好且校验通过，
+			// 只是旧文件没删掉。返回 error 会让上层丢掉这份成功的备份结果、
+			// 显示「备份失败」，用户往往重试一次又多出一份。
+			res.PruneErr = err.Error()
+			logger.Warn("备份已完成，但清理旧备份失败", zap.Error(err))
+		} else {
+			res.Removed = removed
 		}
-		res.Removed = removed
 	}
 	return res, nil
 }
@@ -229,6 +244,11 @@ func collectStats(db *gorm.DB, anchorTables []string) (BackupStats, error) {
 	// 锚点表由调用方传入：一张系统表 + 若干业务表（单据主表、明细表、主数据表）。
 	// 覆盖多类数据，任何一类丢了都能从计数上看出来。
 	for _, t := range anchorTables {
+		if !isValidTableName(t) {
+			// 非法表名直接跳过（记 -1），不拼进 SQL
+			stats.Rows[t] = -1
+			continue
+		}
 		var n int64
 		if err := db.Raw("SELECT count(*) FROM " + t).Scan(&n).Error; err != nil {
 			// 表不存在（老库/精简部署）：记 -1 表示缺失，不让整次备份因此失败 ——
@@ -320,6 +340,16 @@ func pruneBackups(dir string, opt BackupOptions) ([]string, error) {
 // 用「最后一个 - 后面的 14 位数字 + .dump 结尾」定位：库名里无论有没有横线、
 // 下划线都不影响 —— 时间戳永远在文件名末尾、紧贴 .dump 之前。
 var backupTimeRe = regexp.MustCompile(`-(\d{14})\.dump$`)
+
+// tableNamePattern 限定锚点表名。表名要拼进 `SELECT count(*) FROM <t>`，
+// 标识符不能用占位符传参。当前调用方都是内部常量、不可外部利用，
+// 但这是「将来给 CLI 开放 --key-tables」时的注入面 —— 先校验再用，成本为零。
+var tableNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,62}$`)
+
+// isValidTableName 判断表名是否可以安全拼进 SQL。
+func isValidTableName(name string) bool {
+	return tableNamePattern.MatchString(name)
+}
 
 // BackupTimeFromName 从备份文件名解析时间戳；解析不到就回落到 mtime。
 //

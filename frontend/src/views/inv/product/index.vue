@@ -20,7 +20,7 @@
  * 录入查重是**提示而非拦截**：同名不同规格是合法场景（两家供应商的「纸箱」），
  * 硬拦会挡住正常录入，所以只把可疑行摆出来，确认不是同一个仍可保存。
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -28,6 +28,7 @@ import { invApi } from '@/api'
 import type {
   InvCategoryOption,
   InvCategoryPayload,
+  InvCategoryRow,
   InvProductDupRow,
   InvProductPayload,
   InvProductRow,
@@ -159,6 +160,15 @@ function onNameInput(): void {
   if (dupTimer) clearTimeout(dupTimer)
   dupTimer = setTimeout(checkDuplicates, 400)
 }
+
+// 组件卸载时清掉防抖定时器：否则 400ms 后还会触发一次 checkDuplicates，
+// 对已卸载组件 setState（Vue 会告警，请求也白发一次）。
+onUnmounted(() => {
+  if (dupTimer) {
+    clearTimeout(dupTimer)
+    dupTimer = undefined
+  }
+})
 
 // ---------------- 规格 / 单位 编辑动作 ----------------
 function addSpec(): void {
@@ -431,19 +441,10 @@ function specSummary(row: InvProductRow): string {
 // 左侧分类树（原独立「商品分类」页合并到这里）
 // ============================================================
 
-interface CatNode {
-  id: number
-  parentId: number
-  name: string
-  sort: number
-  status: number
-  remark: string
-  productCount: number
-  childCount: number
-}
-
+// CatNode 直接用接口类型 InvCategoryRow：本地再定义一份「少一个 createdAt」的
+// 结构，只能靠 as unknown as 硬转，字段一旦对不上编译器也发现不了。
 const catLoading = ref(false)
-const catRows = ref<CatNode[]>([])
+const catRows = ref<InvCategoryRow[]>([])
 /** 树当前选中的分类 id；0 = 全部商品 */
 const activeCat = ref(0)
 /** 分类树默认展开的节点 */
@@ -455,7 +456,7 @@ async function loadCatTree(): Promise<void> {
     // 商品页的分类树要看得见全部（含停用）：停用分类下的商品仍在库里，
     // 树上看不到就等于那批商品从这一页消失了。
     const res = await invApi.categories({ page: 1, pageSize: 500 })
-    catRows.value = res.list as unknown as CatNode[]
+    catRows.value = res.list
     expandedCat.value = catRows.value.filter((c) => c.parentId > 0).map((c) => c.parentId)
   } finally {
     catLoading.value = false
@@ -473,7 +474,7 @@ interface CatTreeNode {
 
 /** 平表 → 树。按 sort 排序，父节点缺失的节点挂到根下，不丢数据 */
 const catTree = computed<CatTreeNode[]>(() => {
-  const byParent = new Map<number, CatNode[]>()
+  const byParent = new Map<number, InvCategoryRow[]>()
   for (const c of catRows.value) {
     const arr = byParent.get(c.parentId) || []
     arr.push(c)

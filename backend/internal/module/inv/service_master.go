@@ -114,9 +114,13 @@ func (s *Service) PartyList(bizType string, q page.Query, status *int16, actor *
 }
 
 // partyNameFree 校验编号唯一（存活数据内）。
+//
+// 必须带 deleted_at IS NULL：Table() 不带模型，GORM 不会自动补软删除条件，
+// 否则「删掉再用同一编号新建」会被判成重复 —— 而库里的部分唯一索引
+// （WHERE deleted_at IS NULL）本来就是允许复用的，代码与索引口径要一致。
 func (s *Service) partyNameFree(bizType, code string, excludeID int64) error {
 	var cnt int64
-	tx := s.db.Table(partyTable(bizType)).Where("code = ?", code)
+	tx := s.db.Table(partyTable(bizType)).Where("code = ? AND deleted_at IS NULL", code)
 	if excludeID > 0 {
 		tx = tx.Where("id <> ?", excludeID)
 	}

@@ -164,6 +164,9 @@ func runBackup(args []string) error {
 	if len(res.Removed) > 0 {
 		fmt.Printf("  已清理 %d 份过期备份\n", len(res.Removed))
 	}
+	if res.PruneErr != "" {
+		fmt.Printf("  ! 备份已完成，但清理旧备份失败：%s\n", res.PruneErr)
+	}
 	return nil
 }
 

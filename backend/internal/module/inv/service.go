@@ -163,12 +163,21 @@ func (s *Service) nextNo(table, prefix string) (string, error) {
 	return fmt.Sprintf("%s%s%04d", prefix, day, count+1), nil
 }
 
+// settleEpsilon 是结算金额比较的容差（元）。
+//
+// 金额用 float64 承载、按 round2 归一，累加后会有亚分级误差；
+// 「未结清 / 已结清」的判定不能直接和 0 比较。三处判定（Go 侧 settleStatus、
+// 单据列表 SQL、应收应付 SQL）必须共用这一个常量 —— 之前它们各写各的
+// （0、0、0.001），落在 (0, 0.001] 的余额会在一处显示「未结清」、
+// 在另一处被筛成「部分结算」，筛选结果与标签对不上。
+const settleEpsilon = 0.001
+
 // settleStatus 由「总额 - 已结算」推导结算状态。
 func settleStatus(total, settled float64) string {
-	if settled <= 0 {
+	if settled <= settleEpsilon {
 		return model.InvSettleUnpaid
 	}
-	if settled+0.001 >= total {
+	if settled+settleEpsilon >= total {
 		return model.InvSettlePaid
 	}
 	return model.InvSettlePartial
