@@ -1,1 +1,0 @@
-import{h as t}from"./index-B_di3o29.js";const r={list(e){return t.get("/system/menus",e)},create(e){return t.post("/system/menus",e)},update(e,s){return t.put(`/system/menus/${e}`,s)},remove(e){return t.delete(`/system/menus/${e}`)}};export{r as m};

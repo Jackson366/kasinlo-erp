@@ -20,6 +20,8 @@ backend/backups/
 
 # 升级包暂存与替换下来的旧产物：含完整可执行程序，同样不进版本库
 backend/upgrade/
+# 后端托管的前端产物（演练升级/本地静态托管时生成），由构建脚本生成，不进版本库
+backend/web/
 *.new
 frontend/dist.old.*/
 frontend/dist.old-*/
