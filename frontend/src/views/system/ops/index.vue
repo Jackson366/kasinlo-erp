@@ -164,6 +164,14 @@ const cleanupLoading = ref(false)
 const cleanupView = ref<CleanupView | null>(null)
 const cleanupApplying = ref(false)
 
+/**
+ * 清理分两件事，页面上一次只放一件：
+ * - logs：按保留期删日志与过期幂等键，可以反复执行，业务数据不动；
+ * - biz：整表清空业务数据（重置数据库），不可逆。
+ * 两块并排铺在一页时，长得很像，「清日志」与「清账」的边界会被看漏。
+ */
+const cleanupMode = ref<'logs' | 'biz'>('logs')
+
 // ── 业务数据清理（不可逆）─────────────────────────────
 const bizScopes = ref<BizScopeView[]>([])
 const bizScopeKey = ref('inv_documents')
@@ -535,182 +543,162 @@ onMounted(async () => {
           <div class="toolbar">
             <div class="toolbar__title">
               <h3>数据清理</h3>
-              <span class="text-muted">只清理日志与过期幂等键，业务数据永不自动删除</span>
+              <span class="text-muted">
+                {{ cleanupMode === 'logs'
+                  ? '按保留期删除日志与过期幂等键，业务数据不动'
+                  : '整表清空业务数据，删完无法恢复' }}
+              </span>
             </div>
             <div class="toolbar__actions">
-              <el-button :loading="cleanupLoading" @click="previewCleanup">
-                <AppIcon name="Search" /><span>预演（不删数据）</span>
-              </el-button>
-              <el-button v-perm="'ops:cleanup'" type="danger" :loading="cleanupApplying" @click="applyCleanup">
-                <AppIcon name="Delete" /><span>执行清理</span>
-              </el-button>
+              <el-radio-group v-model="cleanupMode" size="small">
+                <el-radio-button value="logs">日常清理</el-radio-button>
+                <el-radio-button value="biz">业务数据重置</el-radio-button>
+              </el-radio-group>
             </div>
           </div>
 
-          <el-alert type="info" :closable="false" show-icon class="ops-alert">
-            <template #title>
-              预演只统计不删除；真删需输入「确认清理」。登录日志会额外避开账号锁定窗口内的记录，
-              避免清理动作把账号锁定一起解除。
-            </template>
-          </el-alert>
+          <!-- ───── 日常清理：日志与过期幂等键 ───── -->
+          <template v-if="cleanupMode === 'logs'">
+            <div class="cleanup-days">
+              <span class="text-muted">保留天数（留空用配置默认值）</span>
+              <label>
+                操作日志
+                <el-input-number v-model="cleanupDays.opLogDays" :min="1" :max="3650" :controls="false" placeholder="默认" />
+              </label>
+              <label>
+                登录日志
+                <el-input-number v-model="cleanupDays.loginLogDays" :min="1" :max="3650" :controls="false" placeholder="默认" />
+              </label>
+              <label>
+                幂等键
+                <el-input-number v-model="cleanupDays.idempotencyDays" :min="1" :max="365" :controls="false" placeholder="默认" />
+              </label>
+            </div>
 
-          <el-form class="filter-form" label-width="140px" @submit.prevent>
-            <el-form-item label="操作日志保留天数">
-              <el-input-number v-model="cleanupDays.opLogDays" :min="1" :max="3650" :controls="false" placeholder="留空用默认" />
-            </el-form-item>
-            <el-form-item label="登录日志保留天数">
-              <el-input-number v-model="cleanupDays.loginLogDays" :min="1" :max="3650" :controls="false" placeholder="留空用默认" />
-            </el-form-item>
-            <el-form-item label="幂等键保留天数">
-              <el-input-number v-model="cleanupDays.idempotencyDays" :min="1" :max="365" :controls="false" placeholder="留空用默认" />
-            </el-form-item>
-          </el-form>
+            <div class="cleanup-actions">
+              <span class="text-muted">登录日志会避开账号锁定窗口，清理不会顺手解锁账号</span>
+              <span class="cleanup-actions__btns">
+                <el-button :loading="cleanupLoading" @click="previewCleanup">
+                  <AppIcon name="Search" /><span>预演</span>
+                </el-button>
+                <el-button v-perm="'ops:cleanup'" type="danger" :loading="cleanupApplying" @click="applyCleanup">
+                  <AppIcon name="Delete" /><span>执行清理</span>
+                </el-button>
+              </span>
+            </div>
 
-          <el-alert
-            v-if="cleanupView?.blocked"
-            type="warning"
-            :closable="false"
-            show-icon
-            class="ops-alert"
-            :title="cleanupView.blocked"
-          />
+            <el-alert
+              v-if="cleanupView?.blocked"
+              type="warning"
+              :closable="false"
+              show-icon
+              class="ops-alert"
+              :title="cleanupView.blocked"
+            />
 
-          <el-table v-if="cleanupView" :data="cleanupView.steps" border>
-            <el-table-column label="对象" min-width="140">
-              <template #default="{ row }">{{ row.name }}</template>
-            </el-table-column>
-            <el-table-column prop="table" label="表" min-width="170" />
-            <el-table-column label="删除边界" width="180">
-              <template #default="{ row }">{{ formatDateTime(row.cutoff) }}</template>
-            </el-table-column>
-            <el-table-column label="行数" width="100" align="right">
-              <template #default="{ row }">
-                <b>{{ row.rows }}</b>
+            <el-table v-if="cleanupView" :data="cleanupView.steps" border>
+              <el-table-column prop="name" label="对象" min-width="150" />
+              <el-table-column prop="table" label="表" min-width="180" />
+              <el-table-column label="删除边界" width="170">
+                <template #default="{ row }">{{ formatDateTime(row.cutoff) }}</template>
+              </el-table-column>
+              <el-table-column label="行数" width="100" align="right">
+                <template #default="{ row }"><b>{{ row.rows }}</b></template>
+              </el-table-column>
+              <el-table-column label="说明" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.note || '-' }}</template>
+              </el-table-column>
+              <template #empty>
+                <span class="text-muted">暂无可清理的数据</span>
               </template>
-            </el-table-column>
-            <el-table-column label="批次" width="80" align="right">
-              <template #default="{ row }">{{ row.dryRun || row.batches === 0 ? '-' : row.batches }}</template>
-            </el-table-column>
-            <el-table-column label="说明" min-width="200" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.note || '-' }}</template>
-            </el-table-column>
-            <template #empty>
-              <span class="text-muted">暂无可清理的数据</span>
-            </template>
-          </el-table>
+            </el-table>
 
-          <div v-if="cleanupView" class="ops-summary">
-            <span>
-              模式：<el-tag :type="cleanupView.dryRun ? 'info' : 'success'" size="small">
-                {{ cleanupView.dryRun ? '预演' : '已执行' }}
-              </el-tag>
-            </span>
-            <span>合计将删除 <b>{{ totalCleanupRows(cleanupView.steps) }}</b> 行</span>
-            <span v-if="cleanupView.vacuumed?.length">已回收空间：{{ cleanupView.vacuumed.join('、') }}</span>
-          </div>
+            <div v-if="cleanupView" class="ops-summary">
+              <span>
+                模式：<el-tag :type="cleanupView.dryRun ? 'info' : 'success'" size="small">
+                  {{ cleanupView.dryRun ? '预演' : '已执行' }}
+                </el-tag>
+              </span>
+              <span>合计{{ cleanupView.dryRun ? '将删除' : '已删除' }} <b>{{ totalCleanupRows(cleanupView.steps) }}</b> 行</span>
+              <span v-if="cleanupView.vacuumed?.length">已回收空间：{{ cleanupView.vacuumed.join('、') }}</span>
+            </div>
+          </template>
+
+          <!-- ───── 业务数据重置：不可逆 ───── -->
+          <template v-else>
+            <p class="biz-hint">
+              不可逆硬删除：要求 24 小时内备份，并输入该范围专属口令。
+              账号 / 角色 / 菜单 / 权限 / 部门在任何范围下都不会被删除。
+            </p>
+
+            <el-radio-group v-model="bizScopeKey" class="biz-scopes">
+              <el-radio v-for="sc in bizScopes" :key="sc.key" :value="sc.key" class="biz-scopes__item">
+                <div class="biz-scopes__head">
+                  <b>{{ sc.title }}</b>
+                  <span class="text-muted">{{ sc.totalRows }} 行</span>
+                </div>
+                <div class="biz-scopes__desc">{{ sc.desc }}</div>
+                <div class="biz-scopes__keep">保留：{{ sc.keep }}</div>
+              </el-radio>
+            </el-radio-group>
+
+            <el-collapse v-if="currentBizScope" class="biz-tables">
+              <el-collapse-item :title="'涉及 ' + currentBizScope.tables.length + ' 张表（当前行数）'" name="tables">
+                <el-table :data="currentBizScope.tables" border size="small" :loading="bizLoading">
+                  <el-table-column prop="name" label="表" min-width="220" />
+                  <el-table-column label="行数" width="120" align="right">
+                    <template #default="{ row }"><b>{{ row.rows }}</b></template>
+                  </el-table-column>
+                  <template #empty><span class="text-muted">该范围没有数据</span></template>
+                </el-table>
+              </el-collapse-item>
+            </el-collapse>
+
+            <div class="biz-actions">
+              <span class="biz-actions__info">
+                <el-checkbox v-if="currentBizScope?.resetStockable" v-model="bizResetStock">
+                  同时清零规格库存
+                </el-checkbox>
+                <span class="text-muted">回滚点：{{ bizBackupAge || '读取中…' }}（要求 24 小时内）</span>
+              </span>
+              <span class="biz-actions__btns">
+                <el-button :loading="bizBackupRunning" @click="runBizBackup">
+                  <AppIcon name="Download" /><span>先备份</span>
+                </el-button>
+                <el-button
+                  v-perm="'ops:reset'"
+                  type="danger"
+                  :loading="bizRunning"
+                  :disabled="!currentBizScope || currentBizScope.totalRows === 0"
+                  @click="applyBizCleanup"
+                >
+                  <AppIcon name="Delete" /><span>执行业务清理</span>
+                </el-button>
+              </span>
+            </div>
+
+            <el-table v-if="bizResult" :data="bizResult.tables" border size="small" class="biz-result">
+              <el-table-column prop="name" label="表" min-width="220" />
+              <el-table-column label="清理前" width="110" align="right">
+                <template #default="{ row }">{{ row.rows }}</template>
+              </el-table-column>
+              <el-table-column label="已删除" width="110" align="right">
+                <template #default="{ row }"><b>{{ row.deleted }}</b></template>
+              </el-table-column>
+              <el-table-column label="序号重置" width="110" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.seqReset ? 'success' : 'info'" size="small">{{ row.seqReset ? '是' : '否' }}</el-tag>
+                </template>
+              </el-table-column>
+              <template #empty><span class="text-muted">无可删除数据</span></template>
+            </el-table>
+            <div v-if="bizResult" class="ops-summary">
+              <span>合计删除 <b>{{ bizResult.totalDeleted }}</b> 行</span>
+              <span v-if="bizResult.stockReset">已清零规格库存 <b>{{ bizResult.stockResetRows }}</b> 行</span>
+            </div>
+          </template>
         </div>
       </el-tab-pane>
-
-      <!-- ═══════════ 业务数据清理 ═══════════ -->
-      <div class="ops-biz">
-        <el-alert type="error" :closable="false" show-icon class="ops-alert">
-          <template #title>
-            业务数据清理是<b>不可逆的硬删除</b>，与上面的日志清理不是一回事：
-            执行前 24 小时内必须有备份（回滚点），且需要输入该范围专属的确认口令。
-            系统框架（账号 / 角色 / 菜单 / 权限 / 部门）在任何范围下都不会被删除。
-          </template>
-        </el-alert>
-
-        <el-radio-group v-model="bizScopeKey" class="ops-biz__scopes">
-          <!--
-            用 el-radio 而不是 el-radio-button：后者的插槽内容渲染在
-            .el-radio-button__inner 里，改造成卡片时必须把那个 span 藏掉，
-            结果连卡片内容一起藏了（第一版就踩了这个坑，卡片整块消失）。
-          -->
-          <el-radio
-            v-for="sc in bizScopes"
-            :key="sc.key"
-            :value="sc.key"
-            class="ops-biz__scope"
-          >
-            <div class="ops-biz__scope-title">
-              <span>{{ sc.title }}</span>
-              <span class="text-muted">共 {{ sc.totalRows }} 行</span>
-            </div>
-            <div class="ops-biz__scope-desc">{{ sc.desc }}</div>
-            <div class="ops-biz__scope-keep">保留：{{ sc.keep }}</div>
-          </el-radio>
-        </el-radio-group>
-
-        <div class="ops-biz__tables">
-          <div class="ops-biz__tables-head">
-            <span>将删除以下表（当前行数）</span>
-            <span class="text-muted">顺序即依赖顺序：子表在前</span>
-          </div>
-          <el-table :data="currentBizScope?.tables || []" border size="small" :loading="bizLoading">
-            <el-table-column prop="name" label="表" min-width="200" />
-            <el-table-column label="行数" width="120" align="right">
-              <template #default="{ row }"><b>{{ row.rows }}</b></template>
-            </el-table-column>
-            <template #empty><span class="text-muted">该范围没有数据</span></template>
-          </el-table>
-        </div>
-
-        <div class="ops-biz__gate">
-          <el-checkbox
-            v-if="currentBizScope?.resetStockable"
-            v-model="bizResetStock"
-          >
-            同时清零商品规格库存（inv_product_specs.stock）
-          </el-checkbox>
-          <span v-else class="text-muted">该范围会连商品一起清空，无需单独处理库存</span>
-        </div>
-
-        <div class="ops-biz__actions">
-          <span class="text-muted">
-            回滚点：{{ bizBackupAge || '读取中…' }}（要求 24 小时内）
-          </span>
-          <span class="ops-biz__btns">
-            <el-button :loading="bizBackupRunning" @click="runBizBackup">
-              <AppIcon name="Download" /><span>先备份</span>
-            </el-button>
-            <el-button
-              v-perm="'ops:reset'"
-              type="danger"
-              :loading="bizRunning"
-              :disabled="!currentBizScope || currentBizScope.totalRows === 0"
-              @click="applyBizCleanup"
-            >
-              <AppIcon name="Delete" /><span>执行业务清理</span>
-            </el-button>
-          </span>
-        </div>
-
-        <el-table v-if="bizResult" :data="bizResult.tables" border size="small" class="ops-biz__result">
-          <el-table-column prop="name" label="表" min-width="200" />
-          <el-table-column label="清理前" width="110" align="right">
-            <template #default="{ row }">{{ row.rows }}</template>
-          </el-table-column>
-          <el-table-column label="已删除" width="110" align="right">
-            <template #default="{ row }"><b>{{ row.deleted }}</b></template>
-          </el-table-column>
-          <el-table-column label="序号重置" width="110" align="center">
-            <template #default="{ row }">
-              <el-tag :type="row.seqReset ? 'success' : 'info'" size="small">{{ row.seqReset ? '是' : '否' }}</el-tag>
-            </template>
-          </el-table-column>
-          <template #empty><span class="text-muted">无可删除数据</span></template>
-        </el-table>
-        <div v-if="bizResult" class="ops-summary">
-          <span>
-            模式：<el-tag :type="bizResult.dryRun ? 'info' : 'success'" size="small">
-              {{ bizResult.dryRun ? '预演' : '已执行' }}
-            </el-tag>
-          </span>
-          <span>合计删除 <b>{{ bizResult.totalDeleted }}</b> 行</span>
-          <span v-if="bizResult.stockReset">已清零规格库存 <b>{{ bizResult.stockResetRows }}</b> 行</span>
-        </div>
-      </div>
 
       <!-- ═══════════ 系统巡检 ═══════════ -->
       <el-tab-pane label="系统巡检" name="check">
@@ -718,7 +706,7 @@ onMounted(async () => {
           <div class="toolbar">
             <div class="toolbar__title">
               <h3>系统体检</h3>
-              <span class="text-muted">结构版本 / 体积 / 日志膨胀 / 备份新鲜度</span>
+              <span class="text-muted">只读检查、不改数据：结构版本是否对得上、库有多大、日志与备份是否该处理了</span>
             </div>
             <div class="toolbar__actions">
               <el-button :loading="checkLoading" @click="loadCheck">
@@ -1197,33 +1185,75 @@ onMounted(async () => {
   }
 }
 
-.ops-biz {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--el-border-color-lighter);
+// 保留天数：三个输入放一行，不占三行表单高度
+.cleanup-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  align-items: center;
+  margin-bottom: 16px;
 
-  &__scopes {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 12px;
-    width: 100%;
-    margin-bottom: 16px;
+  label {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 13px;
+    color: var(--el-text-color-regular);
   }
 
-  // 三档范围的影响面差异很大，必须一眼看全「删什么、留什么」再选，
-  // 所以把默认的一排小圆点改成卡片。
-  &__scope {
+  :deep(.el-input-number) {
+    width: 96px;
+  }
+}
+
+.cleanup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  font-size: 13px;
+
+  &__btns {
+    display: flex;
+    gap: 8px;
+  }
+}
+
+// 不可逆操作只用一行字提醒：红框大 alert 太抢眼，反而让人跳过
+.biz-hint {
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--el-color-danger);
+  background: var(--el-color-danger-light-9);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-color-danger);
+}
+
+.biz-scopes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 16px;
+
+  // 三档影响面差异大，必须一眼看全「删什么 / 留什么」再选，
+  // 所以用卡片而不是一排小圆点。
+  &__item {
     margin: 0 !important;
     width: 100%;
-    height: auto !important;
-    padding: 12px 14px;
+    // 撑满 grid 行高：三档的「保留」说明长短不一，auto 会让卡片高低参差
+    height: 100% !important;
+    padding: 10px 12px;
     border: 1px solid var(--el-border-color);
     border-radius: var(--el-border-radius-base);
     background: var(--el-fill-color-lighter);
     align-items: flex-start;
 
     :deep(.el-radio__input) {
-      margin-top: 3px;
+      margin-top: 1px;
     }
 
     :deep(.el-radio__label) {
@@ -1235,68 +1265,65 @@ onMounted(async () => {
   }
 
   // 选中态：描边与底色都要变，只改边框在暗色下几乎看不出来
-  &__scope.is-checked {
+  &__item.is-checked {
     border-color: var(--el-color-danger);
     background: var(--el-color-danger-light-9);
   }
 
-  &__scope-title {
+  &__head {
     display: flex;
-    flex-wrap: wrap; // 窄屏时让行数换行，而不是被裁掉半个数字
+    flex-wrap: wrap;
     justify-content: space-between;
     gap: 4px 8px;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 13px;
     color: var(--el-text-color-primary);
   }
 
-  &__scope-desc {
-    margin-top: 6px;
+  &__desc,
+  &__keep {
+    margin-top: 4px;
     font-size: 12px;
+  }
+
+  &__desc {
     color: var(--el-text-color-regular);
   }
 
-  &__scope-keep {
-    margin-top: 4px;
-    font-size: 12px;
+  &__keep {
     color: var(--el-color-success);
   }
+}
 
-  &__tables {
-    margin-bottom: 16px;
+// 表清单默认收起：三十张表的明细不是决策依据，需要时再展开
+.biz-tables {
+  margin-bottom: 16px;
+  border-top: none;
+}
 
-    &-head {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 8px;
-      font-size: 13px;
-      color: var(--el-text-color-regular);
-    }
-  }
+.biz-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  font-size: 13px;
 
-  &__gate {
-    margin-bottom: 12px;
-  }
-
-  &__actions {
-    display: flex;
+  &__info {
+    display: inline-flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 8px 16px;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-    font-size: 13px;
   }
 
   &__btns {
     display: flex;
     gap: 8px;
   }
+}
 
-  &__result {
-    margin-bottom: 12px;
-  }
+.biz-result {
+  margin-bottom: 12px;
 }
 
 .ops-restore-result {
