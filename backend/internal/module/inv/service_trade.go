@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"nova-erp/internal/authz"
+	"nova-erp/internal/database"
 	"nova-erp/internal/model"
 	"nova-erp/internal/pkg/errcode"
 	"nova-erp/internal/pkg/page"
@@ -349,7 +351,7 @@ func (s *Service) OrderDelete(id int64, actor *authz.Identity) error {
 
 // OrderChangeStatus 流转单据状态：1 待处理 / 2 审核通过 / 3 取消。
 // 置为「审核通过」时会自动生成出入库单并同步商品库存（同一事务）。
-func (s *Service) OrderChangeStatus(id int64, status int16, actor *authz.Identity) error {
+func (s *Service) OrderChangeStatus(id int64, status int16, settleNow bool, actor *authz.Identity) error {
 	var o model.InvOrder
 	if err := s.db.First(&o, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -469,6 +471,31 @@ func (s *Service) OrderChangeStatus(id int64, status int16, actor *authz.Identit
 		}
 		if res.RowsAffected == 0 {
 			return errcode.New(errcode.ErrConflict, "单据已被审核，请勿重复操作")
+		}
+		// 审核并直接结清：同一事务里按全额登记一笔收 / 付款。
+		// 前提是状态已推进到「已审核」—— 结算的账务约束（仅已审核单据可收付款）
+		// 在这里天然满足；行锁下并发反审核进不来，条件更新不会出现竞争。
+		// 0 元单没有可结的款，静默跳过（审核本身照常完成）。
+		if settleNow && locked.TotalAmount > 0 {
+			rec := model.InvSettlement{
+				OrderID: locked.ID, BizType: locked.BizType, PartyID: locked.PartyID,
+				Amount: round2(locked.TotalAmount), Method: "银行转账",
+				SettledAt: time.Now().In(database.Location()),
+				Remark:    "审核时直接结清", CreatedBy: actorUID(actor),
+			}
+			if err := tx.Create(&rec).Error; err != nil {
+				return err
+			}
+			res2 := tx.Model(&model.InvOrder{}).
+				Where("id = ? AND status = ? AND settled_amount + ? <= total_amount + ?",
+					locked.ID, model.InvStatusDone, rec.Amount, settleEpsilon).
+				UpdateColumn("settled_amount", gorm.Expr("settled_amount + ?", rec.Amount))
+			if res2.Error != nil {
+				return res2.Error
+			}
+			if res2.RowsAffected == 0 {
+				return errcode.New(errcode.ErrConflict, "结算金额超出未结余额，审核已一并回滚")
+			}
 		}
 		return nil
 	}))

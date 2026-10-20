@@ -325,6 +325,9 @@ type OrderDetail struct {
 // StatusReq 单据状态流转请求。status 仅允许 1（恢复待处理）/ 2（审核通过）/ 3（取消）。
 type StatusReq struct {
 	Status int16 `json:"status" binding:"required,oneof=1 2 3" label:"状态"`
+	// SettleNow 仅审核（status=2）时有效：审核通过后立即按全额登记一笔
+	// 收 / 付款（采购 → 付款、销售 → 收款），适合「一手交钱一手交货」。
+	SettleNow bool `json:"settleNow" label:"同时结清"`
 }
 
 // ============================================================

@@ -419,17 +419,36 @@ async function submitForm(): Promise<void> {
   }
 }
 
+/** 审核确认弹窗：审核通过会过账并调整库存；可勾选「同时结清全额款项」
+ *  （一手交钱一手交货的场景，省得再去应收应付页补一笔收付款） */
+const approveVisible = ref(false)
+const approveRow = ref<InvOrderRow | null>(null)
+const approveSettleNow = ref(false)
+const approveRunning = ref(false)
+
+function openApprove(row: InvOrderRow): void {
+  approveRow.value = row
+  approveSettleNow.value = false
+  approveVisible.value = true
+}
+
+async function confirmApprove(): Promise<void> {
+  if (!approveRow.value || approveRunning.value) return
+  approveRunning.value = true
+  try {
+    await invApi.changeOrderStatus(approveRow.value.id, 2, approveSettleNow.value)
+    ElMessage.success(approveSettleNow.value ? '已审核并结清全额款项' : '审核通过')
+    approveVisible.value = false
+    load()
+  } finally {
+    approveRunning.value = false
+  }
+}
+
 async function changeStatus(row: InvOrderRow, status: InvOrderStatus): Promise<void> {
   if (status === 2) {
-    try {
-      await ElMessageBox.confirm(
-        `确认审核单据「${row.orderNo}」？审核通过后将生成出入库单并调整库存。`,
-        '审核确认',
-        { type: 'warning', confirmButtonText: '审核' },
-      )
-    } catch {
-      return
-    }
+    openApprove(row)
+    return
   }
   await invApi.changeOrderStatus(row.id, status)
   ElMessage.success('操作成功')
@@ -1024,10 +1043,28 @@ onMounted(() => {
       :columns="printColumns"
       :rows="printRows"
     />
+
+    <!-- 审核确认：可勾选同时结清全额款项 -->
+    <el-dialog v-model="approveVisible" title="审核确认" width="460px">
+      <el-alert type="warning" :closable="false" show-icon class="approve-alert"
+        :title="`审核通过后将为「${approveRow?.orderNo}」生成出入库单并调整库存。`" />
+      <el-checkbox v-model="approveSettleNow">
+        同时结清全额款项
+        <span class="text-muted">（{{ partyLabel === '客户' ? '登记一笔收款' : '登记一笔付款' }}，适合一手交钱一手交货）</span>
+      </el-checkbox>
+      <template #footer>
+        <el-button @click="approveVisible = false">取消</el-button>
+        <el-button type="primary" :loading="approveRunning" @click="confirmApprove">确认审核</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped lang="scss">
+.approve-alert {
+  margin-bottom: 14px;
+}
+
 .filter-form {
   display: grid;
   // 四列等宽；容器窄了自动折行（minmax 保证每个控件都有可用宽度，

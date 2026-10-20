@@ -237,7 +237,7 @@ func (h *Handler) OrderChangeStatus(c *gin.Context) {
 		return
 	}
 	c.Set("opAction", "流转单据状态")
-	if err := h.svc.OrderChangeStatus(id, req.Status, middleware.CurrentIdentity(c)); err != nil {
+	if err := h.svc.OrderChangeStatus(id, req.Status, req.SettleNow, middleware.CurrentIdentity(c)); err != nil {
 		response.Fail(c, err)
 		return
 	}

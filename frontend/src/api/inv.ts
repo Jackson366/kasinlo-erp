@@ -160,8 +160,9 @@ export const invApi = {
   deleteOrder(id: number) {
     return http.delete<string>(`/inv/orders/${id}`)
   },
-  changeOrderStatus(id: number, status: InvOrderStatus) {
-    return http.put<string>(`/inv/orders/${id}/status`, { status })
+  /** 审核并可选直接结清（settleNow 仅在 status=2 时生效） */
+  changeOrderStatus(id: number, status: InvOrderStatus, settleNow = false) {
+    return http.put<string>(`/inv/orders/${id}/status`, { status, settleNow })
   },
   reverseOrder(id: number) {
     return http.put<string>(`/inv/orders/${id}/reverse`)
