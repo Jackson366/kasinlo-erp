@@ -119,24 +119,24 @@ function focusFirstInvalidField(): void {
       <div class="login__brand-inner">
         <div class="login__logo">N</div>
         <h1 class="login__title">Nova ERP</h1>
-        <p class="login__slogan">面向业务的现代化后台管理系统</p>
+        <p class="login__slogan">进销存一体 · 生意账目一本清</p>
 
         <ul class="login__features">
           <li>
             <AppIcon name="CircleCheck" />
-            <span>统一权限体系：用户 · 角色 · 菜单 · 部门</span>
+            <span>采购 · 销售 · 出入库全流程单据，审核过账库存实时准确</span>
           </li>
           <li>
             <AppIcon name="CircleCheck" />
-            <span>菜单驱动动态路由，前后端权限一次配置</span>
+            <span>应收应付自动记账，账龄分析与经营报表一目了然</span>
           </li>
           <li>
             <AppIcon name="CircleCheck" />
-            <span>操作日志全量留痕，关键变更可追溯</span>
+            <span>多规格多单位商品，扫码开单、列表一键导出打印</span>
           </li>
           <li>
             <AppIcon name="CircleCheck" />
-            <span>Go + Vue3 + PostgreSQL，接口规范清晰</span>
+            <span>数据备份可恢复 · 操作留痕可追溯 · 权限按角色管到位</span>
           </li>
         </ul>
       </div>
