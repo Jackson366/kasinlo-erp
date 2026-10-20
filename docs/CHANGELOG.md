@@ -5,6 +5,29 @@
 
 ---
 
+## [1.1.5] - 2026-10-20
+
+### 三十三、pg_dump / pg_restore 自动探测扩展到全盘符
+
+部署机把 PostgreSQL 装在 D 盘（安装向导允许选盘符）时，原先只探测系统盘
+`ProgramFiles` 环境变量指向的位置，导致「立即备份」报找不到 pg_dump、必须手工填
+`backup.pg_dump_path`。
+
+#### Changed
+
+- Windows 下自动枚举 **C–Z 全部盘符**的 `Program Files\PostgreSQL\<版本>\bin`、
+  `Program Files (x86)\...` 与 `<盘>:\PostgreSQL\<版本>\bin`，不存在的盘安静跳过；
+- 多版本共存时仍自动选**版本最高**的客户端；
+- 「找不到 pg_dump」的提示同步修正配置键名（`backup.pg_dump_path`）。
+
+#### 效果
+
+标准结构安装（任意盘符）或已加入 PATH 的机器，备份/恢复**零配置**可用；
+确实装在非标准路径时才需要手工填 `pg_dump_path` / `pg_restore_path`
+（注意 YAML 双引号内必须用正斜杠 `/`，反斜杠 `\` 会被当成转义序列导致解析失败）。
+
+---
+
 ## [1.1.4] - 2026-10-20
 
 ### 三十二、登录页品牌文案改为业务视角
