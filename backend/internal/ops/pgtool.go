@@ -60,8 +60,8 @@ func locateTool(name, configured string) (string, error) {
 	}
 	if len(found) == 0 {
 		return "", errcode.Newf(errcode.ErrBadRequest,
-			"找不到 %s：本机没有安装 PostgreSQL 客户端，或安装路径未被识别。请安装 PostgreSQL，或在 config.yaml 的 backup.%s_path 填写 pg_dump/pg_restore 的绝对路径",
-			name, strings.ReplaceAll(name, "_", ""))
+			"找不到 %s：本机没有安装 PostgreSQL 客户端，或安装路径未被识别。请安装 PostgreSQL，或在 config.yaml 的 backup 段填写绝对路径（%s_path）",
+			name, name)
 	}
 	sort.Slice(found, func(i, j int) bool { return versionLess(found[j], found[i]) })
 	return found[0], nil
