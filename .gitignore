@@ -44,3 +44,6 @@ output/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Office 打开时的锁文件
+~$*
