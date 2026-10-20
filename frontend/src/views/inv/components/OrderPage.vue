@@ -334,6 +334,10 @@ function openCreate(): void {
   dialogMode.value = 'create'
   editingId.value = null
   dialogVisible.value = true
+  // 重拉档案下拉：客户 / 供应商 / 商品可能在其它页面刚新增过，
+  // 只在页面挂载时拉一次的话，弹窗里永远是旧数据（要刷新整页才看得见新档案）。
+  // 拉取失败不拦弹窗 —— 用现有缓存，错误提示由拦截器统一处理。
+  loadOptions().catch(() => {})
 }
 
 /** 编辑 / 详情的请求序号：快速点开不同行时，慢响应不能覆盖后点的那一行 */
@@ -371,6 +375,8 @@ async function openEdit(row: InvOrderRow): Promise<void> {
   dialogMode.value = 'edit'
   editingId.value = row.id
   dialogVisible.value = true
+  // 同 openCreate：编辑时换商品也要能看到刚新增的档案
+  loadOptions().catch(() => {})
 }
 
 async function submitForm(): Promise<void> {

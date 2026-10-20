@@ -151,6 +151,8 @@ function openCreate(): void {
     items: [blankItem()],
   })
   dialogVisible.value = true
+  // 重拉商品下拉：商品可能在商品管理页刚新增，挂载时拉的那份是旧的
+  loadPicks().catch(() => {})
 }
 
 function blankItem(): StockFormItem {
