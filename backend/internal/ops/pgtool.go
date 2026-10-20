@@ -45,6 +45,19 @@ func locateTool(name, configured string) (string, error) {
 		"/usr/local/opt/postgresql@*/bin/" + name,
 		"/Applications/Postgres.app/Contents/Versions/*/bin/" + name,
 	}
+	// PostgreSQL 安装向导允许选盘符，D:/E: 盘的「标准结构」安装很常见
+	// （ProgramFiles 环境变量只指向 C 盘，上面两条覆盖不到）。
+	// 枚举 C-Z 各盘符的 Program Files 与 Program Files (x86)，glob 不存在的盘安静跳过。
+	if runtime.GOOS == "windows" {
+		for drive := 'C'; drive <= 'Z'; drive++ {
+			d := string(drive)
+			patterns = append(patterns,
+				d+`:/Program Files/PostgreSQL/*/bin/`+exe,
+				d+`:/Program Files (x86)/PostgreSQL/*/bin/`+exe,
+				d+`:/PostgreSQL/*/bin/`+exe,
+			)
+		}
+	}
 
 	var found []string
 	for _, pattern := range patterns {
