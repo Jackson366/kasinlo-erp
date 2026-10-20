@@ -93,10 +93,18 @@ const metaPool = computed<Record<string, MetaValue>>(() => {
 const metaItems = computed(() => {
   const cfgMeta = props.cfg.meta?.length ? props.cfg.meta : defaultMetaFields(props.mode, props.partyLabel || '')
   const pool = metaPool.value
-  return cfgMeta
+  const items = cfgMeta
     .filter((f: PrintMetaField) => f.visible && pool[f.key])
     .map((f: PrintMetaField) => ({ ...pool[f.key], label: f.label || pool[f.key].label }))
     .filter((m) => !(m.skipIfEmpty && !m.value))
+  // 采购 / 销售单永远带往来单位：模板可能固化过出入库模式的信息条
+  // （出入库默认池里没有「往来单位」字段），被销售/采购单复用就会丢客户/供应商。
+  // 这里兜底强制补上 —— 往来单位是单据的主体，比「可配置」优先级更高。
+  if (props.mode === 'order' && !items.some((m) => m.label === (props.partyLabel || '往来单位'))) {
+    const f = pool.party
+    if (f) items.unshift({ ...f, label: props.partyLabel || f.label })
+  }
+  return items
 })
 
 const cols = computed(() => visibleCols(props.cfg))

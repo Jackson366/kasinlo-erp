@@ -61,6 +61,9 @@ defineExpose({ open })
     <div class="print-body">
       <div class="print-body__toolbar">
         <span class="print-body__label">A4 纵向 · 黑白版式</span>
+        <span class="print-body__note">
+          出现日期 / 网址页眉页脚时，在打印对话框「更多设置」里把「边距」选为「无」即可去掉
+        </span>
         <el-button type="primary" @click="doPrint">
           <AppIcon name="Printer" />
           <span>打印</span>
@@ -161,6 +164,12 @@ defineExpose({ open })
 
   &__label {
     color: var(--app-text-muted);
+  }
+
+  &__note {
+    color: var(--app-text-muted);
+    font-size: 12px;
+    margin-right: auto;
   }
 
   &__preview {

@@ -103,6 +103,9 @@ defineExpose({ open })
         <span v-if="templates.length === 0" class="print-body__hint">
           暂无启用中的模板，可到「打印模板」页新增
         </span>
+        <span class="print-body__note">
+          出现日期 / 网址页眉页脚时，在打印对话框「更多设置」里把「边距」选为「无」即可去掉
+        </span>
       </div>
 
       <div v-if="detail" class="print-body__preview">
@@ -130,6 +133,12 @@ defineExpose({ open })
   &__hint {
     color: var(--tone-red);
     font-size: 12px;
+  }
+
+  &__note {
+    color: var(--app-text-muted);
+    font-size: 12px;
+    margin-left: auto;
   }
 
   &__preview {
