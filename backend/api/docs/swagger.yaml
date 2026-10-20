@@ -382,6 +382,10 @@ definitions:
         type: array
       orderDate:
         type: string
+      orderNo:
+        description: OrderNo 单据编号。留空自动生成（CG/XS + 日期 + 流水）；填了用手工值（重复会 409）。
+        maxLength: 32
+        type: string
       partyId:
         type: integer
       remark:
@@ -462,6 +466,7 @@ definitions:
         maxLength: 255
         type: string
       code:
+        description: Code 留空时由服务端自动生成（客户 KH#### / 供应商 GYS####）；填了就用手工值（唯一性照常校验）。
         maxLength: 32
         type: string
       contact:
@@ -485,7 +490,6 @@ definitions:
         maxLength: 64
         type: string
     required:
-    - code
     - name
     type: object
   inv.PartyRow:
@@ -644,11 +648,21 @@ definitions:
       categoryId:
         type: integer
       code:
+        description: Code 留空时由服务端自动生成（SP####）；填了就用手工值（唯一性照常校验）。
         maxLength: 32
         type: string
       name:
         maxLength: 128
         type: string
+      refPurchasePrice:
+        description: |-
+          参考进价 / 参考售价：商品级备忘价。具体成交价仍以规格-单位上的
+          采购价 / 销售价为准，参考价用于开单前的估价与对比。
+        minimum: 0
+        type: number
+      refSalePrice:
+        minimum: 0
+        type: number
       remark:
         maxLength: 255
         type: string
@@ -662,7 +676,6 @@ definitions:
         - 1
         type: integer
     required:
-    - code
     - name
     type: object
   inv.ProductRow:
@@ -681,6 +694,10 @@ definitions:
         type: integer
       name:
         type: string
+      refPurchasePrice:
+        type: number
+      refSalePrice:
+        type: number
       remark:
         type: string
       specCount:
@@ -877,6 +894,11 @@ definitions:
     type: object
   inv.StatusReq:
     properties:
+      settleNow:
+        description: |-
+          SettleNow 仅审核（status=2）时有效：审核通过后立即按全额登记一笔
+          收 / 付款（采购 → 付款、销售 → 收款），适合「一手交钱一手交货」。
+        type: boolean
       status:
         enum:
         - 1
@@ -945,6 +967,10 @@ definitions:
         minItems: 1
         type: array
       orderDate:
+        type: string
+      orderNo:
+        description: OrderNo 单据编号。留空自动生成（CK + 日期 + 流水）；填了用手工值（重复会 409）。
+        maxLength: 32
         type: string
       remark:
         maxLength: 255
@@ -1406,6 +1432,19 @@ definitions:
       title:
         type: string
     type: object
+  ops.RestoreInPlaceReq:
+    properties:
+      confirm:
+        description: |-
+          Confirm 必须正好等于「确认恢复」。原地恢复不可逆，
+          服务端会先自动做一次恢复前备份，但这四个字仍是一道闸门。
+        type: string
+      file:
+        type: string
+    required:
+    - confirm
+    - file
+    type: object
   ops.RestoreReq:
     properties:
       file:
@@ -1505,7 +1544,7 @@ definitions:
     properties:
       newPassword:
         maxLength: 64
-        minLength: 6
+        minLength: 8
         type: string
       oldPassword:
         maxLength: 64
@@ -1721,7 +1760,7 @@ definitions:
         type: string
       password:
         maxLength: 64
-        minLength: 6
+        minLength: 8
         type: string
       phone:
         maxLength: 32
@@ -1794,7 +1833,7 @@ definitions:
     properties:
       password:
         maxLength: 64
-        minLength: 6
+        minLength: 8
         type: string
     required:
     - password
@@ -3627,6 +3666,36 @@ paths:
       security:
       - BearerAuth: []
       summary: 恢复演练
+      tags:
+      - 系统运维
+  /ops/restore/in-place:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        恢复前自动对当前库做一次备份；确认口令为「确认恢复」。
+        恢复期间服务短暂不可用，完成后刷新页面即可，无需重启服务。
+      parameters:
+      - description: 备份文件名与确认口令
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/ops.RestoreInPlaceReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: 缺少 ops:restore 权限
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 恢复当前库
       tags:
       - 系统运维
   /ops/upgrade:

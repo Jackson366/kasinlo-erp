@@ -3022,6 +3022,51 @@ const docTemplate = `{
                 }
             }
         },
+        "/ops/restore/in-place": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "恢复前自动对当前库做一次备份；确认口令为「确认恢复」。\n恢复期间服务短暂不可用，完成后刷新页面即可，无需重启服务。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统运维"
+                ],
+                "summary": "恢复当前库",
+                "parameters": [
+                    {
+                        "description": "备份文件名与确认口令",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ops.RestoreInPlaceReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "403": {
+                        "description": "缺少 ops:restore 权限",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/ops/upgrade": {
             "get": {
                 "security": [
@@ -6328,6 +6373,11 @@ const docTemplate = `{
                 "orderDate": {
                     "type": "string"
                 },
+                "orderNo": {
+                    "description": "OrderNo 单据编号。留空自动生成（CG/XS + 日期 + 流水）；填了用手工值（重复会 409）。",
+                    "type": "string",
+                    "maxLength": 32
+                },
                 "partyId": {
                     "type": "integer"
                 },
@@ -6434,7 +6484,6 @@ const docTemplate = `{
         "inv.PartyReq": {
             "type": "object",
             "required": [
-                "code",
                 "name"
             ],
             "properties": {
@@ -6443,6 +6492,7 @@ const docTemplate = `{
                     "maxLength": 255
                 },
                 "code": {
+                    "description": "Code 留空时由服务端自动生成（客户 KH#### / 供应商 GYS####）；填了就用手工值（唯一性照常校验）。",
                     "type": "string",
                     "maxLength": 32
                 },
@@ -6700,7 +6750,6 @@ const docTemplate = `{
         "inv.ProductReq": {
             "type": "object",
             "required": [
-                "code",
                 "name"
             ],
             "properties": {
@@ -6712,12 +6761,22 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "code": {
+                    "description": "Code 留空时由服务端自动生成（SP####）；填了就用手工值（唯一性照常校验）。",
                     "type": "string",
                     "maxLength": 32
                 },
                 "name": {
                     "type": "string",
                     "maxLength": 128
+                },
+                "refPurchasePrice": {
+                    "description": "参考进价 / 参考售价：商品级备忘价。具体成交价仍以规格-单位上的\n采购价 / 销售价为准，参考价用于开单前的估价与对比。",
+                    "type": "number",
+                    "minimum": 0
+                },
+                "refSalePrice": {
+                    "type": "number",
+                    "minimum": 0
                 },
                 "remark": {
                     "type": "string",
@@ -6761,6 +6820,12 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "refPurchasePrice": {
+                    "type": "number"
+                },
+                "refSalePrice": {
+                    "type": "number"
                 },
                 "remark": {
                     "type": "string"
@@ -7054,6 +7119,10 @@ const docTemplate = `{
                 "status"
             ],
             "properties": {
+                "settleNow": {
+                    "description": "SettleNow 仅审核（status=2）时有效：审核通过后立即按全额登记一笔\n收 / 付款（采购 → 付款、销售 → 收款），适合「一手交钱一手交货」。",
+                    "type": "boolean"
+                },
                 "status": {
                     "type": "integer",
                     "enum": [
@@ -7155,6 +7224,11 @@ const docTemplate = `{
                 },
                 "orderDate": {
                     "type": "string"
+                },
+                "orderNo": {
+                    "description": "OrderNo 单据编号。留空自动生成（CK + 日期 + 流水）；填了用手工值（重复会 409）。",
+                    "type": "string",
+                    "maxLength": 32
                 },
                 "remark": {
                     "type": "string",
@@ -7823,6 +7897,22 @@ const docTemplate = `{
                 }
             }
         },
+        "ops.RestoreInPlaceReq": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "file"
+            ],
+            "properties": {
+                "confirm": {
+                    "description": "Confirm 必须正好等于「确认恢复」。原地恢复不可逆，\n服务端会先自动做一次恢复前备份，但这四个字仍是一道闸门。",
+                    "type": "string"
+                },
+                "file": {
+                    "type": "string"
+                }
+            }
+        },
         "ops.RestoreReq": {
             "type": "object",
             "required": [
@@ -7974,7 +8064,7 @@ const docTemplate = `{
                 "newPassword": {
                     "type": "string",
                     "maxLength": 64,
-                    "minLength": 6
+                    "minLength": 8
                 },
                 "oldPassword": {
                     "type": "string",
@@ -8289,7 +8379,7 @@ const docTemplate = `{
                 "password": {
                     "type": "string",
                     "maxLength": 64,
-                    "minLength": 6
+                    "minLength": 8
                 },
                 "phone": {
                     "type": "string",
@@ -8391,7 +8481,7 @@ const docTemplate = `{
                 "password": {
                     "type": "string",
                     "maxLength": 64,
-                    "minLength": 6
+                    "minLength": 8
                 }
             }
         },
