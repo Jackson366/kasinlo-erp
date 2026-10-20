@@ -116,12 +116,14 @@ interface StockFormItem {
 }
 
 const form = reactive<{
+  orderNo: string
   direction: InvStockDirection
   orderDate: string
   salesman: string
   remark: string
   items: StockFormItem[]
 }>({
+  orderNo: '',
   direction: 'in',
   orderDate: '',
   salesman: '',
@@ -141,6 +143,7 @@ function today(): string {
 
 function openCreate(): void {
   Object.assign(form, {
+    orderNo: '',
     direction: 'in',
     orderDate: today(),
     salesman: '',
@@ -214,6 +217,7 @@ async function submitForm(): Promise<void> {
   }
   const payload: InvStockOrderPayload = {
     direction: form.direction,
+    orderNo: form.orderNo.trim() || undefined,
     sourceType: 'manual',
     orderDate: form.orderDate,
     salesman: form.salesman.trim() || undefined,
@@ -600,6 +604,11 @@ onMounted(() => {
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
         <el-row :gutter="16">
+          <el-col :span="6">
+            <el-form-item label="单据编号">
+              <el-input v-model="form.orderNo" placeholder="留空自动生成" clearable maxlength="32" />
+            </el-form-item>
+          </el-col>
           <el-col :span="6">
             <el-form-item label="方向">
               <el-radio-group v-model="form.direction">

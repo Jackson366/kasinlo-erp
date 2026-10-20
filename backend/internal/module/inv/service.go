@@ -163,6 +163,31 @@ func (s *Service) nextNo(table, prefix string) (string, error) {
 	return fmt.Sprintf("%s%s%04d", prefix, day, count+1), nil
 }
 
+// nextCode 生成主数据编号：前缀 + 定宽流水（如 SP0001 / KH0001）。
+//
+// 与 nextNo（日期式）不同：编码不掺日期，库里的编码序列是连续观感。
+// 取「前缀 + 纯数字」的最大号 +1 而不是 count+1 —— 删过档之后 count 会
+// 退回去产生重号，max 法永远向前。没有历史号时从 0001 起。
+func (s *Service) nextCode(table, column, prefix string, width int) (string, error) {
+	var maxCode string
+	err := s.db.Table(table).
+		Select(column).
+		Where(column+" LIKE ? AND "+column+" ~ ?", prefix+"%", "^"+prefix+"[0-9]+$").
+		Order("length(" + column + ") DESC, " + column + " DESC").
+		Limit(1).Scan(&maxCode).Error
+	if err != nil {
+		return "", errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	next := 1
+	if maxCode != "" {
+		n, convErr := strconv.Atoi(strings.TrimPrefix(maxCode, prefix))
+		if convErr == nil {
+			next = n + 1
+		}
+	}
+	return fmt.Sprintf("%s%0*d", prefix, width, next), nil
+}
+
 // settleEpsilon 是结算金额比较的容差（元）。
 //
 // 金额用 float64 承载、按 round2 归一，累加后会有亚分级误差；

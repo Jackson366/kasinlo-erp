@@ -145,7 +145,20 @@ func partyTable(bizType string) string {
 
 // PartyCreate 新增客户 / 供应商。
 func (s *Service) PartyCreate(bizType string, req PartyReq) (int64, error) {
-	if err := s.partyNameFree(bizType, req.Code, 0); err != nil {
+	// 编号留空自动生成：客户 KH####、供应商 GYS####；填了就用手工值
+	code := strings.TrimSpace(req.Code)
+	if code == "" {
+		table := "inv_customers"
+		prefix := "KH"
+		if bizType == model.InvBizPurchase {
+			table, prefix = "inv_suppliers", "GYS"
+		}
+		var err error
+		if code, err = s.nextCode(table, "code", prefix, 4); err != nil {
+			return 0, err
+		}
+	}
+	if err := s.partyNameFree(bizType, code, 0); err != nil {
 		return 0, err
 	}
 	status := model.StatusEnabled
@@ -154,7 +167,7 @@ func (s *Service) PartyCreate(bizType string, req PartyReq) (int64, error) {
 	}
 	if bizType == model.InvBizPurchase {
 		it := model.InvSupplier{
-			Code: req.Code, Name: req.Name, Contact: req.Contact, Phone: req.Phone,
+			Code: code, Name: req.Name, Contact: req.Contact, Phone: req.Phone,
 			Address: req.Address, TaxNo: req.TaxNo, Status: status, Remark: req.Remark,
 		}
 		if err := s.db.Create(&it).Error; err != nil {
@@ -163,7 +176,7 @@ func (s *Service) PartyCreate(bizType string, req PartyReq) (int64, error) {
 		return it.ID, nil
 	}
 	it := model.InvCustomer{
-		Code: req.Code, Name: req.Name, Contact: req.Contact, Phone: req.Phone,
+		Code: code, Name: req.Name, Contact: req.Contact, Phone: req.Phone,
 		Address: req.Address, TaxNo: req.TaxNo, Status: status, Remark: req.Remark,
 	}
 	if err := s.db.Create(&it).Error; err != nil {
@@ -172,14 +185,18 @@ func (s *Service) PartyCreate(bizType string, req PartyReq) (int64, error) {
 	return it.ID, nil
 }
 
-// PartyUpdate 修改客户 / 供应商。
+// PartyUpdate 修改客户 / 供应商。编号留空视为「不改编号」（沿用原值）。
 func (s *Service) PartyUpdate(bizType string, id int64, req PartyReq) error {
-	if err := s.partyNameFree(bizType, req.Code, id); err != nil {
-		return err
-	}
+	code := strings.TrimSpace(req.Code)
 	updates := map[string]any{
-		"code": req.Code, "name": req.Name, "contact": req.Contact, "phone": req.Phone,
+		"name": req.Name, "contact": req.Contact, "phone": req.Phone,
 		"address": req.Address, "tax_no": req.TaxNo, "remark": req.Remark,
+	}
+	if code != "" {
+		updates["code"] = code
+	}
+	if err := s.partyNameFree(bizType, code, id); err != nil {
+		return err
 	}
 	if req.Status != nil {
 		updates["status"] = *req.Status
@@ -615,6 +632,7 @@ func (s *Service) ProductList(q page.Query, status *int16, categoryID int64) ([]
 		rows = append(rows, ProductRow{
 			ID: it.ID, Code: it.Code, Name: it.Name, Barcode: it.Barcode,
 			CategoryID: it.CategoryID, CategoryName: categories[it.CategoryID],
+			RefPurchasePrice: it.RefPurchasePrice, RefSalePrice: it.RefSalePrice,
 			SpecCount: len(specVOs), UnitCount: unitCount,
 			TotalStock: round4(totalStock), Warn: warn, Status: it.Status,
 			Remark: it.Remark, CreatedAt: it.CreatedAt, Specs: specVOs,
@@ -651,6 +669,7 @@ func (s *Service) ProductDetail(id int64) (*ProductRow, error) {
 	row := ProductRow{
 		ID: it.ID, Code: it.Code, Name: it.Name, Barcode: it.Barcode,
 		CategoryID: it.CategoryID, CategoryName: categories[it.CategoryID],
+		RefPurchasePrice: it.RefPurchasePrice, RefSalePrice: it.RefSalePrice,
 		SpecCount: len(specVOs), UnitCount: unitCount,
 		TotalStock: round4(totalStock), Warn: warn, Status: it.Status,
 		Remark: it.Remark, CreatedAt: it.CreatedAt, Specs: specVOs,
@@ -1169,7 +1188,15 @@ func (s *Service) ProductCreate(req ProductReq) (int64, error) {
 	if err := validateSpecs(req.Specs); err != nil {
 		return 0, err
 	}
-	if err := s.productCodeFree(req.Code, 0); err != nil {
+	// 编号留空自动生成：SP####（取历史最大流水 +1，删档也不会产生重号）
+	code := strings.TrimSpace(req.Code)
+	if code == "" {
+		var err error
+		if code, err = s.nextCode("inv_products", "code", "SP", 4); err != nil {
+			return 0, err
+		}
+	}
+	if err := s.productCodeFree(code, 0); err != nil {
 		return 0, err
 	}
 	if err := s.categoryExists(req.CategoryID); err != nil {
@@ -1180,7 +1207,8 @@ func (s *Service) ProductCreate(req ProductReq) (int64, error) {
 		status = *req.Status
 	}
 	it := model.InvProduct{
-		Code: req.Code, Name: req.Name, Barcode: req.Barcode, CategoryID: req.CategoryID,
+		Code: code, Name: req.Name, Barcode: req.Barcode, CategoryID: req.CategoryID,
+		RefPurchasePrice: req.RefPurchasePrice, RefSalePrice: req.RefSalePrice,
 		Status: status, Remark: req.Remark,
 	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -1196,14 +1224,13 @@ func (s *Service) ProductCreate(req ProductReq) (int64, error) {
 }
 
 // ProductUpdate 修改商品。规格与单位整体覆盖，库存字段不受影响。
+// 编号留空视为「不改编号」（沿用原值）；参考进 / 售价随表单覆盖。
 func (s *Service) ProductUpdate(id int64, req ProductReq) error {
 	req.Specs = normalizeSpecs(req.Specs)
 	if err := validateSpecs(req.Specs); err != nil {
 		return err
 	}
-	if err := s.productCodeFree(req.Code, id); err != nil {
-		return err
-	}
+	code := strings.TrimSpace(req.Code)
 	if err := s.categoryExists(req.CategoryID); err != nil {
 		return err
 	}
@@ -1215,8 +1242,15 @@ func (s *Service) ProductUpdate(id int64, req ProductReq) error {
 		return errcode.New(errcode.ErrNotFound, "商品不存在")
 	}
 	updates := map[string]any{
-		"code": req.Code, "name": req.Name, "barcode": req.Barcode,
+		"name": req.Name, "barcode": req.Barcode,
 		"category_id": req.CategoryID, "remark": req.Remark,
+		"ref_purchase_price": req.RefPurchasePrice, "ref_sale_price": req.RefSalePrice,
+	}
+	if code != "" {
+		updates["code"] = code
+		if err := s.productCodeFree(code, id); err != nil {
+			return err
+		}
 	}
 	if req.Status != nil {
 		updates["status"] = *req.Status

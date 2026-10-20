@@ -120,6 +120,8 @@ const form = reactive<InvProductPayload>({
   name: '',
   barcode: '',
   categoryId: undefined,
+  refPurchasePrice: 0,
+  refSalePrice: 0,
   status: 1,
   remark: '',
   specs: [blankSpec()],
@@ -275,7 +277,7 @@ function validateSpecs(_rule: unknown, _value: unknown, callback: (e?: Error) =>
 }
 
 const rules: FormRules<InvProductPayload> = {
-  code: [{ required: true, message: '请输入商品编码', trigger: 'blur' }],
+  // 编号可留空由后端自动生成（SP####），不再强制手填
   name: [{ required: true, message: '请输入商品名称', trigger: 'blur' }],
   specs: [{ validator: validateSpecs, trigger: 'change' }],
 }
@@ -296,6 +298,8 @@ function openCreate(): void {
     name: '',
     barcode: '',
     categoryId: cat?.id,
+    refPurchasePrice: 0,
+    refSalePrice: 0,
     status: 1,
     remark: '',
     specs: [blankSpec()],
@@ -314,6 +318,8 @@ function openEdit(row: InvProductRow): void {
     name: row.name,
     barcode: row.barcode || '',
     categoryId: row.categoryId || undefined,
+    refPurchasePrice: row.refPurchasePrice ?? 0,
+    refSalePrice: row.refSalePrice ?? 0,
     status: row.status,
     remark: row.remark,
     // 深拷贝：直接把列表行的 specs 塞进表单，用户取消编辑也会改到列表数据
@@ -346,10 +352,12 @@ async function submitForm(): Promise<void> {
       loadCategories()
     },
     () => ({
-      code: form.code.trim(),
+      code: (form.code || '').trim(),
       name: form.name.trim(),
       barcode: (form.barcode || '').trim(),
       categoryId: form.categoryId ?? 0,
+      refPurchasePrice: form.refPurchasePrice ?? 0,
+      refSalePrice: form.refSalePrice ?? 0,
       status: form.status,
       remark: form.remark,
       specs: form.specs.map((s) => ({
@@ -639,6 +647,8 @@ const printColumns = computed<ListPrintColumn<InvProductRow>[]>(() => [
   { label: '条码', value: (r) => r.barcode || '-' },
   { label: '分类', value: (r) => r.categoryName || '-' },
   { label: '规格', value: (r) => specSummary(r) },
+  { label: '参考进价', value: (r) => (r.refPurchasePrice ? formatMoney(r.refPurchasePrice) : '-') },
+  { label: '参考售价', value: (r) => (r.refSalePrice ? formatMoney(r.refSalePrice) : '-') },
   { label: '规格数', value: (r) => String(r.specCount), align: 'center' },
   { label: '单位数', value: (r) => String(r.unitCount), align: 'center' },
   { label: '总库存', value: (r) => formatQty(r.totalStock), align: 'right' },
@@ -866,6 +876,12 @@ onMounted(() => {
         <el-table-column label="规格" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ specSummary(row as InvProductRow) }}</template>
         </el-table-column>
+        <el-table-column label="参考进价" width="96" align="right">
+          <template #default="{ row }">{{ (row as InvProductRow).refPurchasePrice ? formatMoney((row as InvProductRow).refPurchasePrice) : '-' }}</template>
+        </el-table-column>
+        <el-table-column label="参考售价" width="96" align="right">
+          <template #default="{ row }">{{ (row as InvProductRow).refSalePrice ? formatMoney((row as InvProductRow).refSalePrice) : '-' }}</template>
+        </el-table-column>
         <el-table-column label="规格数" width="72" align="center">
           <template #default="{ row }">{{ row.specCount }}</template>
         </el-table-column>
@@ -975,13 +991,13 @@ onMounted(() => {
           <div class="form-section__head">
             <div class="form-section__title">
               基本信息
-              <small>编码与名称必填，其余选填</small>
+              <small>名称必填；编码留空自动生成</small>
             </div>
           </div>
 
           <div class="form-grid">
             <el-form-item label="商品编码" prop="code">
-              <el-input v-model="form.code" placeholder="如 SP001" />
+              <el-input v-model="form.code" placeholder="留空自动生成（SP####）" clearable />
             </el-form-item>
             <el-form-item label="商品名称" prop="name">
               <el-input
@@ -1017,6 +1033,26 @@ onMounted(() => {
                   :value="c.id"
                 />
               </el-select>
+            </el-form-item>
+            <el-form-item label="参考进价">
+              <el-input-number
+                v-model="form.refPurchasePrice"
+                :min="0"
+                :precision="2"
+                :controls="false"
+                placeholder="备忘价，选填"
+                style="width: 100%"
+              />
+            </el-form-item>
+            <el-form-item label="参考售价">
+              <el-input-number
+                v-model="form.refSalePrice"
+                :min="0"
+                :precision="2"
+                :controls="false"
+                placeholder="备忘价，选填"
+                style="width: 100%"
+              />
             </el-form-item>
             <el-form-item label="状态">
               <el-switch

@@ -2,6 +2,7 @@ package inv
 
 import (
 	"errors"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -108,9 +109,13 @@ func (s *Service) StockOrderCreate(req StockOrderReq, actor *authz.Identity) (in
 			Qty: it.Qty, QtyBase: round4(it.Qty * r.Unit.Rate),
 		})
 	}
-	no, err := s.nextNo("inv_stock_orders", "CK")
-	if err != nil {
-		return 0, err
+	// 编号留空自动生成；填了用手工值（重复由唯一索引兜底报 409）
+	no := strings.TrimSpace(req.OrderNo)
+	if no == "" {
+		var err error
+		if no, err = s.nextNo("inv_stock_orders", "CK"); err != nil {
+			return 0, err
+		}
 	}
 	order := model.InvStockOrder{
 		OrderNo: no, Direction: req.Direction, SourceType: sourceType,

@@ -8,7 +8,8 @@ import "time"
 
 // PartyReq 客户 / 供应商新增、修改请求。
 type PartyReq struct {
-	Code    string `json:"code" binding:"required,max=32" label:"编号"`
+	// Code 留空时由服务端自动生成（客户 KH#### / 供应商 GYS####）；填了就用手工值（唯一性照常校验）。
+	Code    string `json:"code" binding:"omitempty,max=32" label:"编号"`
 	Name    string `json:"name" binding:"required,max=128" label:"名称"`
 	Contact string `json:"contact" binding:"omitempty,max=64" label:"联系人"`
 	Phone   string `json:"phone" binding:"omitempty,max=32" label:"联系电话"`
@@ -111,13 +112,18 @@ type ProductSpecReq struct {
 // 「默认 / 个」—— 真正的约束（库存要有归属、单据要能折算）由服务端守住，
 // 不转嫁成用户面前的必填项。
 type ProductReq struct {
-	Code       string           `json:"code" binding:"required,max=32" label:"商品编码"`
-	Name       string           `json:"name" binding:"required,max=128" label:"商品名称"`
-	Barcode    string           `json:"barcode" binding:"omitempty,max=64" label:"商品条码"`
-	CategoryID int64            `json:"categoryId" label:"商品分类"`
-	Status     *int16           `json:"status" binding:"omitempty,oneof=0 1" label:"状态"`
-	Remark     string           `json:"remark" binding:"omitempty,max=255" label:"备注"`
-	Specs      []ProductSpecReq `json:"specs" binding:"dive" label:"规格"`
+	// Code 留空时由服务端自动生成（SP####）；填了就用手工值（唯一性照常校验）。
+	Code             string           `json:"code" binding:"omitempty,max=32" label:"商品编码"`
+	Name             string           `json:"name" binding:"required,max=128" label:"商品名称"`
+	Barcode          string           `json:"barcode" binding:"omitempty,max=64" label:"商品条码"`
+	CategoryID       int64            `json:"categoryId" label:"商品分类"`
+	// 参考进价 / 参考售价：商品级备忘价。具体成交价仍以规格-单位上的
+	// 采购价 / 销售价为准，参考价用于开单前的估价与对比。
+	RefPurchasePrice float64          `json:"refPurchasePrice" binding:"omitempty,gte=0" label:"参考进价"`
+	RefSalePrice     float64          `json:"refSalePrice" binding:"omitempty,gte=0" label:"参考销售价"`
+	Status           *int16           `json:"status" binding:"omitempty,oneof=0 1" label:"状态"`
+	Remark           string           `json:"remark" binding:"omitempty,max=255" label:"备注"`
+	Specs            []ProductSpecReq `json:"specs" binding:"dive" label:"规格"`
 }
 
 // ProductUnitVO 计量单位（响应）。
@@ -144,20 +150,22 @@ type ProductSpecVO struct {
 
 // ProductRow 商品列表行。带全量规格明细，前端列表行可展开直接看规格与单位。
 type ProductRow struct {
-	ID           int64           `json:"id"`
-	Code         string          `json:"code"`
-	Name         string          `json:"name"`
-	Barcode      string          `json:"barcode"`
-	CategoryID   int64           `json:"categoryId"`
-	CategoryName string          `json:"categoryName"`
-	SpecCount    int             `json:"specCount"`
-	UnitCount    int             `json:"unitCount"`
-	TotalStock   float64         `json:"totalStock"`
-	Warn         bool            `json:"warn"`
-	Status       int16           `json:"status"`
-	Remark       string          `json:"remark"`
-	CreatedAt    time.Time       `json:"createdAt"`
-	Specs        []ProductSpecVO `json:"specs"`
+	ID               int64           `json:"id"`
+	Code             string          `json:"code"`
+	Name             string          `json:"name"`
+	Barcode          string          `json:"barcode"`
+	CategoryID       int64           `json:"categoryId"`
+	CategoryName     string          `json:"categoryName"`
+	RefPurchasePrice float64         `json:"refPurchasePrice"`
+	RefSalePrice     float64         `json:"refSalePrice"`
+	SpecCount        int             `json:"specCount"`
+	UnitCount        int             `json:"unitCount"`
+	TotalStock       float64         `json:"totalStock"`
+	Warn             bool            `json:"warn"`
+	Status           int16           `json:"status"`
+	Remark           string          `json:"remark"`
+	CreatedAt        time.Time       `json:"createdAt"`
+	Specs            []ProductSpecVO `json:"specs"`
 }
 
 // ProductDupRow 同名商品提示行。用于「录入时把可疑的重复商品先摆出来」。
@@ -244,6 +252,8 @@ type OrderItemReq struct {
 // OrderReq 单据新增 / 修改请求。价格缺省时取商品的采购价 / 销售价。
 type OrderReq struct {
 	BizType   string         `json:"bizType" binding:"required,oneof=purchase sales" label:"单据类型"`
+	// OrderNo 单据编号。留空自动生成（CG/XS + 日期 + 流水）；填了用手工值（重复会 409）。
+	OrderNo   string         `json:"orderNo" binding:"omitempty,max=32" label:"单据编号"`
 	PartyID   int64          `json:"partyId" binding:"required,gt=0" label:"往来单位"`
 	OrderDate string         `json:"orderDate" binding:"required" label:"单据日期"`
 	DueDate   string         `json:"dueDate" binding:"omitempty" label:"到期日"`
@@ -332,6 +342,8 @@ type StockItemReq struct {
 // StockOrderReq 出入库单据请求。
 type StockOrderReq struct {
 	Direction  string         `json:"direction" binding:"required,oneof=in out" label:"方向"`
+	// OrderNo 单据编号。留空自动生成（CK + 日期 + 流水）；填了用手工值（重复会 409）。
+	OrderNo    string         `json:"orderNo" binding:"omitempty,max=32" label:"单据编号"`
 	SourceType string         `json:"sourceType" binding:"omitempty,oneof=purchase sales manual" label:"来源"`
 	OrderDate  string         `json:"orderDate" binding:"required" label:"单据日期"`
 	Remark     string         `json:"remark" binding:"omitempty,max=255" label:"备注"`

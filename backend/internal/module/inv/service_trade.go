@@ -3,6 +3,7 @@ package inv
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -218,9 +219,13 @@ func (s *Service) OrderCreate(req OrderReq, actor *authz.Identity) (int64, error
 	if err != nil {
 		return 0, err
 	}
-	no, err := s.nextNo("inv_orders", orderPrefix(req.BizType))
-	if err != nil {
-		return 0, err
+	// 编号留空自动生成；填了用手工值（重复由唯一索引兜底报 409）
+	no := strings.TrimSpace(req.OrderNo)
+	if no == "" {
+		var err error
+		if no, err = s.nextNo("inv_orders", orderPrefix(req.BizType)); err != nil {
+			return 0, err
+		}
 	}
 	order := model.InvOrder{
 		OrderNo: no, BizType: req.BizType, PartyID: req.PartyID, PartyName: partyName,

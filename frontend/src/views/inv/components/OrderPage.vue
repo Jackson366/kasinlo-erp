@@ -229,6 +229,7 @@ function detailSummary(param: { columns: unknown[] }): string[] {
 const printRef = ref<InstanceType<typeof OrderPrintDialog> | null>(null)
 
 const form = reactive<{
+  orderNo: string
   partyId: number | undefined
   orderDate: string
   dueDate: string
@@ -236,6 +237,7 @@ const form = reactive<{
   remark: string
   items: FormItem[]
 }>({
+  orderNo: '',
   partyId: undefined,
   orderDate: '',
   dueDate: '',
@@ -320,6 +322,7 @@ function onUnitChange(item: FormItem): void {
 
 function openCreate(): void {
   Object.assign(form, {
+    orderNo: '',
     partyId: undefined,
     orderDate: today(),
     dueDate: '',
@@ -351,6 +354,7 @@ async function openEdit(row: InvOrderRow): Promise<void> {
   // 否则日期选择器会显示一个荒唐的年份，用户一保存就把脏值又写回去
   const due = formatDay(data.dueDate)
   Object.assign(form, {
+    orderNo: data.orderNo,
     partyId: data.partyId,
     orderDate: formatDay(data.orderDate),
     dueDate: due === '-' ? '' : due,
@@ -384,6 +388,8 @@ async function submitForm(): Promise<void> {
   }
   const payload: InvOrderPayload = {
     bizType: props.bizType,
+    // 新建时编号留空 = 后端自动生成；编辑时回填原单号原样提交（后端编辑不改单号）
+    orderNo: dialogMode.value === 'create' ? form.orderNo.trim() || undefined : undefined,
     partyId: form.partyId as number,
     orderDate: form.orderDate,
     dueDate: form.dueDate || undefined,
@@ -755,6 +761,17 @@ onMounted(() => {
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
         <el-row :gutter="16">
+          <el-col :span="6">
+            <el-form-item label="单据编号">
+              <el-input
+                v-model="form.orderNo"
+                :disabled="dialogMode === 'edit'"
+                placeholder="留空自动生成"
+                clearable
+                maxlength="32"
+              />
+            </el-form-item>
+          </el-col>
           <el-col :span="6">
             <el-form-item :label="partyLabel" prop="partyId">
               <el-select v-model="form.partyId" filterable placeholder="请选择" style="width: 100%">

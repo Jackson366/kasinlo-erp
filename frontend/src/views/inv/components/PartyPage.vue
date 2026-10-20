@@ -93,7 +93,7 @@ const form = reactive<InvPartyPayload>({
 })
 
 const rules: FormRules<InvPartyPayload> = {
-  code: [{ required: true, message: '请输入编号', trigger: 'blur' }],
+  // 编号可留空由后端自动生成（客户 KH#### / 供应商 GYS####）
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
 }
 
@@ -344,7 +344,7 @@ onMounted(load)
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="编号" prop="code">
-              <el-input v-model="form.code" placeholder="如 KH001" />
+              <el-input v-model="form.code" placeholder="留空自动生成，也可自定义" clearable />
             </el-form-item>
           </el-col>
           <el-col :span="12">

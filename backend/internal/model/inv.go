@@ -118,8 +118,12 @@ type InvProduct struct {
 	// 不是做唯一键 —— 拿它当唯一键会让正常录入被 409 挡住，
 	// 而库里真正的唯一性早就由 Code 保证了。
 	Barcode string `gorm:"size:64;index" json:"barcode"`
-	Status  int16  `gorm:"not null" json:"status"`
-	Remark  string `gorm:"size:255" json:"remark"`
+	// 参考进价 / 参考售价：商品级备忘价。具体成交价以规格-单位上的
+	// 采购价 / 销售价为准；参考价用于开单前的估价与对比，不参与过账。
+	RefPurchasePrice float64 `gorm:"type:numeric(14,2);default:0" json:"refPurchasePrice"`
+	RefSalePrice     float64 `gorm:"type:numeric(14,2);default:0" json:"refSalePrice"`
+	Status           int16   `gorm:"not null" json:"status"`
+	Remark           string  `gorm:"size:255" json:"remark"`
 }
 
 // TableName 指定表名。

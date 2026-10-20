@@ -355,9 +355,9 @@ export interface InvPartyRow {
   createdAt: string
 }
 
-/** 客户 / 供应商载荷 */
+/** 客户 / 供应商载荷。code 留空由后端自动生成（KH#### / GYS####） */
 export interface InvPartyPayload {
-  code: string
+  code?: string
   name: string
   contact?: string
   phone?: string
@@ -433,6 +433,9 @@ export interface InvProductRow {
   barcode: string
   categoryId: number
   categoryName: string
+  /** 参考进价 / 参考售价：商品级备忘价（成交价以规格-单位为准） */
+  refPurchasePrice: number
+  refSalePrice: number
   specCount: number
   unitCount: number
   totalStock: number
@@ -462,13 +465,16 @@ export interface InvProductSpecPayload {
   units: InvProductUnitPayload[]
 }
 
-/** 商品新增 / 修改载荷。库存不在表单里 —— 它由出入库单据驱动 */
+/** 商品新增 / 修改载荷。库存不在表单里 —— 它由出入库单据驱动。
+ *  code 留空由后端自动生成（SP####）；参考进 / 售价为商品级备忘价 */
 export interface InvProductPayload {
-  code: string
+  code?: string
   name: string
   /** 商品条码（选填）；空串表示清空 */
   barcode?: string
   categoryId?: number
+  refPurchasePrice?: number
+  refSalePrice?: number
   status?: Status
   remark?: string
   specs: InvProductSpecPayload[]
@@ -549,9 +555,10 @@ export interface InvOrderItemPayload {
   price: number
 }
 
-/** 单据新增 / 修改载荷 */
+/** 单据新增 / 修改载荷。orderNo 留空由后端自动生成（CG/XS + 日期 + 流水） */
 export interface InvOrderPayload {
   bizType: InvBizType
+  orderNo?: string
   partyId: number
   orderDate: string
   dueDate?: string
@@ -617,9 +624,10 @@ export interface InvStockItemPayload {
   qty: number
 }
 
-/** 出入库单据载荷 */
+/** 出入库单据载荷。orderNo 留空由后端自动生成（CK + 日期 + 流水） */
 export interface InvStockOrderPayload {
   direction: InvStockDirection
+  orderNo?: string
   sourceType?: 'purchase' | 'sales' | 'manual'
   orderDate: string
   remark?: string
