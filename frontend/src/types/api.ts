@@ -505,6 +505,9 @@ export interface InvProductPick {
   name: string
   /** 商品条码：开单时可以按条码模糊匹配，扫码枪输入即等于输入条码 */
   barcode: string
+  /** 参考进价 / 参考售价：>0 时作为开单默认单价（优先于单位成交价） */
+  refPurchasePrice: number
+  refSalePrice: number
   specs: InvPickSpec[]
 }
 

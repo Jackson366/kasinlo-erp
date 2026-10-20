@@ -378,3 +378,102 @@ a {
 #nprogress .peg {
   box-shadow: 0 0 10px var(--brand-primary), 0 0 5px var(--brand-primary);
 }
+
+// ---------- 列表页头部：搜索与操作合并成一行 ----------
+// 以前「搜索区」与「新建/刷新」分属两张卡片上下排布，视觉上像两个独立区块。
+// 现在统一收进内容卡片顶部一行：左侧列表名，中间筛选（放不下时字段自身折行），
+// 右侧查询 / 重置 / 新建 / 刷新。
+//
+// 用三列 grid 而不是 flex-wrap：flex 折行时标题与按钮会被挤到不同行、
+// 上下错位（筛选字段多的页面尤其明显）；grid 的标题与按钮列始终垂直居中，
+// 只有中间的筛选区在自身宽度内折行。
+.list-head {
+  display: grid;
+  grid-template-columns: auto minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 10px 16px;
+  margin-bottom: 14px;
+
+  &__title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--app-text-primary);
+    white-space: nowrap;
+    // 筛选字段折成多行时，标题贴住第一行（垂直居中会显得悬在两行之间）
+    align-self: start;
+    line-height: 32px;
+
+    em {
+      margin-left: 8px;
+      font-size: 12px;
+      font-style: normal;
+      font-weight: 400;
+      color: var(--app-text-muted);
+
+      a {
+        cursor: pointer;
+      }
+    }
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    // 与第一行字段 / 标题齐平，而不是沉到筛选区的中间
+    align-self: start;
+    min-height: 32px;
+
+    // 查询/重置 与 新建/刷新 之间留一道视觉分隔
+    .list-head__divider {
+      width: 1px;
+      height: 18px;
+      background: var(--app-border-light);
+      margin: 0 4px;
+    }
+  }
+
+  // 搜索表单：横向流式排布，字段多了自动折行
+  .filter-form {
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    margin: 0;
+    padding: 0;
+
+    .el-form-item {
+      margin: 0;
+    }
+
+    .el-form-item__label {
+      padding-right: 6px;
+    }
+
+    // 流式布局下控件用固定宽（网格时代的 100% 会让每个字段随容器乱变）
+    .el-input,
+    .el-select {
+      width: 165px;
+    }
+
+    .el-date-editor {
+      width: 205px;
+
+      &--daterange {
+        width: 235px;
+      }
+    }
+  }
+}
+
+// 窄屏（含侧边栏收起的中等宽度）改成纵向堆叠，避免三列互相挤压
+@media (max-width: 1180px) {
+  .list-head {
+    grid-template-columns: 1fr;
+
+    &__actions {
+      flex-wrap: wrap;
+    }
+  }
+}

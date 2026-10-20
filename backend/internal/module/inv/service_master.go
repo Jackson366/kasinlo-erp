@@ -733,7 +733,11 @@ func (s *Service) ProductPick(keyword string) (*ProductPickResult, error) {
 	}
 	out := make([]ProductPickVO, 0, len(list))
 	for _, p := range list {
-		pick := ProductPickVO{ID: p.ID, Code: p.Code, Name: p.Name, Barcode: p.Barcode, Specs: []PickSpecVO{}}
+		pick := ProductPickVO{
+			ID: p.ID, Code: p.Code, Name: p.Name, Barcode: p.Barcode,
+			RefPurchasePrice: p.RefPurchasePrice, RefSalePrice: p.RefSalePrice,
+			Specs: []PickSpecVO{},
+		}
 		for _, sp := range specs[p.ID] {
 			if sp.Status != model.StatusEnabled {
 				continue

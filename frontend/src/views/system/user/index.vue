@@ -374,52 +374,43 @@ onMounted(() => {
 
 <template>
   <div class="user-page">
-    <!-- 搜索区 -->
-    <div class="page-card search-bar">
-      <el-form class="filter-form" label-width="76px" @submit.prevent>
-        <el-form-item label="关键字">
-          <el-input
-            v-model="query.keyword"
-            placeholder="用户名 / 昵称 / 手机号"
-            clearable
-            @keyup.enter="search"
-          />
-        </el-form-item>
-        <el-form-item label="所属部门">
-          <el-tree-select
-            v-model="query.deptId"
-            :data="deptTree"
-            :props="{ label: 'name', children: 'children' }"
-            node-key="id"
-            check-strictly
-            clearable
-            placeholder="全部部门"
-            
-          />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="query.status" placeholder="全部" clearable>
-            <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </el-form-item>
-        <div class="filter-form__actions">
+    <!-- 搜索与操作合并一行 -->
+    <div class="page-card">
+      <div class="list-head">
+        <span class="list-head__title">用户<em>共 {{ total }} 条</em></span>
+        <el-form class="filter-form" label-width="76px" @submit.prevent>
+          <el-form-item label="关键字">
+            <el-input
+              v-model="query.keyword"
+              placeholder="用户名 / 昵称 / 手机号"
+              clearable
+              @keyup.enter="search"
+            />
+          </el-form-item>
+          <el-form-item label="所属部门">
+            <el-tree-select
+              v-model="query.deptId"
+              :data="deptTree"
+              :props="{ label: 'name', children: 'children' }"
+              node-key="id"
+              check-strictly
+              clearable
+              placeholder="全部部门"
+            />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select v-model="query.status" placeholder="全部" clearable>
+              <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <div class="list-head__actions">
           <el-button type="primary" @click="search">
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="resetQuery">重置</el-button>
-        </div>
-      </el-form>
-    </div>
-
-    <!-- 列表区 -->
-    <div class="page-card">
-      <div class="toolbar">
-        <div class="toolbar__title">
-          <h3>用户列表</h3>
-          <span class="text-muted">共 {{ total }} 条</span>
-        </div>
-        <div class="toolbar__actions">
+          <span class="list-head__divider" />
           <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
           <el-dropdown v-if="selectedRows.length" trigger="click">
             <el-button :loading="batchRunning">

@@ -197,10 +197,17 @@ function syncUnit(item: FormItem): void {
 }
 
 /** 单价默认取所选单位的采购价 / 销售价（价格挂在单位上，不在商品上） */
+/**
+ * 选中商品 / 规格 / 单位后带出默认单价。
+ * 优先级：商品级参考价（>0）→ 该单位的采购价 / 销售价。
+ * 参考价是「开单价的心理锚点」，录了就用它；没录才回落到单位上的历史成交价。
+ */
 function applyPrice(item: FormItem): void {
   const u = unitOf(item)
   if (!u) return
-  item.price = isPurchase.value ? u.purchasePrice : u.salePrice
+  const p = picks.value.find((x) => x.id === item.productId)
+  const ref = isPurchase.value ? Number(p?.refPurchasePrice ?? 0) : Number(p?.refSalePrice ?? 0)
+  item.price = ref > 0 ? ref : isPurchase.value ? u.purchasePrice : u.salePrice
 }
 
 const formRef = ref<FormInstance>()
@@ -587,67 +594,58 @@ onMounted(() => {
 
 <template>
   <div class="order-page">
-    <!-- 筛选区：网格自适应列数。
-         以前是 el-form inline + 固定像素宽，加了时间 / 结算之后控件宽度不一，
-         第二行会参差不齐地挤在一起。改成 grid 之后每列等宽、行高一致，
-         窗口变窄自动从四列折成两列，不会出现「一个控件孤零零占一行」。 -->
-    <div class="page-card search-bar">
-      <el-form class="filter-form" label-width="76px" @submit.prevent>
-        <el-form-item label="关键字">
-          <el-input
-            v-model="query.keyword"
-            placeholder="单号 / 往来单位 / 业务员"
-            clearable
-            @keyup.enter="search"
-          />
-        </el-form-item>
-        <el-form-item label="单据日期">
-          <el-date-picker
-            v-model="query.dateRange"
-            type="daterange"
-            value-format="YYYY-MM-DD"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            unlink-panels
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item label="单据状态">
-          <el-select v-model="query.status" placeholder="全部" clearable>
-            <el-option label="待处理" :value="1" />
-            <el-option label="已审核" :value="2" />
-            <el-option label="已取消" :value="3" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="结算状态">
-          <el-select v-model="query.settleStatus" placeholder="全部" clearable>
-            <el-option label="未结清" value="unpaid" />
-            <el-option label="部分结算" value="partial" />
-            <el-option label="已结清" value="paid" />
-          </el-select>
-        </el-form-item>
-        <div class="filter-form__actions">
+    <div class="page-card">
+      <!-- 搜索与操作合并一行：左侧列表名，中间筛选（自动折行），右侧查询/重置/新建/刷新 -->
+      <div class="list-head">
+        <span class="list-head__title">
+          {{ title }}<em>共 {{ total }} 张单据</em>
+          <em v-if="selection.length">
+            已选 {{ selection.length }} 项
+            <a @click="clearSelection(tableRef)">清空</a>
+          </em>
+        </span>
+        <el-form class="filter-form" label-width="76px" @submit.prevent>
+          <el-form-item label="关键字">
+            <el-input
+              v-model="query.keyword"
+              placeholder="单号 / 往来单位 / 业务员"
+              clearable
+              @keyup.enter="search"
+            />
+          </el-form-item>
+          <el-form-item label="单据日期">
+            <el-date-picker
+              v-model="query.dateRange"
+              type="daterange"
+              value-format="YYYY-MM-DD"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              unlink-panels
+            />
+          </el-form-item>
+          <el-form-item label="单据状态">
+            <el-select v-model="query.status" placeholder="全部" clearable>
+              <el-option label="待处理" :value="1" />
+              <el-option label="已审核" :value="2" />
+              <el-option label="已取消" :value="3" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="结算状态">
+            <el-select v-model="query.settleStatus" placeholder="全部" clearable>
+              <el-option label="未结清" value="unpaid" />
+              <el-option label="部分结算" value="partial" />
+              <el-option label="已结清" value="paid" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <div class="list-head__actions">
           <el-button type="primary" @click="search">
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="reset">重置</el-button>
-        </div>
-      </el-form>
-    </div>
-
-    <div class="page-card">
-      <div class="toolbar">
-        <div class="toolbar__title">
-          <h3>{{ title }}</h3>
-          <span class="text-muted">共 {{ total }} 张单据</span>
-          <span v-if="selection.length" class="selection-tip">
-            已选 {{ selection.length }} 项
-            <a @click="clearSelection(tableRef)">清空</a>
-          </span>
-        </div>
-        <div class="toolbar__actions">
+          <span class="list-head__divider" />
           <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
           <el-dropdown v-if="selection.length" trigger="click">
             <el-button v-perm="`inv:${bizType}:finish`" :loading="batchRunning">
@@ -1069,28 +1067,6 @@ onMounted(() => {
 <style scoped lang="scss">
 .approve-alert {
   margin-bottom: 14px;
-}
-
-.filter-form {
-  display: grid;
-  // 四列等宽；容器窄了自动折行（minmax 保证每个控件都有可用宽度，
-  // 不会像 flex 那样把日期区间压成一条缝）
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 12px 20px;
-  align-items: end;
-
-  :deep(.el-form-item) {
-    margin: 0;
-  }
-
-  // 按钮单独占一整行并右对齐：混在 grid 里会按列宽左对齐，
-  // 看起来像「第五个筛选条件」而不是动作区
-  &__actions {
-    grid-column: 1 / -1;
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-  }
 }
 
 .table-pager {

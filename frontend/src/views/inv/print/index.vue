@@ -107,40 +107,35 @@ onMounted(load)
 
 <template>
   <div class="print-page">
-    <!-- 筛选区与其它列表一致：独立卡片 + 网格 -->
-    <div class="page-card search-bar">
-      <el-form class="filter-form" label-width="76px" @submit.prevent>
-        <el-form-item label="关键字">
-          <el-input
-            v-model="query.keyword"
-            placeholder="编码 / 名称 / 单据类型"
-            clearable
-            @keyup.enter="search"
-          />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="query.status" placeholder="全部状态" clearable>
-            <el-option label="启用" :value="1" />
-            <el-option label="停用" :value="0" />
-          </el-select>
-        </el-form-item>
-        <div class="filter-form__actions">
+    <div class="page-card">
+      <!-- 搜索与操作合并一行：左侧列表名，中间筛选，右侧查询/重置/新建/刷新 -->
+      <div class="list-head">
+        <span class="list-head__title">
+          打印模板<em>共 {{ total }} 个</em>
+        </span>
+        <el-form class="filter-form" label-width="76px" @submit.prevent>
+          <el-form-item label="关键字">
+            <el-input
+              v-model="query.keyword"
+              placeholder="编码 / 名称 / 单据类型"
+              clearable
+              @keyup.enter="search"
+            />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select v-model="query.status" placeholder="全部状态" clearable>
+              <el-option label="启用" :value="1" />
+              <el-option label="停用" :value="0" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <div class="list-head__actions">
           <el-button type="primary" @click="search">
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="reset">重置</el-button>
-        </div>
-      </el-form>
-    </div>
-
-    <div class="page-card">
-      <div class="toolbar">
-        <div class="toolbar__title">
-          <h3>打印模板</h3>
-          <span class="text-muted">共 {{ total }} 个模板</span>
-        </div>
-        <div class="toolbar__actions">
+          <span class="list-head__divider" />
           <el-button v-perm="'inv:print:create'" type="primary" @click="openCreateDialog">
             <AppIcon name="Plus" />
             <span>新增模板</span>

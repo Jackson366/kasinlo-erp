@@ -219,43 +219,37 @@ onMounted(async () => {
     <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <!-- 操作日志 -->
       <el-tab-pane label="操作日志" name="operation">
-        <div class="page-card search-bar">
-          <el-form class="filter-form" label-width="76px" @submit.prevent>
-            <el-form-item label="关键字">
-              <el-input
-                v-model="opQuery.keyword"
-                placeholder="账号 / 操作 / 路径"
-                clearable
-                @keyup.enter="searchOperations"
-              />
-            </el-form-item>
-            <el-form-item label="模块">
-              <el-select v-model="opQuery.module" placeholder="全部" clearable>
-                <el-option v-for="item in opModules" :key="item" :label="item" :value="item" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="方法">
-              <el-select v-model="opQuery.method" placeholder="全部" clearable>
-                <el-option v-for="item in methodOptions" :key="item" :label="item" :value="item" />
-              </el-select>
-            </el-form-item>
-            <div class="filter-form__actions">
+        <div class="page-card">
+          <!-- 搜索与操作合并一行 -->
+          <div class="list-head">
+            <span class="list-head__title">操作日志<em>共 {{ opTotal }} 条</em></span>
+            <el-form class="filter-form" label-width="76px" @submit.prevent>
+              <el-form-item label="关键字">
+                <el-input
+                  v-model="opQuery.keyword"
+                  placeholder="账号 / 操作 / 路径"
+                  clearable
+                  @keyup.enter="searchOperations"
+                />
+              </el-form-item>
+              <el-form-item label="模块">
+                <el-select v-model="opQuery.module" placeholder="全部" clearable>
+                  <el-option v-for="item in opModules" :key="item" :label="item" :value="item" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="方法">
+                <el-select v-model="opQuery.method" placeholder="全部" clearable>
+                  <el-option v-for="item in methodOptions" :key="item" :label="item" :value="item" />
+                </el-select>
+              </el-form-item>
+            </el-form>
+            <div class="list-head__actions">
               <el-button type="primary" @click="searchOperations">
                 <AppIcon name="Search" />
                 <span>查询</span>
               </el-button>
               <el-button @click="resetOperations">重置</el-button>
-            </div>
-          </el-form>
-        </div>
-
-        <div class="page-card">
-          <div class="toolbar">
-            <div class="toolbar__title">
-              <h3>操作日志</h3>
-              <span class="text-muted">共 {{ opTotal }} 条</span>
-            </div>
-            <div class="toolbar__actions">
+              <span class="list-head__divider" />
               <el-button v-perm="'system:log:export'" :loading="exportingOp" @click="exportOperations">
                 <AppIcon name="Download" />
                 <span>导出</span>
@@ -329,39 +323,33 @@ onMounted(async () => {
 
       <!-- 登录日志 -->
       <el-tab-pane label="登录日志" name="login">
-        <div class="page-card search-bar">
-          <el-form class="filter-form" label-width="76px" @submit.prevent>
-            <el-form-item label="关键字">
-              <el-input
-                v-model="loginQuery.keyword"
-                placeholder="账号 / IP / 说明"
-                clearable
-                @keyup.enter="searchLogins"
-              />
-            </el-form-item>
-            <el-form-item label="结果">
-              <el-select v-model="loginQuery.success" placeholder="全部" clearable>
-                <el-option label="成功" :value="true" />
-                <el-option label="失败" :value="false" />
-              </el-select>
-            </el-form-item>
-            <div class="filter-form__actions">
+        <div class="page-card">
+          <!-- 搜索与操作合并一行 -->
+          <div class="list-head">
+            <span class="list-head__title">登录日志<em>共 {{ loginTotal }} 条</em></span>
+            <el-form class="filter-form" label-width="76px" @submit.prevent>
+              <el-form-item label="关键字">
+                <el-input
+                  v-model="loginQuery.keyword"
+                  placeholder="账号 / IP / 说明"
+                  clearable
+                  @keyup.enter="searchLogins"
+                />
+              </el-form-item>
+              <el-form-item label="结果">
+                <el-select v-model="loginQuery.success" placeholder="全部" clearable>
+                  <el-option label="成功" :value="true" />
+                  <el-option label="失败" :value="false" />
+                </el-select>
+              </el-form-item>
+            </el-form>
+            <div class="list-head__actions">
               <el-button type="primary" @click="searchLogins">
                 <AppIcon name="Search" />
                 <span>查询</span>
               </el-button>
               <el-button @click="resetLogins">重置</el-button>
-            </div>
-          </el-form>
-        </div>
-
-        <div class="page-card">
-          <div class="toolbar">
-            <div class="toolbar__title">
-              <h3>登录日志</h3>
-              <span class="text-muted">共 {{ loginTotal }} 条</span>
-            </div>
-            <div class="toolbar__actions">
+              <span class="list-head__divider" />
               <el-button v-perm="'system:log:export'" :loading="exportingLogin" @click="exportLogins">
                 <AppIcon name="Download" />
                 <span>导出</span>

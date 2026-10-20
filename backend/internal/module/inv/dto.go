@@ -202,7 +202,10 @@ type ProductPickVO struct {
 	Code    string       `json:"code"`
 	Name    string       `json:"name"`
 	Barcode string       `json:"barcode"`
-	Specs   []PickSpecVO `json:"specs"`
+	// 参考进价 / 参考售价：开单选中商品时作为默认单价（>0 时优先于单位成交价）
+	RefPurchasePrice float64      `json:"refPurchasePrice"`
+	RefSalePrice     float64      `json:"refSalePrice"`
+	Specs            []PickSpecVO `json:"specs"`
 }
 
 // ProductPickResult 商品级联选项的返回体。

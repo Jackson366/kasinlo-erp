@@ -216,43 +216,39 @@ onMounted(load)
 
 <template>
   <div class="party-page">
-    <div class="page-card search-bar">
-      <el-form class="filter-form" label-width="76px" @submit.prevent>
-        <el-form-item label="关键字">
-          <el-input
-            v-model="query.keyword"
-            placeholder="编号 / 名称 / 联系人"
-            clearable
-            @keyup.enter="search"
-          />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="query.status" placeholder="全部" clearable>
-            <el-option label="启用" :value="1" />
-            <el-option label="停用" :value="0" />
-          </el-select>
-        </el-form-item>
-        <div class="filter-form__actions">
+    <div class="page-card">
+      <!-- 搜索与操作合并一行 -->
+      <div class="list-head">
+        <span class="list-head__title">
+          {{ title }}<em>{{ subtitle }} · 共 {{ total }} 条</em>
+          <em v-if="selection.length">
+            已选 {{ selection.length }} 项
+            <a @click="clearSelection(tableRef)">清空</a>
+          </em>
+        </span>
+        <el-form class="filter-form" label-width="76px" @submit.prevent>
+          <el-form-item label="关键字">
+            <el-input
+              v-model="query.keyword"
+              placeholder="编号 / 名称 / 联系人"
+              clearable
+              @keyup.enter="search"
+            />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select v-model="query.status" placeholder="全部" clearable>
+              <el-option label="启用" :value="1" />
+              <el-option label="停用" :value="0" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <div class="list-head__actions">
           <el-button type="primary" @click="search">
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="reset">重置</el-button>
-        </div>
-      </el-form>
-    </div>
-
-    <div class="page-card">
-      <div class="toolbar">
-        <div class="toolbar__title">
-          <h3>{{ title }}</h3>
-          <span class="text-muted">{{ subtitle }} · 共 {{ total }} 条</span>
-          <span v-if="selection.length" class="selection-tip">
-            已选 {{ selection.length }} 项
-            <a @click="clearSelection(tableRef)">清空</a>
-          </span>
-        </div>
-        <div class="toolbar__actions">
+          <span class="list-head__divider" />
           <el-button v-if="selection.length" v-perm="`inv:${partyPerm}:delete`" :loading="batchRunning" @click="batchDelete">
             批量删除
           </el-button>

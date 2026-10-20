@@ -754,71 +754,65 @@ onMounted(() => {
 
       <!-- 右栏：商品表格 -->
       <div class="product-main">
-        <div class="page-card search-bar">
-          <el-form class="filter-form" label-width="76px" @submit.prevent>
-            <el-form-item label="关键字">
-              <el-input
-                v-model="query.keyword"
-                placeholder="编码 / 名称 / 条码 / 规格"
-                clearable
-                @keyup.enter="search"
-              />
-            </el-form-item>
-            <el-form-item label="分类">
-              <el-select
-                v-model="query.categoryId"
-                placeholder="全部"
-                clearable
-                @change="search"
-              >
-                <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="状态">
-              <el-select v-model="query.status" placeholder="全部" clearable>
-                <el-option label="启用" :value="1" />
-                <el-option label="停用" :value="0" />
-              </el-select>
-            </el-form-item>
-            <div class="filter-form__actions">
+        <div class="page-card">
+          <!-- 搜索与操作合并一行 -->
+          <div class="list-head">
+            <span class="list-head__title">
+              商品<em>共 {{ total }} 条</em>
+              <em v-if="selection.length">
+                已选 {{ selection.length }} 项
+                <a @click="clearSelection(tableRef)">清空</a>
+              </em>
+            </span>
+            <el-form class="filter-form" label-width="76px" @submit.prevent>
+              <el-form-item label="关键字">
+                <el-input
+                  v-model="query.keyword"
+                  placeholder="编码 / 名称 / 条码 / 规格"
+                  clearable
+                  @keyup.enter="search"
+                />
+              </el-form-item>
+              <el-form-item label="分类">
+                <el-select
+                  v-model="query.categoryId"
+                  placeholder="全部"
+                  clearable
+                  @change="search"
+                >
+                  <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="状态">
+                <el-select v-model="query.status" placeholder="全部" clearable>
+                  <el-option label="启用" :value="1" />
+                  <el-option label="停用" :value="0" />
+                </el-select>
+              </el-form-item>
+            </el-form>
+            <div class="list-head__actions">
               <el-button type="primary" @click="search">
                 <AppIcon name="Search" />
                 <span>查询</span>
               </el-button>
               <el-button @click="reset">重置</el-button>
+              <span class="list-head__divider" />
+              <el-button v-if="selection.length" v-perm="'inv:product:delete'" :loading="batchRunning" @click="batchDelete">
+                批量删除
+              </el-button>
+              <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">
+                导出{{ selection.length ? '选中' : '' }}
+              </el-button>
+              <el-button @click="printVisible = true">打印</el-button>
+              <el-button v-perm="'inv:product:create'" type="primary" @click="openCreate">
+                <AppIcon name="Plus" />
+                <span>新增商品</span>
+              </el-button>
+              <el-button @click="load">
+                <AppIcon name="Refresh" />
+              </el-button>
             </div>
-          </el-form>
-        </div>
-
-        <div class="page-card">
-          <div class="toolbar">
-        <div class="toolbar__title">
-          <h3>商品管理</h3>
-          <span class="text-muted">
-            商品档案与价格维护 · 共 {{ total }} 条 · 展开行可看规格与单位
-          </span>
-          <span v-if="selection.length" class="selection-tip">
-            已选 {{ selection.length }} 项
-            <a @click="clearSelection(tableRef)">清空</a>
-          </span>
-        </div>
-        <div class="toolbar__actions">
-          <el-button v-if="selection.length" v-perm="'inv:product:delete'" :loading="batchRunning" @click="batchDelete">
-            批量删除
-          </el-button>
-          <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">
-            导出{{ selection.length ? '选中' : '' }}
-          </el-button>
-          <el-button @click="printVisible = true">打印</el-button>
-          <el-button v-perm="'inv:product:create'" type="primary" @click="openCreate">
-            <AppIcon name="Plus" />
-            <span>新增商品</span>
-          </el-button>
-          <el-button @click="load">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
-      </div>
+          </div>
 
       <el-table
         ref="tableRef"

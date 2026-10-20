@@ -277,33 +277,27 @@ onMounted(() => {
 
 <template>
   <div class="role-page">
-    <div class="page-card search-bar">
-      <el-form class="filter-form" label-width="76px" @submit.prevent>
-        <el-form-item label="关键字">
-          <el-input
-            v-model="query.keyword"
-            placeholder="角色名称 / 标识"
-            clearable
-            @keyup.enter="search"
-          />
-        </el-form-item>
-        <div class="filter-form__actions">
+    <div class="page-card">
+      <!-- 搜索与操作合并一行 -->
+      <div class="list-head">
+        <span class="list-head__title">角色<em>共 {{ total }} 条</em></span>
+        <el-form class="filter-form" label-width="76px" @submit.prevent>
+          <el-form-item label="关键字">
+            <el-input
+              v-model="query.keyword"
+              placeholder="角色名称 / 标识"
+              clearable
+              @keyup.enter="search"
+            />
+          </el-form-item>
+        </el-form>
+        <div class="list-head__actions">
           <el-button type="primary" @click="search">
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="resetQuery">重置</el-button>
-        </div>
-      </el-form>
-    </div>
-
-    <div class="page-card">
-      <div class="toolbar">
-        <div class="toolbar__title">
-          <h3>角色列表</h3>
-          <span class="text-muted">共 {{ total }} 条</span>
-        </div>
-        <div class="toolbar__actions">
+          <span class="list-head__divider" />
           <el-button v-if="selectedRows.length" :loading="batchRunning" @click="batchDelete">
             批量删除（{{ selectedRows.length }}）
           </el-button>

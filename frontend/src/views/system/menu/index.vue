@@ -412,42 +412,37 @@ onMounted(loadTree)
 
 <template>
   <div class="menu-page">
-    <div class="page-card search-bar">
-      <el-form class="filter-form" label-width="76px" @submit.prevent>
-        <el-form-item label="关键字">
-          <el-input
-            v-model="keyword"
-            placeholder="标题 / 路由名称 / 权限标识"
-            clearable
-            @keyup.enter="loadTree"
-          />
-        </el-form-item>
-        <el-form-item label="类型">
-          <el-select v-model="typeFilter" placeholder="全部" clearable>
-            <el-option label="目录" value="dir" />
-            <el-option label="菜单" value="menu" />
-            <el-option label="按钮" value="button" />
-          </el-select>
-        </el-form-item>
-        <div class="filter-form__actions">
+    <div class="page-card">
+      <!-- 搜索与操作合并一行 -->
+      <div class="list-head">
+        <span class="list-head__title">
+          菜单
+          <em>共 {{ stats.total }} 项（目录 {{ stats.dir }} · 菜单 {{ stats.menu }} · 按钮 {{ stats.button }}）</em>
+        </span>
+        <el-form class="filter-form" label-width="76px" @submit.prevent>
+          <el-form-item label="关键字">
+            <el-input
+              v-model="keyword"
+              placeholder="标题 / 路由名称 / 权限标识"
+              clearable
+              @keyup.enter="loadTree"
+            />
+          </el-form-item>
+          <el-form-item label="类型">
+            <el-select v-model="typeFilter" placeholder="全部" clearable>
+              <el-option label="目录" value="dir" />
+              <el-option label="菜单" value="menu" />
+              <el-option label="按钮" value="button" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <div class="list-head__actions">
           <el-button type="primary" @click="loadTree">
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="resetQuery">重置</el-button>
-        </div>
-      </el-form>
-    </div>
-
-    <div class="page-card">
-      <div class="toolbar">
-        <div class="toolbar__title">
-          <h3>菜单结构</h3>
-          <span class="text-muted">
-            共 {{ stats.total }} 项（目录 {{ stats.dir }} · 菜单 {{ stats.menu }} · 按钮 {{ stats.button }}）
-          </span>
-        </div>
-        <div class="toolbar__actions">
+          <span class="list-head__divider" />
           <el-button :loading="exporting" @click="handleExport">导出</el-button>
           <el-button @click="printVisible = true">打印</el-button>
           <el-button v-perm="'system:menu:create'" type="primary" @click="openCreate(0)">
