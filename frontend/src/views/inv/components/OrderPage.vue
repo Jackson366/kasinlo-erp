@@ -26,6 +26,7 @@ import OrderPrintDialog from './OrderPrintDialog.vue'
 import { formatDay, formatMoney, formatQty } from '@/utils/format'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useListTools } from '@/composables/useListTools'
+import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 const props = defineProps<{
   bizType: 'purchase' | 'sales'
@@ -275,19 +276,17 @@ function today(): string {
 }
 
 /**
- * 商品下拉的显示文案：名称 + 编码 + 规格数。
+ * 商品下拉的显示文案：名称（编码）+ 参考价。
  *
- * 明细下行还会选到具体规格与单位，所以这里刻意**不**把规格写死进下拉文案 ——
- * 一个商品下挂了「φ20 / φ25」两个规格，把它拼进商品名会让每一行都长得一样，
- * 反而看不出「这个商品有几个规格可选」。
+ * 刻意**不**带规格数量与单位：明细行后面就有「规格」「单位」两列，
+ * 再塞进商品名里只会让每一行都很长、还看不出这是同一件货。
  */
 function productLabel(p: InvProductPick): string {
   // 有码就带上：扫码枪敲完一串数字，用户要能一眼确认「选中的是这件货」
   const key = p.barcode ? `${p.code} / ${p.barcode}` : p.code
-  // 参考价直接写在候选里：选商品时就能看到会带出什么价，不用选了再回头核对
   const ref = isPurchase.value ? p.refPurchasePrice : p.refSalePrice
   const refText = ref > 0 ? ` · 参考${isPurchase.value ? '进价' : '售价'} ¥${ref.toFixed(2)}` : ''
-  return `${p.name}（${key}）· ${p.specs.length} 个规格${refText}`
+  return `${p.name}（${key}）${refText}`
 }
 
 function addItem(): void {
@@ -599,6 +598,8 @@ onMounted(() => {
   load()
   loadOptions()
 })
+// 关键字录入即查询（防抖），不必再按回车
+const { searchSoon } = useDebouncedSearch(search)
 </script>
 
 <template>
@@ -616,7 +617,7 @@ onMounted(() => {
         <el-form class="filter-form" label-width="76px" @submit.prevent>
           <el-form-item label="关键字">
             <el-input
-              v-model="query.keyword"
+              v-model="query.keyword" @input="searchSoon"
               placeholder="单号 / 往来单位 / 业务员"
               clearable
               @keyup.enter="search"

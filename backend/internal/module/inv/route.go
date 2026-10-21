@@ -80,6 +80,8 @@ func Register(rg *gin.RouterGroup) {
 		g.GET("/report/ranking", middleware.RequirePerm("inv:report:view"), h.ReportRanking)
 		g.GET("/report/category", middleware.RequirePerm("inv:report:view"), h.ReportCategory)
 		g.GET("/report/inventory", middleware.RequirePerm("inv:report:view"), h.ReportInventory)
+		g.GET("/report/stock-ranking", middleware.RequirePerm("inv:report:view"), h.ReportStockRanking)
+		g.GET("/report/detail", middleware.RequirePerm("inv:report:view"), h.ReportDetail)
 		g.GET("/report/export", middleware.RequirePerm("inv:report:view"), h.ReportExport)
 
 		// 打印模板

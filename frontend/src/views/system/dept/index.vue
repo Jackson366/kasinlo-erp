@@ -12,6 +12,7 @@ import { formatDate, flattenTree } from '@/utils/format'
 import { downloadFile } from '@/utils/download'
 import { useLatestGuard } from '@/composables/useLatestGuard'
 import { useCrudDialog } from '@/composables/useCrudDialog'
+import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 defineOptions({ name: 'SystemDept' })
 
@@ -180,6 +181,8 @@ async function handleExport(): Promise<void> {
 }
 
 onMounted(loadTree)
+// 关键字录入即查询（防抖），不必再按回车
+const { searchSoon } = useDebouncedSearch(loadTree)
 </script>
 
 <template>
@@ -191,7 +194,7 @@ onMounted(loadTree)
         <el-form class="filter-form" label-width="76px" @submit.prevent>
           <el-form-item label="关键字">
             <el-input
-              v-model="keyword"
+              v-model="keyword" @input="searchSoon"
               placeholder="部门名称 / 负责人"
               clearable
               @keyup.enter="loadTree"

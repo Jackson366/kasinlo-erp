@@ -30,6 +30,7 @@ import { useTableQuery } from '@/composables/useTableQuery'
 import { useListTools } from '@/composables/useListTools'
 import { useLatestGuard } from '@/composables/useLatestGuard'
 import StockPrintDialog from '../components/StockPrintDialog.vue'
+import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 defineOptions({ name: 'InvStock' })
 
@@ -313,9 +314,10 @@ function onPickVisible(open: boolean): void {
 
 /** 商品下拉文案：名称 + 编码 + 规格数（具体规格在下一级选） */
 function productLabel(p: InvProductPick): string {
-  // 有码就带上：扫码枪敲完一串数字，用户要能一眼确认「选中的是这件货」
+  // 有码就带上：扫码枪敲完一串数字，用户要能一眼确认「选中的是这件货」。
+  // 不带规格数量 —— 明细行后面就有规格 / 单位两列
   const key = p.barcode ? `${p.code} / ${p.barcode}` : p.code
-  return `${p.name}（${key}）· ${p.specs.length} 个规格`
+  return `${p.name}（${key}）`
 }
 
 function onTabChange(name: string | number): void {
@@ -391,6 +393,9 @@ onMounted(() => {
   loadInventory()
   loadPicks()
 })
+// 关键字录入即查询（防抖）：单据 tab 用 search，库存 tab 用 loadInventory
+const { searchSoon } = useDebouncedSearch(search)
+const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
 </script>
 
 <template>
@@ -411,7 +416,7 @@ onMounted(() => {
             <el-form class="filter-form" label-width="76px" @submit.prevent>
               <el-form-item label="关键字">
                 <el-input
-                  v-model="query.keyword"
+                  v-model="query.keyword" @input="searchSoon"
                   placeholder="单号"
                   clearable
                   @keyup.enter="search"
@@ -529,7 +534,7 @@ onMounted(() => {
             <el-form class="filter-form" label-width="76px" @submit.prevent>
               <el-form-item label="关键字">
                 <el-input
-                  v-model="inventoryKeyword"
+                  v-model="inventoryKeyword" @input="searchInventorySoon"
                   placeholder="商品编码 / 名称"
                   clearable
                   @keyup.enter="loadInventory"

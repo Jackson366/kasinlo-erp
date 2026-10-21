@@ -807,6 +807,47 @@ definitions:
       ratio:
         type: number
     type: object
+  inv.ReportDetailResult:
+    properties:
+      amount:
+        type: number
+      qty:
+        type: number
+      rows:
+        items:
+          $ref: '#/definitions/inv.ReportDetailRow'
+        type: array
+      total:
+        type: integer
+      truncated:
+        description: Truncated 为 true 表示命中行数超过上限被截断（明细只展示前 N 行）
+        type: boolean
+    type: object
+  inv.ReportDetailRow:
+    properties:
+      amount:
+        type: number
+      orderDate:
+        type: string
+      orderId:
+        type: integer
+      orderNo:
+        type: string
+      partyName:
+        type: string
+      price:
+        type: number
+      productName:
+        type: string
+      qty:
+        type: number
+      salesman:
+        type: string
+      spec:
+        type: string
+      unit:
+        type: string
+    type: object
   inv.ReportInventory:
     properties:
       categoryValue:
@@ -849,6 +890,27 @@ definitions:
       rank:
         type: integer
       ratio:
+        type: number
+    type: object
+  inv.ReportStockRankRow:
+    properties:
+      productCode:
+        type: string
+      productId:
+        type: integer
+      productName:
+        type: string
+      rank:
+        type: integer
+      ratio:
+        type: number
+      spec:
+        type: string
+      stock:
+        type: number
+      unit:
+        type: string
+      value:
         type: number
     type: object
   inv.ReportSummary:
@@ -3065,6 +3127,34 @@ paths:
       summary: 品类销售占比
       tags:
       - 进销存-报表
+  /inv/report/detail:
+    get:
+      parameters:
+      - description: sales / purchase（默认 sales）
+        in: query
+        name: biz
+        type: string
+      - description: 行数上限（默认 2000）
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.ReportDetailResult'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 销售 / 采购明细（单据明细粒度）
+      tags:
+      - 进销存-报表
   /inv/report/export:
     get:
       description: 返回 xlsx 二进制流，筛选参数与报表接口一致。
@@ -3176,6 +3266,27 @@ paths:
       security:
       - BearerAuth: []
       summary: 销售 / 采购排行（按客户、供应商或商品）
+      tags:
+      - 进销存-报表
+  /inv/report/stock-ranking:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/inv.ReportStockRankRow'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 库存排行（按库存金额降序，全量）
       tags:
       - 进销存-报表
   /inv/report/summary:

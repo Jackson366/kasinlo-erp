@@ -274,9 +274,18 @@ func (s *Service) ReportTrend(days int, f ReportFilter, actor *authz.Identity) (
 //
 // dimension 取 customer（按交易对手）或 product（按商品明细）；
 // biz 取 sales（销售排行）或 purchase（采购排行，交易对手即供应商）。
+// reportRankMaxRows 是全量排行的保险丝：正常业务量远达不到，
+// 但没有上限的 GROUP BY 一旦碰上异常数据会把整张表读进内存。
+const reportRankMaxRows = 1000
+
 func (s *Service) ReportRanking(f ReportFilter, dimension, biz string, limit int, actor *authz.Identity) ([]ReportRankRow, error) {
-	if limit <= 0 || limit > 50 {
-		limit = 5
+	// limit <= 0 = 全量排（报表要看完整名次，不是「前 5 名」）；
+	// 传了正数仍按传入值截断，给「只看前 N」留口子
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > reportRankMaxRows {
+		limit = reportRankMaxRows
 	}
 	if biz != model.InvBizSales && biz != model.InvBizPurchase {
 		biz = model.InvBizSales
@@ -321,7 +330,11 @@ func (s *Service) reportPartyRanking(f ReportFilter, biz string, start time.Time
 			Where("inv_order_items.order_id = inv_orders.id AND "+cond, args...)
 		tx = tx.Where("EXISTS (?)", sub)
 	}
-	if err := tx.Group("party_id, party_name").Order("amount DESC").Limit(limit).Scan(&rows).Error; err != nil {
+	q := tx.Group("party_id, party_name").Order("amount DESC")
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if err := q.Scan(&rows).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	var sum float64
@@ -375,7 +388,11 @@ func (s *Service) reportProductRanking(f ReportFilter, biz string, start time.Ti
 		tx = tx.Joins("JOIN inv_products AS p ON p.id = i.product_id AND p.deleted_at IS NULL").
 			Where(cond, args...)
 	}
-	if err := tx.Group("i.product_id, i.product_name").Order("amount DESC").Limit(limit).Scan(&rows).Error; err != nil {
+	q := tx.Group("i.product_id, i.product_name").Order("amount DESC")
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if err := q.Scan(&rows).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	var sum float64
@@ -537,4 +554,153 @@ func (s *Service) ReportInventory() (*ReportInventory, error) {
 		})
 	}
 	return &out, nil
+}
+
+// ReportStockRanking 库存排行：按「库存金额」降序，全量返回。
+//
+// 计价口径与库存分析一致：库存数量（基本单位）× 基本单位采购价。
+// 库存是共享主数据，不按数据范围收窄（与库存查询页一致）。
+func (s *Service) ReportStockRanking(limit int) ([]ReportStockRankRow, error) {
+	if limit <= 0 || limit > reportRankMaxRows {
+		limit = reportRankMaxRows
+	}
+	type row struct {
+		ProductID   int64
+		ProductCode string
+		ProductName string
+		Spec        string
+		Unit        string
+		Stock       float64
+		Value       float64
+	}
+	base := func() *gorm.DB {
+		return s.db.Table("inv_product_specs AS sp").
+			Joins("JOIN inv_products AS p ON p.id = sp.product_id AND p.deleted_at IS NULL").
+			Joins("LEFT JOIN inv_product_units AS u ON u.spec_id = sp.id AND u.is_base AND u.deleted_at IS NULL").
+			Where("sp.deleted_at IS NULL AND p.status = ? AND sp.status = ?",
+				model.StatusEnabled, model.StatusEnabled)
+	}
+	// 占比要按「全部库存金额」算，不能只按前 N 行之和
+	var total float64
+	if err := base().Select("COALESCE(SUM(sp.stock * COALESCE(u.purchase_price, 0)), 0)").Scan(&total).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	var rows []row
+	if err := base().
+		Select("p.id AS product_id, p.code AS product_code, p.name AS product_name, " +
+			"sp.spec AS spec, COALESCE(u.unit, '') AS unit, sp.stock AS stock, " +
+			"sp.stock * COALESCE(u.purchase_price, 0) AS value").
+		Order("value DESC, sp.id ASC").Limit(limit).Scan(&rows).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	out := make([]ReportStockRankRow, 0, len(rows))
+	for i, r := range rows {
+		ratio := 0.0
+		if total > 0 {
+			ratio = round2(r.Value / total * 100)
+		}
+		out = append(out, ReportStockRankRow{
+			Rank: i + 1, ProductID: r.ProductID, ProductCode: r.ProductCode,
+			ProductName: r.ProductName, Spec: r.Spec, Unit: r.Unit,
+			Stock: round2(r.Stock), Value: round2(r.Value), Ratio: ratio,
+		})
+	}
+	return out, nil
+}
+
+// ReportDetail 销售 / 采购明细（单据明细粒度，一行一个商品）。
+//
+// 与排行同一套过滤：已审核、日期区间、可选品类、按数据范围收窄。
+// 明细天然比排行长得多，所以给了行数上限；截断时 Truncated=true，
+// 前端要如实提示「只展示前 N 行」，而不是让人以为账就这么点。
+func (s *Service) ReportDetail(f ReportFilter, biz string, limit int, actor *authz.Identity) (*ReportDetailResult, error) {
+	if biz != model.InvBizSales && biz != model.InvBizPurchase {
+		biz = model.InvBizSales
+	}
+	if limit <= 0 || limit > 5000 {
+		limit = 2000
+	}
+	start, _, err := f.start()
+	if err != nil {
+		return nil, err
+	}
+	end, err := f.end()
+	if err != nil {
+		return nil, err
+	}
+	build := func() (*gorm.DB, error) {
+		tx := s.db.Table("inv_order_items AS i").
+			Joins("JOIN inv_orders AS o ON o.id = i.order_id AND o.deleted_at IS NULL").
+			Where("i.deleted_at IS NULL AND o.biz_type = ? AND o.status = ? AND o.order_date >= ?",
+				biz, model.InvStatusDone, start)
+		tx = s.applyCreatorAs(tx, actor, "o")
+		if end != nil {
+			tx = tx.Where("o.order_date <= ?", *end)
+		}
+		if f.CategoryID > 0 {
+			cond, args, e := s.categoryScope(f.CategoryID, "p.category_id")
+			if e != nil {
+				return nil, e
+			}
+			tx = tx.Joins("JOIN inv_products AS p ON p.id = i.product_id AND p.deleted_at IS NULL").
+				Where(cond, args...)
+		}
+		return tx, nil
+	}
+
+	var agg struct {
+		Cnt    int64
+		Amount float64
+		Qty    float64
+	}
+	atx, err := build()
+	if err != nil {
+		return nil, err
+	}
+	if err := atx.Select("COUNT(*) AS cnt, COALESCE(SUM(i.amount), 0) AS amount, COALESCE(SUM(i.qty_base), 0) AS qty").
+		Scan(&agg).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+
+	type row struct {
+		OrderID     int64
+		OrderNo     string
+		OrderDate   time.Time
+		PartyName   string
+		Salesman    string
+		ProductName string
+		Spec        string
+		Unit        string
+		Qty         float64
+		Price       float64
+		Amount      float64
+	}
+	var rows []row
+	rtx, err := build()
+	if err != nil {
+		return nil, err
+	}
+	if err := rtx.
+		Select("o.id AS order_id, o.order_no AS order_no, o.order_date AS order_date, " +
+			"o.party_name AS party_name, o.salesman AS salesman, i.product_name AS product_name, " +
+			"i.spec AS spec, i.unit AS unit, i.qty AS qty, i.price AS price, i.amount AS amount").
+		Order("o.order_date DESC, o.id DESC, i.id ASC").Limit(limit).Scan(&rows).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+
+	out := &ReportDetailResult{
+		Rows:      make([]ReportDetailRow, 0, len(rows)),
+		Total:     agg.Cnt,
+		Amount:    round2(agg.Amount),
+		Qty:       round2(agg.Qty),
+		Truncated: agg.Cnt > int64(len(rows)),
+	}
+	for _, r := range rows {
+		out.Rows = append(out.Rows, ReportDetailRow{
+			OrderID: r.OrderID, OrderNo: r.OrderNo, OrderDate: r.OrderDate.Format("2006-01-02"),
+			PartyName: r.PartyName, Salesman: r.Salesman, ProductName: r.ProductName,
+			Spec: r.Spec, Unit: r.Unit, Qty: round2(r.Qty), Price: round2(r.Price), Amount: round2(r.Amount),
+		})
+	}
+	return out, nil
 }

@@ -15,6 +15,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import { useCrudDialog } from '@/composables/useCrudDialog'
 import { useTableQuery } from '@/composables/useTableQuery'
 import TemplateDesigner from '../components/TemplateDesigner.vue'
+import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 defineOptions({ name: 'InvPrint' })
 
@@ -103,6 +104,8 @@ async function removeRow(row: InvPrintTemplateRow): Promise<void> {
 }
 
 onMounted(load)
+// 关键字录入即查询（防抖），不必再按回车
+const { searchSoon } = useDebouncedSearch(search)
 </script>
 
 <template>
@@ -116,7 +119,7 @@ onMounted(load)
         <el-form class="filter-form" label-width="76px" @submit.prevent>
           <el-form-item label="关键字">
             <el-input
-              v-model="query.keyword"
+              v-model="query.keyword" @input="searchSoon"
               placeholder="编码 / 名称 / 单据类型"
               clearable
               @keyup.enter="search"

@@ -24,6 +24,7 @@ import UserImportDialog from './UserImportDialog.vue'
 import UserPasswordDialog from './UserPasswordDialog.vue'
 import { exportStamp, formatDate, formatDateTime } from '@/utils/format'
 import { useUserStore } from '@/store'
+import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 defineOptions({ name: 'SystemUser' })
 
@@ -370,6 +371,8 @@ onMounted(() => {
   // 失败提示由请求层统一弹出，吞掉 rejection 避免未捕获告警
   void Promise.all([loadOptions(), loadList()]).catch(() => {})
 })
+// 关键字录入即查询（防抖），不必再按回车
+const { searchSoon } = useDebouncedSearch(search)
 </script>
 
 <template>
@@ -381,7 +384,7 @@ onMounted(() => {
         <el-form class="filter-form" label-width="76px" @submit.prevent>
           <el-form-item label="关键字">
             <el-input
-              v-model="query.keyword"
+              v-model="query.keyword" @input="searchSoon"
               placeholder="用户名 / 昵称 / 手机号"
               clearable
               @keyup.enter="search"

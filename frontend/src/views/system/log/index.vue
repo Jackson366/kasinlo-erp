@@ -9,6 +9,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import { exportStamp, formatDateTime, formatLatency, fromNow } from '@/utils/format'
+import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 defineOptions({ name: 'SystemLog' })
 
@@ -210,6 +211,9 @@ onMounted(async () => {
   // 首屏只有「操作日志」可见：只加载它 + 模块下拉，登录日志等切过去再说
   await Promise.all([ensureOperations(), loadModules()])
 })
+// 关键字录入即查询（防抖）：操作日志 / 登录日志各一套
+const { searchSoon: searchOpSoon } = useDebouncedSearch(searchOperations)
+const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
 </script>
 
 <template>
@@ -226,7 +230,7 @@ onMounted(async () => {
             <el-form class="filter-form" label-width="76px" @submit.prevent>
               <el-form-item label="关键字">
                 <el-input
-                  v-model="opQuery.keyword"
+                  v-model="opQuery.keyword" @input="searchOpSoon"
                   placeholder="账号 / 操作 / 路径"
                   clearable
                   @keyup.enter="searchOperations"
@@ -330,7 +334,7 @@ onMounted(async () => {
             <el-form class="filter-form" label-width="76px" @submit.prevent>
               <el-form-item label="关键字">
                 <el-input
-                  v-model="loginQuery.keyword"
+                  v-model="loginQuery.keyword" @input="searchLoginSoon"
                   placeholder="账号 / IP / 说明"
                   clearable
                   @keyup.enter="searchLogins"

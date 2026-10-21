@@ -1178,11 +1178,35 @@ async function main() {
     ['/inv/report/trend?days=30', '趋势'],
     ['/inv/report/ranking?range=month&limit=5', '排行'],
     ['/inv/report/category?range=month', '品类占比'],
+    ['/inv/report/stock-ranking', '库存排行'],
+    ['/inv/report/detail?range=month&biz=sales', '销售明细'],
+    ['/inv/report/detail?range=month&biz=purchase', '采购明细'],
   ]
   for (const [uri, label] of reportCases) {
     const r = await request('GET', uri, { token })
     ok(`报表${label}`, r.json?.code === 0, JSON.stringify(r.json).slice(0, 160))
   }
+  // 排行全量：limit=0 表示不截断（返回行数应 >= 限 1 条时的行数）
+  const rankAll = await request('GET', '/inv/report/ranking?range=year&dimension=product&biz=sales&limit=0', { token })
+  ok(
+    '排行 limit=0 返回全量（不截成前 N）',
+    rankAll.json?.code === 0 && Array.isArray(rankAll.json?.data) && rankAll.json.data.length >= 1,
+    `rows=${rankAll.json?.data?.length}`,
+  )
+  // 明细行必须有商品与金额，且合计与行内金额之和一致（同一口径两处实现）
+  const detailProbe = await request('GET', '/inv/report/detail?range=year&biz=sales', { token })
+  const detailRows = detailProbe.json?.data?.rows ?? []
+  const detailSum = detailRows.reduce((s, r) => s + Number(r.amount || 0), 0)
+  ok(
+    '销售明细行结构完整（单号/商品/金额）',
+    detailProbe.json?.code === 0 && detailRows.every((r) => r.orderNo && r.productName && typeof r.amount === 'number'),
+    JSON.stringify(detailRows[0] || {}),
+  )
+  ok(
+    '销售明细合计 == 行金额之和',
+    Math.abs(detailSum - Number(detailProbe.json?.data?.amount ?? -1)) < 0.02,
+    `sum=${detailSum.toFixed(2)} total=${detailProbe.json?.data?.amount}`,
+  )
   // 排行维度：客户 / 产品（销售），供应商（采购）
   const rankCustomer = await request('GET', '/inv/report/ranking?range=year&dimension=customer&biz=sales&limit=10', { token })
   ok(

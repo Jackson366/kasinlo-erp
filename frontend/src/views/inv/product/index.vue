@@ -43,6 +43,7 @@ import { formatDate, formatMoney, formatQty } from '@/utils/format'
 import { useCrudDialog } from '@/composables/useCrudDialog'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useListTools } from '@/composables/useListTools'
+import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 defineOptions({ name: 'InvProduct' })
 
@@ -135,6 +136,16 @@ const form = reactive<InvProductPayload>({
  * 数据一直是同一个 form.specs，折叠只影响「显不显示」。
  */
 const showPrice = ref(false)
+
+/**
+ * 「只有一组」= 一个规格 + 一个单位。
+ *
+ * 这是绝大多数商品的样子（一个商品一个规格、一个计量单位），此时压成**一行**
+ * 就够了：规格 / 单位 / 换算率 / 预警 排开，不必先摆一个「规格 1」卡片、
+ * 再在卡片里摆一张带表头的单位小表 —— 那看起来像两组东西。
+ * 一旦用户点了「添加单位 / 添加规格」，自动落到分块布局（带表头，多行才看得清）。
+ */
+const soloGroup = computed(() => form.specs.length === 1 && form.specs[0].units.length === 1)
 
 // ---------------- 录入查重 ----------------
 // 名称失焦（或停止输入 400ms）后拉一次同名商品，只提示不拦截。
@@ -687,6 +698,8 @@ onMounted(() => {
   loadCategories()
   loadCatTree()
 })
+// 关键字录入即查询（防抖），不必再按回车
+const { searchSoon } = useDebouncedSearch(search)
 </script>
 
 <template>
@@ -770,7 +783,7 @@ onMounted(() => {
             <el-form class="filter-form" label-width="76px" @submit.prevent>
               <el-form-item label="关键字">
                 <el-input
-                  v-model="query.keyword"
+                  v-model="query.keyword" @input="searchSoon"
                   placeholder="编码 / 名称 / 条码 / 规格"
                   clearable
                   @keyup.enter="search"
@@ -1099,7 +1112,78 @@ onMounted(() => {
                form.validate() 调到 —— 否则 rules.specs 就是一段死配置。 -->
           <el-form-item prop="specs" class="spec-errors" label-width="0" />
 
-          <div class="spec-list">
+          <!-- 只有一组：规格 + 单位压成一行 -->
+          <div v-if="soloGroup" class="spec-solo">
+            <div class="spec-solo__field is-spec">
+              <span class="spec-solo__label">规格</span>
+              <el-form-item :prop="`specs.0.spec`" class="spec-solo__item">
+                <el-input v-model="form.specs[0].spec" />
+              </el-form-item>
+            </div>
+            <div class="spec-solo__field is-unit">
+              <span class="spec-solo__label">单位</span>
+              <el-form-item :prop="`specs.0.units.0.unit`" class="spec-solo__item">
+                <el-input v-model="form.specs[0].units[0].unit" />
+              </el-form-item>
+            </div>
+            <div class="spec-solo__field is-rate">
+              <span class="spec-solo__label">换算率</span>
+              <el-form-item class="spec-solo__item">
+                <el-input-number
+                  v-model="form.specs[0].units[0].rate"
+                  :min="0.0001"
+                  :precision="4"
+                  :controls="false"
+                />
+              </el-form-item>
+            </div>
+            <div class="spec-solo__field is-num">
+              <span class="spec-solo__label">预警</span>
+              <el-form-item class="spec-solo__item">
+                <el-input-number
+                  v-model="form.specs[0].warnStock"
+                  :min="0"
+                  :precision="2"
+                  :controls="false"
+                />
+              </el-form-item>
+            </div>
+            <div v-if="showPrice" class="spec-solo__field is-num">
+              <span class="spec-solo__label">采购价</span>
+              <el-form-item class="spec-solo__item">
+                <el-input-number
+                  v-model="form.specs[0].units[0].purchasePrice"
+                  :min="0"
+                  :precision="2"
+                  :controls="false"
+                />
+              </el-form-item>
+            </div>
+            <div v-if="showPrice" class="spec-solo__field is-num">
+              <span class="spec-solo__label">销售价</span>
+              <el-form-item class="spec-solo__item">
+                <el-input-number
+                  v-model="form.specs[0].units[0].salePrice"
+                  :min="0"
+                  :precision="2"
+                  :controls="false"
+                />
+              </el-form-item>
+            </div>
+            <div class="spec-solo__ops">
+              <el-button link type="primary" @click="addUnit(form.specs[0])">
+                <AppIcon name="Plus" />
+                <span>添加单位</span>
+              </el-button>
+              <el-button link type="primary" @click="addSpec">
+                <AppIcon name="Plus" />
+                <span>添加规格</span>
+              </el-button>
+            </div>
+          </div>
+
+          <!-- 多组：分块 + 表头，多行才看得清 -->
+          <div v-else class="spec-list">
             <div v-for="(spec, si) in form.specs" :key="si" class="spec-card">
               <div class="spec-card__head">
                 <span class="spec-card__index">规格 {{ si + 1 }}</span>
@@ -1199,7 +1283,7 @@ onMounted(() => {
             </div>
           </div>
 
-          <el-button class="add-spec" @click="addSpec">
+          <el-button v-if="!soloGroup" class="add-spec" @click="addSpec">
             <AppIcon name="Plus" />
             <span>添加规格</span>
           </el-button>
@@ -1411,6 +1495,69 @@ onMounted(() => {
 
   & + & {
     margin-top: 10px;
+  }
+}
+
+// 单组模式：一行放下「规格 / 单位 / 换算率 / 预警（+ 价格）」
+.spec-solo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--app-border-light);
+  border-radius: var(--radius-md);
+  background: var(--app-surface);
+
+  &__field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    &.is-spec {
+      flex: 1;
+      min-width: 220px;
+    }
+
+    &.is-unit {
+      width: 160px;
+      flex: none;
+    }
+
+    &.is-rate {
+      width: 150px;
+      flex: none;
+    }
+
+    &.is-num {
+      width: 130px;
+      flex: none;
+    }
+  }
+
+  &__label {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+  }
+
+  // 无标签的 form-item 仍会留出 label-width 的缩进，只能 !important 抹掉
+  &__item {
+    flex: 1;
+    min-width: 0;
+    margin-bottom: 0;
+
+    :deep(.el-form-item__content) {
+      margin-left: 0 !important;
+    }
+  }
+
+  &__ops {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
   }
 }
 

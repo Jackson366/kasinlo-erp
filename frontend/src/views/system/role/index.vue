@@ -14,6 +14,7 @@ import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDia
 import StatusTag from '@/components/StatusTag.vue'
 import Pagination from '@/components/Pagination.vue'
 import { formatDate, exportStamp, flattenTree } from '@/utils/format'
+import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 defineOptions({ name: 'SystemRole' })
 
@@ -273,6 +274,8 @@ onMounted(() => {
     .then(() => loadList())
     .catch(() => {})
 })
+// 关键字录入即查询（防抖），不必再按回车
+const { searchSoon } = useDebouncedSearch(search)
 </script>
 
 <template>
@@ -284,7 +287,7 @@ onMounted(() => {
         <el-form class="filter-form" label-width="76px" @submit.prevent>
           <el-form-item label="关键字">
             <el-input
-              v-model="query.keyword"
+              v-model="query.keyword" @input="searchSoon"
               placeholder="角色名称 / 标识"
               clearable
               @keyup.enter="search"

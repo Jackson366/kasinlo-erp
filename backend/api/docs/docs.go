@@ -1929,6 +1929,56 @@ const docTemplate = `{
                 }
             }
         },
+        "/inv/report/detail": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-报表"
+                ],
+                "summary": "销售 / 采购明细（单据明细粒度）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "sales / purchase（默认 sales）",
+                        "name": "biz",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "行数上限（默认 2000）",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.ReportDetailResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/inv/report/export": {
             "get": {
                 "security": [
@@ -2107,6 +2157,45 @@ const docTemplate = `{
                                             "type": "array",
                                             "items": {
                                                 "$ref": "#/definitions/inv.ReportRankRow"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/report/stock-ranking": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-报表"
+                ],
+                "summary": "库存排行（按库存金额降序，全量）",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/inv.ReportStockRankRow"
                                             }
                                         }
                                     }
@@ -7027,6 +7116,68 @@ const docTemplate = `{
                 }
             }
         },
+        "inv.ReportDetailResult": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "qty": {
+                    "type": "number"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.ReportDetailRow"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "truncated": {
+                    "description": "Truncated 为 true 表示命中行数超过上限被截断（明细只展示前 N 行）",
+                    "type": "boolean"
+                }
+            }
+        },
+        "inv.ReportDetailRow": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "orderDate": {
+                    "type": "string"
+                },
+                "orderId": {
+                    "type": "integer"
+                },
+                "orderNo": {
+                    "type": "string"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "price": {
+                    "type": "number"
+                },
+                "productName": {
+                    "type": "string"
+                },
+                "qty": {
+                    "type": "number"
+                },
+                "salesman": {
+                    "type": "string"
+                },
+                "spec": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
         "inv.ReportInventory": {
             "type": "object",
             "properties": {
@@ -7085,6 +7236,38 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "ratio": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.ReportStockRankRow": {
+            "type": "object",
+            "properties": {
+                "productCode": {
+                    "type": "string"
+                },
+                "productId": {
+                    "type": "integer"
+                },
+                "productName": {
+                    "type": "string"
+                },
+                "rank": {
+                    "type": "integer"
+                },
+                "ratio": {
+                    "type": "number"
+                },
+                "spec": {
+                    "type": "string"
+                },
+                "stock": {
+                    "type": "number"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "value": {
                     "type": "number"
                 }
             }

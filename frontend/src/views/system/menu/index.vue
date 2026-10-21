@@ -14,6 +14,7 @@ import { downloadFile } from '@/utils/download'
 import { availableViewPaths } from '@/router/helper'
 import { useLatestGuard } from '@/composables/useLatestGuard'
 import { useCrudDialog } from '@/composables/useCrudDialog'
+import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 defineOptions({ name: 'SystemMenu' })
 
@@ -408,6 +409,8 @@ async function handleExport(): Promise<void> {
 }
 
 onMounted(loadTree)
+// 关键字录入即查询（防抖），不必再按回车
+const { searchSoon } = useDebouncedSearch(loadTree)
 </script>
 
 <template>
@@ -422,7 +425,7 @@ onMounted(loadTree)
         <el-form class="filter-form" label-width="76px" @submit.prevent>
           <el-form-item label="关键字">
             <el-input
-              v-model="keyword"
+              v-model="keyword" @input="searchSoon"
               placeholder="标题 / 路由名称 / 权限标识"
               clearable
               @keyup.enter="loadTree"

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * 报表中心：按「经营总览 / 销售排行 / 采购分析 / 库存分析」四个报表区组织，
- * 顶部共享时间与品类筛选栏。
+ * 报表中心：按「经营总览 / 销售排行 / 采购排行 / 库存排行 / 销售明细 / 采购明细」
+ * 六个报表区组织，顶部共享时间与品类筛选栏。
  *
- * 各报表区数据懒加载、切 tab 时按需请求；共享主数据（库存）不随筛选变化，
- * 其余报表跟着筛选栏走。排行支持「客户 / 商品」两个维度。
+ * 各报表区数据懒加载、切 tab 时按需请求。排行一律**全量**返回（名次一直排下去，
+ * 不截成「前 5 名」），明细是单据明细粒度（一行一个商品）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
@@ -12,15 +12,16 @@ import type { EChartsCoreOption } from 'echarts/core'
 import { invApi } from '@/api'
 import type {
   InvReportCategoryRow,
-  InvReportInventory,
+  InvReportDetailResult,
   InvReportRankRow,
+  InvReportStockRankRow,
   InvReportSummary,
   InvReportTrendPoint,
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import EChart from '@/components/EChart.vue'
 import ReportPrintDialog from '../components/ReportPrintDialog.vue'
-import { formatMoney } from '@/utils/format'
+import { formatDay, formatMoney } from '@/utils/format'
 import { chartPalette } from '@/utils/theme'
 import { useAppStore } from '@/store'
 import { useLatestGuard } from '@/composables/useLatestGuard'
@@ -33,19 +34,21 @@ const palette = computed(() => {
   return chartPalette()
 })
 
-type TabKey = 'overview' | 'ranking' | 'purchase' | 'inventory'
+type TabKey = 'overview' | 'salesRank' | 'purchaseRank' | 'stockRank' | 'salesDetail' | 'purchaseDetail'
 type RankDimension = 'customer' | 'product'
+type PurchaseDimension = 'supplier' | 'product'
 
 const tabs: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: '经营总览' },
-  { key: 'ranking', label: '销售排行' },
-  { key: 'purchase', label: '采购分析' },
-  { key: 'inventory', label: '库存分析' },
+  { key: 'salesRank', label: '销售排行' },
+  { key: 'purchaseRank', label: '采购排行' },
+  { key: 'stockRank', label: '库存排行' },
+  { key: 'salesDetail', label: '销售明细' },
+  { key: 'purchaseDetail', label: '采购明细' },
 ]
 const activeTab = ref<TabKey>('overview')
 const rankDimension = ref<RankDimension>('customer')
-/** 排行条数：排行 tab 可调，采购供应商排行固定 10 */
-const rankLimit = ref(10)
+const purchaseDimension = ref<PurchaseDimension>('supplier')
 
 const printRef = ref<InstanceType<typeof ReportPrintDialog> | null>(null)
 
@@ -71,11 +74,14 @@ const trend = ref<InvReportTrendPoint[]>([])
 const categories = ref<InvReportCategoryRow[]>([])
 /** 客户销售排行：概览区展示 + 打印共用（排行 tab 另有一份随维度变化的 ranking） */
 const customerRanking = ref<InvReportRankRow[]>([])
-/** 排行 tab 当前维度的排行数据 */
+/** 销售排行（当前维度，全量） */
 const ranking = ref<InvReportRankRow[]>([])
-/** 采购供应商排行 */
+/** 采购排行（当前维度，全量） */
 const purchaseRanking = ref<InvReportRankRow[]>([])
-const inventory = ref<InvReportInventory | null>(null)
+/** 库存排行（按库存金额降序，全量） */
+const stockRanking = ref<InvReportStockRankRow[]>([])
+/** 明细：销售 / 采购共用一个容器，按当前 tab 取数 */
+const detail = ref<InvReportDetailResult | null>(null)
 
 // ---------------- 各报表区加载 ----------------
 
@@ -99,37 +105,43 @@ async function loadOverview(ticket: number): Promise<void> {
   customerRanking.value = rk
 }
 
-/** 排行区：按当前维度查销售排行 */
-async function loadRanking(ticket: number): Promise<void> {
+/** 销售排行：limit 0 = 全量，名次一直排下去 */
+async function loadSalesRank(ticket: number): Promise<void> {
   const rk = await invApi.reportRanking({
     ...filterParams(),
     dimension: rankDimension.value,
     biz: 'sales',
-    limit: rankLimit.value,
+    limit: 0,
   })
   if (!guard.isCurrent(ticket)) return
   ranking.value = rk
 }
 
-/** 采购区：采购汇总 + 采购趋势 + 供应商排行 */
-async function loadPurchase(ticket: number): Promise<void> {
-  const p = filterParams()
-  const [sm, tr, rk] = await Promise.all([
-    invApi.reportSummary(p),
-    invApi.reportTrend({ ...p, days: trendDays.value }),
-    invApi.reportRanking({ ...p, dimension: 'customer', biz: 'purchase', limit: 10 }),
-  ])
+/** 采购排行：按供应商（party 聚合）/ 按商品（明细聚合） */
+async function loadPurchaseRank(ticket: number): Promise<void> {
+  const rk = await invApi.reportRanking({
+    ...filterParams(),
+    dimension: purchaseDimension.value === 'supplier' ? 'customer' : 'product',
+    biz: 'purchase',
+    limit: 0,
+  })
   if (!guard.isCurrent(ticket)) return
-  summary.value = sm
-  trend.value = tr
   purchaseRanking.value = rk
 }
 
-/** 库存区：库存分析（共享主数据，不随筛选变化） */
-async function loadInventory(ticket: number): Promise<void> {
-  const r = await invApi.reportInventory()
+/** 库存排行：共享主数据，不随时间 / 品类筛选变化 */
+async function loadStockRank(ticket: number): Promise<void> {
+  const rk = await invApi.reportStockRanking()
   if (!guard.isCurrent(ticket)) return
-  inventory.value = r
+  stockRanking.value = rk
+}
+
+/** 明细：销售 / 采购共用，按当前 tab 决定 biz */
+async function loadDetail(ticket: number): Promise<void> {
+  const biz = activeTab.value === 'purchaseDetail' ? 'purchase' : 'sales'
+  const r = await invApi.reportDetail({ ...filterParams(), biz })
+  if (!guard.isCurrent(ticket)) return
+  detail.value = r
 }
 
 /** 按当前 tab 加载对应数据 */
@@ -138,14 +150,18 @@ async function loadTab(): Promise<void> {
   loading.value = true
   try {
     switch (activeTab.value) {
-      case 'ranking':
-        await loadRanking(ticket)
+      case 'salesRank':
+        await loadSalesRank(ticket)
         break
-      case 'purchase':
-        await loadPurchase(ticket)
+      case 'purchaseRank':
+        await loadPurchaseRank(ticket)
         break
-      case 'inventory':
-        await loadInventory(ticket)
+      case 'stockRank':
+        await loadStockRank(ticket)
+        break
+      case 'salesDetail':
+      case 'purchaseDetail':
+        await loadDetail(ticket)
         break
       default:
         await loadOverview(ticket)
@@ -158,9 +174,12 @@ async function loadTab(): Promise<void> {
 }
 
 watch(activeTab, () => loadTab())
-// 维度切换只在排行 tab 内生效，切了维度立即重查
+// 维度切换只在自己那个 tab 内生效，切了维度立即重查
 watch(rankDimension, () => {
-  if (activeTab.value === 'ranking') loadTab()
+  if (activeTab.value === 'salesRank') loadTab()
+})
+watch(purchaseDimension, () => {
+  if (activeTab.value === 'purchaseRank') loadTab()
 })
 
 // ---------------- KPI 卡片 ----------------
@@ -172,23 +191,6 @@ const overviewKpis = computed(() => {
     { label: '销售成本', value: formatMoney(s?.costAmount ?? 0), tone: 'amber' },
     { label: '毛利', value: formatMoney(s?.grossProfit ?? 0), tone: 'green' },
     { label: '毛利率', value: `${s?.grossRate ?? 0}%`, tone: 'violet' },
-  ]
-})
-
-const purchaseKpis = computed(() => {
-  const s = summary.value
-  return [
-    { label: '采购总额', value: formatMoney(s?.purchases ?? 0), tone: 'blue' },
-    { label: '采购单数', value: `${s?.purchaseOrders ?? 0} 张`, tone: 'green' },
-  ]
-})
-
-const inventoryKpis = computed(() => {
-  const inv = inventory.value
-  return [
-    { label: '库存总金额', value: formatMoney(inv?.totalValue ?? 0), tone: 'blue' },
-    { label: '库存规格数', value: `${inv?.specCount ?? 0} 个`, tone: 'violet' },
-    { label: '低库存预警', value: `${inv?.warnCount ?? 0} 项`, tone: inv?.warnCount ? 'amber' : 'green' },
   ]
 })
 
@@ -269,7 +271,6 @@ function buildTrendOption(showSales: boolean, showPurchase: boolean): EChartsCor
 }
 
 const overviewTrendOption = computed(() => buildTrendOption(true, true))
-const purchaseTrendOption = computed(() => buildTrendOption(false, true))
 
 const categoryOption = computed<EChartsCoreOption>(() => {
   const p = palette.value
@@ -303,45 +304,6 @@ const categoryOption = computed<EChartsCoreOption>(() => {
           value: it.amount,
           itemStyle: { color: colors[index % colors.length] },
         })),
-      },
-    ],
-  }
-})
-
-/** 品类库存金额分布：横向条形图（品类多时纵向排得下） */
-const inventoryOption = computed<EChartsCoreOption>(() => {
-  const p = palette.value
-  const data = inventory.value?.categoryValue ?? []
-  return {
-    grid: { left: 8, right: 30, top: 10, bottom: 8, containLabel: true },
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      backgroundColor: p.overlay,
-      borderColor: p.border,
-      textStyle: { color: p.textStrong, fontSize: 12 },
-      formatter: (params: Array<{ name: string; value: number }>) => {
-        const it = params[0]
-        return `${it.name}<br/>库存金额：¥${it.value.toLocaleString()}`
-      },
-    },
-    xAxis: {
-      type: 'value',
-      splitLine: { lineStyle: { color: p.split } },
-      axisLabel: { color: p.text, fontSize: 11, formatter: '{value}元' },
-    },
-    yAxis: {
-      type: 'category',
-      data: data.map((it) => it.category),
-      axisLine: { lineStyle: { color: p.axis } },
-      axisTick: { show: false },
-      axisLabel: { color: p.text, fontSize: 12 },
-    },
-    series: [
-      {
-        type: 'bar',
-        barMaxWidth: 20,
-        data: data.map((it) => ({ value: it.value, itemStyle: { color: p.primary, borderRadius: [0, 4, 4, 0] } })),
       },
     ],
   }
@@ -425,12 +387,27 @@ function openPrint(): void {
 
 /** 导出当前报表区的数据为 xlsx（导出的是当前筛选范围的全量，不是屏幕上的前 N 条） */
 const exporting = ref(false)
+/**
+ * 哪些报表区支持导出。
+ *
+ * 导出走的是服务端生成的工作簿，目前只覆盖「总览 / 排行」两类；
+ * 库存排行与两个明细还没做专用版式，就不摆一个点了没反应的按钮。
+ */
+const canExport = computed(() => ['overview', 'salesRank', 'purchaseRank'].includes(activeTab.value))
 
 async function exportReport(): Promise<void> {
   exporting.value = true
   try {
-    const params: Record<string, unknown> = { ...filterParams(), type: activeTab.value }
-    if (activeTab.value === 'ranking') params.dimension = rankDimension.value
+    const params: Record<string, unknown> = { ...filterParams(), type: 'overview' }
+    if (activeTab.value === 'salesRank') {
+      params.type = 'ranking'
+      params.biz = 'sales'
+      params.dimension = rankDimension.value
+    } else if (activeTab.value === 'purchaseRank') {
+      params.type = 'ranking'
+      params.biz = 'purchase'
+      params.dimension = purchaseDimension.value === 'supplier' ? 'customer' : 'product'
+    }
     await invApi.reportExport(params)
     ElMessage.success('导出成功')
   } catch {
@@ -490,7 +467,7 @@ onMounted(() => {
           <AppIcon name="Printer" />
           <span>打印</span>
         </el-button>
-        <el-button :loading="exporting" @click="exportReport">
+        <el-button v-if="canExport" :loading="exporting" @click="exportReport">
           <AppIcon name="Download" />
           <span>导出</span>
         </el-button>
@@ -577,16 +554,11 @@ onMounted(() => {
       </div>
     </template>
 
-    <!-- ② 销售排行 -->
-    <div v-else-if="activeTab === 'ranking'" class="page-card">
+    <!-- ② 销售排行（全量，不截名次） -->
+    <div v-else-if="activeTab === 'salesRank'" class="page-card">
       <header class="card-head">
         <h3>销售排行</h3>
         <div class="head-actions">
-          <el-select v-model="rankLimit" style="width: 110px" @change="loadRanking">
-            <el-option :value="5" label="前 5 名" />
-            <el-option :value="10" label="前 10 名" />
-            <el-option :value="20" label="前 20 名" />
-          </el-select>
           <div class="dim-switch">
             <button
               class="dim-btn"
@@ -600,29 +572,34 @@ onMounted(() => {
               :class="rankDimension === 'product' ? 'is-active' : ''"
               @click="rankDimension = 'product'"
             >
-              按产品
+              按商品
             </button>
           </div>
         </div>
       </header>
 
-      <el-table :data="ranking" stripe>
+      <el-table :data="ranking" stripe max-height="620">
         <el-table-column label="排名" width="80" align="center">
           <template #default="{ row }">
             <span class="rank" :class="row.rank <= 3 ? 'rank--top' : ''">{{ row.rank }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="name" :label="rankDimension === 'customer' ? '客户' : '商品'" min-width="180" show-overflow-tooltip />
+        <el-table-column
+          prop="name"
+          :label="rankDimension === 'customer' ? '客户' : '商品'"
+          min-width="180"
+          show-overflow-tooltip
+        />
         <el-table-column label="销售额" width="160" align="right">
           <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
         </el-table-column>
-        <el-table-column v-if="rankDimension === 'product'" label="销量" width="140" align="right">
+        <el-table-column v-if="rankDimension === 'product'" label="销量（基本单位）" width="150" align="right">
           <template #default="{ row }">{{ row.quantity }}</template>
         </el-table-column>
-        <el-table-column label="订单数" width="110" align="right">
+        <el-table-column label="单据数" width="100" align="right">
           <template #default="{ row }">{{ row.orderCount }}</template>
         </el-table-column>
-        <el-table-column label="占比" min-width="180">
+        <el-table-column label="占比" min-width="160">
           <template #default="{ row }">
             <div class="ratio">
               <el-progress :percentage="row.ratio" :stroke-width="8" :show-text="false" />
@@ -634,94 +611,141 @@ onMounted(() => {
       <el-empty v-if="!ranking.length" description="暂无排行数据" :image-size="80" />
     </div>
 
-    <!-- ③ 采购分析 -->
-    <template v-else-if="activeTab === 'purchase'">
-      <div class="kpi-row kpi-row--two">
-        <div v-for="kpi in purchaseKpis" :key="kpi.label" class="kpi-card" :class="`tone-${kpi.tone}`">
-          <span class="kpi-card__label">{{ kpi.label }}</span>
-          <strong class="kpi-card__value">{{ kpi.value }}</strong>
-        </div>
-      </div>
-
-      <div class="page-card">
-        <header class="card-head">
-          <h3>采购金额趋势</h3>
-          <span class="text-muted">近 30 天 · 单位：元</span>
-        </header>
-        <EChart :option="purchaseTrendOption" height="300px" />
-      </div>
-
-      <div class="page-card">
-        <header class="card-head">
-          <h3>供应商采购排行</h3>
-          <span class="text-muted">{{ summary?.range }} · 共 {{ summary?.purchaseOrders ?? 0 }} 张采购单</span>
-        </header>
-        <el-table :data="purchaseRanking" stripe>
-          <el-table-column label="排名" width="80" align="center">
-            <template #default="{ row }">
-              <span class="rank" :class="row.rank <= 3 ? 'rank--top' : ''">{{ row.rank }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="name" label="供应商" min-width="180" show-overflow-tooltip />
-          <el-table-column label="采购额" width="160" align="right">
-            <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
-          </el-table-column>
-          <el-table-column label="订单数" width="110" align="right">
-            <template #default="{ row }">{{ row.orderCount }}</template>
-          </el-table-column>
-          <el-table-column label="占比" min-width="180">
-            <template #default="{ row }">
-              <div class="ratio">
-                <el-progress :percentage="row.ratio" :stroke-width="8" :show-text="false" />
-                <span>{{ row.ratio }}%</span>
-              </div>
-            </template>
-          </el-table-column>
-        </el-table>
-        <el-empty v-if="!purchaseRanking.length" description="暂无采购数据" :image-size="80" />
-      </div>
-    </template>
-
-    <!-- ④ 库存分析 -->
-    <template v-else>
-      <div class="kpi-row">
-        <div v-for="kpi in inventoryKpis" :key="kpi.label" class="kpi-card" :class="`tone-${kpi.tone}`">
-          <span class="kpi-card__label">{{ kpi.label }}</span>
-          <strong class="kpi-card__value">{{ kpi.value }}</strong>
-        </div>
-      </div>
-
-      <div class="chart-row chart-row--inventory">
-        <div class="page-card chart-main">
-          <header class="card-head">
-            <h3>品类库存金额分布</h3>
-            <span class="text-muted">按基本单位采购价计价</span>
-          </header>
-          <EChart v-if="inventory?.categoryValue.length" :option="inventoryOption" height="300px" />
-          <el-empty v-else description="暂无库存数据" :image-size="80" />
-        </div>
-        <div class="page-card chart-side">
-          <header class="card-head">
-            <h3>低库存预警</h3>
-            <span class="text-muted">共 {{ inventory?.warnCount ?? 0 }} 项</span>
-          </header>
-          <div class="warn-list">
-            <div v-for="w in inventory?.warnList" :key="w.specId" class="warn-item">
-              <div class="warn-item__main">
-                <span class="warn-item__name" :title="`${w.productName} ${w.spec}`">{{ w.productName }} · {{ w.spec }}</span>
-                <span class="warn-item__code">{{ w.productCode }}</span>
-              </div>
-              <div class="warn-item__stock">
-                <span class="warn-item__num">{{ w.stock }}</span>
-                <span class="warn-item__sep">/</span>
-                <span class="warn-item__limit">预警 {{ w.warnStock }}{{ w.unit }}</span>
-              </div>
-            </div>
-            <el-empty v-if="!inventory?.warnList.length" description="没有低库存商品" :image-size="80" />
+    <!-- ③ 采购排行（全量） -->
+    <div v-else-if="activeTab === 'purchaseRank'" class="page-card">
+      <header class="card-head">
+        <h3>采购排行</h3>
+        <div class="head-actions">
+          <div class="dim-switch">
+            <button
+              class="dim-btn"
+              :class="purchaseDimension === 'supplier' ? 'is-active' : ''"
+              @click="purchaseDimension = 'supplier'"
+            >
+              按供应商
+            </button>
+            <button
+              class="dim-btn"
+              :class="purchaseDimension === 'product' ? 'is-active' : ''"
+              @click="purchaseDimension = 'product'"
+            >
+              按商品
+            </button>
           </div>
         </div>
-      </div>
-    </template>
+      </header>
+
+      <el-table :data="purchaseRanking" stripe max-height="620">
+        <el-table-column label="排名" width="80" align="center">
+          <template #default="{ row }">
+            <span class="rank" :class="row.rank <= 3 ? 'rank--top' : ''">{{ row.rank }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="name"
+          :label="purchaseDimension === 'supplier' ? '供应商' : '商品'"
+          min-width="180"
+          show-overflow-tooltip
+        />
+        <el-table-column label="采购额" width="160" align="right">
+          <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
+        </el-table-column>
+        <el-table-column v-if="purchaseDimension === 'product'" label="采购量（基本单位）" width="160" align="right">
+          <template #default="{ row }">{{ row.quantity }}</template>
+        </el-table-column>
+        <el-table-column label="单据数" width="100" align="right">
+          <template #default="{ row }">{{ row.orderCount }}</template>
+        </el-table-column>
+        <el-table-column label="占比" min-width="160">
+          <template #default="{ row }">
+            <div class="ratio">
+              <el-progress :percentage="row.ratio" :stroke-width="8" :show-text="false" />
+              <span>{{ row.ratio }}%</span>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!purchaseRanking.length" description="暂无采购数据" :image-size="80" />
+    </div>
+
+    <!-- ④ 库存排行（按库存金额降序，全量） -->
+    <div v-else-if="activeTab === 'stockRank'" class="page-card">
+      <header class="card-head">
+        <h3>库存排行</h3>
+        <span class="text-muted">按库存金额降序 · 计价 = 库存数量 × 基本单位采购价</span>
+      </header>
+
+      <el-table :data="stockRanking" stripe max-height="640">
+        <el-table-column label="排名" width="80" align="center">
+          <template #default="{ row }">
+            <span class="rank" :class="row.rank <= 3 ? 'rank--top' : ''">{{ row.rank }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="商品" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.productName }}
+            <span class="text-muted">{{ row.productCode }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="规格" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.spec || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="单位" width="80" align="center">
+          <template #default="{ row }">{{ row.unit || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="库存数量" width="120" align="right">
+          <template #default="{ row }">{{ row.stock }}</template>
+        </el-table-column>
+        <el-table-column label="库存金额" width="150" align="right">
+          <template #default="{ row }">{{ formatMoney(row.value) }}</template>
+        </el-table-column>
+        <el-table-column label="占比" min-width="160">
+          <template #default="{ row }">
+            <div class="ratio">
+              <el-progress :percentage="row.ratio" :stroke-width="8" :show-text="false" />
+              <span>{{ row.ratio }}%</span>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!stockRanking.length" description="暂无库存数据" :image-size="80" />
+    </div>
+
+    <!-- ⑤⑥ 销售 / 采购明细（单据明细粒度） -->
+    <div v-else class="page-card">
+      <header class="card-head">
+        <h3>{{ activeTab === 'salesDetail' ? '销售明细' : '采购明细' }}</h3>
+        <span class="text-muted">
+          共 {{ detail?.total ?? 0 }} 行 · 合计 {{ formatMoney(detail?.amount ?? 0) }}
+          <template v-if="detail?.truncated">（行数过多，仅展示前 {{ detail.rows.length }} 行）</template>
+        </span>
+      </header>
+
+      <el-table :data="detail?.rows ?? []" stripe max-height="640">
+        <el-table-column label="日期" width="110">
+          <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
+        </el-table-column>
+        <el-table-column prop="orderNo" label="单号" width="160" show-overflow-tooltip />
+        <el-table-column prop="partyName" :label="activeTab === 'salesDetail' ? '客户' : '供应商'" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="productName" label="商品" min-width="160" show-overflow-tooltip />
+        <el-table-column label="规格" min-width="110" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.spec || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="单位" width="70" align="center">
+          <template #default="{ row }">{{ row.unit || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="数量" width="100" align="right">
+          <template #default="{ row }">{{ row.qty }}</template>
+        </el-table-column>
+        <el-table-column label="单价" width="110" align="right">
+          <template #default="{ row }">{{ formatMoney(row.price, false) }}</template>
+        </el-table-column>
+        <el-table-column label="金额" width="130" align="right">
+          <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!(detail?.rows ?? []).length" description="暂无明细数据" :image-size="80" />
+    </div>
 
     <!-- 打印经营概览（汇总 + 客户排行 + 品类占比） -->
     <ReportPrintDialog ref="printRef" :summary="summary" :ranking="customerRanking" :categories="categories" />

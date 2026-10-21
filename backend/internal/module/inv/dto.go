@@ -546,6 +546,47 @@ type ReportInventory struct {
 	WarnList      []InvWarnStockRow     `json:"warnList"`      // 低库存预警清单（前 20）
 }
 
+// ReportStockRankRow 库存排行行（按库存金额降序，全量）。
+//
+// 计价口径与库存分析一致：库存数量（基本单位）× 基本单位采购价。
+// 没有采购价的规格金额为 0，仍会出现在榜上（数量有价值无，正好提示去补价）。
+type ReportStockRankRow struct {
+	Rank        int     `json:"rank"`
+	ProductID   int64   `json:"productId"`
+	ProductCode string  `json:"productCode"`
+	ProductName string  `json:"productName"`
+	Spec        string  `json:"spec"`
+	Unit        string  `json:"unit"`
+	Stock       float64 `json:"stock"`
+	Value       float64 `json:"value"`
+	Ratio       float64 `json:"ratio"`
+}
+
+// ReportDetailRow 销售 / 采购明细行（单据明细粒度，一行一个商品）。
+type ReportDetailRow struct {
+	OrderID     int64   `json:"orderId"`
+	OrderNo     string  `json:"orderNo"`
+	OrderDate   string  `json:"orderDate"`
+	PartyName   string  `json:"partyName"`
+	Salesman    string  `json:"salesman"`
+	ProductName string  `json:"productName"`
+	Spec        string  `json:"spec"`
+	Unit        string  `json:"unit"`
+	Qty         float64 `json:"qty"`
+	Price       float64 `json:"price"`
+	Amount      float64 `json:"amount"`
+}
+
+// ReportDetailResult 明细结果集：行 + 合计，前端不必自己再算一遍。
+type ReportDetailResult struct {
+	Rows   []ReportDetailRow `json:"rows"`
+	Total  int64             `json:"total"`
+	Amount float64           `json:"amount"`
+	Qty    float64           `json:"qty"`
+	// Truncated 为 true 表示命中行数超过上限被截断（明细只展示前 N 行）
+	Truncated bool `json:"truncated"`
+}
+
 // ============================================================
 // 打印模板
 // ============================================================

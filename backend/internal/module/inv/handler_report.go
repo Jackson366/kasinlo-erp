@@ -235,6 +235,47 @@ func (h *Handler) ReportInventory(c *gin.Context) {
 	response.OK(c, data)
 }
 
+// ReportStockRanking 库存排行
+// @Summary      库存排行（按库存金额降序，全量）
+// @Tags         进销存-报表
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  response.Body{data=[]inv.ReportStockRankRow}
+// @Router       /inv/report/stock-ranking [get]
+func (h *Handler) ReportStockRanking(c *gin.Context) {
+	limit := page.AtoiOr(c.Query("limit"), 0)
+	data, err := h.svc.ReportStockRanking(limit)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, data)
+}
+
+// ReportDetail 销售 / 采购明细
+// @Summary      销售 / 采购明细（单据明细粒度）
+// @Tags         进销存-报表
+// @Produce      json
+// @Security     BearerAuth
+// @Param        biz    query  string  false  "sales / purchase（默认 sales）"
+// @Param        limit  query  int     false  "行数上限（默认 2000）"
+// @Success      200  {object}  response.Body{data=inv.ReportDetailResult}
+// @Router       /inv/report/detail [get]
+func (h *Handler) ReportDetail(c *gin.Context) {
+	f, err := reportFilterFrom(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	limit := page.AtoiOr(c.Query("limit"), 0)
+	data, err := h.svc.ReportDetail(f, c.DefaultQuery("biz", "sales"), limit, middleware.CurrentIdentity(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, data)
+}
+
 // ReportExport 导出报表
 // @Summary      按筛选条件导出报表（xlsx）
 // @Description  返回 xlsx 二进制流，筛选参数与报表接口一致。

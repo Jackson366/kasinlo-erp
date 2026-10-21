@@ -787,6 +787,44 @@ export interface InvReportInventory {
   warnList: InvWarnStockRow[]
 }
 
+/** 库存排行行（按库存金额降序，全量） */
+export interface InvReportStockRankRow {
+  rank: number
+  productId: number
+  productCode: string
+  productName: string
+  spec: string
+  unit: string
+  stock: number
+  value: number
+  ratio: number
+}
+
+/** 销售 / 采购明细行（一行一个商品） */
+export interface InvReportDetailRow {
+  orderId: number
+  orderNo: string
+  orderDate: string
+  partyName: string
+  salesman: string
+  productName: string
+  spec: string
+  unit: string
+  qty: number
+  price: number
+  amount: number
+}
+
+/** 明细结果集：行 + 合计 */
+export interface InvReportDetailResult {
+  rows: InvReportDetailRow[]
+  total: number
+  amount: number
+  qty: number
+  /** true 表示命中行数超过上限，只展示了前 N 行 */
+  truncated: boolean
+}
+
 /** 打印模板列表行 */
 export interface InvPrintTemplateRow {
   id: number

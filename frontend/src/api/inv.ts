@@ -20,8 +20,10 @@ import type {
   InvProductPickResult,
   InvProductRow,
   InvReportCategoryRow,
+  InvReportDetailResult,
   InvReportInventory,
   InvReportRankRow,
+  InvReportStockRankRow,
   InvReportSummary,
   InvReportTrendPoint,
   InvSettlePayload,
@@ -57,6 +59,14 @@ export const invApi = {
   },
   reportInventory() {
     return http.get<InvReportInventory>('/inv/report/inventory')
+  },
+  /** 库存排行（按库存金额降序，全量） */
+  reportStockRanking(params?: Params) {
+    return http.get<InvReportStockRankRow[]>('/inv/report/stock-ranking', params)
+  },
+  /** 销售 / 采购明细（单据明细粒度） */
+  reportDetail(params?: Params) {
+    return http.get<InvReportDetailResult>('/inv/report/detail', params)
   },
   reportExport(params?: Params, fallbackName = '报表.xlsx') {
     return downloadFile('/inv/report/export', params as Record<string, unknown>, fallbackName)
