@@ -43,7 +43,7 @@ func IsDefaultPassword(username, password string) bool {
 
 // Options 是种子数据选项。
 type Options struct {
-	// DemoData 为 false 时只建系统骨架：部门、菜单、角色、管理员账号。
+	// DemoData 为 false 时只建系统骨架：部门、菜单、角色、管理员账号、打印模板。
 	// 不写示例客户/供应商/商品/单据，也不建 demo 只读账号 ——
 	// 交付真实客户时必须关掉，否则对方第一次登录看到的是别人的假单据。
 	DemoData bool
@@ -72,6 +72,8 @@ func Run(opts Options) error {
 		{"菜单", seedMenus},
 		{"角色", seedRoles},
 		{"用户", func(db *gorm.DB) error { return seedUsers(db, opts.DemoData) }},
+		// 打印模板是配置而非演示数据：新库必须带上，否则打印功能开箱不可用
+		{"打印模板", seedPrintTemplates},
 	}
 	if opts.DemoData {
 		steps = append(steps,

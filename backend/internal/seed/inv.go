@@ -138,7 +138,40 @@ type demoProduct struct {
 	units   [][]model.InvProductUnit // 与 specs 同下标
 }
 
-// seedInv 写入进销存演示数据（分类 / 客户 / 供应商 / 商品 / 单据 / 出入库 / 打印模板）。
+// seedPrintTemplates 建内置打印模板（采购 / 销售订单、各出入库单、对账单…）。
+//
+// 这是**配置**而不是演示数据：真实客户第一次开单就要打印，模板表空着等于
+// 打印功能不可用（打印弹窗只会提示「暂无启用中的模板」）。
+// 所以它不跟随 app.demo_data 开关，任何新库都建。
+//
+// 只建一次：用 Unscoped 数「历史上是否存在过模板」，有就整体跳过 ——
+// 用户把不需要的模板删掉（软删）之后，重启不该给它变回来。
+func seedPrintTemplates(db *gorm.DB) error {
+	var ever int64
+	if err := db.Unscoped().Model(&model.InvPrintTemplate{}).Count(&ever).Error; err != nil {
+		return fmt.Errorf("检查打印模板失败: %w", err)
+	}
+	if ever > 0 {
+		return nil
+	}
+	templates := []model.InvPrintTemplate{
+		{Code: "BG01", Name: "采购订单", DocType: "采购订单", Paper: "A4", Status: 1},
+		{Code: "BG02", Name: "采购入库单", DocType: "采购入库单", Paper: "A4", Status: 1},
+		{Code: "BG03", Name: "采购退货单", DocType: "采购退货单", Paper: "A5", Status: 1},
+		{Code: "BG04", Name: "销售订单", DocType: "销售订单", Paper: "A4", Status: 1},
+		{Code: "BG05", Name: "销售出库单", DocType: "销售出库单", Paper: "A4", Status: 1},
+		{Code: "BG06", Name: "销售退货单", DocType: "销售退货单", Paper: "A5", Status: 1},
+		{Code: "BG07", Name: "客户对账单", DocType: "客户对账单", Paper: "A4", Status: 1},
+		{Code: "BG08", Name: "库存盘点单", DocType: "库存盘点单", Paper: "A4", Status: 0, Remark: "已停用"},
+	}
+	if err := db.Create(&templates).Error; err != nil {
+		return fmt.Errorf("写入打印模板失败: %w", err)
+	}
+	logger.Info("已初始化打印模板", zap.Int("count", len(templates)))
+	return nil
+}
+
+// seedInv 写入进销存演示数据（分类 / 客户 / 供应商 / 商品 / 单据 / 出入库）。
 //
 // 幂等：只要 inv_customers 已有数据就整体跳过。业务数据不像系统字典那样
 // 需要「补齐缺失项」，重复灌入只会污染真实数据。
@@ -197,20 +230,6 @@ func seedInv(db *gorm.DB) error {
 	products, err := seedProducts(db, categoryID)
 	if err != nil {
 		return err
-	}
-
-	templates := []model.InvPrintTemplate{
-		{Code: "BG01", Name: "采购订单", DocType: "采购订单", Paper: "A4", Status: 1},
-		{Code: "BG02", Name: "采购入库单", DocType: "采购入库单", Paper: "A4", Status: 1},
-		{Code: "BG03", Name: "采购退货单", DocType: "采购退货单", Paper: "A5", Status: 1},
-		{Code: "BG04", Name: "销售订单", DocType: "销售订单", Paper: "A4", Status: 1},
-		{Code: "BG05", Name: "销售出库单", DocType: "销售出库单", Paper: "A4", Status: 1},
-		{Code: "BG06", Name: "销售退货单", DocType: "销售退货单", Paper: "A5", Status: 1},
-		{Code: "BG07", Name: "客户对账单", DocType: "客户对账单", Paper: "A4", Status: 1},
-		{Code: "BG08", Name: "库存盘点单", DocType: "库存盘点单", Paper: "A4", Status: 0, Remark: "已停用"},
-	}
-	if err := db.Create(&templates).Error; err != nil {
-		return fmt.Errorf("写入打印模板失败: %w", err)
 	}
 
 	if err := seedInvOrders(db, customers, suppliers, products, dayAgo); err != nil {
