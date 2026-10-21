@@ -522,25 +522,24 @@ async function main() {
   const prodDup = await request('POST', '/inv/products', { token, body: prodBody })
   ok('商品编码重复返回 40900', prodDup.json?.code === 40900, JSON.stringify(prodDup.json))
 
-  // 规格 / 单位是**可选项**：缺什么由服务端 normalizeSpecs 补成自洽的默认值
-  // （「默认」规格 + 「个」基本单位），不报错。这不是把约束删掉 ——
-  // 真的允许空的话，商品会因为「没有规格」而进不了开单的商品下拉
-  // （ProductPick 只给有规格的商品），等于建了个查不到、开不了单的僵尸档案。
-  // 所以断言的是「被兜底成什么」，而不是「返回 40000」。
+  // 规格 / 单位是**可选项**，而且是「留空就存空白」：不再补「默认 / 个」。
+  // 结构仍然被补齐（至少一条规格 + 一个单位，换算率取 1，第一个单位提为基本单位），
+  // 因为规格是库存归属层、单位是单据折算基准，缺了商品就查不到也开不了单。
+  // 所以断言的是「结构被补齐、名称保持空白」，而不是「返回 40000」。
   const fillCases = [
     {
-      label: '不填规格与单位',
+      label: '不填规格与单位（名称保持空白）',
       code: `${smokeCode}Q1`,
       name: '不填规格',
       specs: [],
-      want: { spec: '默认', unit: '个', rate: 1, isBase: true },
+      want: { spec: '', unit: '', rate: 1, isBase: true },
     },
     {
-      label: '规格下不填单位',
+      label: '规格下不填单位（补齐一条空单位）',
       code: `${smokeCode}Q2`,
       name: '不填单位',
       specs: [{ spec: 'A', units: [] }],
-      want: { spec: 'A', unit: '个', rate: 1, isBase: true },
+      want: { spec: 'A', unit: '', rate: 1, isBase: true },
     },
     {
       label: '不指定基本单位',
@@ -1150,6 +1149,23 @@ async function main() {
   } else {
     ok('存在可结算的应收单（跳过超额断言）', false, JSON.stringify(recvRow))
   }
+
+  // 批量收付款：入参必须是至少一张单据；不存在的单据要整批拒掉（不给半截结果）
+  const batchEmpty = await request('POST', '/inv/finance/settlements/batch', {
+    token,
+    body: { orderIds: [] },
+  })
+  ok('批量结算空单据被拒(40000)', batchEmpty.json?.code === 40000, JSON.stringify(batchEmpty.json))
+
+  const batchMissing = await request('POST', '/inv/finance/settlements/batch', {
+    token,
+    body: { orderIds: [orderId] },
+  })
+  ok(
+    '批量结算含不存在单据被拒',
+    batchMissing.json?.code !== 0,
+    JSON.stringify(batchMissing.json),
+  )
 
   const invOverview = await request('GET', '/inv/overview', { token })
   ok(

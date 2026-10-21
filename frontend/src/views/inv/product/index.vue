@@ -233,41 +233,42 @@ function setBaseUnit(spec: InvProductSpecPayload, index: number): void {
 }
 
 /** 规格行里「1 箱 = N 个」的提示语，让换算率一眼能读懂 */
-function rateHint(spec: InvProductSpecPayload, index: number): string {
-  const unit = spec.units[index]?.unit || '该单位'
-  const base = spec.units.find((u) => u.isBase)?.unit || '基本单位'
-  const rate = spec.units[index]?.rate
-  if (!rate || rate <= 0) return ''
-  if (spec.units[index]?.isBase) return `库存按${base}计`
-  return `1 ${unit} = ${rate} ${base}`
-}
 
 // ---------------- 提交校验 ----------------
 // 逐字段必填交给 el-form-item 的嵌套 prop（错误信息贴着控件显示）；
 // 这里只管**真正的错误**：规格重名、同一规格下单位重名。
 //
-// 规格名 / 单位名 / 换算率 / 基本单位都**不再是必填**：留空由后端
-// normalizeSpecs 兜底成「默认」「个」「1」，并把第一个单位提为基本单位。
-// 理由是这些约束对录一个「办公用品-签字笔」的人来说纯属负担 ——
-// 真正的约束（库存要有归属、单据要能折算）由服务端守住，
-// 不应该转嫁成用户面前的必填项。
-//
-// 唯一不能让步的是重名：两行「φ20」会把库存劈成两半、各自都不预警；
-// 同一规格下两个「箱」会让单据选单位时不知道看哪一行的价格。
+// 规格名 / 单位名 / 换算率 / 基本单位都**不是必填**：留空就存空白，
+// 后端不再补「默认」「个」，换算率缺省取 1、第一个单位提为基本单位。
+// 唯一的硬约束是「同一层级里名称不能重复」——两行「φ20」会把库存劈成两半。
+// 空名也占一个坑：库上是 (product_id, spec) 与 (spec_id, unit) 唯一索引，
+// 两个空名会撞索引，所以提前给出人话提示。
 function validateSpecs(_rule: unknown, _value: unknown, callback: (e?: Error) => void): void {
   const errs: string[] = []
 
   const seenSpec = new Set<string>()
+  let blankSpec = false
   form.specs.forEach((s, si) => {
-    const label = `第 ${si + 1} 个规格`
-    // 按「补完之后的名字」判重：两个都留空的规格，后端都会补成「默认」，同属重名
-    const specName = s.spec.trim() || '默认'
-    if (seenSpec.has(specName)) errs.push(`规格「${specName}」重复了`)
-    else seenSpec.add(specName)
+    const label = `规格 ${si + 1}`
+    const specName = s.spec.trim()
+    if (!specName) {
+      if (blankSpec) errs.push('同一商品下只能有一个未填名称的规格')
+      blankSpec = true
+    } else if (seenSpec.has(specName)) {
+      errs.push(`规格「${specName}」重复了`)
+    } else {
+      seenSpec.add(specName)
+    }
 
     const seenUnit = new Set<string>()
+    let blankUnit = false
     s.units.forEach((u) => {
-      const name = u.unit.trim() || '个'
+      const name = u.unit.trim()
+      if (!name) {
+        if (blankUnit) errs.push(`${label}：只能有一个未填名称的单位`)
+        blankUnit = true
+        return
+      }
       if (seenUnit.has(name)) errs.push(`${label}：单位「${name}」重复了`)
       else seenUnit.add(name)
     })
@@ -442,7 +443,9 @@ const categoryFlatOptions = computed(() => {
 
 /** 列表行展开时规格摘要，例如「φ20 · φ25」 */
 function specSummary(row: InvProductRow): string {
-  return row.specs.map((s) => s.spec).join(' · ') || '-'
+  // 规格允许留空（不再补「默认」）：空名不进摘要，全空就是「-」
+  const names = row.specs.map((s) => (s.spec || '').trim()).filter(Boolean)
+  return names.length ? names.join(' · ') : '-'
 }
 
 // ============================================================
@@ -827,7 +830,7 @@ onMounted(() => {
             <div class="spec-detail">
               <div v-for="s in (row as InvProductRow).specs" :key="s.id" class="spec-detail__item">
                 <div class="spec-detail__head">
-                  <span class="spec-detail__name">{{ s.spec }}</span>
+                  <span class="spec-detail__name">{{ s.spec || '—' }}</span>
                   <span class="spec-detail__stock" :class="s.warn ? 'stock-warn' : ''">
                     库存 {{ formatQty(s.stock) }}
                     {{ s.units.find((u) => u.isBase)?.unit || '' }}
@@ -1086,18 +1089,10 @@ onMounted(() => {
 
         <section class="form-section">
           <div class="form-section__head">
-            <div class="form-section__title">
-              规格与计量单位
-              <small>简单商品留空即可</small>
-            </div>
-            <!-- 价格默认收起：简单商品录「编码 + 名称 + 规格」就够，五列表格太重 -->
+            <div class="form-section__title">规格与计量单位</div>
+            <!-- 价格默认收起：多数商品录「名称 + 规格」就够，五列表格太重 -->
             <el-switch v-model="showPrice" size="small" active-text="价格" />
           </div>
-          <p class="form-section__hint">
-            留空保存时自动按「默认 / 个」处理。需要区分时才填：一个商品可维护多个规格，
-            每个规格下可维护多个计量单位；库存按<strong>基本单位</strong>计数，
-            出入库时按所选单位的换算率折算。
-          </p>
 
           <!-- 跨行约束只剩「重名」一项，由 validateSpecs 判完。它挂在 specs 这个
                「整数组」上，必须有一个绑到 prop="specs" 的 form-item 才会被
@@ -1109,10 +1104,10 @@ onMounted(() => {
               <div class="spec-card__head">
                 <span class="spec-card__index">规格 {{ si + 1 }}</span>
                 <el-form-item :prop="`specs.${si}.spec`" class="spec-card__name">
-                  <el-input v-model="spec.spec" placeholder="选填，如 φ20 / 500ml（留空按「默认」）" />
+                  <el-input v-model="spec.spec" />
                 </el-form-item>
                 <div class="spec-card__warn">
-                  <span class="spec-card__label">预警下限</span>
+                  <span class="spec-card__label">预警</span>
                   <el-input-number
                     v-model="spec.warnStock"
                     :min="0"
@@ -1132,36 +1127,32 @@ onMounted(() => {
                 </div>
                 <el-button link type="danger" class="spec-card__del" @click="removeSpec(si)">
                   <AppIcon name="Delete" />
-                  <span>删除</span>
                 </el-button>
               </div>
 
               <div class="unit-table">
                 <div class="unit-table__row unit-table__row--head">
-                  <span class="unit-col unit-col--unit">计量单位</span>
+                  <span class="unit-col unit-col--unit">单位</span>
                   <span class="unit-col unit-col--rate">换算率</span>
-                  <span class="unit-col unit-col--base">基本单位</span>
+                  <span class="unit-col unit-col--base">基本</span>
                   <span v-if="showPrice" class="unit-col unit-col--price">采购价</span>
                   <span v-if="showPrice" class="unit-col unit-col--price">销售价</span>
-                  <span class="unit-col unit-col--op"></span>
+                  <span class="unit-col unit-col--op" />
                 </div>
                 <div v-for="(u, ui) in spec.units" :key="ui" class="unit-table__row">
                   <div class="unit-col unit-col--unit">
                     <el-form-item :prop="`specs.${si}.units.${ui}.unit`" class="unit-form-item">
-                      <el-input v-model="u.unit" placeholder="选填，如 根 / 箱" />
+                      <el-input v-model="u.unit" />
                     </el-form-item>
                   </div>
                   <div class="unit-col unit-col--rate">
                     <el-form-item class="unit-form-item">
-                      <div class="rate-cell">
-                        <el-input-number
-                          v-model="u.rate"
-                          :min="0.0001"
-                          :precision="4"
-                          :controls="false"
-                        />
-                        <span class="rate-hint">{{ rateHint(spec, ui) }}</span>
-                      </div>
+                      <el-input-number
+                        v-model="u.rate"
+                        :min="0.0001"
+                        :precision="4"
+                        :controls="false"
+                      />
                     </el-form-item>
                   </div>
                   <div class="unit-col unit-col--base">
@@ -1201,7 +1192,7 @@ onMounted(() => {
                 <div class="unit-table__foot">
                   <el-button link type="primary" @click="addUnit(spec)">
                     <AppIcon name="Plus" />
-                    <span>添加计量单位</span>
+                    <span>添加单位</span>
                   </el-button>
                 </div>
               </div>
@@ -1357,8 +1348,10 @@ onMounted(() => {
   color: var(--app-text-secondary);
 }
 
+// 单位表与卡片左右边界对齐（早先的 8px 缩进会让它比规格名输入框
+// 往里缩一截，看着像错位）
 .unit-table {
-  margin-left: 8px;
+  margin: 0;
 }
 
 // ---------------- 弹窗内的规格编辑 ----------------
@@ -1411,21 +1404,25 @@ onMounted(() => {
 }
 
 .spec-card {
-  padding: 12px 14px;
+  padding: 10px 12px;
   border: 1px solid var(--app-border-light);
   border-radius: var(--radius-md);
   background: var(--app-surface);
+
+  & + & {
+    margin-top: 10px;
+  }
 }
 
 // 卡片头一行：规格名弹性占满，其余定宽 —— 多个规格卡片之间
-// 「预警下限 / 启用 / 删除」因此永远对齐在同一竖线上。
+// 「预警 / 启用 / 删除」因此永远对齐在同一竖线上。
 .spec-card__head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding-bottom: 10px;
-  margin-bottom: 6px;
-  border-bottom: 1px dashed var(--app-border-light);
+  gap: 10px;
+  padding-bottom: 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--app-border-light);
 
   // 卡片头一行的 form-item 去掉默认下边距，避免卡片被撑高
   :deep(.el-form-item) {
@@ -1435,28 +1432,15 @@ onMounted(() => {
 
 .spec-card__index {
   flex: none;
-  padding: 2px 8px;
+  width: 52px;
   font-size: 12px;
-  font-weight: 600;
-  color: var(--app-text-secondary);
-  background: var(--app-bg-subtle, #f3f4f6);
-  border-radius: 999px;
+  color: var(--app-text-muted);
+  white-space: nowrap;
 }
 
 .spec-card__name {
   flex: 1;
   min-width: 0;
-}
-
-// 弹窗里的 el-form 统一设了 label-width=88px，**没有标签**的 form-item
-// 仍会空出这 88px —— 而且这个 margin-left 是 Element Plus 写进 content 的
-// **行内样式**，只能 !important 盖掉。规格名与单位表的输入框因此比表头
-// 缩进一大段，看起来像「表格错位」。这两处本就不需要标签，直接归零。
-.spec-card__name,
-.unit-form-item {
-  :deep(.el-form-item__content) {
-    margin-left: 0 !important;
-  }
 }
 
 // 弹窗里的 el-form 统一设了 label-width=88px，**没有标签**的 form-item
@@ -1479,7 +1463,7 @@ onMounted(() => {
 }
 
 .spec-card__warn :deep(.el-input-number) {
-  width: 104px;
+  width: 92px;
 }
 
 .spec-card__label {
@@ -1506,20 +1490,21 @@ onMounted(() => {
   border-bottom: 1px solid var(--app-border);
 }
 
-// 「计量单位 / 换算率」按比例弹性：价格列收起时由这两列填满整行，
-// 展开价格后它们自动让位 —— 不用弹性占位子，列多列少都不会留大片空白
+// 列宽固定：行内只有 2～4 个控件，用 flex 比例会让「单位 / 换算率」
+// 各占半行、看起来空旷；定宽之后整块靠左，视线是「单位 → 换算率 → 基本」
+// 一条直线，价格列展开也不会把前面的列挤变形
 .unit-col--unit {
-  flex: 1.2;
-  min-width: 170px;
+  width: 220px;
+  flex: none;
 }
 
 .unit-col--rate {
-  flex: 1;
-  min-width: 170px;
+  width: 120px;
+  flex: none;
 }
 
 .unit-col--base {
-  width: 88px;
+  width: 64px;
   flex: none;
   display: flex;
   justify-content: center;
@@ -1527,43 +1512,30 @@ onMounted(() => {
 }
 
 .unit-col--price {
-  width: 130px;
+  width: 118px;
   flex: none;
 }
 
 .unit-col--op {
-  width: 44px;
+  width: 36px;
   flex: none;
   display: flex;
   justify-content: center;
   padding-top: 4px;
+  margin-left: auto;
 }
 
-// 单位行嵌在自由布局里，form-item 若保留默认下边距会把行高撑成两倍
 .unit-form-item {
   margin-bottom: 0;
 }
 
-.rate-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-}
-
-.rate-hint {
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--app-text-muted);
-}
-
 .unit-table__foot {
-  padding-top: 4px;
+  padding-top: 2px;
 }
 
 .add-spec {
   width: 100%;
-  margin-top: 12px;
+  margin-top: 10px;
   border-style: dashed;
 }
 </style>

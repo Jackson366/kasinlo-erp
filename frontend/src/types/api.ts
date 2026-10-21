@@ -696,6 +696,18 @@ export interface InvSettlePayload {
   remark?: string
 }
 
+/**
+ * 批量结算载荷。缺省口径是「每张单据按未结余额结清」；
+ * amounts 用于个别单据只结一部分（键为单据 ID）。
+ */
+export interface InvSettleBatchPayload {
+  orderIds: number[]
+  amounts?: Record<number, number>
+  method?: string
+  settledAt?: string
+  remark?: string
+}
+
 /** 数据概览 */
 export interface InvOverview {
   customerCount: number

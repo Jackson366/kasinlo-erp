@@ -635,6 +635,11 @@ definitions:
         type: integer
       name:
         type: string
+      refPurchasePrice:
+        description: 参考进价 / 参考售价：开单选中商品时作为默认单价（>0 时优先于单位成交价）
+        type: number
+      refSalePrice:
+        type: number
       specs:
         items:
           $ref: '#/definitions/inv.PickSpecVO'
@@ -873,6 +878,30 @@ definitions:
         type: number
       salesAmount:
         type: number
+    type: object
+  inv.SettleBatchReq:
+    properties:
+      amounts:
+        additionalProperties:
+          format: float64
+          type: number
+        type: object
+      method:
+        maxLength: 32
+        type: string
+      orderIds:
+        items:
+          type: integer
+        maxItems: 200
+        minItems: 1
+        type: array
+      remark:
+        maxLength: 255
+        type: string
+      settledAt:
+        type: string
+    required:
+    - orderIds
     type: object
   inv.SettleReq:
     properties:
@@ -2424,6 +2453,29 @@ paths:
       security:
       - BearerAuth: []
       summary: 登记收付款
+      tags:
+      - 进销存-应收应付
+  /inv/finance/settlements/batch:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 批量结算信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.SettleBatchReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 批量登记收付款
       tags:
       - 进销存-应收应付
   /inv/inventory:

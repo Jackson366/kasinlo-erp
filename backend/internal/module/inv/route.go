@@ -72,6 +72,7 @@ func Register(rg *gin.RouterGroup) {
 		g.GET("/finance/receivables", middleware.RequirePerm("inv:finance:list"), h.Receivables)
 		g.GET("/finance/payables", middleware.RequirePerm("inv:finance:list"), h.Payables)
 		g.POST("/finance/settlements", middleware.RequirePerm("inv:finance:settle"), h.Settle)
+		g.POST("/finance/settlements/batch", middleware.RequirePerm("inv:finance:settle"), h.SettleBatch)
 
 		// 报表中心
 		g.GET("/report/summary", middleware.RequirePerm("inv:report:view"), h.ReportSummary)

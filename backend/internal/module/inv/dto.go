@@ -440,6 +440,25 @@ type SettleReq struct {
 	Remark    string  `json:"remark" binding:"omitempty,max=255" label:"备注"`
 }
 
+// SettleBatchReq 批量收付款。
+//
+// 默认口径是「按每张单据的未结余额全额结清」——一批单子一起付款时，
+// 最常做的就是照着余额付干净。Amounts 用于个别单据只付一部分的场景：
+// 传了就按该单据的指定金额，没传的仍按未结余额结清。
+type SettleBatchReq struct {
+	OrderIDs  []int64           `json:"orderIds" binding:"required,min=1,max=200,dive,gt=0" label:"单据"`
+	Amounts   map[int64]float64 `json:"amounts" binding:"omitempty" label:"金额"`
+	Method    string            `json:"method" binding:"omitempty,max=32" label:"结算方式"`
+	SettledAt string            `json:"settledAt" binding:"omitempty" label:"结算日期"`
+	Remark    string            `json:"remark" binding:"omitempty,max=255" label:"备注"`
+}
+
+// SettleBatchResult 批量结果：实际结算的单据数与金额合计。
+type SettleBatchResult struct {
+	Count  int     `json:"count"`
+	Amount float64 `json:"amount"`
+}
+
 // ============================================================
 // 报表 / 概览
 // ============================================================

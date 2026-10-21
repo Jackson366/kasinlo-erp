@@ -871,6 +871,44 @@ const docTemplate = `{
                 }
             }
         },
+        "/inv/finance/settlements/batch": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-应收应付"
+                ],
+                "summary": "批量登记收付款",
+                "parameters": [
+                    {
+                        "description": "批量结算信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.SettleBatchReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/inv/inventory": {
             "get": {
                 "security": [
@@ -6739,6 +6777,13 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "refPurchasePrice": {
+                    "description": "参考进价 / 参考售价：开单选中商品时作为默认单价（\u003e0 时优先于单位成交价）",
+                    "type": "number"
+                },
+                "refSalePrice": {
+                    "type": "number"
+                },
                 "specs": {
                     "type": "array",
                     "items": {
@@ -7084,6 +7129,40 @@ const docTemplate = `{
                 },
                 "salesAmount": {
                     "type": "number"
+                }
+            }
+        },
+        "inv.SettleBatchReq": {
+            "type": "object",
+            "required": [
+                "orderIds"
+            ],
+            "properties": {
+                "amounts": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "number",
+                        "format": "float64"
+                    }
+                },
+                "method": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "orderIds": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "minItems": 1,
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "settledAt": {
+                    "type": "string"
                 }
             }
         },

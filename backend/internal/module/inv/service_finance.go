@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"nova-erp/internal/authz"
 	"nova-erp/internal/database"
@@ -112,6 +113,94 @@ func (s *Service) Receivables(q page.Query, settle string, actor *authz.Identity
 // Payables 应付明细。
 func (s *Service) Payables(q page.Query, settle string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
 	return s.financeList(model.InvBizPurchase, q, settle, actor)
+}
+
+// SettleBatch 批量登记收付款：一个事务里给每张单据各记一笔。
+//
+// 语义与单张结算完全一致（已审核、金额不超未结、条件更新兜底），差别只有两点：
+//   - **整批原子**：任何一张不满足条件就整批回滚。批量付款最怕「付了一半」——
+//     账上出现一批半结清的单据，比完全没付更难对账；
+//   - 默认按每张单据的未结余额结清（见 SettleBatchReq 的说明）。
+//
+// 行锁用 FOR UPDATE：批量时用户往往连点两下，两批请求并发读同一份余额
+// 都会通过校验，只有锁住行、后到的那批重新读到新余额，才不会超额。
+func (s *Service) SettleBatch(req SettleBatchReq, actor *authz.Identity) (SettleBatchResult, error) {
+	var res SettleBatchResult
+	settledAt, err := parseDate(req.SettledAt)
+	if err != nil {
+		return res, err
+	}
+	if settledAt.IsZero() {
+		settledAt = time.Now().In(database.Location())
+	}
+	method := req.Method
+	if method == "" {
+		method = "银行转账"
+	}
+	// 去重：同一张单据传两次不能写出两笔结算记录
+	seen := make(map[int64]bool, len(req.OrderIDs))
+	ids := make([]int64, 0, len(req.OrderIDs))
+	for _, id := range req.OrderIDs {
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+
+	err = saveErr(s.db.Transaction(func(tx *gorm.DB) error {
+		for _, id := range ids {
+			var o model.InvOrder
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&o, id).Error
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errcode.Newf(errcode.ErrNotFound, "单据 %d 不存在", id)
+				}
+				return err
+			}
+			if err := s.ensureCreatorVisible(o.CreatedBy, actor); err != nil {
+				return err
+			}
+			if o.Status != model.InvStatusDone {
+				return errcode.Newf(errcode.ErrConflict, "单据 %s 未审核，不能登记收付款", o.OrderNo)
+			}
+			outstanding := round2(o.TotalAmount - o.SettledAmount)
+			if outstanding <= settleEpsilon {
+				return errcode.Newf(errcode.ErrConflict, "单据 %s 已结清", o.OrderNo)
+			}
+			amount := outstanding
+			if a, ok := req.Amounts[id]; ok {
+				amount = round2(a)
+				if amount <= settleEpsilon {
+					return errcode.Newf(errcode.ErrBadRequest, "单据 %s 的结算金额必须大于 0", o.OrderNo)
+				}
+				if amount > outstanding+settleEpsilon {
+					return errcode.Newf(errcode.ErrConflict, "单据 %s 结算金额超出未结余额（剩余 %.2f）", o.OrderNo, outstanding)
+				}
+			}
+			rec := model.InvSettlement{
+				OrderID: o.ID, BizType: o.BizType, PartyID: o.PartyID,
+				Amount: amount, Method: method, SettledAt: settledAt,
+				Remark: req.Remark, CreatedBy: actorUID(actor),
+			}
+			if err := tx.Create(&rec).Error; err != nil {
+				return err
+			}
+			upd := tx.Model(&model.InvOrder{}).
+				Where("id = ? AND status = ? AND settled_amount + ? <= total_amount + ?",
+					o.ID, model.InvStatusDone, amount, settleEpsilon).
+				UpdateColumn("settled_amount", gorm.Expr("settled_amount + ?", amount))
+			if upd.Error != nil {
+				return upd.Error
+			}
+			if upd.RowsAffected == 0 {
+				return errcode.Newf(errcode.ErrConflict, "单据 %s 的余额已被改动，请刷新后重试", o.OrderNo)
+			}
+			res.Count++
+			res.Amount = round2(res.Amount + amount)
+		}
+		return nil
+	}))
+	return res, err
 }
 
 // Settle 登记收付款：写入结算记录并累加单据已结算金额（同一事务）。

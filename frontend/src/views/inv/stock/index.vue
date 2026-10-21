@@ -673,7 +673,7 @@ onMounted(() => {
                 <el-option
                   v-for="s in specOptions(item)"
                   :key="s.id"
-                  :label="`${s.spec}（库存 ${formatQty(s.stock)}）`"
+                  :label="`${s.spec || '—'}（库存 ${formatQty(s.stock)}）`"
                   :value="s.id"
                 />
               </el-select>

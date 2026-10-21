@@ -23,6 +23,13 @@ const rows = ref<InvFinanceRow[]>([])
 const total = ref(0)
 const summary = ref<InvFinanceSummary>({ total: 0, settled: 0, outstanding: 0, overdue: 0 })
 
+/** 表格勾选（批量收付款用）。只允许勾「还有未结余额」的单据 */
+const tableRef = ref<{ clearSelection: () => void }>()
+const selection = ref<InvFinanceRow[]>([])
+const selectedOutstanding = computed(() =>
+  selection.value.reduce((sum, r) => sum + (Number(r.outstanding) || 0), 0),
+)
+
 const query = reactive<{ page: number; pageSize: number; keyword: string; settle: string }>({
   page: 1,
   pageSize: 10,
@@ -64,6 +71,9 @@ async function load(): Promise<void> {
     rows.value = res.list
     total.value = res.total
     summary.value = res.summary
+    // 列表换了，勾选必须清空：留着旧行会让批量操作作用到看不见的单据上
+    selection.value = []
+    tableRef.value?.clearSelection()
   } catch {
     // 失败提示由响应拦截器统一处理
   } finally {
@@ -135,6 +145,52 @@ async function submitForm(): Promise<void> {
     load()
   } finally {
     submitting.value = false
+  }
+}
+
+// ---------------- 批量收付款 ----------------
+/**
+ * 批量口径：**按每张单据的未结余额全额结清**。
+ *
+ * 一批单子一起付款，最常做的就是照着余额付干净；要只付一部分的，
+ * 走行内的单张登记。这样批量弹窗里不需要维护一张金额表——
+ * 金额清单在选中时就已经在页面上摆着了（合计未结余额）。
+ */
+const batchVisible = ref(false)
+const batchSubmitting = ref(false)
+const batchForm = reactive<{ method: string; settledAt: string; remark: string }>({
+  method: '银行转账',
+  settledAt: '',
+  remark: '',
+})
+
+function onSelectionChange(list: InvFinanceRow[]): void {
+  selection.value = list
+}
+
+function openBatch(): void {
+  if (!selection.value.length) return
+  Object.assign(batchForm, { method: '银行转账', settledAt: today(), remark: '' })
+  batchVisible.value = true
+}
+
+async function submitBatch(): Promise<void> {
+  if (!selection.value.length) return
+  batchSubmitting.value = true
+  try {
+    const res = await invApi.settleBatch({
+      orderIds: selection.value.map((r) => r.orderId),
+      method: batchForm.method,
+      settledAt: batchForm.settledAt || undefined,
+      remark: batchForm.remark || undefined,
+    })
+    ElMessage.success(`已登记 ${res.count} 张，合计 ${formatMoney(res.amount)}`)
+    batchVisible.value = false
+    load()
+  } catch {
+    // 失败提示由响应拦截器统一处理（整批回滚，不会留半截账）
+  } finally {
+    batchSubmitting.value = false
   }
 }
 
@@ -224,6 +280,15 @@ onMounted(load)
           </el-button>
           <el-button @click="reset">重置</el-button>
           <span class="list-head__divider" />
+          <el-button
+            v-if="selection.length"
+            v-perm="'inv:finance:settle'"
+            type="primary"
+            plain
+            @click="openBatch"
+          >
+            {{ activeTab === 'receivable' ? '批量收款' : '批量付款' }}（{{ selection.length }}）
+          </el-button>
           <el-button :loading="exporting" @click="handleExport">导出</el-button>
           <el-button @click="printVisible = true">打印</el-button>
           <el-button @click="load">
@@ -232,7 +297,14 @@ onMounted(load)
         </div>
       </div>
 
-      <el-table v-loading="loading" :data="rows" stripe>
+      <el-table
+        ref="tableRef"
+        v-loading="loading"
+        :data="rows"
+        stripe
+        @selection-change="onSelectionChange"
+      >
+        <el-table-column type="selection" width="46" :selectable="(row: InvFinanceRow) => row.outstanding > 0" />
         <el-table-column prop="orderNo" label="单号" width="160" />
         <el-table-column prop="partyName" label="往来单位" min-width="150" show-overflow-tooltip />
         <el-table-column prop="orderDate" label="单据日期" width="120">
@@ -332,6 +404,48 @@ onMounted(load)
         <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 批量收付款 -->
+    <el-dialog
+      v-model="batchVisible"
+      :title="activeTab === 'receivable' ? '批量收款' : '批量付款'"
+      width="620px"
+      top="8vh"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <div class="batch-summary">
+        <div class="batch-summary__item">
+          <span>单据</span>
+          <strong>{{ selection.length }} 张</strong>
+        </div>
+        <div class="batch-summary__item">
+          <span>合计未结</span>
+          <strong class="batch-summary__amount">{{ formatMoney(selectedOutstanding) }}</strong>
+        </div>
+      </div>
+      <el-form label-width="88px">
+        <el-form-item label="结算方式">
+          <el-select v-model="batchForm.method" style="width: 100%">
+            <el-option label="银行转账" value="银行转账" />
+            <el-option label="现金" value="现金" />
+            <el-option label="承兑汇票" value="承兑汇票" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="结算日期">
+          <el-date-picker v-model="batchForm.settledAt" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="batchForm.remark" maxlength="255" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="batchVisible = false">取消</el-button>
+        <el-button type="primary" :loading="batchSubmitting" @click="submitBatch">
+          确定{{ activeTab === 'receivable' ? '收款' : '付款' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -385,6 +499,32 @@ onMounted(load)
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
+}
+
+.batch-summary {
+  display: flex;
+  gap: 32px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  background: var(--app-surface-subtle);
+  border-radius: var(--radius-sm);
+
+  &__item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--app-text-secondary);
+
+    strong {
+      font-size: 16px;
+      color: var(--app-text);
+    }
+  }
+
+  &__amount {
+    color: var(--tone-amber) !important;
+  }
 }
 
 .overdue {

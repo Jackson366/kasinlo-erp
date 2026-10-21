@@ -78,3 +78,27 @@ func (h *Handler) Settle(c *gin.Context) {
 	}
 	response.OKMsg(c, "登记成功")
 }
+
+// SettleBatch 批量登记收付款（一张单据一笔流水，整批原子）
+// @Summary      批量登记收付款
+// @Tags         进销存-应收应付
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body  SettleBatchReq  true  "批量结算信息"
+// @Success      200  {object}  response.Body
+// @Router       /inv/finance/settlements/batch [post]
+func (h *Handler) SettleBatch(c *gin.Context) {
+	var req SettleBatchReq
+	if err := bind.JSON(c, &req); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	c.Set("opAction", "批量登记收付款")
+	res, err := h.svc.SettleBatch(req, middleware.CurrentIdentity(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, res)
+}

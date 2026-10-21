@@ -509,7 +509,7 @@ defineExpose({ open })
     max-height: 74vh;
     overflow: auto;
     padding: 4px;
-    background: var(--app-bg-muted, transparent);
+    background: var(--app-surface-subtle);
     border-radius: var(--radius-sm);
   }
 }

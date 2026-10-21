@@ -903,60 +903,43 @@ func (s *Service) productCodeFree(code string, excludeID int64) error {
 
 // 规格与单位没填时的兜底值。
 //
-// 为什么是「自动补」而不是「允许为空」：规格在业务上是库存的归属层、
-// 单位是单据折算的基准 —— 真的允许空，商品会因为「没有规格」而进不了
-// 开单的商品下拉（ProductPick 只给有规格的商品），等于建了个查不到、
-// 开不了单的僵尸档案。所以做法是**用户不用想，系统自己填**。
-const (
-	defaultSpecName = "默认"
-	defaultUnitName = "个"
-)
-
-func defaultUnitReq() ProductUnitReq {
-	return ProductUnitReq{Unit: defaultUnitName, Rate: 1, IsBase: true}
+// blankUnitReq 是一个结构占位的计量单位：只有换算率与「基本单位」标记。
+//
+// 名称**故意留空** —— 用户没填就是没填，不再替他填成「个」。
+// 纸面与列表遇到空名称显示为「—」，语义上等同于「未命名」。
+func blankUnitReq() ProductUnitReq {
+	return ProductUnitReq{Rate: 1, IsBase: true}
 }
 
-// normalizeSpecs 把用户没填的部分补成结构自洽的默认值。
+// normalizeSpecs 把「规格 / 单位」里只影响结构的部分补齐。
 //
-// 这个函数让「规格 / 单位」从必填项降级为可选项：录一个「办公用品-签字笔」时
-// 不必先想清楚规格和计量单位，系统会补上「默认 / 个」。
-// 归一化之后 validateSpecs 只需面对干净数据、只管真正的错误（重名）。
-//
-// 四类兜底：
-//  1. 完全没有规格 → 补一条「默认」规格 + 基本单位「个」；
-//  2. 规格名为空 → 「默认」；
-//  3. 规格下没有单位 / 单位为空白 / 换算率 <= 0 → 补「个」、rate 取 1；
+// 补什么、不补什么：
+//  1. 完全没有规格 → 补一条**不带名称**的规格 + 一个**不带名称**的基本单位。
+//     结构上必须有这一层：规格是库存归属层、单位是单据折算基准，缺了就会
+//     变成查不到、开不了单的僵尸档案；
+//  2. 名称一律**不重建**：用户留空就存空串，不再自动写成「默认」「个」；
+//  3. 换算率 <= 0 → 取 1（0 会让折算除零，无意义）；
 //  4. 基本单位不是「恰一个」→ 没指定就把第一个提为基本单位，
 //     指定了多个只留第一个（基本单位必须唯一，否则库存没有计数基准）。
 func normalizeSpecs(reqs []ProductSpecReq) []ProductSpecReq {
 	if len(reqs) == 0 {
-		return []ProductSpecReq{{
-			Spec:  defaultSpecName,
-			Units: []ProductUnitReq{defaultUnitReq()},
-		}}
+		return []ProductSpecReq{{Units: []ProductUnitReq{blankUnitReq()}}}
 	}
 	out := make([]ProductSpecReq, 0, len(reqs))
 	for _, sp := range reqs {
 		name := strings.TrimSpace(sp.Spec)
-		if name == "" {
-			name = defaultSpecName
-		}
 		units := sp.Units
 		if len(units) == 0 {
-			units = []ProductUnitReq{defaultUnitReq()}
+			units = []ProductUnitReq{blankUnitReq()}
 		}
 		fixed := make([]ProductUnitReq, 0, len(units))
 		for _, u := range units {
-			un := strings.TrimSpace(u.Unit)
-			if un == "" {
-				un = defaultUnitName
-			}
 			rate := u.Rate
 			if rate <= 0 {
 				rate = 1
 			}
 			fixed = append(fixed, ProductUnitReq{
-				Unit: un, Rate: rate, IsBase: u.IsBase,
+				Unit: strings.TrimSpace(u.Unit), Rate: rate, IsBase: u.IsBase,
 				PurchasePrice: u.PurchasePrice, SalePrice: u.SalePrice, Status: u.Status,
 			})
 		}
@@ -991,22 +974,42 @@ func normalizeSpecs(reqs []ProductSpecReq) []ProductSpecReq {
 //   - 两行「φ20」会把库存劈成两半，各自都不预警；
 //   - 同一规格下两个「箱」会让单据选单位时不知道看哪一行的价格。
 //
+// 名称允许留空（不再补「默认 / 个」），但**空名只能有一个**：库上是
+// (product_id, spec) / (spec_id, unit) 唯一索引，两个空名会撞索引，
+// 所以在这里先给出人话提示，而不是让用户看到一条 500。
+//
 // 缺规格、缺单位、缺基本单位、基本单位换算率不是 1 —— 这些都由
 // normalizeSpecs 兜底，不在这里报错（它们不是用户的错，是系统该补的）。
 func validateSpecs(reqs []ProductSpecReq) error {
 	seenSpec := map[string]bool{}
+	blankSpec := false
 	for _, sp := range reqs {
 		spec := strings.TrimSpace(sp.Spec)
-		if seenSpec[spec] {
-			return errcode.Newf(errcode.ErrBadRequest, "规格「%s」重复", spec)
+		if spec == "" {
+			if blankSpec {
+				return errcode.New(errcode.ErrBadRequest, "同一商品下只能有一个未填名称的规格")
+			}
+			blankSpec = true
+		} else {
+			if seenSpec[spec] {
+				return errcode.Newf(errcode.ErrBadRequest, "规格「%s」重复", spec)
+			}
+			seenSpec[spec] = true
 		}
-		seenSpec[spec] = true
 
 		seenUnit := map[string]bool{}
+		blankUnit := false
 		for _, u := range sp.Units {
 			unit := strings.TrimSpace(u.Unit)
+			if unit == "" {
+				if blankUnit {
+					return errcode.New(errcode.ErrBadRequest, "同一规格下只能有一个未填名称的计量单位")
+				}
+				blankUnit = true
+				continue
+			}
 			if seenUnit[unit] {
-				return errcode.Newf(errcode.ErrBadRequest, "规格「%s」下的单位「%s」重复", spec, unit)
+				return errcode.Newf(errcode.ErrBadRequest, "单位「%s」重复", unit)
 			}
 			seenUnit[unit] = true
 		}

@@ -104,6 +104,12 @@ async function loadOptions(): Promise<void> {
   picks.value = pickRes.items
   picksTruncated.value = pickRes.truncated
   applyPickFilter(pickQuery.value)
+  // 档案是异步拉回来的：用户手快时（新商品刚建完就开单）可能先选了商品、
+  // 而那一瞬间 picks 里还没有它，applyPrice 找不到商品会把单价留成 0。
+  // 拿到档案后补一次，单价才不会再是 0。
+  form.items.forEach((it) => {
+    if (it.productId && !Number(it.price)) applyPrice(it)
+  })
 }
 
 // ---------------- 表单 ----------------
@@ -278,7 +284,10 @@ function today(): string {
 function productLabel(p: InvProductPick): string {
   // 有码就带上：扫码枪敲完一串数字，用户要能一眼确认「选中的是这件货」
   const key = p.barcode ? `${p.code} / ${p.barcode}` : p.code
-  return `${p.name}（${key}）· ${p.specs.length} 个规格`
+  // 参考价直接写在候选里：选商品时就能看到会带出什么价，不用选了再回头核对
+  const ref = isPurchase.value ? p.refPurchasePrice : p.refSalePrice
+  const refText = ref > 0 ? ` · 参考${isPurchase.value ? '进价' : '售价'} ¥${ref.toFixed(2)}` : ''
+  return `${p.name}（${key}）· ${p.specs.length} 个规格${refText}`
 }
 
 function addItem(): void {
@@ -878,7 +887,7 @@ onMounted(() => {
                 <el-option
                   v-for="s in specOptions(item)"
                   :key="s.id"
-                  :label="`${s.spec}（库存 ${formatQty(s.stock)}）`"
+                  :label="`${s.spec || '—'}（库存 ${formatQty(s.stock)}）`"
                   :value="s.id"
                 />
               </el-select>

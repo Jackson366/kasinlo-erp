@@ -25,6 +25,7 @@ import type {
   InvReportSummary,
   InvReportTrendPoint,
   InvSettlePayload,
+  InvSettleBatchPayload,
   InvStockOrderDetail,
   InvStockOrderPayload,
   InvStockOrderRow,
@@ -191,6 +192,13 @@ export const invApi = {
   },
   settle(data: InvSettlePayload) {
     return http.post<string>('/inv/finance/settlements', data)
+  },
+  /**
+   * 批量登记收付款：默认按每张单据的未结余额结清。
+   * 服务端整批原子，任一张不满足条件就整批回滚。
+   */
+  settleBatch(data: InvSettleBatchPayload) {
+    return http.post<{ count: number; amount: number }>('/inv/finance/settlements/batch', data)
   },
 
   // ---------------- 打印模板 ----------------
