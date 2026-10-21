@@ -29,10 +29,16 @@ const currentTemplate = computed(() => templates.value.find((t) => t.id === temp
 const paper = computed(() => (currentTemplate.value?.paper === 'A5' ? 'A5' : 'A4'))
 const cfg = computed<PrintContentConfig>(() => parseContent(currentTemplate.value?.content))
 
-/** 配置标题留空时按方向取默认——「入库单 / 出库单」比模板名更贴纸面 */
-const title = computed(
-  () => cfg.value.title || (detail.value?.direction === 'in' ? '入库单' : '出库单'),
-)
+/**
+ * 纸面标题优先级：模板里填的标题 > 模板的单据类型（如「销售出库单」）
+ * > 方向默认（入库单 / 出库单）。
+ */
+const title = computed(() => {
+  if (cfg.value.title) return cfg.value.title
+  const dt = currentTemplate.value?.docType || ''
+  if (/入库|出库|领料|调拨|盘点/.test(dt)) return dt
+  return detail.value?.direction === 'in' ? '入库单' : '出库单'
+})
 
 /** 打开并取数。模板默认选与方向匹配的单据类型（入库单 / 出库单），都没有则取第一个 */
 async function open(row: InvStockOrderRow): Promise<void> {
@@ -46,9 +52,16 @@ async function open(row: InvStockOrderRow): Promise<void> {
     ])
     detail.value = d
     templates.value = t.list
-    const key = d.direction === 'in' ? '入库单' : '出库单'
-    const matched = t.list.find((x) => (x.docType || '').includes(key))
-    templateId.value = (matched ?? t.list[0])?.id ?? null
+    // 先按来源（采购 / 销售）+ 方向精确命中，再退到方向，最后退第一个
+    const dirKey = d.direction === 'in' ? '入库' : '出库'
+    const srcKey = d.sourceType === 'sales' ? '销售' : d.sourceType === 'purchase' ? '采购' : ''
+    const matched =
+      (srcKey
+        ? t.list.find((x) => (x.docType || '').startsWith(srcKey) && (x.docType || '').includes(dirKey))
+        : undefined) ??
+      t.list.find((x) => (x.docType || '').includes(dirKey)) ??
+      t.list[0]
+    templateId.value = matched?.id ?? null
   } finally {
     loading.value = false
   }

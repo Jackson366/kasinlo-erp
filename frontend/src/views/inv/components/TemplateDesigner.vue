@@ -6,12 +6,12 @@
  * 写进模板的 content 字段。设计器分四组：
  *
  *   1. 纸张与标题   标题、纸张规格（A4/A5 竖版）、标题是否显示
- *   2. 公司信息     公司名 / Logo / 地址 / 电话 / 开户行（纸面表头区）
- *   3. 信息条       单据编号 / 日期 / 往来单位等字段：可改名、显隐、排序
+ *   2. 公司信息与 Logo  公司名 / 电话 / 地址 / 开户行；可放表尾落款（默认）或表头居中
+ *   3. 信息条       往来单位 / 日期 / 单号等字段：可改名、显隐、排序
  *   4. 明细列       显隐、列标题可改、对齐方式、可上下移动调顺序
- *                  （序号 / 基本数量 / 换算率都在列池里，可自由组合）
- *   5. 页面与底部   页边距（毫米，直接驱动打印 @page）/ 行高 / 字号 /
- *                  表头底色；签收栏项目可自定义、备注 / 大写 / 页脚
+ *                  （序号 / 编码 / 基本数量 / 换算率 / 备注都在列池里，可自由组合）
+ *   5. 页面与底部   页边距（毫米，直接驱动打印 @page）/ 行高 / 字号 / 表头底衬；
+ *                  收货声明与签字处可自定义，备注 / 大写 / 页脚、旧版三联签收栏
  *
  * 页边距单位是毫米并与打印 @page 同源（PrintSheet 挂载时注入），
  * 预览按同一数值模拟 —— 设计器里看到多宽的留白，打印出来就是多宽。
@@ -25,8 +25,11 @@ import { invApi } from '@/api'
 import type { InvOrderDetail, InvPrintTemplateRow, InvStockOrderDetail } from '@/types/api'
 import {
   ALL_COLUMNS,
+  DEFAULT_COLUMNS,
+  defaultDeclaration,
   defaultMetaFields,
   defaultSignItems,
+  defaultSignLabel,
   parseContent,
   type ColumnKey,
   type PrintColumn,
@@ -105,6 +108,10 @@ function open(r: InvPrintTemplateRow): void {
   row.value = r
   paper.value = r.paper === 'A5' ? 'A5' : 'A4'
   Object.assign(cfg, parseContent(r.content))
+  // 出入库单没有成交价：把单价 / 金额列从配置里摘掉，设计器列表与纸面保持一致
+  if (mode.value === 'stock') {
+    cfg.columns = cfg.columns.filter((c) => c.key !== 'price' && c.key !== 'amount')
+  }
   // 信息条没配置过（老模板）就按当前单据类型初始化，保存后固化
   if (!cfg.meta.length) {
     cfg.meta = defaultMetaFields(mode.value, orderPartyLabel.value)
@@ -112,9 +119,29 @@ function open(r: InvPrintTemplateRow): void {
   visible.value = true
 }
 
+/** 采购 / 销售单预览用示例数据（带单价金额） */
+const isSalesDoc = computed(() => /销售/.test(row.value?.docType || ''))
+
+/**
+ * 预览用的示例单据。销售类模板要给「销售」口径的示例：
+ * 声明话术（款未付 / 货款按约定结算）与往来单位标签都跟着业务线走，
+ * 否则设计器里看到的纸面和真实打印出来的一句话不一样。
+ */
+const previewDetail = computed<InvOrderDetail | InvStockOrderDetail>(() =>
+  isOrderDoc.value
+    ? {
+        ...sampleOrder,
+        bizType: (isSalesDoc.value ? 'sales' : 'purchase') as InvOrderDetail['bizType'],
+        partyName: isSalesDoc.value ? '信阳市宏达商贸有限公司' : '信阳市宏达钢材有限公司',
+      }
+    : sample,
+)
+
 const previewTitle = computed(() => {
   if (cfg.title) return cfg.title
-  if (isOrderDoc.value) return /采购/.test(row.value?.docType || '') ? '采购单' : '销售单'
+  // 纸张抬头用模板的单据类型（「销售订单 / 销货出库单」），比「销售单」更像纸面
+  const dt = row.value?.docType || ''
+  if (/采购|销售/.test(dt)) return dt
   return sample.direction === 'in' ? '入库单' : '出库单'
 })
 
@@ -154,12 +181,10 @@ function removeCol(index: number): void {
   cfg.columns.splice(index, 1)
 }
 
-/** 恢复默认列集合：用户改乱了之后的一条退路 */
+/** 恢复默认列集合：用户改乱了之后的一条退路（出入库单没有单价 / 金额） */
 function resetColumns(): void {
-  cfg.columns = ALL_COLUMNS.filter(
-    (c) =>
-      !(mode.value === 'stock' && (c.key === 'price' || c.key === 'amount')) &&
-      ['index', 'code', 'name', 'spec', 'unit', 'qty', 'price', 'amount'].includes(c.key),
+  cfg.columns = DEFAULT_COLUMNS.filter(
+    (c) => !(mode.value === 'stock' && (c.key === 'price' || c.key === 'amount')),
   ).map((c) => ({ ...c }))
 }
 
@@ -171,6 +196,12 @@ function addMeta(): void {
 function removeMeta(index: number): void {
   cfg.meta.splice(index, 1)
 }
+
+/** 默认声明 / 签字标签的提示文案（占位符里显示「留空会打成什么」） */
+const declHint = computed(() =>
+  defaultDeclaration(mode.value, isOrderDoc.value ? (isSalesDoc.value ? 'sales' : 'purchase') : undefined, sample.direction),
+)
+const signHint = computed(() => defaultSignLabel(mode.value, orderPartyLabel.value, sample.direction))
 
 // ---------------- 签收栏编辑 ----------------
 /**
@@ -241,22 +272,31 @@ defineExpose({ open })
               </el-form-item>
             </el-collapse-item>
 
-            <el-collapse-item title="公司信息（表头区）" name="company">
-              <el-form-item label="公司名称">
-                <el-input v-model="cfg.header.companyName" placeholder="显示在标题下方" />
+            <el-collapse-item title="公司信息与 Logo" name="company">
+              <el-form-item label="显示位置">
+                <el-radio-group v-model="cfg.header.placement">
+                  <el-radio-button value="bottom">表尾落款</el-radio-button>
+                  <el-radio-button value="top">表头居中</el-radio-button>
+                </el-radio-group>
               </el-form-item>
-              <el-form-item label="Logo 地址">
-                <el-input v-model="cfg.header.logoUrl" placeholder="图片 URL，留空不显示" />
+              <el-form-item label="公司名称">
+                <el-input v-model="cfg.header.companyName" placeholder="如：信阳市全程电子有限公司" />
+              </el-form-item>
+              <el-form-item label="电话">
+                <el-input v-model="cfg.header.phone" placeholder="如：13598586346" />
               </el-form-item>
               <el-form-item label="地址">
                 <el-input v-model="cfg.header.address" />
               </el-form-item>
-              <el-form-item label="电话">
-                <el-input v-model="cfg.header.phone" />
-              </el-form-item>
               <el-form-item label="开户行">
-                <el-input v-model="cfg.header.bank" placeholder="选填，显示在地址下方" />
+                <el-input v-model="cfg.header.bank" placeholder="选填" />
               </el-form-item>
+              <el-form-item label="Logo 地址">
+                <el-input v-model="cfg.header.logoUrl" placeholder="图片 URL，留空不显示（仅表头模式）" />
+              </el-form-item>
+              <div class="col-editor__foot text-muted">
+                「表尾落款」是纸质送货单的常规写法：公司名与电话压在明细表下方、合计金额左侧。
+              </div>
             </el-collapse-item>
 
             <el-collapse-item title="信息条（单据编号 / 日期等）" name="meta">
@@ -386,7 +426,18 @@ defineExpose({ open })
               <el-form-item label="表头底色">
                 <el-input v-model="cfg.page.headerBg" size="small" placeholder="如 #f2f2f2，留空为无" />
               </el-form-item>
-              <el-form-item label="签收栏">
+              <el-form-item label="收货声明">
+                <el-input
+                  v-model="cfg.footer.declaration"
+                  type="textarea"
+                  :rows="2"
+                  :placeholder="`留空用默认：${declHint}`"
+                />
+              </el-form-item>
+              <el-form-item label="签字处">
+                <el-input v-model="cfg.footer.signLabel" :placeholder="`默认：${signHint}`" />
+              </el-form-item>
+              <el-form-item label="三联签收栏">
                 <el-switch v-model="cfg.footer.showSign" />
               </el-form-item>
               <el-form-item v-if="cfg.footer.showSign" label="签收项目">
@@ -425,7 +476,7 @@ defineExpose({ open })
       <div class="designer__preview">
         <PrintSheet
           :mode="mode"
-          :detail="isOrderDoc ? sampleOrder : sample"
+          :detail="previewDetail"
           :cfg="cfg"
           :title="previewTitle"
           :paper="paper"

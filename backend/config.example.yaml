@@ -31,7 +31,7 @@ app:
   # 升级包校验、升级记录、启动后的「升级是否生效」核对都读它。
   # 优先级：本配置 > 构建注入（-ldflags "-X nova-erp/internal/config.appRelease=1.1.0"）> dev。
   # 为 dev 时升级后无法自动确认生效，记录会一直停在「已执行」。
-  release: 1.2.0
+  release: 1.2.1
   # 前端静态产物目录：目录里有 index.html 时由后端直接托管（含 SPA 深链回退），
   # 此时不需要额外架 Nginx；留空或不放产物则保持纯 API 形态。
   web_dir: web

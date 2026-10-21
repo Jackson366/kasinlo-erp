@@ -2,27 +2,42 @@
 /**
  * 单据打印纸面（纯展示组件，采购销售 / 出入库共用）。
  *
- * 与 ReportPrintDialog 的报表版式同一套设计语言：固定黑白灰纸面（不跟主题）、
- * 宋体，纸头区 + 信息条 + 明细表 + 底部区域。差异由 mode 决定：
- * order 带单价金额与合计金额，stock 合计数量且无金额列。
+ * 版式按纸质送货单重做：
+ *
+ *   　　　　　　　　　　销货出库单
+ *   客户：xxx　　　　单据日期：2026-07-14　　　　单据编号：XHCD0582
+ *   ┌──────────┬────────┬────┬────┬────┬────┬──────┐
+ *   │ 商品名称  │ 规格型号│单位│单价│数量│金额│备注信息│
+ *   ├──────────┼────────┼────┼────┼────┼────┼──────┤
+ *   │ xxx      │        │ 个 │300 │ 1  │300 │      │
+ *   └──────────┴────────┴────┴────┴────┴────┴──────┘
+ *   信阳市全程电子有限公司 联系电话：135…        合计金额：300
+ *   本人确认已收到上述产品，经核对数量、型号、外观均无误，款未付。　客户签字：
+ *
+ * 与旧版的差别（都是有意的）：
+ *   1. 抬头上不再压公司名与地址，落款放到明细表下方——签收人第一眼要看到的是货和钱；
+ *   2. 信息条没有上下横线，三个字段横向铺开，与表格左对齐；
+ *   3. 表头无灰色底衬、细实线边框，黑白打印不发灰；
+ *   4. 合计金额从表格里挪到表尾行右侧，与公司信息同一行；
+ *   5. 三联「制单 / 审核 / 批准」签收栏换成「一行收货声明 + 签字处」，仍可切回。
  *
  * 版式完全由模板配置驱动：明细列（显隐 / 标题 / 对齐）、信息条（显隐 / 改名 /
- * 排序）、公司信息与 Logo、页边距与行高字号、签收栏与底部区域——
+ * 排序）、公司信息与 Logo、页边距与行高字号、声明与签字——
  * 组件本身不写死任何一列、任何一个信息条字段。
  *
  * 页边距：配置是毫米，预览按 96dpi 换算模拟，打印时注入 @page（applyPrintPage），
  * 两边数值一致——所见即所得。打印方向由 @page size 钉死为竖版。
- *
- * 打印弹窗与模板设计器共用：前者喂真实单据，后者喂示例数据做实时预览。
  */
 import { computed, onMounted, watch } from 'vue'
 import type { InvOrderDetail, InvStockOrderDetail } from '@/types/api'
-import { formatDay } from '@/utils/format'
+import { formatDay, formatQty } from '@/utils/format'
 import {
   amountToCN,
   applyPrintPage,
+  defaultDeclaration,
   defaultMetaFields,
   defaultSignItems,
+  defaultSignLabel,
   MM_PX,
   visibleCols,
   type PrintContentConfig,
@@ -54,6 +69,9 @@ function applyPage(): void {
   applyPrintPage(props.paper, props.cfg.page.marginMm)
 }
 
+const bizType = computed(() => (props.detail as InvOrderDetail).bizType)
+const direction = computed(() => (props.detail as InvStockOrderDetail).direction)
+
 const sourceLabel = computed(() => {
   const st = (props.detail as InvStockOrderDetail).sourceType
   return st === 'purchase' ? '采购单号' : st === 'sales' ? '销售单号' : '来源单号'
@@ -71,9 +89,9 @@ const metaPool = computed<Record<string, MetaValue>>(() => {
   if (props.mode === 'order') {
     const o = d as InvOrderDetail
     const pool: Record<string, MetaValue> = {
-      orderNo: { label: '单据编号', value: o.orderNo },
-      orderDate: { label: '单据日期', value: formatDay(o.orderDate) },
       party: { label: props.partyLabel || '往来单位', value: o.partyName || '-' },
+      orderDate: { label: '单据日期', value: formatDay(o.orderDate) },
+      orderNo: { label: '单据编号', value: o.orderNo },
       salesman: { label: '业务员', value: o.salesman || '', skipIfEmpty: true },
       operator: { label: '制单人', value: o.operator || '', skipIfEmpty: true },
     }
@@ -81,8 +99,8 @@ const metaPool = computed<Record<string, MetaValue>>(() => {
   }
   const s = d as InvStockOrderDetail
   const pool: Record<string, MetaValue> = {
-    orderNo: { label: '单据编号', value: s.orderNo },
     orderDate: { label: '单据日期', value: formatDay(s.orderDate) },
+    orderNo: { label: '单据编号', value: s.orderNo },
     source: { label: sourceLabel.value, value: s.sourceOrderNo || '', skipIfEmpty: true },
     salesman: { label: '业务员', value: s.salesman || '', skipIfEmpty: true },
     operator: { label: '制单人', value: s.operator || '', skipIfEmpty: true },
@@ -107,15 +125,47 @@ const metaItems = computed(() => {
   return items
 })
 
-const cols = computed(() => visibleCols(props.cfg))
-/** 合计行的 colspan = 可见列数 - 1（值自己占一格） */
-const colspan = computed(() => Math.max(cols.value.length - 1, 1))
+const cols = computed(() => visibleCols(props.cfg, props.mode))
+/** 空明细时的占位列数 */
+const colCount = computed(() => Math.max(cols.value.length, 1))
 
 const amountCN = computed(() => (props.mode === 'order' ? amountToCN((props.detail as InvOrderDetail).totalAmount) : ''))
 
+/** 表尾合计：销售/采购打金额，出入库打数量 */
+const totalLabel = computed(() => (props.mode === 'order' ? '合计金额' : '合计数量'))
+const totalValue = computed(() =>
+  props.mode === 'order'
+    ? (props.detail as InvOrderDetail).totalAmount.toFixed(2)
+    // 数量是 numeric(14,4)，直接打出来会是 1.0002 这种账本精度，纸面上要读成人话
+    : formatQty((props.detail as InvStockOrderDetail).totalQty),
+)
+
+/** 表尾左侧的公司落款（配置了「公司信息位置 = 表尾」才显示） */
+const companyBottom = computed(() => props.cfg.header.placement !== 'top')
+const companyParts = computed(() => {
+  const h = props.cfg.header
+  const parts: string[] = []
+  if (h.companyName) parts.push(h.companyName)
+  if (h.phone) parts.push(`联系电话：${h.phone}`)
+  if (h.address) parts.push(h.address)
+  if (h.bank) parts.push(h.bank)
+  return parts
+})
+
+const declaration = computed(
+  () =>
+    props.cfg.footer.declaration ||
+    defaultDeclaration(props.mode, bizType.value, direction.value),
+)
+const signLabel = computed(
+  () =>
+    props.cfg.footer.signLabel ||
+    defaultSignLabel(props.mode, props.partyLabel || '', direction.value),
+)
+
 type AnyItem = Record<string, unknown>
 
-/** 单元格取值。index / qty 两列有专属渲染，其余列按配置 */
+/** 单元格取值。把模板配置的列键翻成单据行上的字面值 */
 function cell(it: AnyItem, key: string): string {
   switch (key) {
     case 'code':
@@ -123,17 +173,20 @@ function cell(it: AnyItem, key: string): string {
     case 'name':
       return String(it.productName ?? '-')
     case 'spec':
-      return String(it.spec || '-')
+      return String(it.spec || '')
     case 'unit':
       return String(it.unit || '-')
     case 'qtyBase':
-      return String(it.qtyBase ?? '-')
+      return formatQty(Number(it.qtyBase))
     case 'rate':
       return String(it.rate ?? '-')
     case 'price':
       return Number(it.price ?? 0).toFixed(2)
     case 'amount':
       return Number(it.amount ?? 0).toFixed(2)
+    // 备注列是留给手写的空白格：纸质单据上的「备注信息」本来就要现场填
+    case 'note':
+      return ''
     default:
       return '-'
   }
@@ -157,31 +210,30 @@ const signItems = computed(() =>
       '--th-bg': cfg.page.headerBg || 'transparent',
     }"
   >
-    <img v-if="cfg.header.logoUrl" class="sheet__logo" :src="cfg.header.logoUrl" alt="logo" />
+    <img v-if="cfg.header.logoUrl && !companyBottom" class="sheet__logo" :src="cfg.header.logoUrl" alt="logo" />
     <h1 v-if="cfg.header.showTitle" class="sheet__title" :style="{ fontSize: `${cfg.page.titleFontSize}pt` }">
       {{ title }}
     </h1>
-    <div v-if="cfg.header.companyName" class="sheet__company">{{ cfg.header.companyName }}</div>
-    <div v-if="cfg.header.address || cfg.header.phone" class="sheet__company-sub">
-      {{ cfg.header.address }}{{ cfg.header.address && cfg.header.phone ? ' · ' : '' }}{{ cfg.header.phone }}
-    </div>
-    <div v-if="cfg.header.bank" class="sheet__company-sub">{{ cfg.header.bank }}</div>
+    <!-- 公司信息放在表头时（少数模板习惯）才在标题下重复一遍 -->
+    <template v-if="!companyBottom">
+      <div v-if="cfg.header.companyName" class="sheet__company">{{ cfg.header.companyName }}</div>
+      <div v-if="cfg.header.address || cfg.header.phone" class="sheet__company-sub">
+        {{ cfg.header.address }}{{ cfg.header.address && cfg.header.phone ? ' · ' : '' }}{{ cfg.header.phone }}
+      </div>
+      <div v-if="cfg.header.bank" class="sheet__company-sub">{{ cfg.header.bank }}</div>
+    </template>
 
     <div class="sheet__meta">
       <span v-for="m in metaItems" :key="m.label" class="sheet__meta-item">
-        <b>{{ m.label }}：</b>{{ m.value }}
+        <em>{{ m.label }}：</em>{{ m.value }}
       </span>
     </div>
 
     <table class="sheet__table">
       <thead>
         <tr>
-          <th
-            v-for="c in cols"
-            :key="c.key"
-            :class="`col-${c.key}`"
-            :style="{ textAlign: c.align }"
-          >
+          <!-- 表头一律居中：纸质单据的表头是「栏名」，与单元格数据的对齐方式无关 -->
+          <th v-for="c in cols" :key="c.key" :class="`col-${c.key}`">
             {{ c.label }}
           </th>
         </tr>
@@ -191,36 +243,42 @@ const signItems = computed(() =>
           <td v-for="c in cols" :key="c.key" :class="`col-${c.key}`" :style="{ textAlign: c.align }">
             <template v-if="c.key === 'index'">{{ i + 1 }}</template>
             <template v-else-if="c.key === 'qty'">
-              {{ it.qty }}
+              {{ formatQty(it.qty) }}
               <!-- 非基本单位时把折算关系写出来：纸面上的「2 箱」入账是 20 个基本单位，
                    不写清楚，对账时没人知道库存为什么不是整数 -->
-              <span v-if="Number(it.rate) !== 1" class="qty-sub">×{{ it.rate }} = {{ it.qtyBase }}{{ it.unitBase ? ` ${it.unitBase}` : '' }}</span>
+              <span v-if="Number(it.rate) !== 1" class="qty-sub">×{{ formatQty(it.rate) }} = {{ formatQty(it.qtyBase) }}{{ it.unitBase ? ` ${it.unitBase}` : '' }}</span>
             </template>
             <template v-else>{{ cell(it, c.key) }}</template>
           </td>
         </tr>
         <tr v-if="(detail as any).items.length === 0">
-          <td :colspan="colspan" class="sheet__empty">无明细</td>
+          <td :colspan="colCount" class="sheet__empty">无明细</td>
         </tr>
       </tbody>
-      <tfoot>
-        <tr v-if="mode === 'order'">
-          <td :colspan="colspan" class="col-qty-label">合计金额（元）</td>
-          <td class="col-money">{{ (detail as InvOrderDetail).totalAmount.toFixed(2) }}</td>
-        </tr>
-        <tr v-else>
-          <td :colspan="colspan" class="col-qty-label">合计数量</td>
-          <td class="col-qty">{{ (detail as InvStockOrderDetail).totalQty }}</td>
-        </tr>
-      </tfoot>
     </table>
 
+    <div class="sheet__summary">
+      <div class="sheet__summary-left">
+        <span v-for="p in companyParts" :key="p">{{ p }}</span>
+      </div>
+      <div class="sheet__summary-right">
+        {{ totalLabel }}：<b>{{ totalValue }}</b>
+      </div>
+    </div>
+
     <div v-if="cfg.footer.showAmountCn && amountCN" class="sheet__amount-cn">{{ amountCN }}</div>
+
+    <div v-if="declaration || signLabel" class="sheet__declare">
+      <span class="sheet__declare-text">{{ declaration }}</span>
+      <span class="sheet__declare-sign">{{ signLabel }}：<i /></span>
+    </div>
+
     <div v-if="cfg.footer.showRemark && (detail as any).remark" class="sheet__remark">
       <b>备注：</b>{{ (detail as any).remark }}
     </div>
     <div v-if="cfg.footer.customText" class="sheet__remark sheet__custom">{{ cfg.footer.customText }}</div>
 
+    <!-- 旧版三联签收栏：默认关闭，模板里打开才出现 -->
     <div v-if="cfg.footer.showSign" class="sheet__sign">
       <span v-for="s in signItems" :key="s">{{ s }}：____________</span>
     </div>
@@ -245,11 +303,13 @@ const signItems = computed(() =>
     margin: 0 auto 8px;
   }
 
+  // 标题：居中、略加字距（纸质单据的习惯）；末尾的空白用 text-indent 抵掉，保证真正居中
   &__title {
-    margin: 0;
+    margin: 4px 0 14px;
     text-align: center;
-    letter-spacing: 0.35em;
-    text-indent: 0.35em; // 抵消最后一个字的字距，让标题真正居中
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-indent: 0.18em;
   }
 
   &__company {
@@ -265,73 +325,80 @@ const signItems = computed(() =>
     color: #555;
   }
 
+  // 信息条：三五个字段横向铺开，与表格左右边界对齐；不画线（纸质单据的写法）
   &__meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 22px;
-    border-top: 2px solid #1a1a1a;
-    border-bottom: 1px solid #999;
-    padding: 8px 2px;
-    margin-top: 10px;
-    font-size: 0.92em;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 4px 24px;
+    margin-bottom: 6px;
+    font-size: 1em;
 
-    b {
-      font-weight: 600;
+    em {
+      font-style: normal;
+      font-weight: 400;
     }
   }
 
   &__table {
     width: 100%;
-    margin-top: 10px;
     border-collapse: collapse;
-    font-size: 0.95em;
+    font-size: 1em;
 
     th,
     td {
-      border: 1px solid #444;
-      padding: 5px 8px;
-      text-align: left;
+      border: 1px solid #000;
+      padding: 3px 6px;
+      vertical-align: middle;
       word-break: break-all;
     }
 
+    // 表头不加粗、不填底衬：细线框的白表头在黑白打印下最干净
     th {
       background: var(--th-bg);
-      font-weight: 600;
+      font-weight: 400;
+      text-align: center;
       white-space: nowrap;
     }
 
-    // 行高可调：紧凑适合条目多的单据，宽松适合手写补录
     tbody td {
       height: var(--row-h, 30px);
-    }
-
-    tfoot td {
-      border-top: 2px solid #1a1a1a;
-      font-weight: 600;
-      height: auto;
     }
   }
 
   .col-index {
-    width: 34px;
-    text-align: center;
+    width: 38px;
   }
 
   .col-code {
-    width: 88px;
+    width: 92px;
   }
 
-  .col-unit,
-  .col-rate {
-    width: 48px;
-    text-align: center;
+  .col-name {
+    min-width: 150px;
+  }
+
+  .col-spec {
+    min-width: 96px;
+  }
+
+  .col-unit {
+    width: 64px;
   }
 
   .col-qty,
   .col-qtybase,
-  .col-money {
-    width: 80px;
+  .col-price,
+  .col-money,
+  .col-amount,
+  .col-rate {
+    width: 74px;
     white-space: nowrap;
+  }
+
+  .col-note {
+    min-width: 84px;
   }
 
   // 折算行是「数量的解释」而不是另一个数量：降一号字、压灰，
@@ -342,36 +409,84 @@ const signItems = computed(() =>
     color: #666;
   }
 
-  .col-qty-label {
-    text-align: right;
-  }
-
   &__empty {
     text-align: center;
     color: #999;
   }
 
-  &__amount-cn {
+  // 表尾行：左侧公司落款，右侧合计金额，与表格同宽
+  &__summary {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
     margin-top: 8px;
+    font-size: 1em;
+
+    &-left {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px 22px;
+      min-width: 0;
+    }
+
+    &-right {
+      flex: none;
+      white-space: nowrap;
+
+      b {
+        font-weight: 700;
+      }
+    }
+  }
+
+  &__amount-cn {
+    margin-top: 2px;
     text-align: right;
     font-size: 0.92em;
-    font-weight: 600;
+  }
+
+  // 声明行：左一句话，右签字处，中间留白给手写
+  &__declare {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 24px;
+    margin-top: 14px;
+    font-size: 1em;
+
+    &-text {
+      min-width: 0;
+    }
+
+    &-sign {
+      flex: none;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: baseline;
+
+      i {
+        display: inline-block;
+        width: 110px;
+        border-bottom: 1px solid #666;
+      }
+    }
   }
 
   &__remark {
-    margin-top: 10px;
+    margin-top: 8px;
     font-size: 0.92em;
   }
 
   &__sign {
     display: flex;
     justify-content: space-between;
-    margin-top: 34px;
+    margin-top: 28px;
     font-size: 0.92em;
   }
 
   &__footer {
-    margin-top: 14px;
+    margin-top: 10px;
     text-align: center;
     font-size: 0.85em;
     color: #666;

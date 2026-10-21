@@ -33,8 +33,19 @@ const currentTemplate = computed(() => templates.value.find((t) => t.id === temp
 const paper = computed(() => (currentTemplate.value?.paper === 'A5' ? 'A5' : 'A4'))
 const cfg = computed<PrintContentConfig>(() => parseContent(currentTemplate.value?.content))
 
-/** 配置标题留空时按业务线取默认——「采购单 / 销售单」比模板名更贴纸面 */
-const title = computed(() => cfg.value.title || (props.bizType === 'purchase' ? '采购单' : '销售单'))
+/**
+ * 纸面标题优先级：模板里填的标题 > 模板的单据类型（如「销货出库单」）
+ * > 业务线默认（采购单 / 销售单）。
+ *
+ * 纸质单据的抬头通常是「销货出库单」这种完整说法，模板名已经写了就照用，
+ * 不必让用户为了一个抬头再去改标题。
+ */
+const title = computed(() => {
+  if (cfg.value.title) return cfg.value.title
+  const dt = currentTemplate.value?.docType || ''
+  if (/采购|销售/.test(dt)) return dt
+  return props.bizType === 'purchase' ? '采购单' : '销售单'
+})
 
 /** 打开并取数。模板默认选与业务线匹配的类型，都没有则取第一个 */
 async function open(row: InvOrderRow): Promise<void> {
@@ -48,9 +59,14 @@ async function open(row: InvOrderRow): Promise<void> {
     ])
     detail.value = d
     templates.value = t.list
-    const key = props.bizType === 'purchase' ? '采购单' : '销售单'
-    const matched = t.list.find((x) => (x.docType || '').includes(key))
-    templateId.value = (matched ?? t.list[0])?.id ?? null
+    // 优先同业务线的「订单」模板，其次同业务线任意模板，最后退第一个——
+    // 以前只找「销售单」三个字，而模板叫「销售出库单 / 销售订单」，永远匹配不上，
+    // 结果每次都拿列表第一个（往往是采购订单），纸面抬头与单据对不上。
+    const key = props.bizType === 'purchase' ? '采购' : '销售'
+    const sameLine = t.list.filter((x) => (x.docType || '').startsWith(key))
+    const matched =
+      sameLine.find((x) => (x.docType || '').includes('订单')) ?? sameLine[0] ?? t.list[0]
+    templateId.value = matched?.id ?? null
   } finally {
     loading.value = false
   }
