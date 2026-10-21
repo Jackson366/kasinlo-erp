@@ -331,6 +331,38 @@ func insertNode(db *gorm.DB, node module.MenuNode, parentID int64, sort int) (in
 	return added, skipped, nil
 }
 
+// menuRenames 内置菜单的**历史改名记录**。
+//
+// ensureNode 的原则是「已存在的节点一律不覆盖」，因为管理员可能改过标题 / 图标 / 排序。
+// 但产品自己给内置菜单改名时，存量库不能一直停在旧名字上 —— 这里只处理
+// 「标题仍是旧内置值」的情况：管理员自己起过名字（不等于 From）就不动它。
+var menuRenames = []struct {
+	Name string // 节点 name：稳定标识，改名不变
+	From string // 旧内置标题
+	To   string // 新内置标题
+}{
+	{Name: "InvStock", From: "出入库", To: "库存管理"},
+}
+
+// applyMenuRename 把仍是旧内置标题的节点改成新标题（管理员自定义过的跳过）。
+func applyMenuRename(db *gorm.DB, m *model.Menu) error {
+	for _, r := range menuRenames {
+		if m.Name != r.Name || m.Title != r.From {
+			continue
+		}
+		if err := db.Model(&model.Menu{}).Where("id = ?", m.ID).Update("title", r.To).Error; err != nil {
+			return fmt.Errorf("更新菜单标题 %s 失败: %w", m.Name, err)
+		}
+		logger.Info("内置菜单改名",
+			zap.String("name", m.Name),
+			zap.String("from", r.From),
+			zap.String("to", r.To),
+		)
+		m.Title = r.To
+	}
+	return nil
+}
+
 // ensureNode 保证节点存在，返回 (菜单 ID, 是否新建, 是否跳过, 错误)。
 func ensureNode(db *gorm.DB, node module.MenuNode, parentID int64, sort int) (int64, bool, bool, error) {
 	var existing model.Menu
@@ -338,6 +370,9 @@ func ensureNode(db *gorm.DB, node module.MenuNode, parentID int64, sort int) (in
 	if err == nil {
 		// 已存在：沿用原 ID，字段一律不覆盖 ——
 		// 管理员对标题、图标、排序的调整必须保留
+		if err := applyMenuRename(db, &existing); err != nil {
+			return 0, false, false, err
+		}
 		return existing.ID, false, false, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {

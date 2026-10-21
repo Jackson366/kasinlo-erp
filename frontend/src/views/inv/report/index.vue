@@ -82,6 +82,11 @@ const purchaseRanking = ref<InvReportRankRow[]>([])
 const stockRanking = ref<InvReportStockRankRow[]>([])
 /** 明细：销售 / 采购共用一个容器，按当前 tab 取数 */
 const detail = ref<InvReportDetailResult | null>(null)
+/**
+ * 明细的往来单位关键字（销售 = 客户，采购 = 供应商）。
+ * 只作用于明细：排行榜本身按往来单位聚合，再按名字过滤它没有意义。
+ */
+const detailParty = ref('')
 
 // ---------------- 各报表区加载 ----------------
 
@@ -136,10 +141,12 @@ async function loadStockRank(ticket: number): Promise<void> {
   stockRanking.value = rk
 }
 
-/** 明细：销售 / 采购共用，按当前 tab 决定 biz */
+/** 明细：销售 / 采购共用，按当前 tab 决定 biz；往来单位是明细专属筛选 */
 async function loadDetail(ticket: number): Promise<void> {
   const biz = activeTab.value === 'purchaseDetail' ? 'purchase' : 'sales'
-  const r = await invApi.reportDetail({ ...filterParams(), biz })
+  const p: Record<string, string | number> = { ...filterParams(), biz }
+  if (detailParty.value) p.party = detailParty.value
+  const r = await invApi.reportDetail(p)
   if (!guard.isCurrent(ticket)) return
   detail.value = r
 }
@@ -390,10 +397,12 @@ const exporting = ref(false)
 /**
  * 哪些报表区支持导出。
  *
- * 导出走的是服务端生成的工作簿，目前只覆盖「总览 / 排行」两类；
- * 库存排行与两个明细还没做专用版式，就不摆一个点了没反应的按钮。
+ * 导出走服务端生成的工作簿，覆盖总览 / 两个排行 / 两个明细；
+ * 库存排行本身就是一张按金额排序的表，不另做导出。
  */
-const canExport = computed(() => ['overview', 'salesRank', 'purchaseRank'].includes(activeTab.value))
+const canExport = computed(() =>
+  ['overview', 'salesRank', 'purchaseRank', 'salesDetail', 'purchaseDetail'].includes(activeTab.value),
+)
 
 async function exportReport(): Promise<void> {
   exporting.value = true
@@ -407,6 +416,11 @@ async function exportReport(): Promise<void> {
       params.type = 'ranking'
       params.biz = 'purchase'
       params.dimension = purchaseDimension.value === 'supplier' ? 'customer' : 'product'
+    } else if (activeTab.value === 'salesDetail' || activeTab.value === 'purchaseDetail') {
+      // 明细导出跟着屏幕上的筛选走：换了往来单位再导出，拿到的必须是过滤后的那份
+      params.type = 'detail'
+      params.biz = activeTab.value === 'purchaseDetail' ? 'purchase' : 'sales'
+      if (detailParty.value) params.party = detailParty.value
     }
     await invApi.reportExport(params)
     ElMessage.success('导出成功')
@@ -715,10 +729,25 @@ onMounted(() => {
     <div v-else class="page-card">
       <header class="card-head">
         <h3>{{ activeTab === 'salesDetail' ? '销售明细' : '采购明细' }}</h3>
-        <span class="text-muted">
-          共 {{ detail?.total ?? 0 }} 行 · 合计 {{ formatMoney(detail?.amount ?? 0) }}
-          <template v-if="detail?.truncated">（行数过多，仅展示前 {{ detail.rows.length }} 行）</template>
-        </span>
+        <div class="detail-head__right">
+          <span class="text-muted">
+            共 {{ detail?.total ?? 0 }} 行 · 合计 {{ formatMoney(detail?.amount ?? 0) }}
+            <template v-if="detail?.truncated">（行数过多，仅展示前 {{ detail.rows.length }} 行）</template>
+          </span>
+          <el-input
+            v-model="detailParty"
+            :placeholder="`${activeTab === 'salesDetail' ? '客户' : '供应商'}名称，可模糊`"
+            clearable
+            style="width: 200px"
+            @keyup.enter="loadTab"
+            @clear="loadTab"
+          >
+            <template #prefix>
+              <AppIcon name="Search" />
+            </template>
+          </el-input>
+          <el-button type="primary" plain @click="loadTab">查询</el-button>
+        </div>
       </header>
 
       <el-table :data="detail?.rows ?? []" stripe max-height="640">
@@ -953,6 +982,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 12px;
 
   h3 {
@@ -961,6 +992,14 @@ onMounted(() => {
     font-weight: 600;
     color: var(--app-text);
   }
+}
+
+// 明细卡片头右侧：统计 + 往来单位筛选，一行排开（窄屏整体换行）
+.detail-head__right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }
 
 .rank {

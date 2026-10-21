@@ -34,7 +34,9 @@ import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 defineOptions({ name: 'InvStock' })
 
-const activeTab = ref('orders')
+// 默认落在「库存查询」：菜单叫库存管理，进页面先看库存现状，
+// 单据是这个页面的历史记录，需要时再切过去。
+const activeTab = ref('inventory')
 const printRef = ref<InstanceType<typeof StockPrintDialog> | null>(null)
 
 // ---------------- 出入库单据 ----------------
@@ -402,6 +404,79 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
   <div class="stock-page">
     <div class="page-card">
       <el-tabs v-model="activeTab" @tab-change="onTabChange">
+        <!-- 库存查询 -->
+        <el-tab-pane label="库存查询" name="inventory">
+          <!-- 搜索与统计合并一行 -->
+          <div class="list-head">
+            <span class="list-head__title">
+              库存查询
+              <em>共 {{ inventory.length }} 条规格 · 预警 {{ warnCount }} 项 · 总值 {{ formatMoney(inventoryTotal) }}</em>
+              <em v-if="inventoryTruncated" class="text-warning">
+                仅显示前 {{ inventoryLimit }} 条，请用关键字搜索其余
+              </em>
+            </span>
+            <el-form class="filter-form" label-width="76px" @submit.prevent>
+              <el-form-item label="关键字">
+                <el-input
+                  v-model="inventoryKeyword" @input="searchInventorySoon"
+                  placeholder="商品编码 / 名称"
+                  clearable
+                  @keyup.enter="loadInventory"
+                />
+              </el-form-item>
+            </el-form>
+            <div class="list-head__actions">
+              <el-button type="primary" @click="loadInventory">
+                <AppIcon name="Search" />
+                <span>查询</span>
+              </el-button>
+              <el-button @click="inventoryKeyword = ''; loadInventory()">重置</el-button>
+              <span class="list-head__divider" />
+              <el-button :loading="inventoryLoading" @click="loadInventory">
+                <AppIcon name="Refresh" />
+              </el-button>
+            </div>
+          </div>
+
+          <el-table v-loading="inventoryLoading" :data="inventory" stripe>
+            <el-table-column prop="productCode" label="编码" width="100" />
+            <el-table-column
+              prop="productName"
+              label="商品"
+              min-width="140"
+              show-overflow-tooltip
+            />
+            <el-table-column prop="spec" label="规格" width="130" />
+            <!-- 单位单列出来：它是库存的**计数单位**（基本单位），
+                 决定「12」是 12 张还是 12 吨；塞在库存数字后面会被当成数量的一部分读过去 -->
+            <el-table-column prop="unit" label="基本单位" width="100" align="center">
+              <template #default="{ row }">{{ row.unit || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="categoryName" label="分类" width="110">
+              <template #default="{ row }">{{ row.categoryName || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="库存" width="120" align="right">
+              <template #default="{ row }">
+                <span :class="row.warn ? 'stock-warn' : ''">{{ formatQty(row.stock) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="预警下限" width="110" align="right">
+              <template #default="{ row }">{{ formatQty(row.warnStock) }}</template>
+            </el-table-column>
+            <el-table-column label="库存成本" width="130" align="right">
+              <template #default="{ row }">
+                {{ formatMoney(row.stock * row.purchasePrice) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="row.warn" type="danger" size="small" effect="light">库存预警</el-tag>
+                <el-tag v-else type="success" size="small" effect="light">正常</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
         <!-- 出入库单据 -->
         <el-tab-pane label="出入库单据" name="orders">
           <!-- 搜索与操作合并一行 -->
@@ -518,79 +593,6 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
               @change="load"
             />
           </div>
-        </el-tab-pane>
-
-        <!-- 库存查询 -->
-        <el-tab-pane label="库存查询" name="inventory">
-          <!-- 搜索与统计合并一行 -->
-          <div class="list-head">
-            <span class="list-head__title">
-              库存查询
-              <em>共 {{ inventory.length }} 条规格 · 预警 {{ warnCount }} 项 · 总值 {{ formatMoney(inventoryTotal) }}</em>
-              <em v-if="inventoryTruncated" class="text-warning">
-                仅显示前 {{ inventoryLimit }} 条，请用关键字搜索其余
-              </em>
-            </span>
-            <el-form class="filter-form" label-width="76px" @submit.prevent>
-              <el-form-item label="关键字">
-                <el-input
-                  v-model="inventoryKeyword" @input="searchInventorySoon"
-                  placeholder="商品编码 / 名称"
-                  clearable
-                  @keyup.enter="loadInventory"
-                />
-              </el-form-item>
-            </el-form>
-            <div class="list-head__actions">
-              <el-button type="primary" @click="loadInventory">
-                <AppIcon name="Search" />
-                <span>查询</span>
-              </el-button>
-              <el-button @click="inventoryKeyword = ''; loadInventory()">重置</el-button>
-              <span class="list-head__divider" />
-              <el-button :loading="inventoryLoading" @click="loadInventory">
-                <AppIcon name="Refresh" />
-              </el-button>
-            </div>
-          </div>
-
-          <el-table v-loading="inventoryLoading" :data="inventory" stripe>
-            <el-table-column prop="productCode" label="编码" width="100" />
-            <el-table-column
-              prop="productName"
-              label="商品"
-              min-width="140"
-              show-overflow-tooltip
-            />
-            <el-table-column prop="spec" label="规格" width="130" />
-            <!-- 单位单列出来：它是库存的**计数单位**（基本单位），
-                 决定「12」是 12 张还是 12 吨；塞在库存数字后面会被当成数量的一部分读过去 -->
-            <el-table-column prop="unit" label="基本单位" width="100" align="center">
-              <template #default="{ row }">{{ row.unit || '-' }}</template>
-            </el-table-column>
-            <el-table-column prop="categoryName" label="分类" width="110">
-              <template #default="{ row }">{{ row.categoryName || '-' }}</template>
-            </el-table-column>
-            <el-table-column label="库存" width="120" align="right">
-              <template #default="{ row }">
-                <span :class="row.warn ? 'stock-warn' : ''">{{ formatQty(row.stock) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="预警下限" width="110" align="right">
-              <template #default="{ row }">{{ formatQty(row.warnStock) }}</template>
-            </el-table-column>
-            <el-table-column label="库存成本" width="130" align="right">
-              <template #default="{ row }">
-                {{ formatMoney(row.stock * row.purchasePrice) }}
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="100" align="center">
-              <template #default="{ row }">
-                <el-tag v-if="row.warn" type="danger" size="small" effect="light">库存预警</el-tag>
-                <el-tag v-else type="success" size="small" effect="light">正常</el-tag>
-              </template>
-            </el-table-column>
-          </el-table>
         </el-tab-pane>
       </el-tabs>
     </div>

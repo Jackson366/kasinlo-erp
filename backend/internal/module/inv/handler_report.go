@@ -1,6 +1,7 @@
 package inv
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,10 @@ type ReportFilter struct {
 	From       string
 	To         string
 	CategoryID int64
+	// Party 往来单位关键字（客户 / 供应商名，模糊匹配）。
+	// 目前只有销售 / 采购明细用它：明细是逐单逐货的流水，按客户或供应商
+	// 收窄是最常用的看法（对账、查某个客户这一年买了什么）。
+	Party string
 }
 
 func reportFilterFrom(c *gin.Context) (ReportFilter, error) {
@@ -37,6 +42,7 @@ func reportFilterFrom(c *gin.Context) (ReportFilter, error) {
 		From:       c.Query("from"),
 		To:         c.Query("to"),
 		CategoryID: categoryID,
+		Party:      strings.TrimSpace(c.Query("party")),
 	}, nil
 }
 
@@ -282,7 +288,7 @@ func (h *Handler) ReportDetail(c *gin.Context) {
 // @Tags         进销存-报表
 // @Produce      application/octet-stream
 // @Security     BearerAuth
-// @Param        type       query  string  false  "报表区：overview（默认）/ ranking / purchase / inventory"
+// @Param        type       query  string  false  "报表区：overview（默认）/ ranking / detail（销售采购明细）"
 // @Param        dimension  query  string  false  "排行维度：customer（默认）/ product"
 // @Param        biz        query  string  false  "业务方向：sales（默认）/ purchase"
 // @Param        range      query  string  false  "时间范围"

@@ -1237,19 +1237,36 @@ async function main() {
   )
 
   // 报表导出：四类面板都要产出有效的 xlsx（xlsx 是 zip，头两字节 PK）
-  for (const [type, label] of [
-    ['overview', '经营总览'],
-    ['ranking', '销售排行'],
-    ['purchase', '采购分析'],
-    ['inventory', '库存分析'],
+  for (const [type, label, extra] of [
+    ['overview', '经营总览', ''],
+    ['ranking', '销售排行', '&dimension=product'],
+    ['detail', '销售明细', '&biz=sales'],
+    ['detail', '采购明细', '&biz=purchase'],
   ]) {
-    const extra = type === 'ranking' ? '&dimension=product' : ''
     const r = await request('GET', `/inv/report/export?type=${type}&range=year${extra}`, { token })
     ok(
       `报表导出 xlsx（${label}）`,
       r.status === 200 && typeof r.text === 'string' && r.text.startsWith('PK'),
       `status=${r.status} head=${(r.text || '').slice(0, 2)}`,
     )
+  }
+  // 明细的往来单位筛选：拿第一行的往来单位去筛，结果必须全部命中该关键字
+  const partyProbe = detailRows.find((r) => r.partyName)?.partyName || ''
+  if (partyProbe) {
+    const kw = partyProbe.slice(0, 2)
+    const pf = await request(
+      'GET',
+      `/inv/report/detail?range=year&biz=sales&party=${encodeURIComponent(kw)}`,
+      { token },
+    )
+    const pfRows = pf.json?.data?.rows ?? []
+    ok(
+      '明细按往来单位模糊筛选',
+      pf.json?.code === 0 && pfRows.length > 0 && pfRows.every((r) => String(r.partyName || '').includes(kw)),
+      `kw=${kw} rows=${pfRows.length}/${detailRows.length}`,
+    )
+  } else {
+    ok('明细按往来单位模糊筛选', false, '没有可用的往来单位样本')
   }
 
   section('进销存：反审核')

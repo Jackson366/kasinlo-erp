@@ -21,15 +21,14 @@ type reportSheet struct {
 }
 
 // ReportExport 生成报表 xlsx 字节流与建议文件名。
-// kind 对应报表中心的四个面板：overview（默认）/ ranking / purchase / inventory。
+// kind 对应报表中心可导出的面板：overview（默认）/ ranking / detail。
+// 库存排行没有专用导出：它本身就是一张按金额排序的表，明细导出已覆盖核对需求。
 func (s *Service) ReportExport(f ReportFilter, kind, dimension, biz string, actor *authz.Identity) ([]byte, string, error) {
 	switch kind {
 	case "ranking":
 		return s.exportRanking(f, dimension, biz, actor)
-	case "purchase":
-		return s.exportPurchase(f, actor)
-	case "inventory":
-		return s.exportInventory()
+	case "detail":
+		return s.exportDetail(f, biz, actor)
 	default:
 		return s.exportOverview(f, actor)
 	}
@@ -112,70 +111,56 @@ func (s *Service) exportRanking(f ReportFilter, dimension, biz string, actor *au
 	return data, "销售排行_" + textutil.Timestamp() + ".xlsx", nil
 }
 
-// exportPurchase 采购分析：采购汇总 + 供应商排行。
-func (s *Service) exportPurchase(f ReportFilter, actor *authz.Identity) ([]byte, string, error) {
-	sm, err := s.ReportSummary(f, actor)
+// exportDetail 销售 / 采购明细：逐单逐货的流水，末行带合计。
+//
+// 明细是唯一「行数由数据决定」的报表，所以导出上限（5000）比列表页（2000）宽；
+// 真超了就在表名上标出来，免得拿到一份「少了一半却看不出来」的对账表。
+func (s *Service) exportDetail(f ReportFilter, biz string, actor *authz.Identity) ([]byte, string, error) {
+	if biz != model.InvBizPurchase {
+		biz = model.InvBizSales
+	}
+	res, err := s.ReportDetail(f, biz, reportDetailExportRows, actor)
 	if err != nil {
 		return nil, "", err
 	}
-	rank, err := s.ReportRanking(f, "customer", model.InvBizPurchase, reportExportRows, actor)
-	if err != nil {
-		return nil, "", err
+	title, partyLabel := "销售明细", "客户"
+	if biz == model.InvBizPurchase {
+		title, partyLabel = "采购明细", "供应商"
 	}
-	summaryRows := [][]string{
-		{"采购总额", money(sm.Purchases)},
-		{"采购单数", strconv.FormatInt(sm.PurchaseOrders, 10)},
-	}
-	rankRows := make([][]string, 0, len(rank))
-	for _, r := range rank {
-		rankRows = append(rankRows, []string{
-			strconv.Itoa(r.Rank), r.Name, money(r.Amount),
-			strconv.FormatInt(r.OrderCount, 10), pct(r.Ratio),
+	rows := make([][]string, 0, len(res.Rows)+1)
+	for _, r := range res.Rows {
+		rows = append(rows, []string{
+			r.OrderDate, r.OrderNo, r.PartyName, r.ProductName,
+			r.Spec, r.Unit, qty(r.Qty), money(r.Price), money(r.Amount),
 		})
 	}
+	if len(rows) > 0 {
+		// 合计行放末尾：对账时先看总数、再逐行核，比在别处另开一张汇总表省事
+		rows = append(rows, []string{"合计", "", "", "", "", qty(res.Qty), "", money(res.Amount)})
+	}
+	sheetName := title
+	if res.Truncated {
+		sheetName = title + "（仅前 " + strconv.Itoa(len(res.Rows)) + " 行）"
+	}
 	data, err := buildReportWorkbook([]reportSheet{
-		{Name: "采购汇总（" + sm.Range + "）", Headers: []string{"指标", "数值"}, Widths: []float64{20, 22}, Rows: summaryRows},
-		{Name: "供应商采购排行", Headers: []string{"排名", "供应商", "采购额", "订单数", "占比"}, Widths: []float64{8, 28, 16, 12, 10}, Rows: rankRows},
+		{
+			Name:    sheetName,
+			Headers: []string{"日期", "单号", partyLabel, "商品", "规格", "单位", "数量", "单价", "金额"},
+			Widths:  []float64{12, 22, 26, 24, 16, 8, 10, 12, 14},
+			Rows:    rows,
+		},
 	})
 	if err != nil {
 		return nil, "", err
 	}
-	return data, "采购分析_" + textutil.Timestamp() + ".xlsx", nil
-}
-
-// exportInventory 库存分析：品类库存金额分布 + 低库存预警清单。
-func (s *Service) exportInventory() ([]byte, string, error) {
-	inv, err := s.ReportInventory()
-	if err != nil {
-		return nil, "", err
-	}
-	catRows := make([][]string, 0, len(inv.CategoryValue))
-	for _, c := range inv.CategoryValue {
-		catRows = append(catRows, []string{c.Category, money(c.Value), pct(c.Ratio)})
-	}
-	warnRows := make([][]string, 0, len(inv.WarnList))
-	for _, w := range inv.WarnList {
-		warnRows = append(warnRows, []string{
-			w.ProductName, w.ProductCode, w.Spec, w.Unit, qty(w.Stock), qty(w.WarnStock),
-		})
-	}
-	data, err := buildReportWorkbook([]reportSheet{
-		{Name: "库存概况", Headers: []string{"指标", "数值"}, Widths: []float64{20, 22}, Rows: [][]string{
-			{"库存总金额", money(inv.TotalValue)},
-			{"库存规格数", strconv.FormatInt(inv.SpecCount, 10)},
-			{"低库存预警数", strconv.FormatInt(inv.WarnCount, 10)},
-		}},
-		{Name: "品类库存金额分布", Headers: []string{"品类", "库存金额", "占比"}, Widths: []float64{22, 16, 10}, Rows: catRows},
-		{Name: "低库存预警清单", Headers: []string{"商品", "编码", "规格", "单位", "当前库存", "预警下限"}, Widths: []float64{24, 16, 16, 10, 12, 12}, Rows: warnRows},
-	})
-	if err != nil {
-		return nil, "", err
-	}
-	return data, "库存分析_" + textutil.Timestamp() + ".xlsx", nil
+	return data, title + "_" + textutil.Timestamp() + ".xlsx", nil
 }
 
 // reportExportRows 导出时排行取满上限（列表页只显示前 N，导出应是完整一份）。
 const reportExportRows = 50
+
+// reportDetailExportRows 明细导出上限，与 ReportDetail 允许的最大值一致。
+const reportDetailExportRows = 5000
 
 func money(v float64) string { return strconv.FormatFloat(v, 'f', 2, 64) }
 

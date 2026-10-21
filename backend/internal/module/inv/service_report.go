@@ -637,6 +637,11 @@ func (s *Service) ReportDetail(f ReportFilter, biz string, limit int, actor *aut
 		if end != nil {
 			tx = tx.Where("o.order_date <= ?", *end)
 		}
+		if f.Party != "" {
+			// 用往来单位名而不是 party_id：用户手上只有「信阳建材」这样的名字，
+			// 记不住 ID；LIKE 两侧加 % 支持输入中间几个字命中。
+			tx = tx.Where("o.party_name LIKE ?", "%"+f.Party+"%")
+		}
 		if f.CategoryID > 0 {
 			cond, args, e := s.categoryScope(f.CategoryID, "p.category_id")
 			if e != nil {

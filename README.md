@@ -251,8 +251,8 @@ node scripts/build-release.mjs --version 1.1.6
 #   → build/release/nova-erp-1.1.6-win64.zip
 
 # 升级包（已部署环境的增量）：由管理页「系统运维 → 系统升级」上传
-node scripts/build-upgrade-package.mjs --version 1.2.4
-#   → build/upgrade/nova-erp-1.2.4.zip
+node scripts/build-upgrade-package.mjs --version 1.2.5
+#   → build/upgrade/nova-erp-1.2.5.zip
 ```
 
 生产部署（Windows 单机、无需 Nginx —— 后端自带前端静态托管）见

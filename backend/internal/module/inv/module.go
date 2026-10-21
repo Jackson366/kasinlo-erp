@@ -54,7 +54,9 @@ func Module() module.Module {
 						// 菜单漏了它的话，权限码 inv:stock:* 根本挂不到任何节点上：
 						// 角色授权树里勾不到，前端也就拿不到 /inv/stock 的动态路由 —— 
 						// 页面文件在、接口也在，唯独没人能进。
-						Name: "InvStock", Title: "出入库", Icon: "Box",
+						// 菜单名叫「库存管理」：这个页面管的是库存本身（单据 + 库存查询），
+						// 「出入库」只是产生库存变动的一种方式，拿它当菜单名会把页面说小了。
+						Name: "InvStock", Title: "库存管理", Icon: "Box",
 						Path: "/inv/stock", Component: "inv/stock/index",
 						Permission: "inv:stock:list", KeepAlive: true,
 						Children: []module.MenuNode{

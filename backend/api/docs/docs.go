@@ -1997,7 +1997,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "报表区：overview（默认）/ ranking / purchase / inventory",
+                        "description": "报表区：overview（默认）/ ranking / detail（销售采购明细）",
                         "name": "type",
                         "in": "query"
                     },

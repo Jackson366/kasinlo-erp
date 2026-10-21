@@ -3159,7 +3159,7 @@ paths:
     get:
       description: 返回 xlsx 二进制流，筛选参数与报表接口一致。
       parameters:
-      - description: 报表区：overview（默认）/ ranking / purchase / inventory
+      - description: 报表区：overview（默认）/ ranking / detail（销售采购明细）
         in: query
         name: type
         type: string
