@@ -214,7 +214,7 @@ function addUnit(spec: InvProductSpecPayload): void {
 
 function removeUnit(spec: InvProductSpecPayload, index: number): void {
   if (spec.units.length <= 1) {
-    ElMessage.warning('至少留一个计量单位（留空不填也可以，系统会按「个」处理）')
+    ElMessage.warning('至少留一个计量单位（留空保存也可以）')
     return
   }
   const removed = spec.units[index]
@@ -243,7 +243,32 @@ function setBaseUnit(spec: InvProductSpecPayload, index: number): void {
   })
 }
 
-/** 规格行里「1 箱 = N 个」的提示语，让换算率一眼能读懂 */
+/** 换算率展示：4 位精度去掉多余尾零（10.0000 → 10，0.5000 → 0.5） */
+function fmtRate(v: number): string {
+  const n = Number(Number(v).toFixed(4))
+  return Number.isFinite(n) ? String(n) : '1'
+}
+
+/**
+ * 一个规格下的单位换算说明，**只在多单位时显示**。
+ *
+ * 单单位刻意不提示：那一个单位就是基本单位、换算率恒为 1，
+ * 写一行「1 个 = 1 个」只是噪音（单组布局连这一行都不渲染）。
+ * 多单位必须说清楚 —— 换算率填错时库存和单据会一起错，而且错得很安静：
+ * 「2 箱」到底入账 2 还是 20，只有这一行能把关系讲明白。
+ */
+function unitHint(spec: InvProductSpecPayload): string {
+  const base = spec.units.find((u) => u.isBase)
+  const baseName = base?.unit.trim() || ''
+  const parts = spec.units
+    .filter((u) => !u.isBase && u.unit.trim())
+    .map((u) => `1 ${u.unit.trim()} = ${fmtRate(u.rate)} ${baseName || '基本单位'}`)
+  const tail = baseName ? `（库存按「${baseName}」计）` : '（库存按基本单位计）'
+  if (!parts.length) {
+    return `勾选「基本」选定库存计数单位${tail}；其余单位填「1 个该单位 = 多少个基本单位」`
+  }
+  return parts.join('；') + tail
+}
 
 // ---------------- 提交校验 ----------------
 // 逐字段必填交给 el-form-item 的嵌套 prop（错误信息贴着控件显示）；
@@ -1273,6 +1298,10 @@ const { searchSoon } = useDebouncedSearch(search)
                     </el-button>
                   </div>
                 </div>
+                <!-- 多单位才提示换算关系：单单位就是基本单位、换算率恒为 1，没什么可算的 -->
+                <div v-if="spec.units.length > 1" class="unit-hint">
+                  {{ unitHint(spec) }}
+                </div>
                 <div class="unit-table__foot">
                   <el-button link type="primary" @click="addUnit(spec)">
                     <AppIcon name="Plus" />
@@ -1674,6 +1703,19 @@ const { searchSoon } = useDebouncedSearch(search)
 
 .unit-form-item {
   margin-bottom: 0;
+}
+
+// 多单位换算说明：一行浅底提示，紧贴单位表下方。
+// 用 text-secondary 而不是灰色 placeholder 级的颜色 —— 换算率填错是「安静的错」
+// （库存与单据一起错），这行必须读得到，不能淡到被忽略。
+.unit-hint {
+  margin-top: 2px;
+  padding: 5px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--app-text-secondary);
+  background: var(--app-surface-subtle);
+  border-radius: var(--radius-sm, 4px);
 }
 
 .unit-table__foot {

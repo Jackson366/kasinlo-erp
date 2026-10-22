@@ -74,9 +74,9 @@ go run ./cmd/server -config config.yaml -seed    # 强制重跑种子数据（�
 
 启动后：
 
-- 服务地址：`http://127.0.0.1:6082`
+- 服务地址：`http://127.0.0.1:6085`
 - 接口前缀：`/api/v1`
-- 健康检查：`GET http://127.0.0.1:6082/health`
+- 健康检查：`GET http://127.0.0.1:6085/health`
 
 ### 4. 启动前端
 
@@ -86,7 +86,7 @@ npm install
 npm run dev            # http://localhost:6083
 ```
 
-Vite 已把 `/api` 与 `/swagger` 代理到 `http://127.0.0.1:6082`，无需处理跨域；
+Vite 已把 `/api` 与 `/swagger` 代理到 `http://127.0.0.1:6085`，无需处理跨域；
 在线接口文档在开发时可直接访问 `http://localhost:6083/swagger/index.html`。
 
 ### 5. 切换主题
@@ -228,7 +228,7 @@ cp test/testdata/config.example.yaml test/testdata/config.yaml
 ### 后端：对运行实例的接口冒烟
 
 ```bash
-node scripts/api-smoke.mjs                      # 默认 http://127.0.0.1:6082
+node scripts/api-smoke.mjs                      # 默认 http://127.0.0.1:6085
 node scripts/api-smoke.mjs http://host:port     # 指定实例
 ```
 
@@ -251,8 +251,8 @@ node scripts/build-release.mjs --version 1.1.6
 #   → build/release/nova-erp-1.1.6-win64.zip
 
 # 升级包（已部署环境的增量）：由管理页「系统运维 → 系统升级」上传
-node scripts/build-upgrade-package.mjs --version 1.2.5
-#   → build/upgrade/nova-erp-1.2.5.zip
+node scripts/build-upgrade-package.mjs --version 1.2.6
+#   → build/upgrade/nova-erp-1.2.6.zip
 ```
 
 生产部署（Windows 单机、无需 Nginx —— 后端自带前端静态托管）见

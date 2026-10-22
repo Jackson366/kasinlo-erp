@@ -37,7 +37,7 @@ import path from 'node:path'
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 const APP = process.env.APP_URL || 'http://localhost:6083'
 const PORT = 9352
-const API = 'http://127.0.0.1:6082/api/v1'
+const API = 'http://127.0.0.1:6085/api/v1'
 const OUT_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\//, ''))
 
 const userDataDir = path.join(os.tmpdir(), `cdp-p3-${Date.now()}`)

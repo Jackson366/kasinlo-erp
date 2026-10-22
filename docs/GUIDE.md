@@ -521,7 +521,7 @@ database:
   password: CHANGE_ME      # ← 改成你本机的口令
   dbname: nova_inv_v5
 app:
-  port: 6082
+  port: 6085
 ```
 
 > `config.yaml` 含口令，**已在 `.gitignore` 中，不会进版本库**。
@@ -541,13 +541,13 @@ go run ./cmd/server -config config.yaml
 
 ```
 数据库连接成功    {"database": "nova_inv_v5"}
-HTTP 服务已启动   {"addr": "0.0.0.0:6082", "basePath": "/api/v1"}
+HTTP 服务已启动   {"addr": "0.0.0.0:6085", "basePath": "/api/v1"}
 ```
 
 验证：
 
 ```bash
-curl http://127.0.0.1:6082/health
+curl http://127.0.0.1:6085/health
 # {"app":"nova-erp","status":"ok","version":"v1"}
 ```
 
@@ -559,7 +559,7 @@ npm install
 npm run dev
 ```
 
-打开 `http://localhost:6083`。Vite 已把 `/api` 代理到 `http://127.0.0.1:6082`，无需处理跨域。
+打开 `http://localhost:6083`。Vite 已把 `/api` 代理到 `http://127.0.0.1:6085`，无需处理跨域。
 
 ### 第 4 步：准备测试配置（跑测试前必做）
 
@@ -954,8 +954,14 @@ cp test/testdata/config.example.yaml test/testdata/config.yaml
      一上来摆五列表格会让录入看起来比实际重。折叠只影响显示，数据始终是同一个 `form.specs`。
    - **留空就是空白，不填任何默认值**：规格名、单位名留空就存空串，
      后端**不再**补「默认」「个」；换算率缺省取 1，第一个单位自动提为基本单位。
-     页面也不摆说明文字与占位提示 —— 输入框空着，客户想填就填。
+     页面不摆整段说明文字、输入框也不放占位语 —— 空着就是空着。
      空名称在列表 / 下拉 / 纸面上显示为「—」。
+   - **多单位时给一行换算说明**（单单位不显示）：单位小表下方实时显示
+     「`1 箱 = 10 个（库存按「个」计）`」，随单位名与换算率同步更新；
+     还没指定基本单位 / 没填单位名时，提示改成「勾选「基本」选定库存计数单位…」。
+     为什么单单位不提示：那一个单位就是基本单位、换算率恒为 1，写「1 个 = 1 个」只是噪音。
+     多单位必须说清楚 —— **换算率填错是「安静的错」**：「2 箱」到底入账 2 还是 20，
+     库存与单据会一起错，只有这一行能把关系讲明白。
    - 结构上仍必须有「一条规格 + 一个单位」：规格是库存的归属层、单位是单据折算的基准，
      完全没有的话商品既查不到也开不了单。所以新增商品时默认就带一行空行。
    - 唯一的硬约束是**同一层级不能重名**：两行「φ20」会把库存劈成两半、各自都不预警；
@@ -1101,7 +1107,7 @@ app:
   name: nova-erp          # 应用名
   mode: debug               # debug | release
   host: 0.0.0.0
-  port: 6082
+  port: 6085
   prefix: /api              # 路由统一前缀
   version: v1               # API 版本段，最终拼接为 /api/v1
   swagger: true             # 是否挂载 /swagger 在线文档；不写则跟随 mode（debug 开、release 关）
@@ -1203,7 +1209,7 @@ npm run build        # 类型检查 + 产出 dist/
 npm run preview      # 预览生产产物（已配置 /api 代理）
 
 # ── 端到端（需要服务已在运行）──────────────
-node scripts/api-smoke.mjs                    # 默认 http://127.0.0.1:6082
+node scripts/api-smoke.mjs                    # 默认 http://127.0.0.1:6085
 node scripts/api-smoke.mjs http://host:port   # 指定实例
 node scripts/browser-verify.mjs               # 需后端 + 前端都启动
 APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产物
@@ -1243,8 +1249,8 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs  # 验证生产产
 | --- | --- | --- |
 | `连接 PostgreSQL 失败` | 口令 / 端口 / 服务未启动 | 核对 `config.yaml` 的 `database` 段；`psql -U postgres -c 'select 1'` |
 | 启动报 `自动迁移表结构失败` | 老库缺列 / 权限不足 | 见 §3.3；`23502` 类错误是「新增 NOT NULL 列没带默认值」 |
-| 端口被占用 | 有旧进程还在跑 | `netstat -ano \| grep :6082` 找 PID 后 `taskkill //PID <pid> //F` |
-| 前端 404 / 接口报跨域 | 后端没起来或代理目标不对 | 确认 6082 在监听；检查 `.env.development` 的 `VITE_PROXY_TARGET` |
+| 端口被占用 | 有旧进程还在跑 | `netstat -ano \| grep :6085` 找 PID 后 `taskkill //PID <pid> //F` |
+| 前端 404 / 接口报跨域 | 后端没起来或代理目标不对 | 确认 6085 在监听；检查 `.env.development` 的 `VITE_PROXY_TARGET` |
 | 登录后被立刻弹回登录页 | 令牌没读到 | 令牌必须走 `utils/auth.ts`，不要在 `computed` 里直接读 `localStorage` |
 | 刷新页面落 404 | 动态路由注入被 redirect 抢先 | 检查静态路由里是否出现了 `redirect` |
 | 页面切换后状态没保留 | `keep-alive` 未命中 | 页面 `defineOptions({ name })` 必须与菜单 `name` 完全一致 |

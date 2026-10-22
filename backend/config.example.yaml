@@ -24,14 +24,14 @@ app:
   name: nova-erp
   mode: release           # release | debug。本地开发可改 debug（会打开 swagger、gin 详细日志）
   host: 0.0.0.0           # 只允许本机访问可改 127.0.0.1；局域网访问保持 0.0.0.0 并配好防火墙
-  port: 6082
+  port: 6085
   prefix: /api            # 路由统一前缀
   version: v1             # API 版本段，最终前缀为 /api/v1
   # 程序发布版本号（如 1.1.0），与上面的 version（API 版本段）是两件事。
   # 升级包校验、升级记录、启动后的「升级是否生效」核对都读它。
   # 优先级：本配置 > 构建注入（-ldflags "-X nova-erp/internal/config.appRelease=1.1.0"）> dev。
   # 为 dev 时升级后无法自动确认生效，记录会一直停在「已执行」。
-  release: 1.2.5
+  release: 1.2.6
   # 前端静态产物目录：目录里有 index.html 时由后端直接托管（含 SPA 深链回退），
   # 此时不需要额外架 Nginx；留空或不放产物则保持纯 API 形态。
   web_dir: web
