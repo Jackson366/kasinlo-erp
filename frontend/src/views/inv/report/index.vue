@@ -181,7 +181,10 @@ async function loadDetail(ticket: number): Promise<void> {
 function contractParams(): Record<string, string | number> {
   const p: Record<string, string | number> = {}
   if (contractBiz.value) p.bizType = contractBiz.value
-  if (contractStage.value) p.stage = contractStage.value
+  // 「已完成 / 已终止」不是日期条件，后端按 status 判（与合同列表同一套映射）
+  if (contractStage.value === 'finished') p.status = 2
+  else if (contractStage.value === 'terminated') p.status = 3
+  else if (contractStage.value) p.stage = contractStage.value
   if (contractKeyword.value.trim()) p.keyword = contractKeyword.value.trim()
   return p
 }
@@ -576,6 +579,8 @@ onMounted(() => {
             <el-option label="已验收" value="accepted" />
             <el-option label="质保中" value="warranty" />
             <el-option label="质保到期" value="warranty_due" />
+            <el-option label="已完成" value="finished" />
+            <el-option label="已终止" value="terminated" />
           </el-select>
         </el-form-item>
         <el-form-item label="关键字">

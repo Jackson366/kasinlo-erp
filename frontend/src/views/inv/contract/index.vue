@@ -27,8 +27,10 @@ import type {
   InvContractPayload,
   InvContractRow,
   InvContractStage,
+  InvContractStatus,
   InvPartyRow,
   InvPlanKind,
+  InvPlanSettleRecord,
   InvPlanTrigger,
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
@@ -441,6 +443,7 @@ async function openDetail(row: InvContractRow): Promise<void> {
   detailLoading.value = true
   try {
     detail.value = await invApi.contractDetail(row.id)
+    statusBaseline.value = detail.value.status
   } catch {
     detail.value = null
   } finally {
@@ -452,6 +455,7 @@ async function refreshDetail(): Promise<void> {
   if (!detail.value) return
   try {
     detail.value = await invApi.contractDetail(detail.value.id)
+    statusBaseline.value = detail.value.status
     load()
   } catch {
     // 忽略
@@ -459,6 +463,70 @@ async function refreshDetail(): Promise<void> {
 }
 
 const detailPlans = computed<InvContractPlanItem[]>(() => detail.value?.plans ?? [])
+
+// ---------------- 改状态 ----------------
+//
+// 阶段是派生的（验收 / 质保由日期决定），但「已完成 / 已终止」是人工判断，
+// 必须给一个入口 —— 否则合同永远停在执行中，报表里也没法把它划走。
+// 复用 update 接口（它要完整字段），所以按详情回填一份，plans 原样带回：
+// 已收付款的期次带的还是原金额与原比例，不会触发「已收付款不可改」的拦截。
+const statusOptions: Array<{ label: string; value: InvContractStatus }> = [
+  { label: '执行中', value: 1 },
+  { label: '已完成', value: 2 },
+  { label: '已终止', value: 3 },
+]
+const statusSaving = ref(false)
+/**
+ * 已落库的状态基线。
+ *
+ * 不能拿 `detail.status` 判断「值有没有变」：el-select 的 v-model 在 change
+ * 之前就把 detail.status 改成新值了，那样判等永远成立，请求根本不会发出。
+ * 基线只在详情加载成功后更新，代表库里真实的值。
+ */
+const statusBaseline = ref<InvContractStatus>(1)
+
+async function changeStatus(next: InvContractStatus): Promise<void> {
+  const d = detail.value
+  if (!d || next === statusBaseline.value) return
+  const prev = statusBaseline.value
+  statusSaving.value = true
+  try {
+    await invApi.updateContract(d.id, {
+      contractNo: d.contractNo,
+      name: d.name,
+      bizType: d.bizType,
+      partyId: d.partyId,
+      signDate: formatDay(d.signDate),
+      startDate: d.startDate ? formatDay(d.startDate) : undefined,
+      endDate: d.endDate ? formatDay(d.endDate) : undefined,
+      amount: d.amount,
+      status: next,
+      salesman: d.salesman,
+      remark: d.remark,
+      warrantyMonths: d.warrantyMonths,
+      retentionRate: d.retentionRate,
+      retentionAmount: d.retentionAmount,
+      plans: (d.plans ?? []).map((p) => ({
+        id: p.id,
+        seq: p.seq,
+        name: p.name,
+        kind: p.kind,
+        rate: p.rate,
+        amount: p.amount,
+        dueDate: p.dueDate ? formatDay(p.dueDate) : undefined,
+        triggerNode: p.triggerNode || undefined,
+        remark: p.remark || undefined,
+      })),
+    })
+    ElMessage.success('状态已更新')
+    await refreshDetail()
+  } catch {
+    // 失败时把下拉恢复成库里的值，避免界面显示一个并没有生效的状态
+    d.status = prev
+  } finally {
+    statusSaving.value = false
+  }
+}
 
 // ---------------- 验收 ----------------
 const acceptVisible = ref(false)
@@ -545,6 +613,30 @@ async function submitSettle(): Promise<void> {
     // 提示由拦截器统一处理
   } finally {
     settleSubmitting.value = false
+  }
+}
+
+// ---------------- 期次收付款流水 ----------------
+//
+// 期次上只显示「已收付 / 未收付」两个数，但真要对账时需要知道
+// 「哪天、收了多少、什么方式、谁记的」。流水是只读的，改不了历史，
+// 所以单独开一个小弹窗，不打断详情里的操作。
+const historyVisible = ref(false)
+const historyLoading = ref(false)
+const historyPlan = ref<InvContractPlanItem | null>(null)
+const historyRows = ref<InvPlanSettleRecord[]>([])
+
+async function openHistory(plan: InvContractPlanItem): Promise<void> {
+  historyPlan.value = plan
+  historyRows.value = []
+  historyVisible.value = true
+  historyLoading.value = true
+  try {
+    historyRows.value = await invApi.contractPlanSettles(plan.id)
+  } catch {
+    // 失败提示由响应拦截器统一处理
+  } finally {
+    historyLoading.value = false
   }
 }
 
@@ -998,6 +1090,16 @@ const attachType: InvAttachBizType = 'contract'
               </div>
             </div>
             <div class="detail-head__actions">
+              <el-select
+                v-perm="'inv:contract:update'"
+                v-model="detail.status"
+                size="small"
+                style="width: 108px"
+                :loading="statusSaving"
+                @change="changeStatus"
+              >
+                <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
+              </el-select>
               <el-button v-perm="'inv:contract:accept'" size="small" @click="openAccept">
                 {{ detail.acceptedAt ? '重新验收' : '登记验收' }}
               </el-button>
@@ -1073,7 +1175,7 @@ const attachType: InvAttachBizType = 'contract'
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="78" fixed="right">
+            <el-table-column label="操作" width="118" fixed="right">
               <template #default="{ row }">
                 <el-button
                   v-perm="'inv:contract:settle'"
@@ -1083,6 +1185,9 @@ const attachType: InvAttachBizType = 'contract'
                   @click="openSettle(row as InvContractPlanItem, detail as InvContractRow)"
                 >
                   {{ settleVerb((detail as InvContractRow).bizType) }}
+                </el-button>
+                <el-button link :disabled="!row.settledAmount" @click="openHistory(row as InvContractPlanItem)">
+                  流水
                 </el-button>
               </template>
             </el-table-column>
@@ -1176,6 +1281,30 @@ const attachType: InvAttachBizType = 'contract'
       <template #footer>
         <el-button @click="settleVisible = false">取消</el-button>
         <el-button type="primary" :loading="settleSubmitting" @click="submitSettle">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 期次收付款流水 -->
+    <el-dialog
+      v-model="historyVisible"
+      :title="historyPlan ? `第${historyPlan.seq}期 ${historyPlan.name} · 收付款流水` : '收付款流水'"
+      width="580px"
+      destroy-on-close
+    >
+      <el-table v-loading="historyLoading" :data="historyRows" size="small" border empty-text="暂无流水">
+        <el-table-column label="日期" width="112">
+          <template #default="{ row }">{{ formatDay(row.settledAt) }}</template>
+        </el-table-column>
+        <el-table-column label="金额" width="132" align="right">
+          <template #default="{ row }">
+            <strong>{{ formatMoney(row.amount) }}</strong>
+          </template>
+        </el-table-column>
+        <el-table-column prop="method" label="方式" width="112" />
+        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
+      </el-table>
+      <template #footer>
+        <el-button @click="historyVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 

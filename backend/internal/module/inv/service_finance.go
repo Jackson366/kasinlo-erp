@@ -46,6 +46,9 @@ func isOverdue(outstanding float64, due *time.Time, today time.Time) bool {
 // 分开查两次再在内存里合并排序，分页就再也算不准总数。
 //
 // 占位符顺序：bizType, 已审核状态, source, bizType, 已终止状态, source。
+//
+// 期次那条带 `p.amount > 0`：0 元期次（例如比例填了 0 的占位行）会在应收列表里
+// 变成永远 0 的噪音行，点了也收不到钱。
 const financeUnionSQL = `
 SELECT 'order' AS source, o.id AS order_id, o.order_no AS order_no,
        0::bigint AS contract_id, ''::text AS contract_no,
@@ -67,6 +70,7 @@ SELECT 'plan' AS source, 0::bigint AS order_id, ''::text AS order_no,
   FROM inv_contract_plans p
   JOIN inv_contracts c ON c.id = p.contract_id AND c.deleted_at IS NULL
  WHERE p.deleted_at IS NULL AND p.biz_type = ? AND c.status <> ? AND ? <> 'order'
+   AND p.amount > 0
 `
 
 // financeUnionArgs 上面那段 SQL 的参数。

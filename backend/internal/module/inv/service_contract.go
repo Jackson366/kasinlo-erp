@@ -203,9 +203,17 @@ func (s *Service) ContractUpdate(id int64, req ContractReq, actor *authz.Identit
 	if err != nil {
 		return err
 	}
-	partyName, err := s.contractPartyName(req.BizType, req.PartyID)
-	if err != nil {
-		return err
+	// 往来单位没变就沿用原名称。
+	//
+	// 对方档案被删掉的历史合同也要能改备注、改状态：否则一条「指向已删客户」的
+	// 数据会把整份合同锁死 —— 保存时才报「选中的客户不存在，请刷新后重选」，
+	// 而界面上根本没有可选的客户。换单位时仍然严格校验。
+	partyName := old.PartyName
+	if req.PartyID != old.PartyID || req.BizType != old.BizType {
+		partyName, err = s.contractPartyName(req.BizType, req.PartyID)
+		if err != nil {
+			return err
+		}
 	}
 	no := strings.TrimSpace(req.ContractNo)
 	if no == "" {

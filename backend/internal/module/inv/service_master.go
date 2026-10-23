@@ -222,6 +222,19 @@ func (s *Service) PartyDelete(bizType string, id int64) error {
 	if cnt > 0 {
 		return errcode.Newf(errcode.ErrConflict, "该往来单位已被 %d 张单据引用，无法删除", cnt)
 	}
+	// 合同也要算引用。
+	//
+	// 漏了这一步的后果不是「合同看不见了」，而是**这份合同从此改不动**：
+	// 保存时按 party_id 反查名称，查不到就报「选中的客户不存在，请刷新后重选」，
+	// 但界面上根本没有可选的客户 —— 连改个备注都做不到。
+	var ctCnt int64
+	if err := s.db.Model(&model.InvContract{}).Where("biz_type = ? AND party_id = ?", bizType, id).
+		Count(&ctCnt).Error; err != nil {
+		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if ctCnt > 0 {
+		return errcode.Newf(errcode.ErrConflict, "该往来单位已被 %d 份合同引用，无法删除", ctCnt)
+	}
 	var res *gorm.DB
 	if bizType == model.InvBizPurchase {
 		res = s.db.Delete(&model.InvSupplier{}, id)

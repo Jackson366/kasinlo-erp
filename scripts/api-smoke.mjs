@@ -333,11 +333,15 @@ async function main() {
   // 这条断言钉住「两条业务线的搜索口径一致」（AGENTS §5.76）
   const custKw = await request('GET', '/inv/customers?keyword=_', { token })
   ok('客户搜索的 _ 不当通配符', custKw.json?.data?.total === 0, `total=${custKw.json?.data?.total}`)
-  // 列表行要带上「应收余额 + 单据数」，否则客户页只能逐行再发一次请求
+  // 列表行要带上「应收余额 + 单据数」，否则客户页只能逐行再发一次请求。
+  // 只看**字段类型**，不要求 address 非空 —— 地址是选填项，
+  // 之前用 `!!address` 断言，一有新客户进了列表第一行就会误报。
   const firstParty = invCustomers.json?.data?.list?.[0] || {}
   ok(
     '客户行含余额与单据数',
-    typeof firstParty.balance === 'number' && typeof firstParty.orderCount === 'number' && !!firstParty.address,
+    typeof firstParty.balance === 'number' &&
+      typeof firstParty.orderCount === 'number' &&
+      typeof firstParty.address === 'string',
     JSON.stringify(firstParty),
   )
 
@@ -1272,12 +1276,16 @@ async function main() {
   section('进销存：合同与附件')
   // 合同是独立台账（不挂到单据上）：编号留空自动生成 HT + 流水，
   // 附件挂在其上（biz_type=contract）。这里把「建 → 传 → 下 → 删」整条链走一遍。
-  const contractPartyRes = await request('GET', '/inv/customers?page=1&pageSize=1', { token })
-  let contractParty = contractPartyRes.json?.data?.list?.[0]?.id
-  if (!contractParty) {
-    const c = await request('POST', '/inv/customers', { token, body: { name: `冒烟合同客户${smokeCode}` } })
-    contractParty = c.json?.data?.id
-  }
+  // 合同测试用**专用**客户，不复用列表第一个客户。
+  //
+  // 有收付款的合同不允许删除，于是它引用的客户也永远删不掉 ——
+  // 复用「自测客户」会把后面那条「删除自测客户」的断言毒掉，
+  // 而且只在下一次运行时才暴露（数据是上一次留下的）。
+  const ctPartyRes = await request('POST', '/inv/customers', {
+    token,
+    body: { name: `冒烟合同客户${smokeCode}` },
+  })
+  const contractParty = ctPartyRes.json?.data?.id
 
   const ctCreate = await request('POST', '/inv/contracts', {
     token,
@@ -1640,6 +1648,21 @@ async function main() {
   ok(
     '只读账号登记收付款被拒(403)',
     (await request('POST', '/inv/finance/settlements', { token: demoToken, body: { orderId: 1, amount: 1 } })).status === 403,
+  )
+  // 合同的验收与收付款是两条独立权限（inv:contract:accept / settle）：
+  // 只读角色连合同都改不了，更不能确认验收、不能登记资金。
+  ok(
+    '只读账号合同验收被拒(403)',
+    (
+      await request('POST', `/inv/contracts/${planCid}/accept`, {
+        token: demoToken,
+        body: { acceptedAt: '2026-10-20', acceptResult: '合格' },
+      })
+    ).status === 403,
+  )
+  ok(
+    '只读账号合同收付款被拒(403)',
+    (await request('POST', '/inv/contract-plans/settle', { token: demoToken, body: { planId: 1, amount: 1 } })).status === 403,
   )
   ok(
     '只读账号新增打印模板被拒(403)',

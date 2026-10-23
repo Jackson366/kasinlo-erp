@@ -243,7 +243,7 @@ const printColumns: ListPrintColumn<InvFinanceRow>[] = [
     value: (r) => (r.source === 'plan' ? `${r.contractNo} 第${r.planSeq}期 ${r.planName}` : r.orderNo),
   },
   { label: '往来单位', prop: 'partyName' },
-  { label: '单据日期', value: (r) => formatDay(r.orderDate) },
+  { label: '日期', value: (r) => formatDay(r.orderDate) },
   { label: '到期日', value: (r) => formatDay(r.dueDate) },
   { label: '单据金额', value: (r) => formatMoney(r.totalAmount), align: 'right' },
   { label: '已结算', value: (r) => formatMoney(r.settledAmount), align: 'right' },
@@ -377,7 +377,7 @@ const { searchSoon } = useDebouncedSearch(search)
           </template>
         </el-table-column>
         <el-table-column prop="partyName" label="往来单位" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="orderDate" label="单据日期" width="120">
+        <el-table-column prop="orderDate" label="日期" width="120">
           <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
         </el-table-column>
         <el-table-column prop="dueDate" label="到期日" width="120">

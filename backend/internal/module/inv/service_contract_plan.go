@@ -311,13 +311,34 @@ func (s *Service) ContractAccept(id int64, req ContractAcceptReq, actor *authz.I
 		"warranty_months": months,
 		"warranty_end_at": end,
 	}
-	if strings.TrimSpace(req.Remark) != "" {
-		updates["remark"] = strings.TrimSpace(req.Remark)
+	// 验收备注**追加**到合同备注，不覆盖。
+	//
+	// 合同备注里通常写着付款条件、交货要求这类约定，验收时一句「现场无问题」
+	// 把它冲掉，等于把原始约定删了 —— 而且是静默删除。追加再加长度保护，
+	// 备注列是 varchar(255)，超了会让整条更新失败。
+	if r := strings.TrimSpace(req.Remark); r != "" {
+		merged := strings.TrimSpace(c.Remark)
+		add := "验收：" + r
+		if merged == "" {
+			merged = add
+		} else {
+			merged = merged + "｜" + add
+		}
+		updates["remark"] = clipRunes(merged, 255)
 	}
 	if err := s.db.Model(&model.InvContract{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return saveErr(err)
 	}
 	return nil
+}
+
+// clipRunes 按字符（不是字节）截断，避免把多字节的中文切成半个字。
+func clipRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max])
 }
 
 // ---------------- 期次收付款 ----------------
