@@ -49,6 +49,32 @@ const (
 	InvContractTerminated int16 = 3 // 已终止
 )
 
+// 合同付款期次类型。质保金单列一类，因为它天然是「最后一期 + 有到期条件」，
+// 与按进度付的款项在报表里要能分开统计（质保金余额是单独的考核口径）。
+const (
+	InvPlanAdvance   int16 = 1 // 预付款
+	InvPlanProgress  int16 = 2 // 进度款
+	InvPlanAccept    int16 = 3 // 验收款
+	InvPlanRetention int16 = 4 // 质保金
+	InvPlanOther     int16 = 5 // 其他
+)
+
+// 期次触发节点：按事件而非固定日期进入待收付。
+// 空值表示「按约定日期」（due_date）判断。
+const (
+	InvPlanTriggerSign     = "sign"         // 合同签订即待收付
+	InvPlanTriggerAccept   = "accept"       // 验收后待收付
+	InvPlanTriggerWarranty = "warranty_end" // 质保到期后待收付
+)
+
+// 结算记录来源：单据结算 / 合同期次收付。
+// 两者共用 inv_settlements 一张表：收付款是同一件事，拆表只会让
+// 「账龄、台账、按往来单位汇总」三处各写两遍。
+const (
+	InvSettleSourceOrder = "order"
+	InvSettleSourcePlan  = "plan"
+)
+
 // 附件归属的业务类型。三者共用一张 inv_attachments 表与同一个上传入口，
 // 差异只在 biz_type —— 附件本身没有业务语义（就是一堆文件），
 // 拆表只会让「上传/下载/删除」这套逻辑抄三遍。
@@ -246,7 +272,12 @@ func (InvOrderItem) TableName() string { return "inv_order_items" }
 // InvSettlement 收付款记录。应收与应付共用，方向由 BizType 推导。
 type InvSettlement struct {
 	BaseModel
-	OrderID   int64     `gorm:"index;not null" json:"orderId"`
+	OrderID int64 `gorm:"index;not null" json:"orderId"`
+	// PlanID 合同付款期次 ID。合同收付款与单据结算共用这张表：
+	// 一笔记账行为的字段完全一致（金额、方式、日期、经办），
+	// 分表只会让账龄与台账各算两遍。Source 标明这行挂在谁身上。
+	PlanID    int64     `gorm:"index" json:"planId"`
+	Source    string    `gorm:"size:16;not null;default:order" json:"source"` // order | plan
 	BizType   string    `gorm:"size:16;index" json:"bizType"`
 	PartyID   int64     `gorm:"index" json:"partyId"`
 	Amount    float64   `gorm:"type:numeric(14,2);default:0" json:"amount"`
@@ -348,10 +379,66 @@ type InvContract struct {
 	Salesman  string  `gorm:"size:64" json:"salesman"`
 	Remark    string  `gorm:"size:255" json:"remark"`
 	CreatedBy int64   `json:"createdBy"`
+
+	// ---- 验收与质保 ----
+	//
+	// 四个字段都可有可无：小合同常常「签了、干完、收钱」，不验收入库也不留质保金。
+	// 所以不新增状态码（旧数据 status=1 的含义不变），界面上的
+	// 「待验收 → 已验收 → 质保中 → 质保到期」全部由这两个日期派生 ——
+	// 派生就不会出现「状态字段说质保中、日期说早过期」的自相矛盾。
+	AcceptedAt     *time.Time `gorm:"type:date" json:"acceptedAt"`              // 验收日期，空=未验收
+	AcceptResult   string     `gorm:"size:16" json:"acceptResult"`              // 合格 / 不合格 / 整改
+	WarrantyMonths int        `gorm:"not null;default:0" json:"warrantyMonths"` // 质保期（月）
+	// WarrantyEndAt 保存时按「验收日期 + 质保月数」算好落库，而不是每次查询现算：
+	// 逾期提醒、质保金到期筛选都要在 SQL 里比较这个日期。
+	WarrantyEndAt   *time.Time `gorm:"type:date" json:"warrantyEndAt"`
+	RetentionRate   float64    `gorm:"type:numeric(5,2);default:0" json:"retentionRate"`    // 质保金比例 %
+	RetentionAmount float64    `gorm:"type:numeric(14,2);default:0" json:"retentionAmount"` // 质保金金额
 }
 
 // TableName 指定表名。
 func (InvContract) TableName() string { return "inv_contracts" }
+
+// InvContractPlan 合同付款计划（一个期次一行）。
+//
+// 它同时是「应收 / 应付」的第二类来源：合同签下 100 万、约定 30/40/20/10 四期，
+// 这四行就是四笔应收（销售合同）或应付（采购合同）。所以这里冗余了
+// BizType / PartyID / PartyName —— 应收应付列表要按往来单位汇总、按合同号搜索，
+// 每次联三张表（plans → contracts → customers）得不偿失。
+//
+// 刻意**不存**状态字段：一期是「未到期 / 待收付 / 部分 / 已结清」，完全由
+// amount、settled_amount、due_date、trigger_node 与合同的验收/质保日期推导。
+// 存一份状态就要在每个改金额、改日期、登记收付款的地方同步刷新，
+// 漏一处就出现「已收满却显示待收付」—— 这类漂移对账时最难解释。
+// 这与订单的结算口径一致（见 InvOrder 注释：结算状态由差额推导，不入库）。
+type InvContractPlan struct {
+	BaseModel
+	ContractID int64  `gorm:"not null;index" json:"contractId"`
+	BizType    string `gorm:"size:16;index" json:"bizType"` // purchase | sales
+	PartyID    int64  `gorm:"index" json:"partyId"`
+	PartyName  string `gorm:"size:128" json:"partyName"`
+
+	Seq  int    `gorm:"not null" json:"seq"`            // 期次号，同一合同内唯一（服务层校验，软删下不建唯一索引）
+	Name string `gorm:"size:32;not null" json:"name"`   // 如「预付款」「尾款」「质保金」
+	Kind int16  `gorm:"not null;default:5" json:"kind"` // 1 预付 2 进度 3 验收 4 质保金 5 其他
+
+	// Rate 与 Amount 二选一填：填比例自动算金额（按合同金额），填金额则比例留空。
+	// 两者都存是为了让「30%」这个约定在合同金额变更后还能被看出来。
+	Rate   float64 `gorm:"type:numeric(5,2);default:0" json:"rate"`
+	Amount float64 `gorm:"type:numeric(14,2);default:0" json:"amount"`
+
+	// DueDate 约定收付日期；TriggerNode 按事件触发（签订 / 验收 / 质保到期）。
+	// 两者都留空 = 不限期，只在合同页作为计划行展示，不进逾期统计。
+	DueDate     *time.Time `gorm:"type:date" json:"dueDate"`
+	TriggerNode string     `gorm:"size:16" json:"triggerNode"`
+
+	SettledAmount float64 `gorm:"type:numeric(14,2);default:0" json:"settledAmount"` // 已收 / 已付累计
+	Remark        string  `gorm:"size:255" json:"remark"`
+	CreatedBy     int64   `json:"createdBy"`
+}
+
+// TableName 指定表名。
+func (InvContractPlan) TableName() string { return "inv_contract_plans" }
 
 // InvAttachment 业务附件：采购单 / 销售单 / 合同的图片与文件。
 //

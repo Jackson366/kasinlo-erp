@@ -69,6 +69,12 @@ func Register(rg *gin.RouterGroup) {
 		g.POST("/contracts", middleware.RequirePerm("inv:contract:create"), h.ContractCreate)
 		g.PUT("/contracts/:id", middleware.RequirePerm("inv:contract:update"), h.ContractUpdate)
 		g.DELETE("/contracts/:id", middleware.RequirePerm("inv:contract:delete"), h.ContractDelete)
+		// 验收与收付款单列权限码：能录合同的人未必能确认验收、更未必能登记收付款。
+		g.POST("/contracts/:id/accept", middleware.RequirePerm("inv:contract:accept"), h.ContractAccept)
+		// 期次收付款走独立的路径段：与 /contracts/:id 同层会与通配段抢路由，
+		// 而且「期次」本来也不是合同的子资源（它有自己的 ID 空间）。
+		g.POST("/contract-plans/settle", middleware.RequirePerm("inv:contract:settle"), h.ContractPlanSettle)
+		g.GET("/contract-plans/:id/settles", middleware.RequirePerm("inv:contract:list"), h.ContractPlanSettles)
 
 		// 业务附件（采购单 / 销售单 / 合同共用）
 		//
@@ -103,6 +109,8 @@ func Register(rg *gin.RouterGroup) {
 		g.GET("/report/inventory", middleware.RequirePerm("inv:report:view"), h.ReportInventory)
 		g.GET("/report/stock-ranking", middleware.RequirePerm("inv:report:view"), h.ReportStockRanking)
 		g.GET("/report/detail", middleware.RequirePerm("inv:report:view"), h.ReportDetail)
+		g.GET("/report/contract", middleware.RequirePerm("inv:report:view"), h.ReportContract)
+		g.GET("/report/contract-ledger", middleware.RequirePerm("inv:report:view"), h.ReportContractLedger)
 		g.GET("/report/export", middleware.RequirePerm("inv:report:view"), h.ReportExport)
 
 		// 打印模板

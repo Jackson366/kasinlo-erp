@@ -282,6 +282,78 @@ func (h *Handler) ReportDetail(c *gin.Context) {
 	response.OK(c, data)
 }
 
+// ReportContract 合同执行报表
+// @Summary      合同执行报表
+// @Description  合同金额 / 付款计划 / 已收付 / 未收付 / 质保金余额 / 履约阶段。
+// @Tags         进销存-报表
+// @Produce      json
+// @Security     BearerAuth
+// @Param        bizType    query  string  false  "purchase / sales"
+// @Param        status     query  int     false  "1 执行中 / 2 已完成 / 3 已终止"
+// @Param        stage      query  string  false  "pending / accepted / warranty / warranty_due"
+// @Param        partyId    query  int     false  "往来单位"
+// @Param        keyword    query  string  false  "编号 / 名称 / 往来单位 / 业务员"
+// @Param        startDate  query  string  false  "签订日期起 yyyy-MM-dd"
+// @Param        endDate    query  string  false  "签订日期止 yyyy-MM-dd"
+// @Success      200        {object}  response.Body{data=inv.ReportContractResult}
+// @Router       /inv/report/contract [get]
+func (h *Handler) ReportContract(c *gin.Context) {
+	f, err := contractFilterFrom(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	data, err := h.svc.ReportContract(f, page.FromContext(c), middleware.CurrentIdentity(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, data)
+}
+
+// ReportContractLedger 合同收付款台账
+// @Summary      合同收付款台账
+// @Description  按实际收付日期倒序，一行一笔；只含合同期次的收付款。
+// @Tags         进销存-报表
+// @Produce      json
+// @Security     BearerAuth
+// @Param        bizType  query  string  false  "purchase / sales"
+// @Param        keyword  query  string  false  "合同号 / 合同名称 / 往来单位"
+// @Param        from     query  string  false  "收付日期起 yyyy-MM-dd"
+// @Param        to       query  string  false  "收付日期止 yyyy-MM-dd"
+// @Param        limit    query  int     false  "行数上限（默认 1000）"
+// @Success      200      {object}  response.Body{data=[]inv.ReportContractLedgerRow}
+// @Router       /inv/report/contract-ledger [get]
+func (h *Handler) ReportContractLedger(c *gin.Context) {
+	f, err := contractFilterFrom(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	// 台账的日期区间按**收付日期**，与执行报表的签订日期区间不是一回事，
+	// 所以单独解析 from / to，而不是复用 contractFilterFrom 里的 startDate/endDate。
+	f.Start, f.End = nil, nil
+	from, err := parseDatePtr(strings.TrimSpace(c.Query("from")))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	to, err := parseDatePtr(strings.TrimSpace(c.Query("to")))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	f.Start, f.End = from, to
+
+	limit := page.AtoiOr(c.Query("limit"), 0)
+	rows, err := h.svc.ReportContractLedger(f, page.FromContext(c), middleware.CurrentIdentity(c), limit)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, rows)
+}
+
 // ReportExport 导出报表
 // @Summary      按筛选条件导出报表（xlsx）
 // @Description  返回 xlsx 二进制流，筛选参数与报表接口一致。

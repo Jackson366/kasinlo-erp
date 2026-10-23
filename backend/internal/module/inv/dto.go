@@ -113,10 +113,10 @@ type ProductSpecReq struct {
 // 不转嫁成用户面前的必填项。
 type ProductReq struct {
 	// Code 留空时由服务端自动生成（SP####）；填了就用手工值（唯一性照常校验）。
-	Code             string           `json:"code" binding:"omitempty,max=32" label:"商品编码"`
-	Name             string           `json:"name" binding:"required,max=128" label:"商品名称"`
-	Barcode          string           `json:"barcode" binding:"omitempty,max=64" label:"商品条码"`
-	CategoryID       int64            `json:"categoryId" label:"商品分类"`
+	Code       string `json:"code" binding:"omitempty,max=32" label:"商品编码"`
+	Name       string `json:"name" binding:"required,max=128" label:"商品名称"`
+	Barcode    string `json:"barcode" binding:"omitempty,max=64" label:"商品条码"`
+	CategoryID int64  `json:"categoryId" label:"商品分类"`
 	// 参考进价 / 参考售价：商品级备忘价。具体成交价仍以规格-单位上的
 	// 采购价 / 销售价为准，参考价用于开单前的估价与对比。
 	RefPurchasePrice float64          `json:"refPurchasePrice" binding:"omitempty,gte=0" label:"参考进价"`
@@ -198,10 +198,10 @@ type PickSpecVO struct {
 
 // ProductPickVO 单据明细的商品 → 规格 → 单位 级联选项。
 type ProductPickVO struct {
-	ID      int64        `json:"id"`
-	Code    string       `json:"code"`
-	Name    string       `json:"name"`
-	Barcode string       `json:"barcode"`
+	ID      int64  `json:"id"`
+	Code    string `json:"code"`
+	Name    string `json:"name"`
+	Barcode string `json:"barcode"`
 	// 参考进价 / 参考售价：开单选中商品时作为默认单价（>0 时优先于单位成交价）
 	RefPurchasePrice float64      `json:"refPurchasePrice"`
 	RefSalePrice     float64      `json:"refSalePrice"`
@@ -254,7 +254,7 @@ type OrderItemReq struct {
 
 // OrderReq 单据新增 / 修改请求。价格缺省时取商品的采购价 / 销售价。
 type OrderReq struct {
-	BizType   string         `json:"bizType" binding:"required,oneof=purchase sales" label:"单据类型"`
+	BizType string `json:"bizType" binding:"required,oneof=purchase sales" label:"单据类型"`
 	// OrderNo 单据编号。留空自动生成（CG/XS + 日期 + 流水）；填了用手工值（重复会 409）。
 	OrderNo   string         `json:"orderNo" binding:"omitempty,max=32" label:"单据编号"`
 	PartyID   int64          `json:"partyId" binding:"required,gt=0" label:"往来单位"`
@@ -293,6 +293,9 @@ type OrderFilter struct {
 	// Settle 结算状态："" 全部 / unpaid 未结清 / partial 部分结算 / paid 已结清。
 	// 与 settleStatus() 的判定必须同一口径，否则筛选出来的行与标签对不上。
 	Settle string
+	// Source 应收应付的来源："" 全部 / order 单据 / plan 合同期次。
+	// 只在 finance 类查询里用，单据列表忽略它。
+	Source string
 	// Start / End 按**单据日期**过滤，闭区间；nil 表示不限。
 	Start *time.Time
 	End   *time.Time
@@ -347,7 +350,7 @@ type StockItemReq struct {
 
 // StockOrderReq 出入库单据请求。
 type StockOrderReq struct {
-	Direction  string         `json:"direction" binding:"required,oneof=in out" label:"方向"`
+	Direction string `json:"direction" binding:"required,oneof=in out" label:"方向"`
 	// OrderNo 单据编号。留空自动生成（CK + 日期 + 流水）；填了用手工值（重复会 409）。
 	OrderNo    string         `json:"orderNo" binding:"omitempty,max=32" label:"单据编号"`
 	SourceType string         `json:"sourceType" binding:"omitempty,oneof=purchase sales manual" label:"来源"`
@@ -410,8 +413,17 @@ type StockOrderDetail struct {
 
 // FinanceRow 应收 / 应付明细行。
 type FinanceRow struct {
-	OrderID       int64      `json:"orderId"`
+	// Source 决定这行怎么来的：order（已审核单据）或 plan（合同付款期次）。
+	// 两类钱都进应收应付，靠这个字段分别筛选 —— 混在一起而不标来源，
+	// 对账时分不清「这笔是发货开的单」还是「合同约定的第三期」。
+	Source        string     `json:"source"`
+	OrderID       int64      `json:"orderId"` // Source=order 时有值
 	OrderNo       string     `json:"orderNo"`
+	ContractID    int64      `json:"contractId"` // Source=plan 时有值
+	ContractNo    string     `json:"contractNo"`
+	PlanID        int64      `json:"planId"`
+	PlanSeq       int        `json:"planSeq"`
+	PlanName      string     `json:"planName"`
 	PartyID       int64      `json:"partyId"`
 	PartyName     string     `json:"partyName"`
 	OrderDate     time.Time  `json:"orderDate"`
@@ -424,11 +436,17 @@ type FinanceRow struct {
 }
 
 // FinanceSummary 应收应付汇总。
+//
+// OrderTotal / PlanTotal 是「其中」口径，不是并列的两块：
+// Total = OrderTotal + PlanTotal，前端在汇总条上标「单据 / 合同」两个小字，
+// 让用户一眼看出这个月要收的钱里有多少是合同分期、多少是发货单。
 type FinanceSummary struct {
 	Total       float64 `json:"total"`
 	Settled     float64 `json:"settled"`
 	Outstanding float64 `json:"outstanding"`
 	Overdue     float64 `json:"overdue"`
+	OrderTotal  float64 `json:"orderTotal"`
+	PlanTotal   float64 `json:"planTotal"`
 }
 
 // SettleReq 登记收付款请求。
@@ -587,6 +605,58 @@ type ReportDetailResult struct {
 	Truncated bool `json:"truncated"`
 }
 
+// ReportContractRow 合同执行报表行：一份合同一行，带收付进度与质保金余额。
+type ReportContractRow struct {
+	ContractID           int64      `json:"contractId"`
+	ContractNo           string     `json:"contractNo"`
+	Name                 string     `json:"name"`
+	BizType              string     `json:"bizType"`
+	PartyName            string     `json:"partyName"`
+	SignDate             time.Time  `json:"signDate"`
+	Amount               float64    `json:"amount"`
+	PlanCount            int        `json:"planCount"`
+	PlanAmount           float64    `json:"planAmount"`
+	SettledAmount        float64    `json:"settledAmount"`
+	Outstanding          float64    `json:"outstanding"`
+	RetentionAmount      float64    `json:"retentionAmount"`
+	RetentionOutstanding float64    `json:"retentionOutstanding"`
+	Stage                string     `json:"stage"`
+	StageLabel           string     `json:"stageLabel"`
+	AcceptedAt           *time.Time `json:"acceptedAt"`
+	WarrantyEndAt        *time.Time `json:"warrantyEndAt"`
+}
+
+// ReportContractResult 合同执行报表：行 + 合计。
+//
+// PlanAmount 与 Amount 常常不等（合同可能只约定了几期、或含不收款条款），
+// 两个数都返回，报表里并列显示 —— 只给一个「合计」会让人误以为合同金额就是应收。
+type ReportContractResult struct {
+	Rows                 []ReportContractRow `json:"rows"`
+	Count                int                 `json:"count"`
+	Amount               float64             `json:"amount"`
+	PlanAmount           float64             `json:"planAmount"`
+	SettledAmount        float64             `json:"settledAmount"`
+	Outstanding          float64             `json:"outstanding"`
+	RetentionAmount      float64             `json:"retentionAmount"`
+	RetentionOutstanding float64             `json:"retentionOutstanding"`
+	Truncated            bool                `json:"truncated"`
+}
+
+// ReportContractLedgerRow 合同收付款台账：一行一笔实际发生的收付款。
+type ReportContractLedgerRow struct {
+	SettleID   int64     `json:"settleId"`
+	SettledAt  time.Time `json:"settledAt"`
+	ContractNo string    `json:"contractNo"`
+	Name       string    `json:"name"`
+	BizType    string    `json:"bizType"`
+	PartyName  string    `json:"partyName"`
+	PlanSeq    int       `json:"planSeq"`
+	PlanName   string    `json:"planName"`
+	Amount     float64   `json:"amount"`
+	Method     string    `json:"method"`
+	Remark     string    `json:"remark"`
+}
+
 // ============================================================
 // 打印模板
 // ============================================================
@@ -621,10 +691,34 @@ type PrintTemplateRow struct {
 
 // ContractFilter 合同列表筛选条件。
 type ContractFilter struct {
-	BizType string   // "" 全部 / purchase / sales
-	Status  *int16   // 1 执行中 2 已完成 3 已终止
+	BizType string     // "" 全部 / purchase / sales
+	Status  *int16     // 1 执行中 2 已完成 3 已终止
 	Start   *time.Time // 按**签订日期**过滤，闭区间
 	End     *time.Time
+	PartyID int64 // 往来单位
+	// Stage 按派生的履约阶段筛选：
+	//   pending       未验收（accepted_at 为空）
+	//   accepting     已验收（accepted_at 非空）
+	//   warranty      质保期内（warranty_end_at 未到）
+	//   warranty_due  质保已到期（warranty_end_at 已过）
+	Stage string
+}
+
+// ContractPlanReq 合同付款计划的一期。
+//
+// ID 有值表示这一期已经存在（编辑时原样回传），没有则是新增。
+// 已有收付款的期次只允许改名称与备注，金额与比例必须保持不变 ——
+// 改了会让「已收付累计」与合同金额对不上（见 service 层的校验）。
+type ContractPlanReq struct {
+	ID          int64   `json:"id" binding:"omitempty" label:"期次"`
+	Seq         int     `json:"seq" binding:"required,min=1,max=99" label:"期次号"`
+	Name        string  `json:"name" binding:"required,max=32" label:"期次名称"`
+	Kind        int16   `json:"kind" binding:"omitempty,oneof=1 2 3 4 5" label:"期次类型"`
+	Rate        float64 `json:"rate" binding:"gte=0,lte=100" label:"比例"`
+	Amount      float64 `json:"amount" binding:"gte=0" label:"金额"`
+	DueDate     string  `json:"dueDate" binding:"omitempty" label:"约定日期"`
+	TriggerNode string  `json:"triggerNode" binding:"omitempty,oneof=sign accept warranty_end" label:"触发节点"`
+	Remark      string  `json:"remark" binding:"omitempty,max=255" label:"备注"`
 }
 
 // ContractReq 合同新增 / 修改请求。
@@ -642,6 +736,63 @@ type ContractReq struct {
 	Status    *int16  `json:"status" binding:"omitempty,oneof=1 2 3" label:"状态"`
 	Salesman  string  `json:"salesman" binding:"omitempty,max=64" label:"业务员"`
 	Remark    string  `json:"remark" binding:"omitempty,max=255" label:"备注"`
+
+	// 质保条款：质保期按月填，质保金可按比例折算成金额。
+	// 两个都填时以金额为准（有的合同直接写「质保金 5 万元」而不是百分比）。
+	WarrantyMonths  int     `json:"warrantyMonths" binding:"omitempty,min=0,max=120" label:"质保期(月)"`
+	RetentionRate   float64 `json:"retentionRate" binding:"omitempty,gte=0,lte=100" label:"质保金比例"`
+	RetentionAmount float64 `json:"retentionAmount" binding:"omitempty,gte=0" label:"质保金金额"`
+
+	// Plans 付款计划：整份替换语义 —— 传什么就是什么，
+	// 没出现的既有期次在「未发生收付款」时被删除，已发生收付款则拒绝。
+	Plans []ContractPlanReq `json:"plans" binding:"omitempty,max=20,dive" label:"付款计划"`
+}
+
+// ContractAcceptReq 合同验收请求。验收会同时把质保到期日算出来。
+type ContractAcceptReq struct {
+	AcceptedAt     string `json:"acceptedAt" binding:"required" label:"验收日期"`
+	AcceptResult   string `json:"acceptResult" binding:"required,oneof=合格 不合格 整改" label:"验收结论"`
+	WarrantyMonths int    `json:"warrantyMonths" binding:"omitempty,min=0,max=120" label:"质保期(月)"`
+	Remark         string `json:"remark" binding:"omitempty,max=255" label:"备注"`
+}
+
+// PlanSettleReq 合同付款期次的收付款请求。
+type PlanSettleReq struct {
+	PlanID    int64   `json:"planId" binding:"required,gt=0" label:"付款期次"`
+	Amount    float64 `json:"amount" binding:"required,gt=0" label:"金额"`
+	Method    string  `json:"method" binding:"omitempty,max=32" label:"结算方式"`
+	SettledAt string  `json:"settledAt" binding:"omitempty" label:"收付日期"`
+	Remark    string  `json:"remark" binding:"omitempty,max=255" label:"备注"`
+}
+
+// SettleRecord 一条收付款流水（合同期次详情展开用）。
+type SettleRecord struct {
+	ID        int64     `json:"id"`
+	Amount    float64   `json:"amount"`
+	Method    string    `json:"method"`
+	SettledAt time.Time `json:"settledAt"`
+	Remark    string    `json:"remark"`
+}
+
+// ContractPlanItem 合同付款期次的返回行。
+//
+// Status 与 StatusLabel 都是派生的（未到期 / 待收付 / 部分 / 已结清），
+// 库里不存 —— 改金额、改日期、登记收付款各处都不需要再去同步一个状态列。
+type ContractPlanItem struct {
+	ID            int64      `json:"id"`
+	Seq           int        `json:"seq"`
+	Name          string     `json:"name"`
+	Kind          int16      `json:"kind"`
+	KindLabel     string     `json:"kindLabel"`
+	Rate          float64    `json:"rate"`
+	Amount        float64    `json:"amount"`
+	DueDate       *time.Time `json:"dueDate"`
+	TriggerNode   string     `json:"triggerNode"`
+	SettledAmount float64    `json:"settledAmount"`
+	Outstanding   float64    `json:"outstanding"`
+	Status        string     `json:"status"`
+	StatusLabel   string     `json:"statusLabel"`
+	Remark        string     `json:"remark"`
 }
 
 // ContractRow 合同列表行与详情（结构一致，详情只是单条）。
@@ -660,6 +811,30 @@ type ContractRow struct {
 	Salesman   string     `json:"salesman"`
 	Operator   string     `json:"operator"`
 	Remark     string     `json:"remark"`
+
+	// 验收与质保
+	AcceptedAt      *time.Time `json:"acceptedAt"`
+	AcceptResult    string     `json:"acceptResult"`
+	WarrantyMonths  int        `json:"warrantyMonths"`
+	WarrantyEndAt   *time.Time `json:"warrantyEndAt"`
+	RetentionRate   float64    `json:"retentionRate"`
+	RetentionAmount float64    `json:"retentionAmount"`
+
+	// 履约阶段（派生）：待验收 / 已验收 / 质保中 / 质保到期 / 已完成 / 已终止
+	Stage      string `json:"stage"`
+	StageLabel string `json:"stageLabel"`
+
+	// 收付进度（合同期次汇总；没有计划时全为 0）
+	PlanCount     int     `json:"planCount"`
+	PlanAmount    float64 `json:"planAmount"`
+	SettledAmount float64 `json:"settledAmount"`
+	Outstanding   float64 `json:"outstanding"`
+	// RetentionOutstanding 质保金尚未收付的部分，单列因为它是「以后才能要的钱」
+	RetentionOutstanding float64 `json:"retentionOutstanding"`
+
+	// Plans 仅详情返回，列表不带（避免一页 20 条合同拉出上百行期次）
+	Plans []ContractPlanItem `json:"plans,omitempty"`
+
 	// AttachmentCount 附件数量，列表按钮上显示角标（一次批量查出，不逐行请求）
 	AttachmentCount int       `json:"attachmentCount"`
 	CreatedAt       time.Time `json:"createdAt"`

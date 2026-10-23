@@ -1,17 +1,24 @@
 <script setup lang="ts">
 /**
- * 报表中心：按「经营总览 / 销售排行 / 采购排行 / 库存排行 / 销售明细 / 采购明细」
- * 六个报表区组织，顶部共享时间与品类筛选栏。
+ * 报表中心：按「经营总览 / 销售排行 / 采购排行 / 库存排行 / 销售明细 / 采购明细 /
+ * 合同执行 / 合同台账」八个报表区组织，前六个共用顶部时间与品类筛选栏。
  *
  * 各报表区数据懒加载、切 tab 时按需请求。排行一律**全量**返回（名次一直排下去，
  * 不截成「前 5 名」），明细是单据明细粒度（一行一个商品）。
+ *
+ * 合同两个区**不吃时间范围**：合同是跨月跨年的长期台账，
+ * 按「本月」筛签订日期，看到的往往是一份合同都没有 —— 它们自带阶段/类型筛选。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import type { EChartsCoreOption } from 'echarts/core'
 import { invApi } from '@/api'
 import type {
+  InvContractBizType,
+  InvContractStage,
   InvReportCategoryRow,
+  InvReportContractLedgerRow,
+  InvReportContractResult,
   InvReportDetailResult,
   InvReportRankRow,
   InvReportStockRankRow,
@@ -34,7 +41,15 @@ const palette = computed(() => {
   return chartPalette()
 })
 
-type TabKey = 'overview' | 'salesRank' | 'purchaseRank' | 'stockRank' | 'salesDetail' | 'purchaseDetail'
+type TabKey =
+  | 'overview'
+  | 'salesRank'
+  | 'purchaseRank'
+  | 'stockRank'
+  | 'salesDetail'
+  | 'purchaseDetail'
+  | 'contractExec'
+  | 'contractLedger'
 type RankDimension = 'customer' | 'product'
 type PurchaseDimension = 'supplier' | 'product'
 
@@ -45,8 +60,15 @@ const tabs: Array<{ key: TabKey; label: string }> = [
   { key: 'stockRank', label: '库存排行' },
   { key: 'salesDetail', label: '销售明细' },
   { key: 'purchaseDetail', label: '采购明细' },
+  { key: 'contractExec', label: '合同执行' },
+  { key: 'contractLedger', label: '合同台账' },
 ]
 const activeTab = ref<TabKey>('overview')
+/** 合同两个区用独立筛选：合同是长期台账，跟着「本月」筛没有意义 */
+const isContractTab = computed(() => activeTab.value === 'contractExec' || activeTab.value === 'contractLedger')
+const contractBiz = ref<InvContractBizType | ''>('')
+const contractStage = ref<InvContractStage | ''>('')
+const contractKeyword = ref('')
 const rankDimension = ref<RankDimension>('customer')
 const purchaseDimension = ref<PurchaseDimension>('supplier')
 
@@ -82,6 +104,10 @@ const purchaseRanking = ref<InvReportRankRow[]>([])
 const stockRanking = ref<InvReportStockRankRow[]>([])
 /** 明细：销售 / 采购共用一个容器，按当前 tab 取数 */
 const detail = ref<InvReportDetailResult | null>(null)
+/** 合同执行报表 */
+const contractReport = ref<InvReportContractResult | null>(null)
+/** 合同收付款台账 */
+const contractLedger = ref<InvReportContractLedgerRow[]>([])
 /**
  * 明细的往来单位关键字（销售 = 客户，采购 = 供应商）。
  * 只作用于明细：排行榜本身按往来单位聚合，再按名字过滤它没有意义。
@@ -151,6 +177,29 @@ async function loadDetail(ticket: number): Promise<void> {
   detail.value = r
 }
 
+/** 合同两个区的公共筛选参数（不吃时间范围，见文件头注释） */
+function contractParams(): Record<string, string | number> {
+  const p: Record<string, string | number> = {}
+  if (contractBiz.value) p.bizType = contractBiz.value
+  if (contractStage.value) p.stage = contractStage.value
+  if (contractKeyword.value.trim()) p.keyword = contractKeyword.value.trim()
+  return p
+}
+
+/** 合同执行：一份合同一行，带收付进度与质保金余额 */
+async function loadContractExec(ticket: number): Promise<void> {
+  const r = await invApi.reportContract(contractParams())
+  if (!guard.isCurrent(ticket)) return
+  contractReport.value = r
+}
+
+/** 合同台账：一行一笔实际发生的收付款 */
+async function loadContractLedger(ticket: number): Promise<void> {
+  const r = await invApi.reportContractLedger(contractParams())
+  if (!guard.isCurrent(ticket)) return
+  contractLedger.value = r
+}
+
 /** 按当前 tab 加载对应数据 */
 async function loadTab(): Promise<void> {
   const ticket = guard.start()
@@ -169,6 +218,12 @@ async function loadTab(): Promise<void> {
       case 'salesDetail':
       case 'purchaseDetail':
         await loadDetail(ticket)
+        break
+      case 'contractExec':
+        await loadContractExec(ticket)
+        break
+      case 'contractLedger':
+        await loadContractLedger(ticket)
         break
       default:
         await loadOverview(ticket)
@@ -401,12 +456,21 @@ const exporting = ref(false)
  * 库存排行本身就是一张按金额排序的表，不另做导出。
  */
 const canExport = computed(() =>
-  ['overview', 'salesRank', 'purchaseRank', 'salesDetail', 'purchaseDetail'].includes(activeTab.value),
+  ['overview', 'salesRank', 'purchaseRank', 'salesDetail', 'purchaseDetail', 'contractExec'].includes(
+    activeTab.value,
+  ),
 )
 
 async function exportReport(): Promise<void> {
   exporting.value = true
   try {
+    // 合同执行走「合同台账」导出：后端那一份列里已经带上了已收付 / 未收付 /
+    // 阶段 / 验收 / 质保到期，与屏幕上的报表是同一套查询
+    if (activeTab.value === 'contractExec') {
+      await invApi.exportList({ entity: 'contract', ...contractParams() }, '合同执行.xlsx')
+      ElMessage.success('导出成功')
+      return
+    }
     const params: Record<string, unknown> = { ...filterParams(), type: 'overview' }
     if (activeTab.value === 'salesRank') {
       params.type = 'ranking'
@@ -439,8 +503,8 @@ onMounted(() => {
 
 <template>
   <div v-loading="loading" class="report-page">
-    <!-- 共享筛选栏：时间范围 + 品类，四个报表区通用 -->
-    <div class="page-card range-bar">
+    <!-- 共享筛选栏：时间范围 + 品类，前六个报表区通用 -->
+    <div v-if="!isContractTab" class="page-card range-bar">
       <div class="range-tabs">
         <button
           v-for="item in ranges"
@@ -494,6 +558,52 @@ onMounted(() => {
       <div class="range-hint">
         当前范围：<b>{{ rangeLabel }}</b>
         <template v-if="catLabel"> · 品类：<b>{{ catLabel }}</b>（含子分类）</template>
+      </div>
+    </div>
+
+    <!-- 合同两个区：不吃时间范围，用阶段/类型/关键字筛 -->
+    <div v-else class="page-card range-bar">
+      <el-form class="filter-form" inline @submit.prevent>
+        <el-form-item label="类型">
+          <el-select v-model="contractBiz" placeholder="全部" clearable style="width: 140px" @change="loadTab">
+            <el-option label="销售合同" value="sales" />
+            <el-option label="采购合同" value="purchase" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="阶段">
+          <el-select v-model="contractStage" placeholder="全部" clearable style="width: 140px" @change="loadTab">
+            <el-option label="待验收" value="pending" />
+            <el-option label="已验收" value="accepted" />
+            <el-option label="质保中" value="warranty" />
+            <el-option label="质保到期" value="warranty_due" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关键字">
+          <el-input
+            v-model="contractKeyword"
+            placeholder="合同号 / 名称 / 往来单位"
+            clearable
+            style="width: 220px"
+            @keyup.enter="loadTab"
+          />
+        </el-form-item>
+      </el-form>
+      <div class="range-bar__actions">
+        <el-button type="primary" @click="loadTab">
+          <AppIcon name="Search" />
+          <span>查询</span>
+        </el-button>
+        <el-button v-if="canExport" :loading="exporting" @click="exportReport">
+          <AppIcon name="Download" />
+          <span>导出</span>
+        </el-button>
+        <el-button @click="loadTab">
+          <AppIcon name="Refresh" />
+          <span>刷新</span>
+        </el-button>
+      </div>
+      <div class="range-hint">
+        合同是跨期台账，不随时间范围筛选；金额口径为<b>付款计划</b>（未设计划则为 0）
       </div>
     </div>
 
@@ -726,7 +836,7 @@ onMounted(() => {
     </div>
 
     <!-- ⑤⑥ 销售 / 采购明细（单据明细粒度） -->
-    <div v-else class="page-card">
+    <div v-else-if="activeTab === 'salesDetail' || activeTab === 'purchaseDetail'" class="page-card">
       <header class="card-head">
         <h3>{{ activeTab === 'salesDetail' ? '销售明细' : '采购明细' }}</h3>
         <div class="detail-head__right">
@@ -776,6 +886,117 @@ onMounted(() => {
       <el-empty v-if="!(detail?.rows ?? []).length" description="暂无明细数据" :image-size="80" />
     </div>
 
+    <!-- ⑦ 合同执行 -->
+    <div v-else-if="activeTab === 'contractExec'" class="page-card">
+      <div class="kpi-row">
+        <div class="kpi-card tone-blue">
+          <span class="kpi-card__label">合同金额</span>
+          <strong class="kpi-card__value">{{ formatMoney(contractReport?.amount ?? 0) }}</strong>
+        </div>
+        <div class="kpi-card tone-green">
+          <span class="kpi-card__label">已收付</span>
+          <strong class="kpi-card__value">{{ formatMoney(contractReport?.settledAmount ?? 0) }}</strong>
+        </div>
+        <div class="kpi-card tone-amber">
+          <span class="kpi-card__label">未收付</span>
+          <strong class="kpi-card__value">{{ formatMoney(contractReport?.outstanding ?? 0) }}</strong>
+        </div>
+        <div class="kpi-card tone-red">
+          <span class="kpi-card__label">质保金未收</span>
+          <strong class="kpi-card__value">{{ formatMoney(contractReport?.retentionOutstanding ?? 0) }}</strong>
+        </div>
+      </div>
+
+      <header class="card-head">
+        <h3>合同执行</h3>
+        <span class="text-muted">
+          共 {{ contractReport?.count ?? 0 }} 份 · 计划合计 {{ formatMoney(contractReport?.planAmount ?? 0) }}
+          <template v-if="contractReport?.truncated">（已超过 1000 份，仅展示前 1000 份）</template>
+        </span>
+      </header>
+
+      <el-table :data="contractReport?.rows ?? []" stripe max-height="640">
+        <el-table-column prop="contractNo" label="合同编号" width="130" show-overflow-tooltip />
+        <el-table-column prop="name" label="合同名称" min-width="160" show-overflow-tooltip />
+        <el-table-column label="类型" width="90">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.bizType === 'purchase' ? 'warning' : 'success'" effect="plain">
+              {{ row.bizType === 'purchase' ? '采购' : '销售' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="partyName" label="往来单位" min-width="140" show-overflow-tooltip />
+        <el-table-column label="签订日期" width="104">
+          <template #default="{ row }">{{ formatDay(row.signDate) }}</template>
+        </el-table-column>
+        <el-table-column label="合同金额" width="116" align="right">
+          <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
+        </el-table-column>
+        <el-table-column label="计划" width="112" align="right">
+          <template #default="{ row }">
+            {{ row.planCount ? formatMoney(row.planAmount) : '—' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="已收付" width="112" align="right">
+          <template #default="{ row }">{{ formatMoney(row.settledAmount) }}</template>
+        </el-table-column>
+        <el-table-column label="未收付" width="112" align="right">
+          <template #default="{ row }">
+            <strong :class="row.outstanding > 0 ? 'text-warning' : ''">{{ formatMoney(row.outstanding) }}</strong>
+          </template>
+        </el-table-column>
+        <el-table-column label="质保金未收" width="112" align="right">
+          <template #default="{ row }">{{ formatMoney(row.retentionOutstanding) }}</template>
+        </el-table-column>
+        <el-table-column label="阶段" width="96">
+          <template #default="{ row }">
+            <el-tag size="small" effect="light">{{ row.stageLabel }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="质保到期" width="104">
+          <template #default="{ row }">{{ row.warrantyEndAt ? formatDay(row.warrantyEndAt) : '—' }}</template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!(contractReport?.rows ?? []).length" description="暂无合同数据" :image-size="80" />
+    </div>
+
+    <!-- ⑧ 合同收付款台账 -->
+    <div v-else class="page-card">
+      <header class="card-head">
+        <h3>合同收付款台账</h3>
+        <span class="text-muted">
+          共 {{ contractLedger.length }} 笔 · 合计
+          {{ formatMoney(contractLedger.reduce((s, r) => s + r.amount, 0)) }}
+        </span>
+      </header>
+      <el-table :data="contractLedger" stripe max-height="640">
+        <el-table-column label="收付日期" width="110">
+          <template #default="{ row }">{{ formatDay(row.settledAt) }}</template>
+        </el-table-column>
+        <el-table-column prop="contractNo" label="合同编号" width="130" show-overflow-tooltip />
+        <el-table-column prop="name" label="合同名称" min-width="160" show-overflow-tooltip />
+        <el-table-column label="类型" width="90">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.bizType === 'purchase' ? 'warning' : 'success'" effect="plain">
+              {{ row.bizType === 'purchase' ? '付款' : '收款' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="partyName" label="往来单位" min-width="140" show-overflow-tooltip />
+        <el-table-column label="期次" width="150" show-overflow-tooltip>
+          <template #default="{ row }">第{{ row.planSeq }}期 {{ row.planName }}</template>
+        </el-table-column>
+        <el-table-column label="金额" width="126" align="right">
+          <template #default="{ row }">
+            <strong>{{ formatMoney(row.amount) }}</strong>
+          </template>
+        </el-table-column>
+        <el-table-column prop="method" label="方式" width="110" />
+        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
+      </el-table>
+      <el-empty v-if="!contractLedger.length" description="暂无收付款记录" :image-size="80" />
+    </div>
+
     <!-- 打印经营概览（汇总 + 客户排行 + 品类占比） -->
     <ReportPrintDialog ref="printRef" :summary="summary" :ranking="customerRanking" :categories="categories" />
   </div>
@@ -812,6 +1033,11 @@ onMounted(() => {
   width: 100%;
   font-size: 12px;
   color: var(--app-text-muted);
+}
+
+/* 还有未收付金额时的高亮（合同执行报表用） */
+.text-warning {
+  color: var(--el-color-warning);
 }
 
 .range-bar__actions {

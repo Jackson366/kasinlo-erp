@@ -1318,6 +1318,117 @@ async function main() {
   })
   ok('合同起止日期倒置被拒', ctBadRange.status === 400 && ctBadRange.json?.code === 40000, JSON.stringify(ctBadRange.json).slice(0, 160))
 
+  // ---- 付款计划 / 验收 / 期次收付款：合同如何变成应收应付 ----
+  //
+  // 这条链是「合同 → 付款计划 → 收付款 → 应收应付 → 报表」的入口，
+  // 走一遍才能确认三件事：比例能折成金额、验收能推进质保、收款能结成应收。
+  const ctPlanCreate = await request('POST', '/inv/contracts', {
+    token,
+    body: {
+      name: `冒烟合同计划${smokeCode}`,
+      bizType: 'sales',
+      partyId: contractParty,
+      signDate: '2026-10-01',
+      amount: 10000,
+      warrantyMonths: 6,
+      retentionRate: 10,
+      plans: [
+        { seq: 1, name: '预付款', kind: 1, rate: 60, triggerNode: 'sign' },
+        { seq: 2, name: '质保金', kind: 4, rate: 10, triggerNode: 'warranty_end' },
+      ],
+    },
+  })
+  const planCid = ctPlanCreate.json?.data?.id
+  ok('新增带付款计划的合同', ctPlanCreate.status === 200 && !!planCid, JSON.stringify(ctPlanCreate.json).slice(0, 160))
+
+  const planDetail = await request('GET', `/inv/contracts/${planCid}`, { token })
+  const planRow = planDetail.json?.data || {}
+  const planList = planRow.plans || []
+  ok(
+    '付款计划按比例折算金额',
+    planList.length === 2 && Math.abs((planRow.planAmount || 0) - 7000) < 0.01,
+    `plans=${planList.length} planAmount=${planRow.planAmount}`,
+  )
+  ok(
+    '未设计划的部分不计入应收（未收付=计划合计）',
+    Math.abs((planRow.outstanding || 0) - 7000) < 0.01,
+    String(planRow.outstanding),
+  )
+  const ctPlanOver = await request('POST', '/inv/contracts', {
+    token,
+    body: {
+      name: '超额计划', bizType: 'sales', partyId: contractParty, signDate: '2026-10-01', amount: 100,
+      plans: [{ seq: 1, name: '首款', kind: 1, amount: 200 }],
+    },
+  })
+  ok('计划合计超合同金额被拒', ctPlanOver.status === 400 && ctPlanOver.json?.code === 40000, JSON.stringify(ctPlanOver.json).slice(0, 160))
+
+  const ctAccept = await request('POST', `/inv/contracts/${planCid}/accept`, {
+    token,
+    body: { acceptedAt: '2026-10-20', acceptResult: '合格', warrantyMonths: 6 },
+  })
+  ok('合同验收登记', ctAccept.status === 200 && ctAccept.json?.code === 0, JSON.stringify(ctAccept.json).slice(0, 160))
+
+  const ctAccepted = await request('GET', `/inv/contracts/${planCid}`, { token })
+  const ctAccRow = ctAccepted.json?.data || {}
+  ok('验收后阶段=质保中', ctAccRow.stage === 'warranty', String(ctAccRow.stage))
+  ok(
+    '质保到期日=验收日+质保月数',
+    String(ctAccRow.warrantyEndAt || '').startsWith('2027-04-20'),
+    String(ctAccRow.warrantyEndAt),
+  )
+
+  const planFirst = (ctAccRow.plans || []).find((p) => p.seq === 1) || {}
+  const planSettle = await request('POST', '/inv/contract-plans/settle', {
+    token,
+    body: { planId: planFirst.id, amount: 6000, method: '银行转账', settledAt: '2026-10-21' },
+  })
+  ok('期次收款登记', planSettle.status === 200 && planSettle.json?.code === 0, JSON.stringify(planSettle.json).slice(0, 160))
+
+  const planAfter = await request('GET', `/inv/contracts/${planCid}`, { token })
+  const planAfterRow = planAfter.json?.data || {}
+  ok('合同已收付累计 6000', Math.abs((planAfterRow.settledAmount || 0) - 6000) < 0.01, String(planAfterRow.settledAmount))
+  ok(
+    '首期状态=已结清',
+    (planAfterRow.plans || []).find((p) => p.seq === 1)?.status === 'settled',
+    JSON.stringify((planAfterRow.plans || []).map((p) => [p.seq, p.status])),
+  )
+  const planOver = await request('POST', '/inv/contract-plans/settle', {
+    token,
+    body: { planId: planFirst.id, amount: 1 },
+  })
+  ok('已结清期次再收款被拒', planOver.json?.code === 40900, JSON.stringify(planOver.json).slice(0, 160))
+
+  // 应收应付：合同期次是第二类来源，按 source 能单独筛出来
+  const recvPlan = await request('GET', `/inv/finance/receivables?page=1&pageSize=50&source=plan`, { token })
+  const recvPlanRows = recvPlan.json?.data?.list || []
+  ok(
+    '应收含合同期次（来源=plan）',
+    recvPlanRows.some((r) => r.contractId === planCid && r.source === 'plan'),
+    `rows=${recvPlanRows.length}`,
+  )
+  const recvOrder = await request('GET', `/inv/finance/receivables?page=1&pageSize=20&source=order`, { token })
+  ok(
+    '来源=order 时不混入合同期次',
+    (recvOrder.json?.data?.list || []).every((r) => r.source === 'order'),
+    '',
+  )
+
+  // 报表：合同执行与收付款台账
+  const ctReport = await request('GET', `/inv/report/contract?bizType=sales`, { token })
+  const ctReportRow = (ctReport.json?.data?.rows || []).find((r) => r.contractId === planCid)
+  ok(
+    '合同执行报表：已收付与质保金',
+    !!ctReportRow && Math.abs((ctReportRow.settledAmount || 0) - 6000) < 0.01 && Math.abs((ctReportRow.retentionOutstanding || 0) - 1000) < 0.01,
+    JSON.stringify(ctReportRow || {}).slice(0, 200),
+  )
+  const ctLedger = await request('GET', `/inv/report/contract-ledger?limit=50`, { token })
+  ok(
+    '合同收付款台账含该笔',
+    (ctLedger.json?.data || []).some((r) => r.contractNo === planAfterRow.contractNo && Math.abs(r.amount - 6000) < 0.01),
+    '',
+  )
+
   // 附件：PNG 最小样本
   const pngBytes = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbtEAAAAASUVORK5CYII=',

@@ -1,6 +1,7 @@
 package inv
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -55,6 +56,22 @@ func contractFilterFrom(c *gin.Context) (ContractFilter, error) {
 		return f, err
 	}
 	f.Start, f.End = start, end
+	if v := strings.TrimSpace(c.Query("partyId")); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id < 0 {
+			return f, errcode.Newf(errcode.ErrBadRequest, "查询参数 partyId 非法：%s", v)
+		}
+		f.PartyID = id
+	}
+	// stage 是派生阶段的筛选值，允许值写死在这里：
+	// 传错就 400，而不是静默返回全量（静默丢条件最难查）
+	f.Stage = strings.TrimSpace(c.Query("stage"))
+	switch f.Stage {
+	case "", "pending", "accepted", "warranty", "warranty_due":
+	default:
+		return f, errcode.Newf(errcode.ErrBadRequest,
+			"查询参数 stage 非法：%s（仅支持 pending / accepted / warranty / warranty_due）", f.Stage)
+	}
 	return f, nil
 }
 
@@ -185,4 +202,81 @@ func (h *Handler) ContractDelete(c *gin.Context) {
 		return
 	}
 	response.OKMsg(c, "删除成功")
+}
+
+// ContractAccept 合同验收
+// @Summary      合同验收
+// @Description  登记验收日期与结论，并按质保月数计算质保到期日。
+// @Tags         进销存-合同
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path  int                true  "合同 ID"
+// @Param        body  body  ContractAcceptReq  true  "验收信息"
+// @Success      200   {object}  response.Body
+// @Router       /inv/contracts/{id}/accept [post]
+func (h *Handler) ContractAccept(c *gin.Context) {
+	id, err := bind.PathID(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	var req ContractAcceptReq
+	if err := bind.JSON(c, &req); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	c.Set("opAction", "合同验收")
+	if err := h.svc.ContractAccept(id, req, middleware.CurrentIdentity(c)); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OKMsg(c, "验收已登记")
+}
+
+// ContractPlanSettle 合同期次收付款
+// @Summary      合同期次收付款
+// @Description  给一期付款计划登记收款（销售合同）或付款（采购合同），
+// @Description  金额不得超过该期未收付余额；全部期次结清且质保了结后合同自动完成。
+// @Tags         进销存-合同
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body  PlanSettleReq  true  "收付款信息"
+// @Success      200   {object}  response.Body
+// @Router       /inv/contracts/plans/settle [post]
+func (h *Handler) ContractPlanSettle(c *gin.Context) {
+	var req PlanSettleReq
+	if err := bind.JSON(c, &req); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	c.Set("opAction", "合同收付款")
+	if err := h.svc.PlanSettle(req, middleware.CurrentIdentity(c)); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OKMsg(c, "收付款已登记")
+}
+
+// ContractPlanSettles 期次收付款流水
+// @Summary      期次收付款流水
+// @Tags         进销存-合同
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path  int  true  "期次 ID"
+// @Success      200  {object}  response.Body{data=[]SettleRecord}
+// @Router       /inv/contracts/plans/{id}/settles [get]
+func (h *Handler) ContractPlanSettles(c *gin.Context) {
+	id, err := bind.PathID(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	list, err := h.svc.PlanSettleHistory(id, middleware.CurrentIdentity(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, list)
 }

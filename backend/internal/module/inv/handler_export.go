@@ -118,7 +118,16 @@ func exportQuery(c *gin.Context, entity string, q page.Query) (ExportQuery, erro
 		if err != nil {
 			return f, err
 		}
-		f.Order = OrderFilter{BizType: bizType, Settle: settle}
+		// 来源筛选：空 / order / plan。传错就 400（静默忽略会让导出的范围
+		// 比页面看到的大，而导出的文件是拿去对账的）。
+		source := strings.TrimSpace(c.Query("source"))
+		switch source {
+		case "", model.InvSettleSourceOrder, model.InvSettleSourcePlan:
+		default:
+			return f, errcode.Newf(errcode.ErrBadRequest,
+				"查询参数 source 非法：%s（仅支持 order / plan）", source)
+		}
+		f.Order = OrderFilter{BizType: bizType, Settle: settle, Source: source}
 	case exportContract:
 		// 合同允许「全部类型」，所以不用 bizTypeOf（那个要求必填）
 		biz := strings.TrimSpace(c.Query("bizType"))

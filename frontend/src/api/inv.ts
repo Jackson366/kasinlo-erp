@@ -5,6 +5,7 @@ import type {
   InvAttachmentRow,
   InvCategoryOption,
   InvCategoryPayload,
+  InvContractAcceptPayload,
   InvContractPayload,
   InvContractRow,
   InvCategoryRow,
@@ -17,6 +18,8 @@ import type {
   InvOverview,
   InvPartyPayload,
   InvPartyRow,
+  InvPlanSettlePayload,
+  InvPlanSettleRecord,
   InvPrintTemplatePayload,
   InvPrintTemplateRow,
   InvProductDupRow,
@@ -24,6 +27,8 @@ import type {
   InvProductPickResult,
   InvProductRow,
   InvReportCategoryRow,
+  InvReportContractLedgerRow,
+  InvReportContractResult,
   InvReportDetailResult,
   InvReportInventory,
   InvReportRankRow,
@@ -71,6 +76,14 @@ export const invApi = {
   /** 销售 / 采购明细（单据明细粒度） */
   reportDetail(params?: Params) {
     return http.get<InvReportDetailResult>('/inv/report/detail', params)
+  },
+  /** 合同执行报表：金额 / 计划 / 已收付 / 未收付 / 质保金余额 */
+  reportContract(params?: Params) {
+    return http.get<InvReportContractResult>('/inv/report/contract', params)
+  },
+  /** 合同收付款台账（实际发生的流水） */
+  reportContractLedger(params?: Params) {
+    return http.get<InvReportContractLedgerRow[]>('/inv/report/contract-ledger', params)
   },
   reportExport(params?: Params, fallbackName = '报表.xlsx') {
     return downloadFile('/inv/report/export', params as Record<string, unknown>, fallbackName)
@@ -244,6 +257,18 @@ export const invApi = {
   },
   deleteContract(id: number) {
     return http.delete<string>(`/inv/contracts/${id}`)
+  },
+  /** 合同验收：登记验收日期与结论，并按质保月数算出质保到期日 */
+  acceptContract(id: number, data: InvContractAcceptPayload) {
+    return http.post<string>(`/inv/contracts/${id}/accept`, data)
+  },
+  /** 合同付款期次收付款（销售=收款 / 采购=付款） */
+  settleContractPlan(data: InvPlanSettlePayload) {
+    return http.post<string>('/inv/contract-plans/settle', data)
+  },
+  /** 某一期的收付款流水 */
+  contractPlanSettles(planId: number) {
+    return http.get<InvPlanSettleRecord[]>(`/inv/contract-plans/${planId}/settles`)
   },
 
   // ---------------- 业务附件 ----------------

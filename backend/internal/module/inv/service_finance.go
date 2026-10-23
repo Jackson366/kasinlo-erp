@@ -2,6 +2,7 @@ package inv
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -37,82 +38,175 @@ func isOverdue(outstanding float64, due *time.Time, today time.Time) bool {
 	return due.Before(today)
 }
 
-// financeList 应收 / 应付明细。bizType 取 sales（应收）或 purchase（应付）。
-// 口径：只有「已审核」的单据才形成应收应付（货物已交付 / 已入库）。
-func (s *Service) financeList(bizType string, q page.Query, settle string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
+// financeUnionSQL 应收 / 应付的两类来源。
+//
+// 一类是已审核单据（发货 / 入库即形成债权债务），一类是合同付款期次
+// （签了合同就按约定分期形成应收应付）。两者字段口径一致，
+// 用 UNION ALL 合成一张「应收应付行」再由外层统一筛选、排序、分页 ——
+// 分开查两次再在内存里合并排序，分页就再也算不准总数。
+//
+// 占位符顺序：bizType, 已审核状态, source, bizType, 已终止状态, source。
+const financeUnionSQL = `
+SELECT 'order' AS source, o.id AS order_id, o.order_no AS order_no,
+       0::bigint AS contract_id, ''::text AS contract_no,
+       0::bigint AS plan_id, 0 AS plan_seq, ''::text AS plan_name,
+       o.party_id AS party_id, o.party_name AS party_name,
+       o.order_date AS order_date, o.due_date AS due_date,
+       o.total_amount AS total_amount, o.settled_amount AS settled_amount,
+       o.created_by AS created_by
+  FROM inv_orders o
+ WHERE o.deleted_at IS NULL AND o.biz_type = ? AND o.status = ? AND ? <> 'plan'
+UNION ALL
+SELECT 'plan' AS source, 0::bigint AS order_id, ''::text AS order_no,
+       c.id AS contract_id, c.contract_no AS contract_no,
+       p.id AS plan_id, p.seq AS plan_seq, p.name AS plan_name,
+       p.party_id AS party_id, p.party_name AS party_name,
+       c.sign_date AS order_date, p.due_date AS due_date,
+       p.amount AS total_amount, p.settled_amount AS settled_amount,
+       c.created_by AS created_by
+  FROM inv_contract_plans p
+  JOIN inv_contracts c ON c.id = p.contract_id AND c.deleted_at IS NULL
+ WHERE p.deleted_at IS NULL AND p.biz_type = ? AND c.status <> ? AND ? <> 'order'
+`
+
+// financeUnionArgs 上面那段 SQL 的参数。
+func financeUnionArgs(bizType, source string) []any {
+	return []any{bizType, model.InvStatusDone, source, bizType, model.InvContractTerminated, source}
+}
+
+// financeWhere 外层筛选条件（数据范围 / 关键字 / 结算状态）。
+//
+// 汇总与明细共用同一段条件：两处各写一遍，迟早出现「明细筛出 5 条、
+// 汇总却是全表」的错账，而对账时最不该怀疑的就是这两个数。
+func (s *Service) financeWhere(actor *authz.Identity, q page.Query, settle string, today time.Time) (string, []any) {
+	var sb strings.Builder
+	var args []any
+	if cond, a, ok := authz.ResolveScope(actor).CreatorCond("t"); ok {
+		sb.WriteString(" AND " + cond)
+		args = append(args, a...)
+	}
+	if q.Keyword != "" {
+		kw := likeKW(q.Keyword)
+		// 合同期次要能按合同号与期次名搜到（「HT0007 验收款」）
+		sb.WriteString(" AND (" + likeExpr("t.order_no") + " OR " + likeExpr("t.party_name") +
+			" OR " + likeExpr("t.contract_no") + " OR " + likeExpr("t.plan_name") + ")")
+		args = append(args, kw, kw, kw, kw)
+	}
+	switch settle {
+	case model.InvSettleUnpaid:
+		sb.WriteString(" AND t.settled_amount <= ?")
+		args = append(args, settleEpsilon)
+	case model.InvSettlePaid:
+		sb.WriteString(" AND t.settled_amount + ? >= t.total_amount")
+		args = append(args, settleEpsilon)
+	case model.InvSettlePartial:
+		sb.WriteString(" AND t.settled_amount > ? AND t.settled_amount + ? < t.total_amount")
+		args = append(args, settleEpsilon, settleEpsilon)
+	case "overdue":
+		sb.WriteString(" AND t.total_amount - t.settled_amount > ? AND " + dueDateOverdueCond + " AND t.due_date < ?")
+		args = append(args, settleEpsilon, today)
+	}
+	return sb.String(), args
+}
+
+// financeList 应收 / 应付明细。bizType 取 sales（应收）或 purchase（应付），
+// source 取 "" 全部 / order 单据 / plan 合同期次。
+// 口径：订单只有「已审核」才形成应收应付；合同期次只要合同未终止就计入。
+func (s *Service) financeList(bizType string, q page.Query, settle, source string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
 	now := time.Now().In(database.Location())
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, database.Location())
 
+	where, whereArgs := s.financeWhere(actor, q, settle, today)
+	unionArgs := financeUnionArgs(bizType, source)
+
 	var summary FinanceSummary
 	type sumRow struct {
-		Total   float64
-		Settled float64
+		Total      float64
+		Settled    float64
+		OrderTotal float64
+		PlanTotal  float64
+		Overdue    float64
 	}
 	var sr sumRow
-	if err := s.applyCreator(s.db.Model(&model.InvOrder{}), actor).
-		Select("COALESCE(SUM(total_amount),0) AS total, COALESCE(SUM(settled_amount),0) AS settled").
-		Where("biz_type = ? AND status = ?", bizType, model.InvStatusDone).Scan(&sr).Error; err != nil {
+	// 汇总列与筛选参数的位置：CASE 里的两个占位符在 WHERE 之前
+	sumSQL := `SELECT COALESCE(SUM(t.total_amount),0) AS total,
+       COALESCE(SUM(t.settled_amount),0) AS settled,
+       COALESCE(SUM(CASE WHEN t.source = 'order' THEN t.total_amount ELSE 0 END),0) AS order_total,
+       COALESCE(SUM(CASE WHEN t.source = 'plan'  THEN t.total_amount ELSE 0 END),0) AS plan_total,
+       COALESCE(SUM(CASE WHEN t.total_amount - t.settled_amount > ? AND ` + dueDateOverdueCond +
+		` AND t.due_date < ? THEN t.total_amount - t.settled_amount ELSE 0 END),0) AS overdue
+  FROM (` + financeUnionSQL + `) t WHERE 1=1` + where
+	sumArgs := append([]any{settleEpsilon, today}, unionArgs...)
+	sumArgs = append(sumArgs, whereArgs...)
+	if err := s.db.Raw(sumSQL, sumArgs...).Scan(&sr).Error; err != nil {
 		return nil, summary, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	summary.Total = round2(sr.Total)
 	summary.Settled = round2(sr.Settled)
 	summary.Outstanding = round2(sr.Total - sr.Settled)
+	summary.Overdue = round2(sr.Overdue)
+	summary.OrderTotal = round2(sr.OrderTotal)
+	summary.PlanTotal = round2(sr.PlanTotal)
 
-	if err := s.applyCreator(s.db.Model(&model.InvOrder{}), actor).
-		Select("COALESCE(SUM(total_amount - settled_amount),0)").
-		Where("biz_type = ? AND status = ? AND total_amount - settled_amount > 0 AND "+dueDateOverdueCond+" AND due_date < ?",
-			bizType, model.InvStatusDone, today).Scan(&summary.Overdue).Error; err != nil {
-		return nil, summary, 0, errcode.Wrap(errcode.ErrDatabase, err)
-	}
-	summary.Overdue = round2(summary.Overdue)
-
-	tx := s.db.Model(&model.InvOrder{}).
-		Where("biz_type = ? AND status = ?", bizType, model.InvStatusDone)
-	tx = s.applyCreator(tx, actor)
-	if q.Keyword != "" {
-		kw := likeKW(q.Keyword)
-		tx = tx.Where(likeExpr("order_no")+" OR "+likeExpr("party_name"), kw, kw)
-	}
-	switch settle {
-	case model.InvSettleUnpaid:
-		tx = tx.Where("settled_amount <= ?", settleEpsilon)
-	case model.InvSettlePaid:
-		tx = tx.Where("settled_amount + ? >= total_amount", settleEpsilon)
-	case model.InvSettlePartial:
-		tx = tx.Where("settled_amount > ? AND settled_amount + ? < total_amount", settleEpsilon, settleEpsilon)
-	case "overdue":
-		tx = tx.Where("total_amount - settled_amount > ? AND "+dueDateOverdueCond+" AND due_date < ?", settleEpsilon, today)
-	}
+	countSQL := `SELECT COUNT(*) FROM (` + financeUnionSQL + `) t WHERE 1=1` + where
+	countArgs := append(append([]any{}, unionArgs...), whereArgs...)
 	var total int64
-	if err := tx.Count(&total).Error; err != nil {
+	if err := s.db.Raw(countSQL, countArgs...).Scan(&total).Error; err != nil {
 		return nil, summary, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
-	var list []model.InvOrder
-	if err := q.Paginate(tx.Order("due_date ASC NULLS LAST, id DESC")).Find(&list).Error; err != nil {
+
+	listSQL := `SELECT t.* FROM (` + financeUnionSQL + `) t WHERE 1=1` + where +
+		` ORDER BY t.due_date ASC NULLS LAST, t.source ASC, t.plan_seq ASC, t.order_date DESC, t.order_id DESC
+       LIMIT ? OFFSET ?`
+	listArgs := append(append([]any{}, unionArgs...), whereArgs...)
+	listArgs = append(listArgs, q.Limit(), q.Offset())
+
+	type financeDBRow struct {
+		Source        string
+		OrderID       int64
+		OrderNo       string
+		ContractID    int64
+		ContractNo    string
+		PlanID        int64
+		PlanSeq       int
+		PlanName      string
+		PartyID       int64
+		PartyName     string
+		OrderDate     time.Time
+		DueDate       *time.Time
+		TotalAmount   float64
+		SettledAmount float64
+	}
+	var rowsDB []financeDBRow
+	if err := s.db.Raw(listSQL, listArgs...).Scan(&rowsDB).Error; err != nil {
 		return nil, summary, 0, errcode.Wrap(errcode.ErrDatabase, err)
 	}
-	rows := make([]FinanceRow, 0, len(list))
-	for _, o := range list {
-		outstanding := round2(o.TotalAmount - o.SettledAmount)
+
+	rows := make([]FinanceRow, 0, len(rowsDB))
+	for _, r := range rowsDB {
+		outstanding := round2(r.TotalAmount - r.SettledAmount)
 		rows = append(rows, FinanceRow{
-			OrderID: o.ID, OrderNo: o.OrderNo, PartyID: o.PartyID, PartyName: o.PartyName,
-			OrderDate: o.OrderDate, DueDate: o.DueDate, TotalAmount: o.TotalAmount,
-			SettledAmount: o.SettledAmount, Outstanding: outstanding,
-			SettleStatus: settleStatus(o.TotalAmount, o.SettledAmount),
-			Overdue:      isOverdue(outstanding, o.DueDate, today),
+			Source: r.Source, OrderID: r.OrderID, OrderNo: r.OrderNo,
+			ContractID: r.ContractID, ContractNo: r.ContractNo,
+			PlanID: r.PlanID, PlanSeq: r.PlanSeq, PlanName: r.PlanName,
+			PartyID: r.PartyID, PartyName: r.PartyName,
+			OrderDate: r.OrderDate, DueDate: r.DueDate, TotalAmount: round2(r.TotalAmount),
+			SettledAmount: round2(r.SettledAmount), Outstanding: outstanding,
+			SettleStatus: settleStatus(r.TotalAmount, r.SettledAmount),
+			Overdue:      isOverdue(outstanding, r.DueDate, today),
 		})
 	}
 	return rows, summary, total, nil
 }
 
 // Receivables 应收明细。
-func (s *Service) Receivables(q page.Query, settle string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
-	return s.financeList(model.InvBizSales, q, settle, actor)
+func (s *Service) Receivables(q page.Query, settle, source string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
+	return s.financeList(model.InvBizSales, q, settle, source, actor)
 }
 
 // Payables 应付明细。
-func (s *Service) Payables(q page.Query, settle string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
-	return s.financeList(model.InvBizPurchase, q, settle, actor)
+func (s *Service) Payables(q page.Query, settle, source string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
+	return s.financeList(model.InvBizPurchase, q, settle, source, actor)
 }
 
 // SettleBatch 批量登记收付款：一个事务里给每张单据各记一笔。

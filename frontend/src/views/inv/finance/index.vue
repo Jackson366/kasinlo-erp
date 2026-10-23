@@ -22,7 +22,14 @@ const activeTab = ref<'receivable' | 'payable'>('receivable')
 const loading = ref(false)
 const rows = ref<InvFinanceRow[]>([])
 const total = ref(0)
-const summary = ref<InvFinanceSummary>({ total: 0, settled: 0, outstanding: 0, overdue: 0 })
+const summary = ref<InvFinanceSummary>({
+  total: 0,
+  settled: 0,
+  outstanding: 0,
+  overdue: 0,
+  orderTotal: 0,
+  planTotal: 0,
+})
 
 /** 表格勾选（批量收付款用）。只允许勾「还有未结余额」的单据 */
 const tableRef = ref<{ clearSelection: () => void }>()
@@ -31,11 +38,18 @@ const selectedOutstanding = computed(() =>
   selection.value.reduce((sum, r) => sum + (Number(r.outstanding) || 0), 0),
 )
 
-const query = reactive<{ page: number; pageSize: number; keyword: string; settle: string }>({
+const query = reactive<{
+  page: number
+  pageSize: number
+  keyword: string
+  settle: string
+  source: '' | 'order' | 'plan'
+}>({
   page: 1,
   pageSize: 10,
   keyword: '',
   settle: '',
+  source: '',
 })
 
 const settleMeta: Record<string, { text: string; type: 'danger' | 'warning' | 'success' }> = {
@@ -45,11 +59,16 @@ const settleMeta: Record<string, { text: string; type: 'danger' | 'warning' | 's
 }
 
 const summaryCards = computed(() => [
-  { label: '单据总额', value: summary.value.total, tone: 'blue' },
+  { label: '应收总额', value: summary.value.total, tone: 'blue' },
   { label: '已结算', value: summary.value.settled, tone: 'green' },
   { label: '未结余额', value: summary.value.outstanding, tone: 'amber' },
   { label: '逾期金额', value: summary.value.overdue, tone: 'red' },
 ])
+
+/** 总额的构成：单据 / 合同期次，两个「其中」口径 */
+const summarySplit = computed(
+  () => `其中 单据 ${formatMoney(summary.value.orderTotal)} ｜ 合同 ${formatMoney(summary.value.planTotal)}`,
+)
 
 const guard = useLatestGuard()
 
@@ -62,6 +81,7 @@ async function load(): Promise<void> {
       pageSize: query.pageSize,
       keyword: query.keyword || undefined,
       settle: query.settle || undefined,
+      source: query.source || undefined,
     }
     const res =
       activeTab.value === 'receivable'
@@ -90,6 +110,7 @@ function search(): void {
 function reset(): void {
   query.keyword = ''
   query.settle = ''
+  query.source = ''
   query.page = 1
   load()
 }
@@ -140,7 +161,19 @@ async function submitForm(): Promise<void> {
   if (!valid) return
   submitting.value = true
   try {
-    await invApi.settle({ ...form, amount: Number(form.amount) })
+    const row = currentRow.value
+    if (row?.source === 'plan') {
+      // 合同期次走期次接口：订单结算接口只认 orderId，拿 planId 去调会 40000
+      await invApi.settleContractPlan({
+        planId: row.planId,
+        amount: Number(form.amount),
+        method: form.method || undefined,
+        settledAt: form.settledAt || undefined,
+        remark: form.remark || undefined,
+      })
+    } else {
+      await invApi.settle({ ...form, amount: Number(form.amount) })
+    }
     ElMessage.success('登记成功')
     dialogVisible.value = false
     load()
@@ -204,7 +237,11 @@ const tabLabel = computed(() => (activeTab.value === 'payable' ? '应付明细' 
 
 const printRows = computed(() => rows.value)
 const printColumns: ListPrintColumn<InvFinanceRow>[] = [
-  { label: '单号', prop: 'orderNo' },
+  { label: '来源', value: (r) => (r.source === 'plan' ? '合同' : '单据') },
+  {
+    label: '单号 / 合同',
+    value: (r) => (r.source === 'plan' ? `${r.contractNo} 第${r.planSeq}期 ${r.planName}` : r.orderNo),
+  },
   { label: '往来单位', prop: 'partyName' },
   { label: '单据日期', value: (r) => formatDay(r.orderDate) },
   { label: '到期日', value: (r) => formatDay(r.dueDate) },
@@ -217,6 +254,7 @@ const printSubtitle = computed(() => {
   const parts = [tabLabel.value]
   if (query.keyword) parts.push(`关键字「${query.keyword}」`)
   if (query.settle) parts.push(settleMeta[query.settle]?.text || '已逾期')
+  if (query.source) parts.push(query.source === 'plan' ? '合同期次' : '单据')
   return parts.join(' · ')
 })
 
@@ -229,6 +267,7 @@ async function handleExport(): Promise<void> {
       bizType: bizType.value,
       keyword: query.keyword || undefined,
       settleStatus: query.settle || undefined,
+      source: query.source || undefined,
     }, `${tabLabel.value}.xlsx`)
   } finally {
     exporting.value = false
@@ -247,6 +286,7 @@ const { searchSoon } = useDebouncedSearch(search)
         <span class="summary-card__label">{{ card.label }}</span>
         <strong class="summary-card__value">{{ formatMoney(card.value) }}</strong>
       </div>
+      <div class="summary-split">{{ summarySplit }}</div>
     </div>
 
     <div class="page-card">
@@ -273,6 +313,12 @@ const { searchSoon } = useDebouncedSearch(search)
               <el-option label="部分结算" value="partial" />
               <el-option label="已结清" value="paid" />
               <el-option label="已逾期" value="overdue" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="来源">
+            <el-select v-model="query.source" placeholder="全部" clearable>
+              <el-option label="单据" value="order" />
+              <el-option label="合同期次" value="plan" />
             </el-select>
           </el-form-item>
         </el-form>
@@ -307,8 +353,29 @@ const { searchSoon } = useDebouncedSearch(search)
         stripe
         @selection-change="onSelectionChange"
       >
-        <el-table-column type="selection" width="46" :selectable="(row: InvFinanceRow) => row.outstanding > 0" />
-        <el-table-column prop="orderNo" label="单号" width="160" />
+        <el-table-column
+          type="selection"
+          width="46"
+          :selectable="(row: InvFinanceRow) => row.outstanding > 0 && row.source === 'order'"
+        />
+        <el-table-column label="来源" width="76" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.source === 'plan' ? 'warning' : 'info'" effect="plain">
+              {{ row.source === 'plan' ? '合同' : '单据' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="单号 / 合同" width="196">
+          <template #default="{ row }">
+            <template v-if="row.source === 'plan'">
+              <div class="contract-cell">
+                <span>{{ row.contractNo }}</span>
+                <em>第{{ row.planSeq }}期 {{ row.planName }}</em>
+              </div>
+            </template>
+            <span v-else>{{ row.orderNo }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="partyName" label="往来单位" min-width="150" show-overflow-tooltip />
         <el-table-column prop="orderDate" label="单据日期" width="120">
           <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
@@ -352,7 +419,7 @@ const { searchSoon } = useDebouncedSearch(search)
               :disabled="row.outstanding <= 0"
               @click="openSettle(row as InvFinanceRow)"
             >
-              {{ activeTab === 'receivable' ? '登记收款' : '登记付款' }}
+              {{ row.source === 'plan' ? (activeTab === 'receivable' ? '收款' : '付款') : (activeTab === 'receivable' ? '登记收款' : '登记付款') }}
             </el-button>
           </template>
         </el-table-column>
@@ -380,7 +447,13 @@ const { searchSoon } = useDebouncedSearch(search)
       destroy-on-close
     >
       <el-descriptions v-if="currentRow" :column="1" border size="small" class="mb-16">
-        <el-descriptions-item label="单号">{{ currentRow.orderNo }}</el-descriptions-item>
+        <el-descriptions-item label="单号 / 合同">
+          {{
+            currentRow.source === 'plan'
+              ? `${currentRow.contractNo} · 第${currentRow.planSeq}期 ${currentRow.planName}`
+              : currentRow.orderNo
+          }}
+        </el-descriptions-item>
         <el-descriptions-item label="往来单位">{{ currentRow.partyName }}</el-descriptions-item>
         <el-descriptions-item label="未结余额">{{ formatMoney(currentRow.outstanding) }}</el-descriptions-item>
       </el-descriptions>
@@ -458,6 +531,26 @@ const { searchSoon } = useDebouncedSearch(search)
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
   margin-bottom: 16px;
+}
+
+/* 总额的构成说明：跨满整行，跟在四张卡片下面 */
+.summary-split {
+  grid-column: 1 / -1;
+  margin-top: -6px;
+  font-size: 12.5px;
+  color: var(--app-text-secondary);
+}
+
+.contract-cell {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+
+  em {
+    font-style: normal;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
 }
 
 .summary-card {

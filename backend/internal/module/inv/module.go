@@ -61,12 +61,16 @@ func Module() module.Module {
 							{Name: "InvContractCreate", Title: "新增合同", Type: module.TypeButton, Permission: "inv:contract:create"},
 							{Name: "InvContractUpdate", Title: "修改合同", Type: module.TypeButton, Permission: "inv:contract:update"},
 							{Name: "InvContractDelete", Title: "删除合同", Type: module.TypeButton, Permission: "inv:contract:delete"},
+							// 验收与收付款单独授权：业务员能录合同，但「确认验收」「登记收付款」
+							// 通常是项目经理 / 财务的职责，绑在一起等于把资金权限发给所有业务员。
+							{Name: "InvContractAccept", Title: "合同验收", Type: module.TypeButton, Permission: "inv:contract:accept"},
+							{Name: "InvContractSettle", Title: "合同收付款", Type: module.TypeButton, Permission: "inv:contract:settle"},
 						},
 					},
 					{
 						// 出入库是采购/销售审核后的产物，也支持手工单据。
 						// 菜单漏了它的话，权限码 inv:stock:* 根本挂不到任何节点上：
-						// 角色授权树里勾不到，前端也就拿不到 /inv/stock 的动态路由 —— 
+						// 角色授权树里勾不到，前端也就拿不到 /inv/stock 的动态路由 ——
 						// 页面文件在、接口也在，唯独没人能进。
 						// 菜单名叫「库存管理」：这个页面管的是库存本身（单据 + 库存查询），
 						// 「出入库」只是产生库存变动的一种方式，拿它当菜单名会把页面说小了。

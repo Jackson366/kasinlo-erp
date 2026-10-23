@@ -144,9 +144,9 @@ func (s *Service) ExportInv(q ExportQuery, actor *authz.Identity) ([]byte, strin
 		var err error
 		if q.Order.BizType == model.InvBizPurchase {
 			label = "应付明细"
-			list, _, _, err = s.Payables(pageQ, q.Order.Settle, actor)
+			list, _, _, err = s.Payables(pageQ, q.Order.Settle, q.Order.Source, actor)
 		} else {
-			list, _, _, err = s.Receivables(pageQ, q.Order.Settle, actor)
+			list, _, _, err = s.Receivables(pageQ, q.Order.Settle, q.Order.Source, actor)
 		}
 		if err != nil {
 			return nil, "", err
@@ -157,8 +157,21 @@ func (s *Service) ExportInv(q ExportQuery, actor *authz.Identity) ([]byte, strin
 			if it.Overdue {
 				overdue = "是"
 			}
+			// 单据与合同期次混在一张表里导出，必须让「这行是什么」一眼可见：
+			// 单据行填单号，合同行填合同号 + 第几期。
+			source := "单据"
+			sourceNo := it.OrderNo
+			if it.Source == model.InvSettleSourcePlan {
+				source = "合同"
+				sourceNo = it.ContractNo
+			}
+			period := ""
+			if it.PlanSeq > 0 {
+				period = strconv.Itoa(it.PlanSeq) + "期 " + it.PlanName
+			}
 			rows = append(rows, []string{
-				it.OrderNo, it.PartyName, fmtDay(it.OrderDate), fmtDayPtr(it.DueDate),
+				source, sourceNo, period, it.PartyName,
+				fmtDay(it.OrderDate), fmtDayPtr(it.DueDate),
 				money(it.TotalAmount), money(it.SettledAmount), money(it.Outstanding),
 				settleText(it.SettleStatus), overdue,
 			})
@@ -166,7 +179,7 @@ func (s *Service) ExportInv(q ExportQuery, actor *authz.Identity) ([]byte, strin
 		if len(rows) == 0 {
 			return nil, "", errNoExportData()
 		}
-		data, err := buildExport(label, []string{"单号", "往来单位", "单据日期", "到期日", "单据金额", "已结算", "未结余额", "结算状态", "逾期"}, rows)
+		data, err := buildExport(label, []string{"来源", "单号/合同号", "期次", "往来单位", "单据日期", "到期日", "单据金额", "已结算", "未结余额", "结算状态", "逾期"}, rows)
 		return data, label + ".xlsx", err
 
 	case exportInventory:

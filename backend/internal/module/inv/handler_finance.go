@@ -15,6 +15,7 @@ import (
 // @Produce      json
 // @Security     BearerAuth
 // @Param        settle  query  string  false  "unpaid | partial | paid | overdue"
+// @Param        source  query  string  false  "order | plan（空=全部）"
 // @Success      200  {object}  response.Body{data=response.PageData{list=[]inv.FinanceRow}}
 // @Router       /inv/finance/receivables [get]
 func (h *Handler) Receivables(c *gin.Context) { h.financeList(c, true) }
@@ -24,6 +25,7 @@ func (h *Handler) Receivables(c *gin.Context) { h.financeList(c, true) }
 // @Tags         进销存-应收应付
 // @Produce      json
 // @Security     BearerAuth
+// @Param        source  query  string  false  "order | plan（空=全部）"
 // @Success      200  {object}  response.Body{data=response.PageData{list=[]inv.FinanceRow}}
 // @Router       /inv/finance/payables [get]
 func (h *Handler) Payables(c *gin.Context) { h.financeList(c, false) }
@@ -31,6 +33,7 @@ func (h *Handler) Payables(c *gin.Context) { h.financeList(c, false) }
 func (h *Handler) financeList(c *gin.Context, receivable bool) {
 	q := page.FromContext(c)
 	settle := c.Query("settle")
+	source := c.Query("source")
 	var (
 		rows    []FinanceRow
 		summary FinanceSummary
@@ -38,9 +41,9 @@ func (h *Handler) financeList(c *gin.Context, receivable bool) {
 		err     error
 	)
 	if receivable {
-		rows, summary, total, err = h.svc.Receivables(q, settle, middleware.CurrentIdentity(c))
+		rows, summary, total, err = h.svc.Receivables(q, settle, source, middleware.CurrentIdentity(c))
 	} else {
-		rows, summary, total, err = h.svc.Payables(q, settle, middleware.CurrentIdentity(c))
+		rows, summary, total, err = h.svc.Payables(q, settle, source, middleware.CurrentIdentity(c))
 	}
 	if err != nil {
 		response.Fail(c, err)

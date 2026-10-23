@@ -660,8 +660,15 @@ export interface InvStockOrderRow {
 
 /** 应收 / 应付明细行 */
 export interface InvFinanceRow {
+  /** 来源：order 单据 / plan 合同付款期次 */
+  source: 'order' | 'plan'
   orderId: number
   orderNo: string
+  contractId: number
+  contractNo: string
+  planId: number
+  planSeq: number
+  planName: string
   partyId: number
   partyName: string
   orderDate: string
@@ -680,6 +687,10 @@ export interface InvFinanceSummary {
   settled: number
   outstanding: number
   overdue: number
+  /** 其中：单据类总额 */
+  orderTotal: number
+  /** 其中：合同期次总额 */
+  planTotal: number
 }
 
 /** 应收 / 应付分页结果（在分页结构上附加汇总） */
@@ -825,6 +836,56 @@ export interface InvReportDetailResult {
   truncated: boolean
 }
 
+/** 合同执行报表行 */
+export interface InvReportContractRow {
+  contractId: number
+  contractNo: string
+  name: string
+  bizType: InvContractBizType
+  partyName: string
+  signDate: string
+  amount: number
+  planCount: number
+  planAmount: number
+  settledAmount: number
+  outstanding: number
+  retentionAmount: number
+  retentionOutstanding: number
+  stage: InvContractStage
+  stageLabel: string
+  acceptedAt: string | null
+  warrantyEndAt: string | null
+}
+
+/** 合同执行报表：行 + 合计 */
+export interface InvReportContractResult {
+  rows: InvReportContractRow[]
+  count: number
+  amount: number
+  planAmount: number
+  settledAmount: number
+  outstanding: number
+  retentionAmount: number
+  retentionOutstanding: number
+  /** true 表示超过上限只返回前 N 份 */
+  truncated: boolean
+}
+
+/** 合同收付款台账行 */
+export interface InvReportContractLedgerRow {
+  settleId: number
+  settledAt: string
+  contractNo: string
+  name: string
+  bizType: InvContractBizType
+  partyName: string
+  planSeq: number
+  planName: string
+  amount: number
+  method: string
+  remark: string
+}
+
 /** 打印模板列表行 */
 export interface InvPrintTemplateRow {
   id: number
@@ -912,7 +973,38 @@ export type InvContractBizType = 'purchase' | 'sales'
 /** 合同状态 */
 export type InvContractStatus = 1 | 2 | 3
 
-/** 合同列表行与详情（结构一致） */
+/** 履约阶段（后端派生，不入库） */
+export type InvContractStage = 'pending' | 'accepted' | 'warranty' | 'warranty_due' | 'finished' | 'terminated'
+
+/** 付款期次类型：1 预付 / 2 进度 / 3 验收 / 4 质保金 / 5 其他 */
+export type InvPlanKind = 1 | 2 | 3 | 4 | 5
+
+/** 期次触发节点：按事件而非固定日期进入待收付 */
+export type InvPlanTrigger = 'sign' | 'accept' | 'warranty_end'
+
+/** 期次状态（后端派生） */
+export type InvPlanStatus = 'pending' | 'due' | 'partial' | 'settled'
+
+/** 合同付款计划的一期（返回行） */
+export interface InvContractPlanItem {
+  id: number
+  seq: number
+  name: string
+  kind: InvPlanKind
+  kindLabel: string
+  /** 比例 %，与金额二选一（填比例时金额由合同金额折算） */
+  rate: number
+  amount: number
+  dueDate: string | null
+  triggerNode: InvPlanTrigger | ''
+  settledAmount: number
+  outstanding: number
+  status: InvPlanStatus
+  statusLabel: string
+  remark: string
+}
+
+/** 合同列表行与详情（结构一致，详情带 plans） */
 export interface InvContractRow {
   id: number
   contractNo: string
@@ -928,9 +1020,45 @@ export interface InvContractRow {
   salesman: string
   operator: string
   remark: string
+
+  // 验收与质保
+  acceptedAt: string | null
+  acceptResult: string
+  warrantyMonths: number
+  warrantyEndAt: string | null
+  retentionRate: number
+  retentionAmount: number
+
+  /** 履约阶段（派生）：待验收 / 已验收 / 质保中 / 质保到期 / 已完成 / 已终止 */
+  stage: InvContractStage
+  stageLabel: string
+
+  // 收付进度（期次汇总）
+  planCount: number
+  planAmount: number
+  settledAmount: number
+  outstanding: number
+  retentionOutstanding: number
+
+  /** 仅详情返回 */
+  plans?: InvContractPlanItem[]
+
   /** 附件数量（列表按钮角标） */
   attachmentCount: number
   createdAt: string
+}
+
+/** 付款期次提交行：id 有值表示既有期次 */
+export interface InvContractPlanPayload {
+  id?: number
+  seq: number
+  name: string
+  kind: InvPlanKind
+  rate?: number
+  amount?: number
+  dueDate?: string
+  triggerNode?: InvPlanTrigger | ''
+  remark?: string
 }
 
 /** 合同新增 / 修改载荷。contractNo 留空即自动生成，编辑时留空沿用原号 */
@@ -946,4 +1074,36 @@ export interface InvContractPayload {
   status?: InvContractStatus
   salesman?: string
   remark?: string
+
+  warrantyMonths?: number
+  retentionRate?: number
+  retentionAmount?: number
+  /** 整份替换：传什么就是什么（已发生收付款的期次不能删、不能改金额） */
+  plans?: InvContractPlanPayload[]
+}
+
+/** 合同验收载荷 */
+export interface InvContractAcceptPayload {
+  acceptedAt: string
+  acceptResult: '合格' | '不合格' | '整改'
+  warrantyMonths?: number
+  remark?: string
+}
+
+/** 合同期次收付款载荷 */
+export interface InvPlanSettlePayload {
+  planId: number
+  amount: number
+  method?: string
+  settledAt?: string
+  remark?: string
+}
+
+/** 期次收付款流水 */
+export interface InvPlanSettleRecord {
+  id: number
+  amount: number
+  method: string
+  settledAt: string
+  remark: string
 }
