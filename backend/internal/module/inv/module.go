@@ -50,6 +50,20 @@ func Module() module.Module {
 						},
 					},
 					{
+						// 合同台账：先谈条件、后执行的凭据。
+						// 它**不是**单据的强制上游（见 model.InvContract），
+						// 所以放在销售之后、库存之前 —— 业务流程上属于「成交之前」，
+						// 但不拦截任何开单动作。
+						Name: "InvContract", Title: "合同管理", Icon: "Document",
+						Path: "/inv/contract", Component: "inv/contract/index",
+						Permission: "inv:contract:list", KeepAlive: true,
+						Children: []module.MenuNode{
+							{Name: "InvContractCreate", Title: "新增合同", Type: module.TypeButton, Permission: "inv:contract:create"},
+							{Name: "InvContractUpdate", Title: "修改合同", Type: module.TypeButton, Permission: "inv:contract:update"},
+							{Name: "InvContractDelete", Title: "删除合同", Type: module.TypeButton, Permission: "inv:contract:delete"},
+						},
+					},
+					{
 						// 出入库是采购/销售审核后的产物，也支持手工单据。
 						// 菜单漏了它的话，权限码 inv:stock:* 根本挂不到任何节点上：
 						// 角色授权树里勾不到，前端也就拿不到 /inv/stock 的动态路由 —— 

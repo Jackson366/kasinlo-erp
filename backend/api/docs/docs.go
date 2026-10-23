@@ -186,6 +186,258 @@ const docTemplate = `{
                 }
             }
         },
+        "/inv/attachments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-附件"
+                ],
+                "summary": "附件列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "业务类型",
+                        "name": "bizType",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "bizId",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/inv.AttachmentVO"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "支持图片、PDF、Office 文档与压缩包，单文件 20 MB 以内。业务对象必须存在且在数据范围内。",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-附件"
+                ],
+                "summary": "上传业务附件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "业务类型：purchase / sales / contract",
+                        "name": "bizType",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "bizId",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "附件文件",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.AttachmentVO"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/attachments/count": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "一次查完一批单据的附件数，避免列表逐行请求。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-附件"
+                ],
+                "summary": "附件数量（列表标记用）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "业务类型",
+                        "name": "bizType",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "业务对象 ID，逗号分隔",
+                        "name": "ids",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                                "type": "integer"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/attachments/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "软删记录（文件保留在附件目录，可恢复）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-附件"
+                ],
+                "summary": "删除附件",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "附件 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/attachments/{id}/file": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "默认 inline（图片、PDF 在浏览器里直接看），加 ?download=1 强制下载。",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "进销存-附件"
+                ],
+                "summary": "下载或预览附件",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "附件 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "1 = 下载（默认 inline 预览）",
+                        "name": "download",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
         "/inv/categories": {
             "get": {
                 "security": [
@@ -419,6 +671,259 @@ const docTemplate = `{
                     {
                         "type": "integer",
                         "description": "分类 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/contracts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按类型 / 状态 / 关键字 / 签订日期筛选，受数据范围约束。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-合同"
+                ],
+                "summary": "合同列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "编号 / 名称 / 往来单位 / 业务员",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "purchase / sales",
+                        "name": "bizType",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "1 执行中 / 2 已完成 / 3 已终止",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "签订日期起 yyyy-MM-dd",
+                        "name": "startDate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "签订日期止 yyyy-MM-dd",
+                        "name": "endDate",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/inv.ContractRow"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "合同编号留空自动生成 HT + 流水号，填了就用填的（重号拒绝）。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-合同"
+                ],
+                "summary": "新增合同",
+                "parameters": [
+                    {
+                        "description": "合同内容",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.ContractReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.IDData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/contracts/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-合同"
+                ],
+                "summary": "合同详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "合同 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.ContractRow"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "合同编号留空表示沿用原编号。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-合同"
+                ],
+                "summary": "修改合同",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "合同 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "合同内容",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.ContractReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-合同"
+                ],
+                "summary": "删除合同",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "合同 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6135,6 +6640,41 @@ const docTemplate = `{
                 }
             }
         },
+        "inv.AttachmentVO": {
+            "type": "object",
+            "properties": {
+                "bizId": {
+                    "type": "integer"
+                },
+                "bizType": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "ext": {
+                    "type": "string"
+                },
+                "fileName": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isImage": {
+                    "type": "boolean"
+                },
+                "mime": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "uploader": {
+                    "type": "string"
+                }
+            }
+        },
         "inv.CategoryOption": {
             "type": "object",
             "properties": {
@@ -6206,6 +6746,120 @@ const docTemplate = `{
                 },
                 "sort": {
                     "type": "integer"
+                },
+                "status": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.ContractReq": {
+            "type": "object",
+            "required": [
+                "bizType",
+                "name",
+                "partyId",
+                "signDate"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "bizType": {
+                    "type": "string",
+                    "enum": [
+                        "purchase",
+                        "sales"
+                    ]
+                },
+                "contractNo": {
+                    "description": "ContractNo 留空即自动生成 HT + 流水号；填了就用填的（重号会被拒）。",
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "salesman": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "signDate": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "description": "StartDate / EndDate 履约起止，选填；两个都填时结束不能早于开始。",
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer",
+                    "enum": [
+                        1,
+                        2,
+                        3
+                    ]
+                }
+            }
+        },
+        "inv.ContractRow": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "attachmentCount": {
+                    "description": "AttachmentCount 附件数量，列表按钮上显示角标（一次批量查出，不逐行请求）",
+                    "type": "integer"
+                },
+                "bizType": {
+                    "type": "string"
+                },
+                "contractNo": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "operator": {
+                    "type": "string"
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "salesman": {
+                    "type": "string"
+                },
+                "signDate": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "integer"

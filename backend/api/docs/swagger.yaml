@@ -140,6 +140,29 @@ definitions:
       title:
         type: string
     type: object
+  inv.AttachmentVO:
+    properties:
+      bizId:
+        type: integer
+      bizType:
+        type: string
+      createdAt:
+        type: string
+      ext:
+        type: string
+      fileName:
+        type: string
+      id:
+        type: integer
+      isImage:
+        type: boolean
+      mime:
+        type: string
+      size:
+        type: integer
+      uploader:
+        type: string
+    type: object
   inv.CategoryOption:
     properties:
       id:
@@ -189,6 +212,86 @@ definitions:
         type: string
       sort:
         type: integer
+      status:
+        type: integer
+    type: object
+  inv.ContractReq:
+    properties:
+      amount:
+        minimum: 0
+        type: number
+      bizType:
+        enum:
+        - purchase
+        - sales
+        type: string
+      contractNo:
+        description: ContractNo 留空即自动生成 HT + 流水号；填了就用填的（重号会被拒）。
+        maxLength: 32
+        type: string
+      endDate:
+        type: string
+      name:
+        maxLength: 128
+        type: string
+      partyId:
+        type: integer
+      remark:
+        maxLength: 255
+        type: string
+      salesman:
+        maxLength: 64
+        type: string
+      signDate:
+        type: string
+      startDate:
+        description: StartDate / EndDate 履约起止，选填；两个都填时结束不能早于开始。
+        type: string
+      status:
+        enum:
+        - 1
+        - 2
+        - 3
+        type: integer
+    required:
+    - bizType
+    - name
+    - partyId
+    - signDate
+    type: object
+  inv.ContractRow:
+    properties:
+      amount:
+        type: number
+      attachmentCount:
+        description: AttachmentCount 附件数量，列表按钮上显示角标（一次批量查出，不逐行请求）
+        type: integer
+      bizType:
+        type: string
+      contractNo:
+        type: string
+      createdAt:
+        type: string
+      endDate:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      operator:
+        type: string
+      partyId:
+        type: integer
+      partyName:
+        type: string
+      remark:
+        type: string
+      salesman:
+        type: string
+      signDate:
+        type: string
+      startDate:
+        type: string
       status:
         type: integer
     type: object
@@ -2120,6 +2223,158 @@ paths:
       summary: 刷新访问令牌
       tags:
       - 认证
+  /inv/attachments:
+    get:
+      parameters:
+      - description: 业务类型
+        in: query
+        name: bizType
+        required: true
+        type: string
+      - description: 业务对象 ID
+        in: query
+        name: bizId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/inv.AttachmentVO'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 附件列表
+      tags:
+      - 进销存-附件
+    post:
+      consumes:
+      - multipart/form-data
+      description: 支持图片、PDF、Office 文档与压缩包，单文件 20 MB 以内。业务对象必须存在且在数据范围内。
+      parameters:
+      - description: 业务类型：purchase / sales / contract
+        in: formData
+        name: bizType
+        required: true
+        type: string
+      - description: 业务对象 ID
+        in: formData
+        name: bizId
+        required: true
+        type: integer
+      - description: 附件文件
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.AttachmentVO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 上传业务附件
+      tags:
+      - 进销存-附件
+  /inv/attachments/{id}:
+    delete:
+      description: 软删记录（文件保留在附件目录，可恢复）。
+      parameters:
+      - description: 附件 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除附件
+      tags:
+      - 进销存-附件
+  /inv/attachments/{id}/file:
+    get:
+      description: 默认 inline（图片、PDF 在浏览器里直接看），加 ?download=1 强制下载。
+      parameters:
+      - description: 附件 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 1 = 下载（默认 inline 预览）
+        in: query
+        name: download
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: 下载或预览附件
+      tags:
+      - 进销存-附件
+  /inv/attachments/count:
+    get:
+      description: 一次查完一批单据的附件数，避免列表逐行请求。
+      parameters:
+      - description: 业务类型
+        in: query
+        name: bizType
+        required: true
+        type: string
+      - description: 业务对象 ID，逗号分隔
+        in: query
+        name: ids
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: integer
+                  type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 附件数量（列表标记用）
+      tags:
+      - 进销存-附件
   /inv/categories:
     get:
       parameters:
@@ -2263,6 +2518,157 @@ paths:
       summary: 商品分类下拉项（仅启用）
       tags:
       - 进销存-商品分类
+  /inv/contracts:
+    get:
+      description: 按类型 / 状态 / 关键字 / 签订日期筛选，受数据范围约束。
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      - description: 编号 / 名称 / 往来单位 / 业务员
+        in: query
+        name: keyword
+        type: string
+      - description: purchase / sales
+        in: query
+        name: bizType
+        type: string
+      - description: 1 执行中 / 2 已完成 / 3 已终止
+        in: query
+        name: status
+        type: integer
+      - description: 签订日期起 yyyy-MM-dd
+        in: query
+        name: startDate
+        type: string
+      - description: 签订日期止 yyyy-MM-dd
+        in: query
+        name: endDate
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/inv.ContractRow'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 合同列表
+      tags:
+      - 进销存-合同
+    post:
+      consumes:
+      - application/json
+      description: 合同编号留空自动生成 HT + 流水号，填了就用填的（重号拒绝）。
+      parameters:
+      - description: 合同内容
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.ContractReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 新增合同
+      tags:
+      - 进销存-合同
+  /inv/contracts/{id}:
+    delete:
+      parameters:
+      - description: 合同 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 删除合同
+      tags:
+      - 进销存-合同
+    get:
+      parameters:
+      - description: 合同 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.ContractRow'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 合同详情
+      tags:
+      - 进销存-合同
+    put:
+      consumes:
+      - application/json
+      description: 合同编号留空表示沿用原编号。
+      parameters:
+      - description: 合同 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 合同内容
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.ContractReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 修改合同
+      tags:
+      - 进销存-合同
   /inv/customers:
     get:
       parameters:

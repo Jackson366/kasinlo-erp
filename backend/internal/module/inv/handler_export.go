@@ -119,6 +119,17 @@ func exportQuery(c *gin.Context, entity string, q page.Query) (ExportQuery, erro
 			return f, err
 		}
 		f.Order = OrderFilter{BizType: bizType, Settle: settle}
+	case exportContract:
+		// 合同允许「全部类型」，所以不用 bizTypeOf（那个要求必填）
+		biz := strings.TrimSpace(c.Query("bizType"))
+		if biz != "" && biz != model.InvBizPurchase && biz != model.InvBizSales {
+			return f, errcode.Newf(errcode.ErrBadRequest, "查询参数 bizType 非法：%s", biz)
+		}
+		start, end, err := orderRangeQuery(c)
+		if err != nil {
+			return f, err
+		}
+		f.Contract = ContractFilter{BizType: biz, Status: status, Start: start, End: end}
 	}
 	if entity == exportStock && f.Direction != "" &&
 		f.Direction != model.InvStockIn && f.Direction != model.InvStockOut {
@@ -149,6 +160,8 @@ func ensureExportPerm(c *gin.Context, entity string) error {
 		return requireAnyPerm(c, "inv:customer:list", "inv:sales:list")
 	case exportSupplier:
 		return requireAnyPerm(c, "inv:supplier:list", "inv:purchase:list")
+	case exportContract:
+		return requirePerm(c, "inv:contract:list")
 	default:
 		return errcode.Newf(errcode.ErrBadRequest, "查询参数 entity 非法：%s", entity)
 	}

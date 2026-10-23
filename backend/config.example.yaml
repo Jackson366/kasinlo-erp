@@ -31,7 +31,7 @@ app:
   # 升级包校验、升级记录、启动后的「升级是否生效」核对都读它。
   # 优先级：本配置 > 构建注入（-ldflags "-X nova-erp/internal/config.appRelease=1.1.0"）> dev。
   # 为 dev 时升级后无法自动确认生效，记录会一直停在「已执行」。
-  release: 1.2.6
+  release: 1.2.9
   # 前端静态产物目录：目录里有 index.html 时由后端直接托管（含 SPA 深链回退），
   # 此时不需要额外架 Nginx；留空或不放产物则保持纯 API 形态。
   web_dir: web
@@ -47,6 +47,13 @@ app:
   metrics: false
   # 非空时，抓取 /metrics 必须带 Authorization: Bearer <token>。
   metrics_token: ""
+  # 业务附件（采购单 / 销售单 / 合同的图片与文件）的存储根目录。
+  # 留空取 <exe 所在目录>/data/attachments；相对路径同样按 exe 目录解析。
+  #
+  # 附件**不进数据库**（几百 KB 的扫描件塞进 bytea 会让每天一次的全量备份
+  # 涨到几百 MB）。代价是：**备份要连这个目录一起备**，
+  # 只备数据库会得到「记录在、文件没了」的半套数据。
+  attachment_dir: data/attachments
 
 database:
   host: 127.0.0.1

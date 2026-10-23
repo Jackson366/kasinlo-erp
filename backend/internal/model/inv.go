@@ -42,6 +42,22 @@ const (
 	InvSettlePaid    = "paid"    // 已结清
 )
 
+// 合同状态
+const (
+	InvContractActive     int16 = 1 // 执行中
+	InvContractFinished   int16 = 2 // 已完成
+	InvContractTerminated int16 = 3 // 已终止
+)
+
+// 附件归属的业务类型。三者共用一张 inv_attachments 表与同一个上传入口，
+// 差异只在 biz_type —— 附件本身没有业务语义（就是一堆文件），
+// 拆表只会让「上传/下载/删除」这套逻辑抄三遍。
+const (
+	InvAttachPurchase = "purchase"
+	InvAttachSales    = "sales"
+	InvAttachContract = "contract"
+)
+
 // InvCustomer 客户档案。
 type InvCustomer struct {
 	BaseModel
@@ -300,3 +316,65 @@ type InvPrintTemplate struct {
 
 // TableName 指定表名。
 func (InvPrintTemplate) TableName() string { return "inv_print_templates" }
+
+// InvContract 采购 / 销售合同台账。
+//
+// 合同是「先谈条件、后执行」的凭据：金额、起止日期、对方单位在这里留档，
+// 扫描件 / 盖章 PDF 挂到 inv_attachments（biz_type=contract）。
+//
+// 刻意**不**把它做成单据的强制上游：一张合同常常对应多张采购 / 销售单，
+// 也常出现「先开单、后补合同」。把 contract_id 做成单据必填字段，
+// 会让开单多一道前置手续；真正的核对需求（这张合同执行了多少）
+// 该由统计查询解决，而不是靠外键。需要时再加关联字段与汇总。
+type InvContract struct {
+	BaseModel
+	ContractNo string `gorm:"size:32;not null" json:"contractNo"`
+	Name       string `gorm:"size:128;not null" json:"name"`
+	BizType    string `gorm:"size:16;not null;index" json:"bizType"` // purchase | sales
+	PartyID    int64  `gorm:"index" json:"partyId"`
+	PartyName  string `gorm:"size:128" json:"partyName"` // 冗余名称，列表免联表
+
+	// SignDate 签订日期；StartDate / EndDate 是履约起止，选填。
+	//
+	// 起止日期用指针的理由同 InvOrder.DueDate：空值要落成 NULL，
+	// 不能变成 0001-01-01 那种「两千年前就到期」的语义 —— 到期提醒、
+	// 列表筛选、打印纸面都会因此出错。
+	SignDate  time.Time  `gorm:"type:date" json:"signDate"`
+	StartDate *time.Time `gorm:"type:date" json:"startDate"`
+	EndDate   *time.Time `gorm:"type:date" json:"endDate"`
+
+	Amount    float64 `gorm:"type:numeric(14,2);default:0" json:"amount"`
+	Status    int16   `gorm:"not null;index" json:"status"` // 1 执行中 2 已完成 3 已终止
+	Salesman  string  `gorm:"size:64" json:"salesman"`
+	Remark    string  `gorm:"size:255" json:"remark"`
+	CreatedBy int64   `json:"createdBy"`
+}
+
+// TableName 指定表名。
+func (InvContract) TableName() string { return "inv_contracts" }
+
+// InvAttachment 业务附件：采购单 / 销售单 / 合同的图片与文件。
+//
+// 三类业务共用一张表与一个上传入口，差异只有 biz_type —— 附件本身没有业务语义
+// （就是一堆文件），拆表只会把「上传 / 下载 / 删除」这套逻辑抄三遍。
+//
+// StoredPath 是**相对**存储根目录的路径（如 purchase/12/2026/07/ab12.jpg），
+// 不落绝对路径：换机器部署、改存储目录时，库里那条记录还能用。
+type InvAttachment struct {
+	BaseModel
+	BizType  string `gorm:"size:16;not null;index:idx_inv_attachments_biz" json:"bizType"`
+	BizID    int64  `gorm:"not null;index:idx_inv_attachments_biz" json:"bizId"`
+	FileName string `gorm:"size:255;not null" json:"fileName"` // 原始文件名，下载时用它
+
+	// StoredPath 不出现在接口里：客户端拿 id 走下载接口，
+	// 既不需要、也不该知道磁盘结构。
+	StoredPath string `gorm:"size:255;not null" json:"-"`
+
+	Size       int64  `gorm:"not null" json:"size"`
+	Mime       string `gorm:"size:128" json:"mime"`
+	UploadedBy int64  `json:"uploadedBy"`
+	Uploader   string `gorm:"size:64" json:"uploader"`
+}
+
+// TableName 指定表名。
+func (InvAttachment) TableName() string { return "inv_attachments" }

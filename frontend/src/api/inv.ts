@@ -1,8 +1,12 @@
 import { http } from '@/utils/request'
-import { downloadFile } from '@/utils/download'
+import { downloadFile, fetchBlob, uploadFile } from '@/utils/download'
 import type {
+  InvAttachBizType,
+  InvAttachmentRow,
   InvCategoryOption,
   InvCategoryPayload,
+  InvContractPayload,
+  InvContractRow,
   InvCategoryRow,
   InvFinancePage,
   InvInventoryRow,
@@ -223,5 +227,51 @@ export const invApi = {
   },
   deletePrintTemplate(id: number) {
     return http.delete<string>(`/inv/print-templates/${id}`)
+  },
+
+  // ---------------- 合同 ----------------
+  contracts(params?: Params) {
+    return http.get<PageResult<InvContractRow>>('/inv/contracts', params)
+  },
+  contractDetail(id: number) {
+    return http.get<InvContractRow>(`/inv/contracts/${id}`)
+  },
+  createContract(data: InvContractPayload) {
+    return http.post<{ id: number }>('/inv/contracts', data)
+  },
+  updateContract(id: number, data: InvContractPayload) {
+    return http.put<string>(`/inv/contracts/${id}`, data)
+  },
+  deleteContract(id: number) {
+    return http.delete<string>(`/inv/contracts/${id}`)
+  },
+
+  // ---------------- 业务附件 ----------------
+  attachments(bizType: InvAttachBizType, bizId: number) {
+    return http.get<InvAttachmentRow[]>('/inv/attachments', { bizType, bizId })
+  },
+  /** 列表角标：一次查一批单据的附件数，避免逐行请求 */
+  attachmentCounts(bizType: InvAttachBizType, ids: number[]) {
+    if (ids.length === 0) return Promise.resolve({} as Record<string, number>)
+    return http.get<Record<string, number>>('/inv/attachments/count', {
+      bizType,
+      ids: ids.join(','),
+    })
+  },
+  uploadAttachment(bizType: InvAttachBizType, bizId: number, file: File) {
+    return uploadFile<InvAttachmentRow>('/inv/attachments', file, {
+      fields: { bizType, bizId: String(bizId) },
+    })
+  },
+  deleteAttachment(id: number) {
+    return http.delete<string>(`/inv/attachments/${id}`)
+  },
+  /** 附件二进制（图片预览 / 下载都由调用方决定怎么用） */
+  attachmentBlob(id: number) {
+    return fetchBlob(`/inv/attachments/${id}/file`)
+  },
+  /** 触发浏览器下载（后端会带 Content-Disposition: attachment） */
+  downloadAttachment(id: number, fileName: string) {
+    return downloadFile(`/inv/attachments/${id}/file`, { download: 1 }, fileName)
   },
 }

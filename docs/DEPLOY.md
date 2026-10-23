@@ -82,6 +82,7 @@ database:
 | --- | --- |
 | `database.password` | 上一步的 PostgreSQL 口令（**必改**） |
 | `jwt.secret` | 随包已填随机串，**不用动**；若自己从模板复制才需要换（见上） |
+| `app.attachment_dir` | 业务附件存放目录，默认 `data/attachments`（相对 exe）。**它不在数据库里，备份要连它一起备** |
 
 出厂默认值已经是交付形态，确认这几项没被改回去：
 
@@ -189,6 +190,11 @@ nova-ops.exe check
   `backup.pg_dump_path` / `pg_restore_path` 填绝对路径即可。
 - PostgreSQL 客户端版本低于服务器版本会报 `server version mismatch`，
   这类错误会原样显示在页面上（不再是笼统的「服务器内部错误」）。
+- **附件不在数据库里**（`app.attachment_dir`，默认 `data\attachments`）。
+  只备数据库会得到「附件记录在、文件却没了」的半套数据，打印历史单据时会缺凭证。
+  两个办法任选：
+  - 把 `data\attachments` 一起同步到备份盘（推荐，简单可控）；
+  - 或者把 `app.attachment_dir` 指到一个本身就在备份策略里的目录（如 `D:\erp-data\attachments`）。
 
 ---
 

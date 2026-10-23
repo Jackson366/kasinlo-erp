@@ -881,3 +881,69 @@ export interface InvStockOrderDetail {
   totalQty: number
   items: InvStockPrintItem[]
 }
+
+// ============================================================
+// 合同与附件
+// ============================================================
+
+/** 附件归属的业务类型 */
+export type InvAttachBizType = 'purchase' | 'sales' | 'contract'
+
+/** 业务附件（采购单 / 销售单 / 合同的图片与文件） */
+export interface InvAttachmentRow {
+  id: number
+  bizType: InvAttachBizType
+  bizId: number
+  /** 原始文件名，下载时用它 */
+  fileName: string
+  /** 含点的小写扩展名，如 .pdf */
+  ext: string
+  size: number
+  mime: string
+  /** 图片可直接预览（后端按扩展名判定，不信客户端的 Content-Type） */
+  isImage: boolean
+  uploader: string
+  createdAt: string
+}
+
+/** 合同类型：采购合同挂供应商，销售合同挂客户 */
+export type InvContractBizType = 'purchase' | 'sales'
+
+/** 合同状态 */
+export type InvContractStatus = 1 | 2 | 3
+
+/** 合同列表行与详情（结构一致） */
+export interface InvContractRow {
+  id: number
+  contractNo: string
+  name: string
+  bizType: InvContractBizType
+  partyId: number
+  partyName: string
+  signDate: string
+  startDate: string | null
+  endDate: string | null
+  amount: number
+  status: InvContractStatus
+  salesman: string
+  operator: string
+  remark: string
+  /** 附件数量（列表按钮角标） */
+  attachmentCount: number
+  createdAt: string
+}
+
+/** 合同新增 / 修改载荷。contractNo 留空即自动生成，编辑时留空沿用原号 */
+export interface InvContractPayload {
+  contractNo?: string
+  name: string
+  bizType: InvContractBizType
+  partyId: number
+  signDate: string
+  startDate?: string
+  endDate?: string
+  amount?: number
+  status?: InvContractStatus
+  salesman?: string
+  remark?: string
+}

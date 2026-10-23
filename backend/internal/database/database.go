@@ -137,6 +137,8 @@ func AutoMigrate() error {
 		&model.InvStockOrder{},
 		&model.InvStockItem{},
 		&model.InvPrintTemplate{},
+		&model.InvContract{},
+		&model.InvAttachment{},
 		&model.Idempotency{},
 		// 结构版本表：记录库已升到哪一版，供启动闸门判断方向
 		&model.SchemaVersion{},
@@ -174,6 +176,7 @@ var partialUniqueIndexes = []struct {
 	{name: "uk_inv_orders_no", table: "inv_orders", legacy: "", columns: "order_no", where: "deleted_at IS NULL"},
 	{name: "uk_inv_stock_orders_no", table: "inv_stock_orders", legacy: "", columns: "order_no", where: "deleted_at IS NULL"},
 	{name: "uk_inv_print_templates_code", table: "inv_print_templates", legacy: "", columns: "code", where: "deleted_at IS NULL"},
+	{name: "uk_inv_contracts_no", table: "inv_contracts", legacy: "", columns: "contract_no", where: "deleted_at IS NULL"},
 }
 
 // dataFixes 是幂等的历史数据修补清单，启动时统一执行。

@@ -5,6 +5,45 @@
 
 ---
 
+## [1.2.9] - 2026-10-23
+
+### 四十五、合同管理模块 + 采购 / 销售 / 合同通用附件
+
+#### Added — 合同管理（进销存 → 合同管理）
+- 新表 `inv_contracts` + 权限码 `inv:contract:list / create / update / delete`，
+  菜单位于「销售管理」之后、「库存管理」之前。
+- 字段：合同编号（留空自动生成 `HT0001` 式流水，可手填 / 可改，重号拒绝）、
+  名称、类型（采购挂供应商 / 销售挂客户）、往来单位、签订日期、
+  履约起止（选填，结束不能早于开始）、金额、状态（执行中 / 已完成 / 已终止）、
+  业务员、备注。
+- **不把合同做成单据的强制上游**：一张合同常对应多张采购 / 销售单，也常先开单后补合同。
+  单据上没有 `contract_id`，开单不需要先建合同；按合同核销应走统计查询。
+- 列表支持关键字（编号 / 名称 / 往来单位 / 业务员）边输入边查、类型 / 状态 /
+  签订日期区间筛选、导出 xlsx、打印；受数据范围约束（按创建人）。
+
+#### Added — 业务附件（采购单 / 销售单 / 合同共用）
+- 新表 `inv_attachments`（`biz_type` + `biz_id` 定位业务对象），文件落在
+  `app.attachment_dir`（默认 `data/attachments`），库里只存元数据与相对路径。
+- 接口：`POST /inv/attachments`（multipart，额外字段 bizType / bizId）、
+  `GET /inv/attachments`、`GET /inv/attachments/count`（一次批量算角标）、
+  `GET /inv/attachments/:id/file`（默认 inline，`?download=1` 强制下载）、
+  `DELETE /inv/attachments/:id`。
+- 入口在列表**操作列**：`附件(N)` —— 放在固定列里，窄屏横向滚动时也能点到。
+- 安全与边界：
+  - **扩展名白名单**（图片 / PDF / Office / 压缩包），单文件 20 MB；
+    上传前用 `http.MaxBytesReader` 卡住请求体，写入时再 `io.LimitReader` 兜一次
+    （客户端声明的 size 不可信）；
+  - 磁盘用随机名、原始名只用于下载；`StoredPath` 不出现在接口里，
+    读取时校验前缀防目录穿越；
+  - MIME 按扩展名给（不信客户端 Content-Type）+ `X-Content-Type-Options: nosniff`；
+  - 权限跟着单据走（能看单据才能看附件），越权一律 404 而不是 403；
+  - 删除为软删，文件保留（可恢复），磁盘空间按目录整体回收。
+
+#### Changed — 配置
+- 新增 `app.attachment_dir`（默认 `data/attachments`，相对 exe 目录解析）。
+- **部署注意**：附件目录不在数据库里，备份要连它一起备，否则会得到
+  「记录在、文件没了」的半套数据（见 DEPLOY §7）。
+
 ## [1.2.6] - 2026-10-22
 
 ### 四十四、默认端口改为 6085、新增商品的多单位换算提示

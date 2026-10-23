@@ -3,9 +3,9 @@
  * 打一个「系统升级」能吃的升级包。
  *
  * 用法（在仓库根目录执行）：
- *   node scripts/build-upgrade-package.mjs --version 1.3.0
- *   node scripts/build-upgrade-package.mjs --version 1.3.0 --frontend-only
- *   node scripts/build-upgrade-package.mjs --version 1.3.0 --backend-only --notes "只修后端"
+ *   node scripts/build-upgrade-package.mjs --version 1.2.9
+ *   node scripts/build-upgrade-package.mjs --version 1.2.9 --frontend-only
+ *   node scripts/build-upgrade-package.mjs --version 1.2.9 --backend-only --notes "只修后端"
  *
  * 产物：build/upgrade/nova-erp-<version>.zip
  *

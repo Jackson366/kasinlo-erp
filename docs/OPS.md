@@ -495,7 +495,7 @@ dist.zip               # 可选：前端产物压缩包（zip 顶层必须直接
 
 ```json
 {
-  "version": "1.3.0",
+  "version": "1.2.9",
   "minSchemaVersion": 1,
   "notes": "本次升级说明，会带进升级记录",
   "backend":  { "file": "nova-erp-server.exe", "sha256": "…" },
@@ -511,7 +511,7 @@ dist.zip               # 可选：前端产物压缩包（zip 顶层必须直接
 逐个算 sha256、写 manifest）：
 
 ```bash
-node scripts/build-upgrade-package.mjs --version 1.3.0
+node scripts/build-upgrade-package.mjs --version 1.2.9
 # 只发后端：  --backend-only
 # 只发前端：  --frontend-only
 # 带上结构版本门槛与说明：--min-schema 3 --notes "修复报表导出"

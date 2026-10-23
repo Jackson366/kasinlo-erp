@@ -21,6 +21,7 @@ const (
 	exportStock     = "stock"
 	exportInventory = "inventory"
 	exportFinance   = "finance"
+	exportContract  = "contract"
 )
 
 // ExportQuery 导出参数。字段与列表页一一对应（导出 = 把当前筛选结果落成文件），
@@ -32,6 +33,7 @@ type ExportQuery struct {
 	CategoryID int64
 	Direction  string
 	Order      OrderFilter
+	Contract   ContractFilter
 	// IDs 非空时只导出这些记录（列表勾选后「导出选中」）。
 	// 用 id 过滤而不是新开一套查询：勾选导出与整表导出必须走同一条取数路径，
 	// 否则两边的口径会慢慢漂开。
@@ -111,6 +113,19 @@ func (s *Service) ExportInv(q ExportQuery, actor *authz.Identity) ([]byte, strin
 			},
 		})
 		return data, label + "列表.xlsx", err
+
+	case exportContract:
+		rows, err := s.exportContractRows(pageQ, q.Contract, actor)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(rows) == 0 {
+			return nil, "", errNoExportData()
+		}
+		data, err := buildExport("合同台账",
+			[]string{"合同编号", "合同名称", "类型", "往来单位", "签订日期", "开始日期", "结束日期", "金额", "状态", "业务员", "备注"},
+			rows)
+		return data, "合同台账.xlsx", err
 
 	case exportStock:
 		rows, err := s.exportStockRows(pageQ, q, actor)

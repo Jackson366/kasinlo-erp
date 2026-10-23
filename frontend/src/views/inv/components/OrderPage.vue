@@ -3,7 +3,7 @@
  * 采购 / 销售单据页面主体。两张页面的字段、列、交互完全一致，
  * 差异只有「走哪条业务线」「往来单位是什么」——收敛成一个组件，两个薄壳页面传 bizType。
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -18,11 +18,13 @@ import type {
   InvPickSpec,
   InvPickUnit,
   InvProductPick,
+  InvAttachBizType,
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import OrderPrintDialog from './OrderPrintDialog.vue'
+import AttachmentDrawer from './AttachmentDrawer.vue'
 import { formatDay, formatMoney, formatQty } from '@/utils/format'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useListTools } from '@/composables/useListTools'
@@ -74,6 +76,42 @@ const { query, loading, rows, total, load, search, reset } = useTableQuery<Order
       endDate: params.dateRange?.[1] || undefined,
     }),
 )
+
+// ---------------- 附件 ----------------
+//
+// 附件挂在单据上，列表只给一个带角标的入口。
+// 数量用一次批量查询拿（attachmentCounts），不逐行发请求 ——
+// 20 行列表逐行查就是 20 个请求，而它只是个角标。
+const attachCounts = ref<Record<string, number>>({})
+const attachVisible = ref(false)
+const attachBizId = ref<number | null>(null)
+const attachTitle = ref('')
+
+watch(
+  rows,
+  (list) => {
+    const ids = list.map((r) => r.id)
+    if (!ids.length) {
+      attachCounts.value = {}
+      return
+    }
+    invApi
+      .attachmentCounts(props.bizType as InvAttachBizType, ids)
+      .then((m) => {
+        attachCounts.value = m
+      })
+      .catch(() => {
+        // 角标是装饰：这个查询失败不该让列表看起来像坏了
+      })
+  },
+  { immediate: true },
+)
+
+function openAttach(row: InvOrderRow): void {
+  attachBizId.value = row.id
+  attachTitle.value = `${props.bizType === 'purchase' ? '采购单' : '销售单'} ${row.orderNo} 的附件`
+  attachVisible.value = true
+}
 
 
 // ---------------- 备选数据 ----------------
@@ -738,9 +776,12 @@ const { searchSoon } = useDebouncedSearch(search)
         </el-table-column>
         <!-- 宽度按最多按钮的状态算（待处理单：详情/打印/编辑/审核 4 个，
              已审核单：详情/打印/反审核 3 个），写小了按钮会折成两行 -->
-        <el-table-column label="操作" width="200" fixed="right" align="center">
+        <el-table-column label="操作" width="250" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row as InvOrderRow)">详情</el-button>
+            <el-button link type="primary" @click="openAttach(row as InvOrderRow)">
+              附件{{ attachCounts[String(row.id)] ? `(${attachCounts[String(row.id)]})` : '' }}
+            </el-button>
             <el-button link type="primary" @click="printRef?.open(row as InvOrderRow)">打印</el-button>
             <el-button
               v-if="row.status === 1"
@@ -1048,6 +1089,14 @@ const { searchSoon } = useDebouncedSearch(search)
 
     <!-- 打印 -->
     <OrderPrintDialog ref="printRef" :biz-type="bizType" :party-label="partyLabel" />
+
+    <!-- 附件抽屉：采购单与销售单共用，bizType 决定挂在哪类单据上 -->
+    <AttachmentDrawer
+      v-model="attachVisible"
+      :biz-type="(bizType as InvAttachBizType)"
+      :biz-id="attachBizId"
+      :title="attachTitle"
+    />
 
     <!-- 列表打印：有勾选打勾选的，没勾选打当前页 -->
     <ListPrintDialog

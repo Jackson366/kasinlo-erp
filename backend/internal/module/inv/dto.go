@@ -614,3 +614,53 @@ type PrintTemplateRow struct {
 	Remark    string    `json:"remark"`
 	CreatedAt time.Time `json:"createdAt"`
 }
+
+// ============================================================
+// 合同
+// ============================================================
+
+// ContractFilter 合同列表筛选条件。
+type ContractFilter struct {
+	BizType string   // "" 全部 / purchase / sales
+	Status  *int16   // 1 执行中 2 已完成 3 已终止
+	Start   *time.Time // 按**签订日期**过滤，闭区间
+	End     *time.Time
+}
+
+// ContractReq 合同新增 / 修改请求。
+type ContractReq struct {
+	// ContractNo 留空即自动生成 HT + 流水号；填了就用填的（重号会被拒）。
+	ContractNo string `json:"contractNo" binding:"omitempty,max=32" label:"合同编号"`
+	Name       string `json:"name" binding:"required,max=128" label:"合同名称"`
+	BizType    string `json:"bizType" binding:"required,oneof=purchase sales" label:"合同类型"`
+	PartyID    int64  `json:"partyId" binding:"required,gt=0" label:"往来单位"`
+	SignDate   string `json:"signDate" binding:"required" label:"签订日期"`
+	// StartDate / EndDate 履约起止，选填；两个都填时结束不能早于开始。
+	StartDate string  `json:"startDate" binding:"omitempty" label:"开始日期"`
+	EndDate   string  `json:"endDate" binding:"omitempty" label:"结束日期"`
+	Amount    float64 `json:"amount" binding:"gte=0" label:"合同金额"`
+	Status    *int16  `json:"status" binding:"omitempty,oneof=1 2 3" label:"状态"`
+	Salesman  string  `json:"salesman" binding:"omitempty,max=64" label:"业务员"`
+	Remark    string  `json:"remark" binding:"omitempty,max=255" label:"备注"`
+}
+
+// ContractRow 合同列表行与详情（结构一致，详情只是单条）。
+type ContractRow struct {
+	ID         int64      `json:"id"`
+	ContractNo string     `json:"contractNo"`
+	Name       string     `json:"name"`
+	BizType    string     `json:"bizType"`
+	PartyID    int64      `json:"partyId"`
+	PartyName  string     `json:"partyName"`
+	SignDate   time.Time  `json:"signDate"`
+	StartDate  *time.Time `json:"startDate"`
+	EndDate    *time.Time `json:"endDate"`
+	Amount     float64    `json:"amount"`
+	Status     int16      `json:"status"`
+	Salesman   string     `json:"salesman"`
+	Operator   string     `json:"operator"`
+	Remark     string     `json:"remark"`
+	// AttachmentCount 附件数量，列表按钮上显示角标（一次批量查出，不逐行请求）
+	AttachmentCount int       `json:"attachmentCount"`
+	CreatedAt       time.Time `json:"createdAt"`
+}

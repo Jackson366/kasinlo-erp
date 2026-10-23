@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"nova-erp/internal/authz"
+	"nova-erp/internal/config"
 	"nova-erp/internal/database"
 	"nova-erp/internal/model"
 	"nova-erp/internal/pkg/dberr"
@@ -20,10 +21,19 @@ import (
 // Service 进销存服务。所有业务逻辑收敛在这里，不感知 HTTP。
 type Service struct {
 	db *gorm.DB
+	// attachDir 附件存储根目录（启动时由 config 解析成绝对路径）。
+	// 留空时按 exe 同级 data/attachments 兜底，见 attachmentRoot。
+	attachDir string
 }
 
 // NewService 创建进销存服务。
-func NewService() *Service { return &Service{db: database.DB()} }
+func NewService() *Service {
+	s := &Service{db: database.DB()}
+	if cfg := config.Get(); cfg != nil {
+		s.attachDir = cfg.App.AttachmentDir
+	}
+	return s
+}
 
 // ---------------- 数据范围 ----------------
 //

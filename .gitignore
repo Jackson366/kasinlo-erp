@@ -47,3 +47,7 @@ Thumbs.db
 
 # Office 打开时的锁文件
 ~$*
+
+# 业务附件（运行时数据：图片 / 文件，不进版本库）
+backend/data/
+data/

@@ -105,6 +105,13 @@ type AppConfig struct {
 	Metrics *bool `yaml:"metrics"`
 	// MetricsToken 非空时，访问 /metrics 必须带 Authorization: Bearer <token>。
 	MetricsToken string `yaml:"metrics_token"`
+	// AttachmentDir 是业务附件（采购 / 销售单、合同的图片与文件）的存储根目录。
+	// 留空取 <可执行文件所在目录>/data/attachments —— 与 web_dir 同一套基准，
+	// 用「服务方式」启动（CWD 是 System32）时也不会把附件写进系统目录。
+	//
+	// 附件不进数据库：几百 KB 的扫描件塞进 bytea 会让备份变成几百 MB，
+	// 而备份要能每天跑。库里只存相对路径与元数据。
+	AttachmentDir string `yaml:"attachment_dir"`
 }
 
 // Addr 返回监听地址。
@@ -453,6 +460,7 @@ func (c *Config) resolvePaths() {
 	c.Log.Dir = abs(c.Log.Dir)
 	c.Backup.Dir = abs(c.Backup.Dir)
 	c.App.WebDir = abs(c.App.WebDir)
+	c.App.AttachmentDir = abs(c.App.AttachmentDir)
 	c.Upgrade.FrontendDir = abs(c.Upgrade.FrontendDir)
 	c.Upgrade.StagingDir = abs(c.Upgrade.StagingDir)
 }
@@ -543,6 +551,9 @@ func applyDefaults(c *Config) {
 	}
 	if strings.TrimSpace(c.App.WebDir) == "" {
 		c.App.WebDir = "web"
+	}
+	if strings.TrimSpace(c.App.AttachmentDir) == "" {
+		c.App.AttachmentDir = filepath.Join("data", "attachments")
 	}
 }
 

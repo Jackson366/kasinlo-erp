@@ -1269,6 +1269,116 @@ async function main() {
     ok('明细按往来单位模糊筛选', false, '没有可用的往来单位样本')
   }
 
+  section('进销存：合同与附件')
+  // 合同是独立台账（不挂到单据上）：编号留空自动生成 HT + 流水，
+  // 附件挂在其上（biz_type=contract）。这里把「建 → 传 → 下 → 删」整条链走一遍。
+  const contractPartyRes = await request('GET', '/inv/customers?page=1&pageSize=1', { token })
+  let contractParty = contractPartyRes.json?.data?.list?.[0]?.id
+  if (!contractParty) {
+    const c = await request('POST', '/inv/customers', { token, body: { name: `冒烟合同客户${smokeCode}` } })
+    contractParty = c.json?.data?.id
+  }
+
+  const ctCreate = await request('POST', '/inv/contracts', {
+    token,
+    body: {
+      name: `冒烟合同${smokeCode}`,
+      bizType: 'sales',
+      partyId: contractParty,
+      signDate: '2026-01-15',
+      startDate: '2026-02-01',
+      endDate: '2027-01-31',
+      amount: 8888.88,
+      salesman: '冒烟',
+    },
+  })
+  const contractId = ctCreate.json?.data?.id
+  ok('新增合同（编号留空自动生成）', ctCreate.status === 200 && !!contractId, JSON.stringify(ctCreate.json).slice(0, 160))
+
+  const ctDetail = await request('GET', `/inv/contracts/${contractId}`, { token })
+  const ctRow = ctDetail.json?.data || {}
+  ok(
+    '合同详情：编号 HT 开头且带出往来单位',
+    /^HT\d+$/.test(ctRow.contractNo || '') && !!ctRow.partyName,
+    JSON.stringify(ctRow).slice(0, 160),
+  )
+  ok(
+    '合同履约期正确落库',
+    String(ctRow.startDate || '').startsWith('2026-02-01') && String(ctRow.endDate || '').startsWith('2027-01-31'),
+    `${ctRow.startDate} ~ ${ctRow.endDate}`,
+  )
+
+  // 结束早于开始必须拒绝：否则列表里的「履约期」会出现负区间
+  const ctBadRange = await request('PUT', `/inv/contracts/${contractId}`, {
+    token,
+    body: {
+      name: 'x', bizType: 'sales', partyId: contractParty,
+      signDate: '2026-01-15', startDate: '2026-05-01', endDate: '2026-04-01',
+    },
+  })
+  ok('合同起止日期倒置被拒', ctBadRange.status === 400 && ctBadRange.json?.code === 40000, JSON.stringify(ctBadRange.json).slice(0, 160))
+
+  // 附件：PNG 最小样本
+  const pngBytes = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbtEAAAAASUVORK5CYII=',
+    'base64',
+  )
+  const uploadAttachment = async (bizType, bizId, filename, mime, buf) => {
+    const fd = new FormData()
+    fd.append('bizType', bizType)
+    fd.append('bizId', String(bizId))
+    fd.append('file', new Blob([buf], { type: mime }), filename)
+    const res = await fetch(`${API}/inv/attachments`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    })
+    const text = await res.text()
+    try {
+      return { status: res.status, json: JSON.parse(text) }
+    } catch {
+      return { status: res.status, json: { raw: text } }
+    }
+  }
+
+  const attUp = await uploadAttachment('contract', contractId, '冒烟扫描件.png', 'image/png', pngBytes)
+  const attId = attUp.json?.data?.id
+  ok(
+    '上传图片附件到合同',
+    attUp.status === 200 && attUp.json?.data?.fileName === '冒烟扫描件.png' && attUp.json?.data?.isImage === true,
+    JSON.stringify(attUp.json).slice(0, 160),
+  )
+
+  const attBad = await uploadAttachment('contract', contractId, 'bad.exe', 'application/octet-stream', Buffer.from('MZ'))
+  ok('上传 .exe 被拒（扩展名白名单）', attBad.status === 400 && attBad.json?.code === 40000, JSON.stringify(attBad.json).slice(0, 160))
+
+  const attList = await request('GET', `/inv/attachments?bizType=contract&bizId=${contractId}`, { token })
+  ok('附件列表返回 1 条', attList.json?.data?.length === 1, JSON.stringify(attList.json).slice(0, 160))
+
+  const attCount = await request('GET', `/inv/attachments/count?bizType=contract&ids=${contractId}`, { token })
+  const countMap = attCount.json?.data || {}
+  ok('附件数量按单据聚合', String(countMap[contractId] ?? countMap[String(contractId)]) === '1', JSON.stringify(countMap))
+
+  const dlRes = await fetch(`${API}/inv/attachments/${attId}/file?download=1`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const dlBuf = Buffer.from(await dlRes.arrayBuffer())
+  ok(
+    '附件下载返回原始字节且带 nosniff',
+    dlRes.status === 200 && dlBuf.length === pngBytes.length && dlRes.headers.get('x-content-type-options') === 'nosniff',
+    `${dlRes.status} ${dlBuf.length}B`,
+  )
+
+  const attDel = await request('DELETE', `/inv/attachments/${attId}`, { token })
+  const attAfter = await request('GET', `/inv/attachments?bizType=contract&bizId=${contractId}`, { token })
+  ok('删除附件后列表为空', attDel.status === 200 && (attAfter.json?.data?.length ?? -1) === 0, JSON.stringify(attAfter.json).slice(0, 120))
+
+  const ctExport = await request('GET', '/inv/export?entity=contract&page=1&pageSize=100', { token, raw: true })
+  ok('合同台账导出 xlsx', ctExport.status === 200 && String(ctExport.text).startsWith('PK'), `status=${ctExport.status}`)
+
+  // 清理：合同软删（附件记录随业务一并不可见）
+  await request('DELETE', `/inv/contracts/${contractId}`, { token })
+
   section('进销存：反审核')
   // 审核 → 反审核 必须把副作用一起撤销：状态回到待处理、库存回到审核前、
   // 生成的出入库单作废。只改状态的话库存会永久少掉，且查不到对应单据。

@@ -61,6 +61,27 @@ func Register(rg *gin.RouterGroup) {
 		g.PUT("/orders/:id/status", middleware.RequirePerm("inv:purchase:finish", "inv:sales:finish"), h.OrderChangeStatus)
 		g.PUT("/orders/:id/reverse", middleware.RequirePerm("inv:purchase:finish", "inv:sales:finish"), h.OrderReverse)
 
+		// 合同台账
+		//
+		// 合同不挂到单据上（见 model.InvContract 注释），所以这里只有一组 CRUD。
+		g.GET("/contracts", middleware.RequirePerm("inv:contract:list"), h.ContractList)
+		g.GET("/contracts/:id", middleware.RequirePerm("inv:contract:list"), h.ContractDetail)
+		g.POST("/contracts", middleware.RequirePerm("inv:contract:create"), h.ContractCreate)
+		g.PUT("/contracts/:id", middleware.RequirePerm("inv:contract:update"), h.ContractUpdate)
+		g.DELETE("/contracts/:id", middleware.RequirePerm("inv:contract:delete"), h.ContractDelete)
+
+		// 业务附件（采购单 / 销售单 / 合同共用）
+		//
+		// 这里**不挂** RequirePerm：附件该不该看得懂，取决于它挂在哪张单据上 ——
+		// 服务层按 bizType 反查单据并校验数据范围（能看单据才能看附件）。
+		// 单独设一套 attachment 权限码，早晚会出现「能改单、看不到附件」的怪组合。
+		// count 是静态段，必须在 :id 之前注册，否则会被当成 id="count"。
+		g.GET("/attachments/count", h.AttachmentCount)
+		g.GET("/attachments", h.AttachmentList)
+		g.POST("/attachments", h.AttachmentUpload)
+		g.GET("/attachments/:id/file", h.AttachmentFile)
+		g.DELETE("/attachments/:id", h.AttachmentDelete)
+
 		// 库存：出入库单据与库存查询
 		g.GET("/stock-orders", middleware.RequirePerm("inv:stock:list"), h.StockOrderList)
 		g.GET("/stock-orders/:id", middleware.RequirePerm("inv:stock:list"), h.StockOrderDetail)

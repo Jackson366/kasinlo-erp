@@ -74,6 +74,12 @@ export async function uploadFile<T>(
   file: File,
   options: {
     params?: Record<string, unknown>
+    /**
+     * 额外的表单字段。附件上传要带 bizType / bizId —— 它们必须和文件在**同一个**
+     * multipart 请求里，用 query 参数传会让「文件已收到、单据却不存在」这种
+     * 半成功状态变得可能。
+     */
+    fields?: Record<string, string>
     config?: AxiosRequestConfig
     /** 幂等键：同一次操作的重复提交（超时重试、重复点击）应传入同一个值 */
     idempotencyKey?: string
@@ -81,6 +87,9 @@ export async function uploadFile<T>(
 ): Promise<T> {
   const form = new FormData()
   form.append('file', file)
+  for (const [k, v] of Object.entries(options.fields ?? {})) {
+    form.append(k, v)
+  }
 
   const response = await instance.request<ApiResult<T>>({
     url,
@@ -101,4 +110,20 @@ export async function uploadFile<T>(
     throw new ApiError(body.code, body.message, body.traceId)
   }
   return body.data
+}
+
+/**
+ * 取二进制内容但**不**触发下载（附件图片预览用）。
+ *
+ * 附件的 file 接口要带 Authorization，`<img src>` 带不了 header，
+ * 所以走 axios 拿 Blob 再 URL.createObjectURL。
+ */
+export async function fetchBlob(url: string, params?: Record<string, unknown>): Promise<Blob> {
+  const response = await instance.request<Blob>({
+    url,
+    method: 'GET',
+    params,
+    responseType: 'blob',
+  })
+  return response.data
 }
