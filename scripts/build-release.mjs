@@ -110,11 +110,27 @@ function run(cmd, args, cwd, useShell = false) {
  * 收尾时再尝试删掉，删不掉就留着并由调用方提示。
  */
 const parked = []
+/**
+ * 把已存在的目录挪走，稍后统一清理。
+ *
+ * 为什么要处理 rename 失败：Windows 上目录只要被任何进程持有句柄（杀软扫描刚生成的
+ * exe、资源管理器打开着这个文件夹、索引服务正在爬），rename 就会 EBUSY —— 而子文件
+ * 通常是能删的。曾因此让整次打包在构建跑了十分钟之后才失败。
+ * 失败时改为「原地清空后复用」：内容照样是干净的，包内路径也不变。
+ */
 function park(dir) {
   if (!fs.existsSync(dir)) return
   const target = `${dir}.old-${Date.now()}`
-  fs.renameSync(dir, target)
-  parked.push(target)
+  try {
+    fs.renameSync(dir, target)
+    parked.push(target)
+  } catch (err) {
+    if (err.code !== 'EBUSY' && err.code !== 'EPERM') throw err
+    console.log(`提示：${path.relative(ROOT, dir)} 被占用，改为原地清空后复用`)
+    for (const name of fs.readdirSync(dir)) {
+      fs.rmSync(path.join(dir, name), { recursive: true, force: true })
+    }
+  }
 }
 function cleanParked() {
   for (const p of parked) {
