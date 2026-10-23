@@ -22,6 +22,7 @@ import { invApi } from '@/api'
 import type {
   InvAttachBizType,
   InvContractBizType,
+  InvContractLogRow,
   InvContractPlanItem,
   InvContractPlanPayload,
   InvContractPayload,
@@ -37,7 +38,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
-import { formatDay, formatMoney } from '@/utils/format'
+import { formatDateTime, formatDay, formatMoney } from '@/utils/format'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import AttachmentDrawer from '../components/AttachmentDrawer.vue'
 
@@ -91,6 +92,7 @@ const { searchSoon } = useDebouncedSearch(search)
 type TagTone = 'primary' | 'success' | 'warning' | 'info' | 'danger'
 
 const stageOptions: Array<{ label: string; value: StageFilter; tone: TagTone }> = [
+  { label: '待审核', value: 'unaudited', tone: 'danger' },
   { label: '待验收', value: 'pending', tone: 'warning' },
   { label: '已验收', value: 'accepted', tone: 'primary' },
   { label: '质保中', value: 'warranty', tone: 'success' },
@@ -413,6 +415,26 @@ async function submitForm(): Promise<void> {
   }
 }
 
+/** 列表里的快捷审核：不进详情也能放行，通过后付款计划立即进应收 */
+async function quickAudit(row: InvContractRow): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `审核通过「${row.contractNo} ${row.name}」？通过后它的付款计划会计入应收 / 应付。`,
+      '审核确认',
+      { type: 'warning', confirmButtonText: '审核通过' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await invApi.auditContract(row.id)
+    ElMessage.success('审核通过')
+    load()
+  } catch {
+    // 失败提示由响应拦截器统一处理
+  }
+}
+
 async function removeRow(row: InvContractRow): Promise<void> {
   try {
     await ElMessageBox.confirm(
@@ -463,6 +485,79 @@ async function refreshDetail(): Promise<void> {
 }
 
 const detailPlans = computed<InvContractPlanItem[]>(() => detail.value?.plans ?? [])
+
+// ---------------- 审核 ----------------
+//
+// 审核是「这份合同的钱能不能入账」的门槛：通过之前付款计划不进应收应付，
+// 也不能验收、不能登记收付款。反审核是它的反向操作，但多两个约束：
+// 已有收付款不能退（钱在账上了），且退回时会一并撤销验收记录。
+const auditing = ref(false)
+const detailIsPending = computed(() => detail.value?.status === 0)
+const detailHasSettled = computed(() => (detail.value?.settledAmount ?? 0) > 0.005)
+
+async function doAudit(): Promise<void> {
+  const d = detail.value
+  if (!d) return
+  auditing.value = true
+  try {
+    await invApi.auditContract(d.id)
+    ElMessage.success('审核通过，付款计划已计入应收 / 应付')
+    await refreshDetail()
+  } catch {
+    // 失败提示由响应拦截器统一处理
+  } finally {
+    auditing.value = false
+  }
+}
+
+async function doUnaudit(): Promise<void> {
+  const d = detail.value
+  if (!d) return
+  if (detailHasSettled.value) {
+    ElMessage.warning('该合同已发生收付款，不能反审核')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      d.acceptedAt
+        ? '反审核会同时撤销验收记录与质保到期日，并把合同退回待审核。确认继续？'
+        : '退回后该合同的付款计划将不再计入应收 / 应付。确认继续？',
+      '反审核确认',
+      { type: 'warning', confirmButtonText: '反审核' },
+    )
+  } catch {
+    return
+  }
+  auditing.value = true
+  try {
+    await invApi.unauditContract(d.id)
+    ElMessage.success('已退回待审核')
+    await refreshDetail()
+  } catch {
+    // 同上
+  } finally {
+    auditing.value = false
+  }
+}
+
+// ---------------- 操作记录 ----------------
+const logVisible = ref(false)
+const logLoading = ref(false)
+const logRows = ref<InvContractLogRow[]>([])
+
+async function openLogs(): Promise<void> {
+  if (!detail.value) return
+  logVisible.value = true
+  logLoading.value = true
+  logRows.value = []
+  try {
+    logRows.value = await invApi.contractLogs(detail.value.id, 50)
+  } catch {
+    // 失败提示由响应拦截器统一处理
+  } finally {
+    logLoading.value = false
+  }
+}
 
 // ---------------- 改状态 ----------------
 //
@@ -815,7 +910,16 @@ const attachType: InvAttachBizType = 'contract'
         <el-table-column label="操作" width="216" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row as InvContractRow)">详情</el-button>
-            <el-button link type="primary" @click="openAttach(row as InvContractRow)">
+            <el-button
+              v-if="row.status === 0"
+              v-perm="'inv:contract:audit'"
+              link
+              type="primary"
+              @click="quickAudit(row as InvContractRow)"
+            >
+              审核
+            </el-button>
+            <el-button v-else link type="primary" @click="openAttach(row as InvContractRow)">
               附件{{ row.attachmentCount ? `(${row.attachmentCount})` : '' }}
             </el-button>
             <el-button v-perm="'inv:contract:update'" link type="primary" @click="openEdit(row as InvContractRow)">
@@ -1090,29 +1194,54 @@ const attachType: InvAttachBizType = 'contract'
               </div>
             </div>
             <div class="detail-head__actions">
-              <el-select
-                v-perm="'inv:contract:update'"
-                v-model="detail.status"
+              <template v-if="detailIsPending">
+                <el-tag type="danger" effect="light" size="small">待审核</el-tag>
+                <el-button
+                  v-perm="'inv:contract:audit'"
+                  type="primary"
+                  size="small"
+                  :loading="auditing"
+                  @click="doAudit"
+                >
+                  审核通过
+                </el-button>
+              </template>
+              <template v-else>
+                <el-select
+                  v-perm="'inv:contract:update'"
+                  v-model="detail.status"
+                  size="small"
+                  style="width: 104px"
+                  :loading="statusSaving"
+                  @change="changeStatus"
+                >
+                  <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
+                </el-select>
+                <el-button
+                  v-perm="'inv:contract:audit'"
+                  size="small"
+                  :loading="auditing"
+                  :disabled="detailHasSettled"
+                  @click="doUnaudit"
+                >
+                  反审核
+                </el-button>
+              </template>
+              <el-button
+                v-perm="'inv:contract:accept'"
                 size="small"
-                style="width: 108px"
-                :loading="statusSaving"
-                @change="changeStatus"
+                :disabled="detailIsPending"
+                @click="openAccept"
               >
-                <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
-              </el-select>
-              <el-button v-perm="'inv:contract:accept'" size="small" @click="openAccept">
                 {{ detail.acceptedAt ? '重新验收' : '登记验收' }}
               </el-button>
-              <el-button
-                v-perm="'inv:contract:update'"
-                size="small"
-                @click="openEdit(detail)"
-              >
+              <el-button v-perm="'inv:contract:update'" size="small" @click="openEdit(detail)">
                 编辑
               </el-button>
               <el-button size="small" @click="openAttach(detail)">
                 附件{{ detail.attachmentCount ? `(${detail.attachmentCount})` : '' }}
               </el-button>
+              <el-button size="small" @click="openLogs">记录</el-button>
             </div>
           </div>
 
@@ -1136,6 +1265,12 @@ const attachType: InvAttachBizType = 'contract'
             <el-descriptions-item label="质保到期">
               {{ detail.warrantyEndAt ? formatDay(detail.warrantyEndAt) : '—' }}
               <span v-if="detail.warrantyMonths" class="text-muted">（{{ detail.warrantyMonths }} 个月）</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="审核">
+              <template v-if="detail.auditedAt">
+                {{ detail.auditor || '—' }} · {{ formatDay(detail.auditedAt) }}
+              </template>
+              <span v-else class="text-muted">未审核（不计入应收 / 应付）</span>
             </el-descriptions-item>
             <el-descriptions-item label="备注" :span="3">{{ detail.remark || '—' }}</el-descriptions-item>
           </el-descriptions>
@@ -1181,7 +1316,7 @@ const attachType: InvAttachBizType = 'contract'
                   v-perm="'inv:contract:settle'"
                   link
                   type="primary"
-                  :disabled="row.outstanding <= 0"
+                  :disabled="row.outstanding <= 0 || detailIsPending"
                   @click="openSettle(row as InvContractPlanItem, detail as InvContractRow)"
                 >
                   {{ settleVerb((detail as InvContractRow).bizType) }}
@@ -1305,6 +1440,28 @@ const attachType: InvAttachBizType = 'contract'
       </el-table>
       <template #footer>
         <el-button @click="historyVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 合同操作记录 -->
+    <el-dialog v-model="logVisible" title="合同操作记录" width="680px" destroy-on-close>
+      <el-table v-loading="logLoading" :data="logRows" size="small" border empty-text="暂无操作记录">
+        <el-table-column label="时间" width="150">
+          <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column prop="action" label="操作" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="username" label="操作人" width="110" />
+        <el-table-column prop="ip" label="IP" width="130" show-overflow-tooltip />
+        <el-table-column label="结果" width="70" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.status < 400 ? 'success' : 'danger'" effect="plain">
+              {{ row.status < 400 ? '成功' : '失败' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="logVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 

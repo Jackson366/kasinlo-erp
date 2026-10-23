@@ -6,6 +6,7 @@ import type {
   InvCategoryOption,
   InvCategoryPayload,
   InvContractAcceptPayload,
+  InvContractLogRow,
   InvContractPayload,
   InvContractRow,
   InvCategoryRow,
@@ -257,6 +258,18 @@ export const invApi = {
   },
   deleteContract(id: number) {
     return http.delete<string>(`/inv/contracts/${id}`)
+  },
+  /** 合同审核：待审核 → 执行中，通过后付款计划才进应收应付 */
+  auditContract(id: number) {
+    return http.post<string>(`/inv/contracts/${id}/audit`)
+  },
+  /** 合同反审核：退回待审核（已发生收付款时会被拒绝） */
+  unauditContract(id: number) {
+    return http.post<string>(`/inv/contracts/${id}/unaudit`)
+  },
+  /** 合同操作记录（新增 / 修改 / 审核 / 验收 / 删除） */
+  contractLogs(id: number, limit = 50) {
+    return http.get<InvContractLogRow[]>(`/inv/contracts/${id}/logs`, { limit })
   },
   /** 合同验收：登记验收日期与结论，并按质保月数算出质保到期日 */
   acceptContract(id: number, data: InvContractAcceptPayload) {

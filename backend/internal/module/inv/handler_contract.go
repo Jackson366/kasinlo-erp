@@ -67,10 +67,10 @@ func contractFilterFrom(c *gin.Context) (ContractFilter, error) {
 	// 传错就 400，而不是静默返回全量（静默丢条件最难查）
 	f.Stage = strings.TrimSpace(c.Query("stage"))
 	switch f.Stage {
-	case "", "pending", "accepted", "warranty", "warranty_due":
+	case "", "unaudited", "pending", "accepted", "warranty", "warranty_due":
 	default:
 		return f, errcode.Newf(errcode.ErrBadRequest,
-			"查询参数 stage 非法：%s（仅支持 pending / accepted / warranty / warranty_due）", f.Stage)
+			"查询参数 stage 非法：%s（仅支持 unaudited / pending / accepted / warranty / warranty_due）", f.Stage)
 	}
 	return f, nil
 }
@@ -259,6 +259,76 @@ func (h *Handler) ContractPlanSettle(c *gin.Context) {
 	response.OKMsg(c, "收付款已登记")
 }
 
+// ContractAudit 审核合同
+// @Summary      审核合同
+// @Description  待审核 → 执行中。审核后付款计划才进入应收 / 应付，才能验收与登记收付款。
+// @Tags         进销存-合同
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path  int  true  "合同 ID"
+// @Success      200  {object}  response.Body
+// @Router       /inv/contracts/{id}/audit [post]
+func (h *Handler) ContractAudit(c *gin.Context) {
+	id, err := bind.PathID(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	c.Set("opAction", "审核合同")
+	if err := h.svc.ContractAudit(id, middleware.CurrentIdentity(c)); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OKMsg(c, "审核通过")
+}
+
+// ContractUnaudit 反审核合同
+// @Summary      反审核合同
+// @Description  退回待审核；已发生收付款时拒绝，并同时撤销验收与质保到期日。
+// @Tags         进销存-合同
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path  int  true  "合同 ID"
+// @Success      200  {object}  response.Body
+// @Router       /inv/contracts/{id}/unaudit [post]
+func (h *Handler) ContractUnaudit(c *gin.Context) {
+	id, err := bind.PathID(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	c.Set("opAction", "反审核合同")
+	if err := h.svc.ContractUnaudit(id, middleware.CurrentIdentity(c)); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OKMsg(c, "已退回待审核")
+}
+
+// ContractLogs 合同操作记录
+// @Summary      合同操作记录
+// @Description  该合同的新增 / 修改 / 审核 / 验收 / 删除记录（来自系统操作日志）。
+// @Tags         进销存-合同
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id     path   int  true   "合同 ID"
+// @Param        limit  query  int  false  "条数上限（默认 50）"
+// @Success      200    {object}  response.Body{data=[]ContractLogRow}
+// @Router       /inv/contracts/{id}/logs [get]
+func (h *Handler) ContractLogs(c *gin.Context) {
+	id, err := bind.PathID(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	list, err := h.svc.ContractLogs(id, middleware.CurrentIdentity(c), page.AtoiOr(c.Query("limit"), 0))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, list)
+}
+
 // ContractPlanSettles 期次收付款流水
 // @Summary      期次收付款流水
 // @Tags         进销存-合同
@@ -266,7 +336,7 @@ func (h *Handler) ContractPlanSettle(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        id   path  int  true  "期次 ID"
 // @Success      200  {object}  response.Body{data=[]SettleRecord}
-// @Router       /inv/contracts/plans/{id}/settles [get]
+// @Router       /inv/contract-plans/{id}/settles [get]
 func (h *Handler) ContractPlanSettles(c *gin.Context) {
 	id, err := bind.PathID(c)
 	if err != nil {

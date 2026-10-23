@@ -575,6 +575,7 @@ onMounted(() => {
         </el-form-item>
         <el-form-item label="阶段">
           <el-select v-model="contractStage" placeholder="全部" clearable style="width: 140px" @change="loadTab">
+            <el-option label="待审核" value="unaudited" />
             <el-option label="待验收" value="pending" />
             <el-option label="已验收" value="accepted" />
             <el-option label="质保中" value="warranty" />

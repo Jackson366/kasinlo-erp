@@ -38,6 +38,9 @@ import (
 // 验收与质保由两个日期派生。这样历史合同不需要数据迁移，
 // 也不会出现「状态说质保中、日期说早过期」的自相矛盾。
 func contractStage(c model.InvContract, today time.Time) (string, string) {
+	if c.Status == model.InvContractPending {
+		return "unaudited", "待审核"
+	}
 	switch c.Status {
 	case model.InvContractTerminated:
 		return "terminated", "已终止"
@@ -286,6 +289,9 @@ func (s *Service) ContractAccept(id int64, req ContractAcceptReq, actor *authz.I
 		}
 		return errcode.Wrap(errcode.ErrDatabase, err)
 	}
+	if c.Status == model.InvContractPending {
+		return errcode.New(errcode.ErrConflict, "合同尚未审核，不能登记验收")
+	}
 	if c.Status == model.InvContractTerminated {
 		return errcode.New(errcode.ErrConflict, "合同已终止，不能登记验收")
 	}
@@ -362,6 +368,9 @@ func (s *Service) PlanSettle(req PlanSettleReq, actor *authz.Identity) error {
 	}
 	if err := s.ensureCreatorVisible(c.CreatedBy, actor); err != nil {
 		return err
+	}
+	if c.Status == model.InvContractPending {
+		return errcode.New(errcode.ErrConflict, "合同尚未审核，不能登记收付款")
 	}
 	if c.Status == model.InvContractTerminated {
 		return errcode.New(errcode.ErrConflict, "合同已终止，不能登记收付款")

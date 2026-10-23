@@ -284,16 +284,16 @@ PATCH = 修复。MAJOR 的节拍就是业务痛苦的节拍，能用 MINOR 演�
 
 ```bash
 # 在仓库根目录执行（用当前分支的代码构建后端 + 前端）
-node scripts/build-upgrade-package.mjs --version 1.3.0
+node scripts/build-upgrade-package.mjs --version 1.3.1
 
 # 只发后端（比如只改了 Go）
-node scripts/build-upgrade-package.mjs --version 1.3.0 --backend-only
+node scripts/build-upgrade-package.mjs --version 1.3.1 --backend-only
 
 # 只发前端（纯前端修复，不需要重启）
-node scripts/build-upgrade-package.mjs --version 1.3.0 --frontend-only
+node scripts/build-upgrade-package.mjs --version 1.3.1 --frontend-only
 
 # 带上要求的最低结构版本与升级说明
-node scripts/build-upgrade-package.mjs --version 1.3.0 --min-schema 3 --notes "修复报表导出"
+node scripts/build-upgrade-package.mjs --version 1.3.1 --min-schema 3 --notes "修复报表导出"
 ```
 
 产物：`build/upgrade/nova-erp-<version>.zip`（已 gitignore）。
@@ -310,7 +310,7 @@ dist.zip                 # 前端产物，zip 内顶层就是 index.html 与 ass
 
 ```json
 {
-  "version": "1.3.0",
+  "version": "1.3.1",
   "minSchemaVersion": 3,
   "notes": "修复报表导出",
   "backend":  { "file": "nova-erp-server.exe", "sha256": "0c9f66…" },
@@ -325,12 +325,12 @@ dist.zip                 # 前端产物，zip 内顶层就是 index.html 与 ass
 
 | 配置 | 为什么必须对 | 不对会怎样 |
 | --- | --- | --- |
-| `app.release: 1.3.0` | 重启后 `FinalizeUpgrades` 拿**新程序读到的**这个值去比对目标版本 | 为 `dev` 或旧值时，升级永远停在「未生效」 |
+| `app.release: 1.3.1` | 重启后 `FinalizeUpgrades` 拿**新程序读到的**这个值去比对目标版本 | 为 `dev` 或旧值时，升级永远停在「未生效」 |
 | `upgrade.frontend_dir` | 前端 zip 解压到这个目录 | 不配则只换后端，`dist.zip` 被静默忽略（有 warning） |
 
 ```yaml
 app:
-  release: 1.3.0        # 与升级包 version 一致；也可用 NOVA_APP_RELEASE 覆盖
+  release: 1.3.1        # 与升级包 version 一致；也可用 NOVA_APP_RELEASE 覆盖
 
 upgrade:
   frontend_dir: "D:/go/nova-erp/frontend/dist"   # 线上真正被 Nginx/静态服务读到的目录

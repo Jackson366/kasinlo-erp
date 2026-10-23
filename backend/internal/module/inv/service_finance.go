@@ -45,9 +45,13 @@ func isOverdue(outstanding float64, due *time.Time, today time.Time) bool {
 // 用 UNION ALL 合成一张「应收应付行」再由外层统一筛选、排序、分页 ——
 // 分开查两次再在内存里合并排序，分页就再也算不准总数。
 //
-// 占位符顺序：bizType, 已审核状态, source, bizType, 已终止状态, source。
+// 占位符顺序：bizType, 已审核状态, source, bizType, source。
 //
-// 期次那条带 `p.amount > 0`：0 元期次（例如比例填了 0 的占位行）会在应收列表里
+// 合同期次那条的「待审核(0) / 已终止(3)」写成了字面量而不是占位符：
+// IN (0, 3) 是合同状态编码的一部分，跟 InvContractPending 常量保持一致，
+// 不在 SQL 里再传参 —— 少一个占位符就少一次「参数错位」的机会。
+//
+// 期次那条还带 `p.amount > 0`：0 元期次（例如比例填了 0 的占位行）会在应收列表里
 // 变成永远 0 的噪音行，点了也收不到钱。
 const financeUnionSQL = `
 SELECT 'order' AS source, o.id AS order_id, o.order_no AS order_no,
@@ -69,13 +73,13 @@ SELECT 'plan' AS source, 0::bigint AS order_id, ''::text AS order_no,
        c.created_by AS created_by
   FROM inv_contract_plans p
   JOIN inv_contracts c ON c.id = p.contract_id AND c.deleted_at IS NULL
- WHERE p.deleted_at IS NULL AND p.biz_type = ? AND c.status <> ? AND ? <> 'order'
+ WHERE p.deleted_at IS NULL AND p.biz_type = ? AND c.status NOT IN (0, 3) AND ? <> 'order'
    AND p.amount > 0
 `
 
 // financeUnionArgs 上面那段 SQL 的参数。
 func financeUnionArgs(bizType, source string) []any {
-	return []any{bizType, model.InvStatusDone, source, bizType, model.InvContractTerminated, source}
+	return []any{bizType, model.InvStatusDone, source, bizType, source}
 }
 
 // financeWhere 外层筛选条件（数据范围 / 关键字 / 结算状态）。

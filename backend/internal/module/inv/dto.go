@@ -697,6 +697,7 @@ type ContractFilter struct {
 	End     *time.Time
 	PartyID int64 // 往来单位
 	// Stage 按派生的履约阶段筛选：
+	//   unaudited     待审核（status=0）
 	//   pending       未验收（accepted_at 为空）
 	//   accepting     已验收（accepted_at 非空）
 	//   warranty      质保期内（warranty_end_at 未到）
@@ -765,6 +766,21 @@ type PlanSettleReq struct {
 	Remark    string  `json:"remark" binding:"omitempty,max=255" label:"备注"`
 }
 
+// ContractLogRow 合同的操作记录。
+//
+// 直接复用系统操作日志（按请求路径归集），不再单独建合同变更表：
+// 中间件已经把「谁、什么动作、什么请求体、什么结果」都记下了，
+// 再存一份只会出现「两处记录不一致」的麻烦。
+type ContractLogRow struct {
+	ID        int64     `json:"id"`
+	Username  string    `json:"username"`
+	Action    string    `json:"action"`
+	Method    string    `json:"method"`
+	IP        string    `json:"ip"`
+	Status    int       `json:"status"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 // SettleRecord 一条收付款流水（合同期次详情展开用）。
 type SettleRecord struct {
 	ID        int64     `json:"id"`
@@ -820,9 +836,13 @@ type ContractRow struct {
 	RetentionRate   float64    `json:"retentionRate"`
 	RetentionAmount float64    `json:"retentionAmount"`
 
-	// 履约阶段（派生）：待验收 / 已验收 / 质保中 / 质保到期 / 已完成 / 已终止
+	// 履约阶段（派生）：待审核 / 待验收 / 已验收 / 质保中 / 质保到期 / 已完成 / 已终止
 	Stage      string `json:"stage"`
 	StageLabel string `json:"stageLabel"`
+
+	// 审核：谁在什么时候放行。待审核时两列为空。
+	AuditedAt *time.Time `json:"auditedAt"`
+	Auditor   string     `json:"auditor"`
 
 	// 收付进度（合同期次汇总；没有计划时全为 0）
 	PlanCount     int     `json:"planCount"`

@@ -65,6 +65,8 @@ func Module() module.Module {
 							// 通常是项目经理 / 财务的职责，绑在一起等于把资金权限发给所有业务员。
 							{Name: "InvContractAccept", Title: "合同验收", Type: module.TypeButton, Permission: "inv:contract:accept"},
 							{Name: "InvContractSettle", Title: "合同收付款", Type: module.TypeButton, Permission: "inv:contract:settle"},
+							// 审核决定「合同的钱能不能入账」，是合同模块里最该单独授予的权限
+							{Name: "InvContractAudit", Title: "合同审核", Type: module.TypeButton, Permission: "inv:contract:audit"},
 						},
 					},
 					{

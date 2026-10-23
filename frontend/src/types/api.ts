@@ -970,11 +970,18 @@ export interface InvAttachmentRow {
 /** 合同类型：采购合同挂供应商，销售合同挂客户 */
 export type InvContractBizType = 'purchase' | 'sales'
 
-/** 合同状态 */
-export type InvContractStatus = 1 | 2 | 3
+/** 合同状态：0 待审核 / 1 执行中 / 2 已完成 / 3 已终止 */
+export type InvContractStatus = 0 | 1 | 2 | 3
 
 /** 履约阶段（后端派生，不入库） */
-export type InvContractStage = 'pending' | 'accepted' | 'warranty' | 'warranty_due' | 'finished' | 'terminated'
+export type InvContractStage =
+  | 'unaudited'
+  | 'pending'
+  | 'accepted'
+  | 'warranty'
+  | 'warranty_due'
+  | 'finished'
+  | 'terminated'
 
 /** 付款期次类型：1 预付 / 2 进度 / 3 验收 / 4 质保金 / 5 其他 */
 export type InvPlanKind = 1 | 2 | 3 | 4 | 5
@@ -1029,9 +1036,13 @@ export interface InvContractRow {
   retentionRate: number
   retentionAmount: number
 
-  /** 履约阶段（派生）：待验收 / 已验收 / 质保中 / 质保到期 / 已完成 / 已终止 */
+  /** 履约阶段（派生）：待审核 / 待验收 / 已验收 / 质保中 / 质保到期 / 已完成 / 已终止 */
   stage: InvContractStage
   stageLabel: string
+
+  /** 审核：谁在什么时候放行。待审核时为空 */
+  auditedAt: string | null
+  auditor: string
 
   // 收付进度（期次汇总）
   planCount: number
@@ -1106,4 +1117,15 @@ export interface InvPlanSettleRecord {
   method: string
   settledAt: string
   remark: string
+}
+
+/** 合同操作记录（来自系统操作日志） */
+export interface InvContractLogRow {
+  id: number
+  username: string
+  action: string
+  method: string
+  ip: string
+  status: number
+  createdAt: string
 }

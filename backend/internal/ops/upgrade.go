@@ -35,7 +35,7 @@ import (
 // （.exe / 无后缀），而「这个包里到底有没有前端」也必须能表达 ——
 // 只更后端的补丁包很常见，硬要它带一份前端只会让包变大、让升级变慢。
 type upgradeManifest struct {
-	// Version 是升级包的目标发布版本号，如 1.3.0。
+	// Version 是升级包的目标发布版本号，如 1.3.1。
 	Version string `json:"version"`
 	// MinSchemaVersion 是升级包要求的最低结构版本：低于它说明库太旧，
 	// 必须先升到中间版本，否则新程序的结构补丁会跑在错误的基线上。

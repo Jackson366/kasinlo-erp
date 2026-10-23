@@ -2,6 +2,7 @@ package inv
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -46,11 +47,14 @@ func (s *Service) contractQuery(f ContractFilter, keyword string, actor *authz.I
 	if f.PartyID > 0 {
 		tx = tx.Where("party_id = ?", f.PartyID)
 	}
-	// 履约阶段是派生的（见 contractStage），所以这里把它翻译成日期条件，
-	// 而不是去查一个并不存在的状态列。
+	// 履约阶段是派生的（见 contractStage），所以这里把它翻译成日期 / 状态条件。
 	switch f.Stage {
+	case "unaudited":
+		tx = tx.Where("status = ?", model.InvContractPending)
 	case "pending":
-		tx = tx.Where("accepted_at IS NULL AND status <> ?", model.InvContractTerminated)
+		// 待验收只指「已审核、还没验收」：待审核的合同还没进入履约
+		tx = tx.Where("accepted_at IS NULL AND status NOT IN ?",
+			[]int16{model.InvContractPending, model.InvContractTerminated})
 	case "accepted":
 		tx = tx.Where("accepted_at IS NOT NULL")
 	case "warranty":
@@ -161,10 +165,10 @@ func (s *Service) ContractCreate(req ContractReq, actor *authz.Identity) (int64,
 		return 0, err
 	}
 
-	status := model.InvContractActive
-	if req.Status != nil {
-		status = *req.Status
-	}
+	// 新建一律「待审核」：合同一保存就会按付款计划生成应收 / 应付，
+	// 没有这道门槛，录错一份合同等于当场虚增一笔债权。
+	// 请求里的 status 在这里被忽略 —— 否则「新增时直接传 status=1」就绕过了审核。
+	status := model.InvContractPending
 	amount := round2(req.Amount)
 	retentionAmount, retentionRate := retentionValues(req.RetentionAmount, req.RetentionRate, amount)
 	it := model.InvContract{
@@ -224,6 +228,19 @@ func (s *Service) ContractUpdate(id int64, req ContractReq, actor *authz.Identit
 
 	amount := round2(req.Amount)
 	retentionAmount, retentionRate := retentionValues(req.RetentionAmount, req.RetentionRate, amount)
+
+	// 已审核的合同，金额 / 往来单位 / 类型不能直接改。
+	//
+	// 这三个字段决定「应收多少钱、向谁收」，改了等于换了一份合同 ——
+	// 而钱可能已经收了一部分，报表、账龄、台账全部要跟着变。
+	// 需要改就走「反审核 → 修改 → 重新审核」，让改动有明确的边界。
+	if old.Status != model.InvContractPending {
+		if amount != round2(old.Amount) || req.PartyID != old.PartyID || req.BizType != old.BizType {
+			return errcode.New(errcode.ErrConflict,
+				"合同已审核，金额与往来单位不能直接修改，请先反审核")
+		}
+	}
+
 	updates := map[string]any{
 		"contract_no": no, "name": strings.TrimSpace(req.Name), "biz_type": req.BizType,
 		"party_id": req.PartyID, "party_name": partyName,
@@ -233,9 +250,18 @@ func (s *Service) ContractUpdate(id int64, req ContractReq, actor *authz.Identit
 		"warranty_months": req.WarrantyMonths,
 		"retention_rate":  retentionRate, "retention_amount": retentionAmount,
 	}
-	// 状态是可选字段：不传就是「不改」，避免编辑基础信息时被默认值打回执行中
+	// 状态：待审核不能自己「改」成已审核（那等于绕过审核），
+	// 已审核不能直接退回待审核（那要走反审核，会连带清理验收记录）。
 	if req.Status != nil {
-		updates["status"] = *req.Status
+		next := *req.Status
+		switch {
+		case old.Status == model.InvContractPending && next != model.InvContractPending:
+			return errcode.New(errcode.ErrConflict, "合同尚未审核，请先审核通过")
+		case old.Status != model.InvContractPending && next == model.InvContractPending:
+			return errcode.New(errcode.ErrConflict, "已审核的合同不能直接退回待审核，请使用反审核")
+		default:
+			updates["status"] = next
+		}
 	}
 	// 已验收的合同改了质保月数，质保到期日要跟着重算 ——
 	// 否则报表里的「质保到期」还是按老月数算出来的日期。
@@ -315,6 +341,132 @@ func retentionValues(amount, rate, contractAmount float64) (float64, float64) {
 	return a, r
 }
 
+// ContractAudit 审核合同：待审核 → 执行中。
+//
+// 审核通过意味着「这份合同的钱可以入账了」：只有到这一步，付款计划才会
+// 出现在应收 / 应付里，也才能验收与登记收付款。
+func (s *Service) ContractAudit(id int64, actor *authz.Identity) error {
+	var c model.InvContract
+	if err := s.applyCreator(s.db.Where("id = ?", id), actor).Take(&c).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.New(errcode.ErrNotFound, "合同不存在")
+		}
+		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if c.Status != model.InvContractPending {
+		return errcode.New(errcode.ErrConflict, "该合同已审核，无需重复操作")
+	}
+	now := time.Now().In(database.Location())
+	// 条件更新兜底并发：两个人同时点审核，后到的那个拿到 0 行而不是写两次
+	res := s.db.Model(&model.InvContract{}).
+		Where("id = ? AND status = ?", id, model.InvContractPending).
+		Updates(map[string]any{
+			"status":     model.InvContractActive,
+			"audited_at": now,
+			"auditor":    actorName(actor),
+		})
+	if res.Error != nil {
+		return saveErr(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return errcode.New(errcode.ErrConflict, "该合同状态已被改动，请刷新后重试")
+	}
+	return nil
+}
+
+// ContractUnaudit 反审核：退回待审核，并同时撤销验收。
+//
+// 两个条件 / 动作都是为了不留下自相矛盾的数据：
+//   - 已有收付款不能反审核：钱在账上了，退回待审核会让它从应收里消失；
+//   - 同时清空验收与质保日期：合同要回炉改条款了，留着「已验收 + 质保到期」
+//     会让阶段显示成「待审核却已验收」。质保月数（条款本身）保留。
+func (s *Service) ContractUnaudit(id int64, actor *authz.Identity) error {
+	var c model.InvContract
+	if err := s.applyCreator(s.db.Where("id = ?", id), actor).Take(&c).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.New(errcode.ErrNotFound, "合同不存在")
+		}
+		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if c.Status == model.InvContractPending {
+		return errcode.New(errcode.ErrConflict, "该合同尚未审核")
+	}
+	var settled float64
+	if err := s.db.Model(&model.InvContractPlan{}).
+		Select("COALESCE(SUM(settled_amount),0)").Where("contract_id = ?", id).
+		Scan(&settled).Error; err != nil {
+		return errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if settled > settleEpsilon {
+		return errcode.Newf(errcode.ErrConflict,
+			"该合同已发生收付款 %.2f，不能反审核", round2(settled))
+	}
+	res := s.db.Model(&model.InvContract{}).
+		Where("id = ? AND status <> ?", id, model.InvContractPending).
+		Updates(map[string]any{
+			"status":          model.InvContractPending,
+			"audited_at":      nil,
+			"auditor":         "",
+			"accepted_at":     nil,
+			"accept_result":   "",
+			"warranty_end_at": nil,
+		})
+	if res.Error != nil {
+		return saveErr(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return errcode.New(errcode.ErrConflict, "该合同状态已被改动，请刷新后重试")
+	}
+	return nil
+}
+
+// ContractLogs 合同的操作记录（新增 / 修改 / 审核 / 验收 / 删除）。
+//
+// 数据来自系统操作日志，按请求路径归集：中间件已经记下了「谁、什么动作、
+// 什么请求体、什么结果」，再单独建一张合同变更表只会出现两份不一致的记录。
+//
+// 注意：操作日志是**异步批量落库**（channel + 批量 insert），所以刚做完的操作
+// 可能晚几百毫秒才出现在这里 —— 这是刻意的取舍，日志不该拖慢业务响应。
+func (s *Service) ContractLogs(id int64, actor *authz.Identity, limit int) ([]ContractLogRow, error) {
+	var c model.InvContract
+	if err := s.applyCreator(s.db.Select("id").Where("id = ?", id), actor).Take(&c).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errcode.New(errcode.ErrNotFound, "合同不存在")
+		}
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	// 路径不写死前缀（app.prefix / version 可配），用「后缀 + 后缀/下级」匹配，
+	// 避免 /contracts/12 把 /contracts/120 的记录也捞进来。
+	suffix := fmt.Sprintf("/inv/contracts/%d", id)
+	var list []model.OperationLog
+	if err := s.db.Where("path LIKE ? OR path LIKE ?", "%"+suffix, "%"+suffix+"/%").
+		Order("created_at DESC, id DESC").Limit(limit).Find(&list).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	out := make([]ContractLogRow, 0, len(list))
+	for _, it := range list {
+		out = append(out, ContractLogRow{
+			ID: it.ID, Username: it.Username, Action: it.Action,
+			Method: it.Method, IP: it.IP, Status: it.Status, CreatedAt: it.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
+// actorName 取操作人显示名：优先昵称，其次账号。
+func actorName(actor *authz.Identity) string {
+	if actor == nil {
+		return ""
+	}
+	if n := strings.TrimSpace(actor.Nickname); n != "" {
+		return n
+	}
+	return actor.Username
+}
+
 // contractDates 解析签订日期与履约起止，并校验先后顺序。
 func contractDates(req ContractReq) (time.Time, *time.Time, *time.Time, error) {
 	sign, err := parseDate(strings.TrimSpace(req.SignDate))
@@ -383,6 +535,7 @@ func toContractRow(it model.InvContract, attachCount int, operator string,
 		SignDate: it.SignDate, StartDate: it.StartDate, EndDate: it.EndDate,
 		Amount: it.Amount, Status: it.Status, Salesman: it.Salesman,
 		Operator: operator, Remark: it.Remark,
+		AuditedAt: it.AuditedAt, Auditor: it.Auditor,
 		AcceptedAt: it.AcceptedAt, AcceptResult: it.AcceptResult,
 		WarrantyMonths: it.WarrantyMonths, WarrantyEndAt: it.WarrantyEndAt,
 		RetentionRate: it.RetentionRate, RetentionAmount: it.RetentionAmount,

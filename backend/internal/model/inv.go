@@ -43,8 +43,13 @@ const (
 )
 
 // 合同状态
+//
+// 0 待审核是「准入门槛」而不是审批流：合同一保存就会按付款计划生成应收 / 应付，
+// 没有这道门槛时，录错一份合同等于当场虚增一笔债权，而终止它又能让债权凭空消失。
+// 审核不改变合同内容，只表示「这份合同的钱可以入账了」。
 const (
-	InvContractActive     int16 = 1 // 执行中
+	InvContractPending    int16 = 0 // 待审核（不进应收应付、不能验收、不能收付款）
+	InvContractActive     int16 = 1 // 执行中（已审核）
 	InvContractFinished   int16 = 2 // 已完成
 	InvContractTerminated int16 = 3 // 已终止
 )
@@ -379,6 +384,16 @@ type InvContract struct {
 	Salesman  string  `gorm:"size:64" json:"salesman"`
 	Remark    string  `gorm:"size:255" json:"remark"`
 	CreatedBy int64   `json:"createdBy"`
+
+	// ---- 审核 ----
+	//
+	// 只记「谁在什么时候放行」，不记审批意见：这是一个两态门槛，不是多级审批。
+	// 反审核会把这两列清空（否则会留下「已审核但状态是待审核」的矛盾数据）。
+	//
+	// 时间列不写 type：PostgreSQL 没有 datetime（那是 MySQL 的类型），
+	// 写死会让建表直接失败。交给 GORM 按驱动映射成 timestamptz。
+	AuditedAt *time.Time `json:"auditedAt"`
+	Auditor   string     `gorm:"size:64" json:"auditor"`
 
 	// ---- 验收与质保 ----
 	//

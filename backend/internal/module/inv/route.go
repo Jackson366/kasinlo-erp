@@ -71,6 +71,11 @@ func Register(rg *gin.RouterGroup) {
 		g.DELETE("/contracts/:id", middleware.RequirePerm("inv:contract:delete"), h.ContractDelete)
 		// 验收与收付款单列权限码：能录合同的人未必能确认验收、更未必能登记收付款。
 		g.POST("/contracts/:id/accept", middleware.RequirePerm("inv:contract:accept"), h.ContractAccept)
+		// 审核是「钱能不能入账」的门槛，与录入分开授权
+		g.POST("/contracts/:id/audit", middleware.RequirePerm("inv:contract:audit"), h.ContractAudit)
+		g.POST("/contracts/:id/unaudit", middleware.RequirePerm("inv:contract:audit"), h.ContractUnaudit)
+		// 操作记录：能看合同的人就能看它自己的变更记录，不需要额外的日志权限
+		g.GET("/contracts/:id/logs", middleware.RequirePerm("inv:contract:list"), h.ContractLogs)
 		// 期次收付款走独立的路径段：与 /contracts/:id 同层会与通配段抢路由，
 		// 而且「期次」本来也不是合同的子资源（它有自己的 ID 空间）。
 		g.POST("/contract-plans/settle", middleware.RequirePerm("inv:contract:settle"), h.ContractPlanSettle)

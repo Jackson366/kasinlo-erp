@@ -1371,6 +1371,29 @@ async function main() {
   })
   ok('计划合计超合同金额被拒', ctPlanOver.status === 400 && ctPlanOver.json?.code === 40000, JSON.stringify(ctPlanOver.json).slice(0, 160))
 
+  // ---- 审核是「钱能不能入账」的门槛 ----
+  ok('新建合同默认待审核', planRow.status === 0 && planRow.stage === 'unaudited', `status=${planRow.status} stage=${planRow.stage}`)
+  const recvBefore = await request('GET', `/inv/finance/receivables?page=1&pageSize=50&source=plan`, { token })
+  ok(
+    '待审核合同不进应收',
+    !(recvBefore.json?.data?.list || []).some((r) => r.contractId === planCid),
+    '',
+  )
+  const acceptBeforeAudit = await request('POST', `/inv/contracts/${planCid}/accept`, {
+    token,
+    body: { acceptedAt: '2026-10-20', acceptResult: '合格' },
+  })
+  ok('待审核不能验收', acceptBeforeAudit.json?.code === 40900, JSON.stringify(acceptBeforeAudit.json).slice(0, 160))
+
+  const ctAudit = await request('POST', `/inv/contracts/${planCid}/audit`, { token })
+  ok('合同审核通过', ctAudit.status === 200 && ctAudit.json?.code === 0, JSON.stringify(ctAudit.json).slice(0, 160))
+  const afterAudit = await request('GET', `/inv/contracts/${planCid}`, { token })
+  const afterAuditRow = afterAudit.json?.data || {}
+  ok('审核后状态=执行中且记录审核人', afterAuditRow.status === 1 && !!afterAuditRow.auditedAt && !!afterAuditRow.auditor, `${afterAuditRow.status}/${afterAuditRow.auditor}`)
+
+  const recvAfter = await request('GET', `/inv/finance/receivables?page=1&pageSize=50&source=plan`, { token })
+  ok('审核后进应收', (recvAfter.json?.data?.list || []).some((r) => r.contractId === planCid), '')
+
   const ctAccept = await request('POST', `/inv/contracts/${planCid}/accept`, {
     token,
     body: { acceptedAt: '2026-10-20', acceptResult: '合格', warrantyMonths: 6 },
@@ -1406,6 +1429,21 @@ async function main() {
     body: { planId: planFirst.id, amount: 1 },
   })
   ok('已结清期次再收款被拒', planOver.json?.code === 40900, JSON.stringify(planOver.json).slice(0, 160))
+
+  // 已审核 + 已有收付款：金额锁死、反审核被拒
+  const ctLocked = await request('PUT', `/inv/contracts/${planCid}`, {
+    token,
+    body: {
+      contractNo: planAfterRow.contractNo, name: planAfterRow.name, bizType: planAfterRow.bizType,
+      partyId: planAfterRow.partyId, signDate: '2026-10-01', amount: 99999,
+      plans: (planAfterRow.plans || []).map((p) => ({
+        id: p.id, seq: p.seq, name: p.name, kind: p.kind, rate: p.rate, amount: p.amount,
+      })),
+    },
+  })
+  ok('已审核合同不能改金额', ctLocked.json?.code === 40900, JSON.stringify(ctLocked.json).slice(0, 160))
+  const ctUnaudit = await request('POST', `/inv/contracts/${planCid}/unaudit`, { token })
+  ok('有收付款不能反审核', ctUnaudit.json?.code === 40900, JSON.stringify(ctUnaudit.json).slice(0, 160))
 
   // 应收应付：合同期次是第二类来源，按 source 能单独筛出来
   const recvPlan = await request('GET', `/inv/finance/receivables?page=1&pageSize=50&source=plan`, { token })
