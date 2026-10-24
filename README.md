@@ -1,313 +1,192 @@
-# Nova ERP
+# Kasinlo ERP
 
-一套「简洁够用」的现代化后台管理系统：**Go + Vue 3 + PostgreSQL**，模块化分层，专为 AI 辅助开发做了目录与约定设计。
+面向中小企业日常经营的轻量 ERP，围绕采购、销售、库存、合同履约与收付款组织业务，采用 **Go + Vue 3 + TypeScript + PostgreSQL** 技术栈。
 
-当前仓库里跑的就是一套**进销存后台**（`inv` 模块，11 个页面 65 个接口）：
-数据概览 / 采购管理 / 销售管理 / 合同管理 / 库存管理 / 应收应付 / 报表中心 / 打印模板 / 商品档案（含左侧分类树）/ 客户管理 / 供应商管理。
-登录后直接落在顶级菜单「数据概览」，框架自带的仪表盘已下线。
+本仓库基于 [Nova ERP](https://gitee.com/xy_qcdz/nova-erp) 建立，用于独立维护与后续业务扩展。保留上游代码、提交历史和 MIT 许可证；当前功能继承自上游，仓库重新命名不代表已完成业务改造。
 
-- 后端：Gin + GORM + PostgreSQL，分层清晰（`config / logger / database / authz / middleware / model / module / seed`）
-- 前端：Vue 3 + Vite + TypeScript + Element Plus，菜单驱动动态路由
-- 进销存：采购与销售共用一张单据表（`biz_type` 区分）；单据「完成」时**同事务**生成出入库单并原子调整库存（出库校验库存充足）；应收应付由已完成单据推导，**结算状态不落库**；业务线按实体 `bizType` 二次鉴权，仓库权限看不到成本金额
-- 商品模型：`商品 → 规格 → 计量单位` 三层。**库存只记在规格上（按基本单位计），单价记在单位上** —— 「`φ20` 剩 30 根 = 180 米」永远只有一个数，「1 箱 100 元 vs 1 个 10.5 元」也不会混。单据明细选到「规格 + 单位」后按 `qty × rate` 折算扣减
-- 商品分类：多级父子字典表（`parent_id`），与商品档案同页（左侧树）；同级名称唯一、禁止挂到自己子孙下（成环会让前端组装树时无限递归）
-- 主题：内置**亮色 / 暗色**双主题，跟随系统偏好 + 手动切换 + 本地记忆，首屏无闪烁
-- 权限：JWT 双令牌 + RBAC（用户-角色-菜单）+ 按钮级权限指令（不摘 DOM、运行期权限变化可重新判定）+ **数据范围**（全部 / 本部门 / 本部门及以下 / 仅本人，读写同时生效，统一收口用户 / 部门 / 日志 / **进销存单据**；商品 / 客户是共享主数据，不按范围隔离）
-- 账号安全：连续失败锁定、JWT 锁死 HS256 且校验 issuer、限流记账原子且 key 数有硬上界、改密码即吊销旧令牌（`token_epoch`）、审计 IP 不可被 `X-Forwarded-For` 伪造、清空登录日志不解除账号锁定
-- 健壮性：客户端可控整数（页码）统一收敛、聚合查询错误一律上报而非静默返回空、审计日志组件未初始化会显式报错
-- 导入导出：用户 / 角色 / 操作日志 / 登录日志四类 Excel 导出，用户**两阶段批量导入**（先校验预览、再确认写库）
-- 依赖全部为 MIT / Apache-2.0 / BSD-3-Clause 等宽松许可，无 GPL 传染风险
-- 本项目自身以 [MIT 许可](LICENSE) 发布
+## 功能范围
 
-> **关于名字**：`Nova ERP` 是这个项目的自有命名（Go module 名与目录名），
-> 不是某个现成开源框架。代码是按需求从零写的，仅在依赖层面使用了上述成熟开源库。
+| 模块 | 主要能力 |
+| --- | --- |
+| 商品与往来单位 | 多级商品分类、多规格、多计量单位及价格，客户与供应商档案 |
+| 采购与销售 | 单据录入、审核、反审核、取消、附件与打印 |
+| 库存管理 | 审核生成出入库单、库存查询与预警、出库库存校验、作废回滚 |
+| 合同管理 | 合同审核、分期付款计划、验收、质保金跟踪、期次收付款与操作记录 |
+| 应收应付 | 单据及合同期次应收应付、部分结算、单据批量收付款、逾期统计 |
+| 报表与打印 | 经营概览、采购销售排行与明细、库存分析、合同执行与台账、Excel 导出、打印模板设计 |
+| 系统管理 | 用户、部门、角色、菜单及按钮权限、数据范围、操作日志、登录日志 |
+| 系统运维 | 数据库备份恢复、数据清理、巡检与系统升级 |
 
----
+## 技术架构
 
-## 一、快速开始
+| 层次 | 技术与组织方式 |
+| --- | --- |
+| 前端 | Vue 3、TypeScript、Vite、Element Plus、Pinia、Vue Router、Axios、ECharts |
+| 后端 | Go、Gin、GORM，按业务模块组织 DTO、Handler、Service 与路由 |
+| 数据库 | PostgreSQL，启动时执行结构迁移与基础数据初始化 |
+| 认证授权 | JWT 双令牌、RBAC、部门及本人数据范围 |
+| 接口文档 | Swagger / OpenAPI，由后端注释生成 |
 
-### 1. 环境要求
+后端采用模块化单体：模块声明路由、菜单与权限，组装层统一注册。前端通过后端菜单生成动态路由，公共列表查询与弹窗逻辑由组合式函数复用。
 
-| 组件 | 版本 | 说明 |
-| --- | --- | --- |
-| Go | 1.26+ | 与 `go.mod` 一致，实测 go1.26.4 |
-| Node.js | 18+ | 实测 v22 |
-| PostgreSQL | 13+ | 实测 17.6，监听 `127.0.0.1:5432` |
+### 核心业务约定
 
-### 2. 初始化数据库
+- **库存按规格、按基本单位记账**：商品、规格、计量单位分层，单据保留单位换算快照。
+- **审核与过账同事务完成**：生成出入库单、调整库存和推进单据状态一起提交；出库通过条件更新防止并发超扣。
+- **反审核撤销关联影响**：按业务约束回滚库存与出入库记录，涉及已收付款等情况时拒绝不允许的操作。
+- **结算状态由金额推导**：根据总额与已结算金额计算未结清、部分结算、已结清。
+- **后端执行权限校验**：菜单和按钮展示与接口权限配合，单据读写同时受数据范围约束。
 
-只需保证 PostgreSQL 正常运行、`postgres` 账号可用。
-**数据库 `nova_inv_v5` 与全部数据表会由程序自动创建**，无需手工执行 DDL。
+## 快速开始
 
-连接信息写在 `backend/config.yaml`。**该文件不进版本库**（含数据库口令），
-先从模板复制一份再改：
+### 1. 准备环境
+
+| 组件 | 要求 |
+| --- | --- |
+| Go | 1.26.0 或更高，以 `backend/go.mod` 为准 |
+| Node.js | 推荐 22 LTS，并使用 npm 安装前端依赖 |
+| PostgreSQL | 13 或更高 |
+
+```bash
+git clone https://github.com/Jackson366/kasinlo-erp.git
+cd kasinlo-erp
+```
+
+### 2. 配置后端
 
 ```bash
 cd backend
 cp config.example.yaml config.yaml
 ```
 
+编辑 `config.yaml`，填写数据库连接信息，并替换 JWT 密钥占位值：
+
 ```yaml
+app:
+  name: kasinlo-erp
+  mode: debug
+  host: 127.0.0.1
+  demo_data: true
+
 database:
   host: 127.0.0.1
   port: 5432
   user: postgres
-  password: CHANGE_ME      # ← 改成你本机的口令
-  dbname: nova_inv_v5
+  password: YOUR_DATABASE_PASSWORD
+  dbname: kasinlo_erp
+
+jwt:
+  secret: REPLACE_WITH_A_RANDOM_LONG_SECRET
 ```
 
-任意配置项都可用环境变量覆盖，规则为 `NOVA_<SECTION>_<KEY>`（全大写），例如：
+以上仅展示需要修改的字段，**不要用此片段覆盖完整配置文件**。可通过 `openssl rand -base64 48` 生成密钥。配置模板中的默认密钥占位值会被程序拒绝。
 
-```bash
-NOVA_DATABASE_PASSWORD=xxxx      # 数据库口令
-NOVA_APP_PORT=9090               # 服务端口
-NOVA_JWT_SECRET=change-me        # JWT 密钥
-```
+数据库不存在时，程序会尝试自动创建，数据库账号需具备 `CREATEDB` 权限；也可以提前建好数据库并授权。`demo_data: true` 用于本地体验，正式环境保持 `false`。
+
+当前代码沿用上游的 Go module 名 `nova-erp`、`NOVA_*` 环境变量前缀和部分界面名称。配置覆盖项以 [配置模板](backend/config.example.yaml) 为准。
 
 ### 3. 启动后端
 
+在 `backend` 目录执行：
+
 ```bash
-cd backend
-go run ./cmd/server -config config.yaml          # 首次启动会自动建库、迁移、灌入种子数据
-go run ./cmd/server -config config.yaml -seed    # 强制重跑种子数据（幂等）
+go run ./cmd/server -config config.yaml
 ```
 
-启动后：
-
-- 服务地址：`http://127.0.0.1:6085`
-- 接口前缀：`/api/v1`
-- 健康检查：`GET http://127.0.0.1:6085/health`
+默认服务为 `http://127.0.0.1:6085`，接口前缀为 `/api/v1`，健康检查为 `/health`。需要在线接口文档时，将配置中的 `app.swagger` 改为 `true`，再访问 `/swagger/index.html`；配置模板默认关闭此入口。
 
 ### 4. 启动前端
 
+另开终端，在仓库根目录执行：
+
 ```bash
 cd frontend
-npm install
-npm run dev            # http://localhost:6083
+npm ci
+npm run dev
 ```
 
-Vite 已把 `/api` 与 `/swagger` 代理到 `http://127.0.0.1:6085`，无需处理跨域；
-在线接口文档在开发时可直接访问 `http://localhost:6083/swagger/index.html`。
+访问 `http://localhost:6083`。Vite 默认代理后端请求到 `http://127.0.0.1:6085`。
 
-### 5. 切换主题
+### 5. 首次登录
 
-顶栏右侧的太阳 / 月亮按钮即可切换亮色与暗色，**登录页右上角**也有一个（避免暗色用户每次进登录页都被闪一下）。
-
-| 行为 | 说明 |
-| --- | --- |
-| 首次访问 | 未保存过选择时跟随操作系统偏好（`prefers-color-scheme`） |
-| 手动切换后 | 选择写入 `localStorage.nova_theme`，此后不再跟随系统 |
-| 首屏 | `index.html` 内联脚本在样式生效前就写好 `<html class="dark">`，无白闪 |
-| 图表 | ECharts 的坐标轴 / 渐变 / tooltip 会同步换色（见 `utils/theme.ts`） |
-
-### 6. 导入导出
-
-| 入口 | 位置 | 说明 |
+| 账号 | 初始密码 | 用途 |
 | --- | --- | --- |
-| 导出 | 用户 / 角色 / 操作日志 / 登录日志 列表右上角 | 导出内容与当前筛选条件一致；用户页支持「导出选中项」 |
-| 下载模板 | 用户页 → 「导入」→ 第 1 步 | 模板含「用户导入」+「填写说明」两个工作表 |
-| 批量导入 | 用户页 → 「导入」→ 第 2 步 | 先校验预览（含逐行失败原因），确认后才写库 |
+| `admin` | `admin123456` | 系统管理员 |
+| `demo` | `demo123456` | 启用演示数据时初始化的只读账号 |
 
-导入规则要点：
+正式使用前修改初始密码与 JWT 密钥，关闭演示数据，并按实际部署环境配置访问地址。业务附件保存在文件目录中，备份时需同时保存数据库与附件目录。
 
-- 表头列顺序必须与模板一致，否则直接拒绝
-- 合法行照常写入、非法行跳过并给出原因，**不会因为一行出错整批失败**
-- 密码列留空使用默认密码 `Aa123456`
-- 单文件上限 5 MB、单次最多 1000 行
+## 目录结构
 
-### 7. 内置账号
-
-| 账号 | 密码 | 角色 | 说明 |
-| --- | --- | --- | --- |
-| `admin` | `admin123456` | 超级管理员 | 拥有全部权限 |
-| `demo` | `demo123456` | 只读账号 | 仅可查看，所有写操作被后端拒绝 |
-
-> 生产环境请第一时间修改默认口令与 `NOVA_JWT_SECRET`。
-
-### 8. 进销存业务
-
-登录后落在「数据概览」，侧边栏第一组就是进销存。
-
-| 页面 | 主要能力 |
+| 目录 | 内容 |
 | --- | --- |
-| 数据概览 | 客户 / 销售 / 应收 / 库存 / 待处理单据五张指标卡 + 趋势图 + 品类占比 + 客户排行 |
-| 采购管理 / 销售管理 | 开单（明细行内编辑，选商品 → 规格 → 单位，单价留 0 时自动取所选单位的价格）、审核（生成出入库单）、**反审核**（作废出入库单并回滚库存）、取消、删除 |
-| 库存管理 | 出入库单据（可打印、可作废回滚）+ 库存查询（**按规格出账**、基本单位呈现 / 预警标红 / 库存总值） |
-| 合同管理 | 合同台账 + **审核（钱能不能入账的门槛）** + **付款计划（分期）** + 验收（自动算质保到期）+ 质保金跟踪 + 期次收付款 + **操作记录**；列表/详情/附件/导出/打印；阶段由审核、验收与质保日期派生 |
-| 应收应付 | 明细与汇总（总额 / 已结算 / 未结 / 逾期）+ 登记收付款；**两类来源**：已审核单据 + 合同未结清期次，可按来源筛选，汇总显示「单据 / 合同」构成 |
-| 报表中心 | 八区标签分栏：**经营总览**（KPI + 趋势 + 品类占比 + 客户排行）、**销售排行**（客户 / 产品维度，全量不截断）、**采购排行**（供应商 / 产品维度）、**库存排行**（按库存金额）、**销售明细** / **采购明细**（单据明细粒度，可按往来单位筛、可导出）、**合同执行**（计划 / 已收付 / 未收付 / 质保金未收 / 阶段）、**合同台账**（逐笔收付款流水）；前六区带时间范围预设 + 自定义起止 + 品类筛选（含子分类），合同两区自带阶段 / 类型筛选；**导出 Excel + A4 打印** |
-| 打印模板 | 可视化设计打印版式：**明细列可增删 / 改名 / 调顺序 / 设对齐**、**表头公司信息与 Logo**、**页边距 / 行高 / 字号 / 表头底色**、**签收栏 / 备注 / 合计大写 / 附加文字**，右侧实时预览，A4/A5 |
-| 商品档案 | 左栏分类树（多级，可增改删）+ 右栏商品表格：**一个商品多规格、每个规格多计量单位**（含换算率与各自价格，**价格默认收起**、需要时一键展开）；库存只读（由单据驱动）；录入时自动带出同名商品防重；规格可单独停用 |
-| 客户管理 / 供应商管理 | 档案 CRUD，行内含余额与单据数；被单据引用过则不可删 |
+| `backend/cmd` | 服务端与运维命令入口 |
+| `backend/internal/module/inv` | 进销存、合同、收付款与报表业务 |
+| `backend/internal/assembly` | 模块组装 |
+| `backend/internal/model` | 数据模型 |
+| `backend/internal/authz`、`middleware` | 授权与请求中间件 |
+| `backend/test` | 后端接口及回归测试 |
+| `frontend/src/views` | 业务页面 |
+| `frontend/src/api`、`types` | 接口封装与类型定义 |
+| `frontend/src/composables` | 列表查询、弹窗等公共逻辑 |
+| `scripts` | 冒烟验证、浏览器验证与打包脚本 |
+| `docs` | 使用、接口、数据结构、部署及运维文档 |
 
-**业务规则的五个要点**（详见 [docs/GUIDE.md](docs/GUIDE.md) 与 [AGENTS.md](AGENTS.md) §5.62–5.63）：
+## 开发与验证
 
-1. **出库不能出成负库存**。校验不通过返回 40900 并带上商品名与现有库存，不是含糊的「数据库操作失败」。
-2. **结算状态是推导值**（`总额 − 已结算` → 未结清 / 部分结算 / 已结清），不落库，避免两份口径。
-3. **仓库权限看不到成本**。出入库单的行结构里没有金额字段 —— 能看数量不等于能看钱。
-4. **到期日是内部结算字段**（选填，只用于逾期判定），不进打印纸面；未填的永远不算逾期，
-   明细与汇总走同一个口径（冒烟脚本断言「汇总 == 逐行之和」）。
-5. **库存记规格、价格记单位**。库存按基本单位折算后落在规格上（`qty_base = qty × rate`），
-   价格落在计量单位上；明细落库前校验「商品 → 规格 → 单位」三元组链，防止下拉串了把库存记错地方。
-
----
-
-## 二、目录结构
-
-```
-nova-erp/
-├── LICENSE                             # MIT
-├── backend/
-│   ├── cmd/server/main.go              # 进程入口：装配依赖 + 优雅关停
-│   ├── cmd/ops/main.go                 # 运维命令 nova-ops：备份 / 恢复 / 清理 / 体检
-│   ├── config.example.yaml             # 配置模板（复制为 config.yaml 后填写）
-│   ├── config.yaml                     # 本地配置，含口令，已在 .gitignore 中
-│   ├── internal/
-│   │   ├── bootstrap/bootstrap.go      # 初始化流程（测试与 main 共用）
-│   │   ├── config/                     # 配置加载
-│   │   ├── logger/                     # zap 日志
-│   │   ├── database/                   # 连接、自动迁移、部分唯一索引
-│   │   ├── authz/                      # 身份与权限集合（30s 缓存）
-│   │   ├── middleware/                 # TraceID / Logger / Recovery / CORS / Auth / RequirePerm / 操作日志
-│   │   ├── model/                      # GORM 模型（框架表 + 进销存业务表）
-│   │   ├── module/inv/                 # 进销存业务模块（本仓库的主线功能）
-│   │   ├── module/ops/                  # 系统运维模块：备份 / 清理 / 巡检 / 系统升级（管理页接口）
-│   │   ├── module/<业务模块>/           # ★ 业务代码都放这里
-│   │   │   ├── dto.go                  #    请求/响应结构体
-│   │   │   ├── service.go              #    业务逻辑
-│   │   │   ├── handler.go              #    HTTP 入参出参
-│   │   │   ├── route.go                #    路由注册（含权限码）
-│   │   │   └── excel.go                #    可选：该模块的导入导出
-│   │   ├── oplog/                      # 操作日志异步落库
-│   │   ├── ops/                        # 运维能力：备份 / 恢复 / 清理 / 体检 / 系统升级（cmd/ops 与 module/ops 共用）
-│   │   ├── pkg/                        # 通用工具：errcode / response / bind / jwt / hash / page / sheet
-│   │   ├── router/router.go            # 路由总装配
-│   │   └── seed/seed.go                # 幂等种子数据
-│   └── test/                           # 进程内 E2E 测试（独立测试库）
-├── frontend/
-│   └── src/
-│       ├── api/                        # 按模块拆分的接口封装
-│       ├── components/                 # AppIcon / EChart / Pagination 等通用组件
-│       ├── directives/permission.ts    # v-perm 按钮级权限指令
-│       ├── layout/                     # 布局：Sidebar / Navbar / TagsView / Breadcrumb
-│       ├── router/                     # 常量路由 + 守卫 + 动态路由转换
-│       ├── store/                      # user / permission / app（含主题状态）
-│       ├── styles/                     # 设计令牌（亮/暗两套）+ 全局样式 + Element Plus 覆写
-│       ├── types/api.ts                # 与后端一一对应的类型定义
-│       ├── utils/                      # auth / request / download / format / theme
-│       └── views/                      # 页面：system / inv（进销存）/ dashboard
-├── scripts/
-│   ├── api-smoke.mjs                   # 零依赖接口冒烟脚本（290 项）
-│   ├── browser-verify.mjs              # 零依赖浏览器运行时验证（88 项 / 16 个页面，含双主题）
-│   ├── interaction-verify.mjs          # 零依赖受控组件交互验证（9 项）
-│   ├── gen-swagger.sh                  # swag init 封装：重新生成 OpenAPI 文档
-│   └── fixtures/                       # 测试样例文件（含生成脚本）
-├── docs/                               # GUIDE.md / API.md / DATABASE.md / OPS.md（运维方案）
-└── AGENTS.md                           # ★ AI 开发约定（改代码前先读）
-```
-
----
-
-## 三、验证方式
-
-### 后端：进程内 E2E 测试
-
-```bash
-cd backend
-go vet ./...
-go test ./test/... -count=1        # 68 个测试、139 条用例
-```
-
-测试使用独立库 `nova_inv_v5_test`，通过 `httptest` 在进程内跑完整路由，不依赖外部服务。
-测试配置同样不进版本库，首次跑测试前复制一份：
+后端静态检查与测试：
 
 ```bash
 cd backend
 cp test/testdata/config.example.yaml test/testdata/config.yaml
+# 编辑测试配置，填写数据库连接与独立测试库，并替换 JWT 密钥占位值。
+go vet ./...
+go test ./... -count=1
 ```
 
-### 后端：对运行实例的接口冒烟
-
-```bash
-node scripts/api-smoke.mjs                      # 默认 http://127.0.0.1:6085
-node scripts/api-smoke.mjs http://host:port     # 指定实例
-```
-
-共 328 项断言，覆盖登录/令牌刷新/CRUD/权限隔离/参数校验/日志/导入导出/数据范围/令牌吊销/报表排行维度/库存分析/反审核/系统运维（备份·清理·巡检·升级·业务重置）。
-
-### 前端：类型检查与构建
+前端类型检查、测试与生产构建：
 
 ```bash
 cd frontend
-npm run typecheck      # vue-tsc --noEmit
-npm run build          # 类型检查 + 产出 dist/
-npm run preview        # 本地预览生产产物（已配置 /api 代理）
+npm ci
+npm run typecheck
+npm test
+npm run build
 ```
 
-### 打包交付
+系统启动后，可在仓库根目录运行现有验证脚本；浏览器验证还需本机具备脚本支持的 Chrome 环境：
 
 ```bash
-# 整机交付包（首次部署）：server.exe + ops.exe + web/ + 配置模板 + 启动脚本 + 部署手册
-node scripts/build-release.mjs --version 1.1.6
-#   → build/release/nova-erp-1.3.0-win64.zip
-
-# 升级包（已部署环境的增量）：由管理页「系统运维 → 系统升级」上传
-node scripts/build-upgrade-package.mjs --version 1.3.0
-#   → build/upgrade/nova-erp-1.3.0.zip
-```
-
-生产部署（Windows 单机、无需 Nginx —— 后端自带前端静态托管）见
-**[docs/DEPLOY.md](docs/DEPLOY.md)**：装 PostgreSQL → 改 `config.yaml` → `start.bat` → 改密。
-
-> 交付前务必确认 `app.demo_data: false`（否则空库会灌入示例客户/商品/单据），
-> 并把 `jwt.secret` 换成随机串（模板里的占位值会让启动直接失败）。
-
-### 前端：真实浏览器运行时验证
-
-编译通过不等于运行时正确。本项目曾出现过「类型检查全绿、但冷启动直接落 404」这类缺陷，
-因此提供了一份零依赖的浏览器验证脚本（Node 原生 `fetch` + `WebSocket` 驱动系统已装的 Chrome）：
-
-```bash
-# 前提：后端与前端都已启动
+node scripts/api-smoke.mjs
 node scripts/browser-verify.mjs
-APP_URL=http://localhost:4173 node scripts/browser-verify.mjs    # 验证生产产物
+node scripts/interaction-verify.mjs
 ```
 
-87 项断言，覆盖登录链路、F5 深链、菜单遍历白屏检测、树选择器渲染、**商品多规格编辑弹窗（结构 + 嵌套校验）**、**分类树操作按钮可见性**、**开单选商品的关键字模糊查找**、**商品表单分类下拉含全部层级且可搜索**、**明细商品列宽度下限**、**弹窗尺寸分档（1280 / 1100）**、**echarts 6 下的图表实际渲染（canvas 像素尺寸）**、**报表中心四区导航 + 排行维度 + 库存分析 + 导出入口**、**单据反审核入口**、**商品规格价格折叠**、按钮级权限与导入导出入口、账号切换、控制台干净度。
-退出码非 0 表示存在失败项，可直接接入 CI。
+脚本与测试继承自上游，验证结果以实际运行输出为准。
 
-脚本另外覆盖了**双主题**：跟随系统偏好、登录页与顶栏切换、刷新后持久化、
-暗色下无浅色底残留（按亮度阈值扫描）、关键文字与主按钮的对比度（WCAG 算法）、
-以及暗色下弹窗 / 下拉弹层 / 输入框的底色。
+## 当前边界
 
-> 注意：无头 Chrome 的 `prefers-color-scheme` 默认是 **dark**，脚本会在连接后显式固定为 `light`，
-> 否则主题初始值会随浏览器实现漂移。详见 `AGENTS.md` §5.14。
+- 当前面向单组织使用，尚未实现完整的 SaaS 多租户隔离与订阅体系。
+- 库存以商品规格为核心，尚未建立完整的多仓库、库位与批次库存模型。
+- 尚未提供 BOM、MRP、生产工单等制造业务。
+- 收付款与应收应付属于业务往来管理，尚未形成总账、凭证与会计期间体系。
+- 经营报表中的销售成本使用当前采购价计算，不能直接作为历史出库成本核算结果。
 
----
+## 文档导航
 
-## 四、下一步去哪看
+- [使用与开发指南](docs/GUIDE.md)
+- [接口说明](docs/API.md)
+- [数据库说明](docs/DATABASE.md)
+- [部署说明](docs/DEPLOY.md)
+- [运维说明](docs/OPS.md)
+- [升级说明](docs/UPGRADE.md)
+- [上游变更日志](docs/CHANGELOG.md)
+- [开发约定与已知问题](AGENTS.md)
 
-- **新接手？先读 [`docs/GUIDE.md`](docs/GUIDE.md)** —— 项目说明、使用步骤、新增业务全流程
-  （同内容的 Word 分发版：[`docs/Nova-Admin-项目说明与开发指南.docx`](docs/Nova-Admin-项目说明与开发指南.docx)）
-- 接口清单与响应约定 → [`docs/API.md`](docs/API.md)
-  （在线版：后端开启 `app.swagger` 后访问 `/swagger/index.html`，由 swag 注解自动生成）
-- 数据表结构与索引设计 → [`docs/DATABASE.md`](docs/DATABASE.md)
-- 后台系统独立升级方案（目录契约 / 迁移分段 / 升级 SOP / 回滚） → [`docs/UPGRADE.md`](docs/UPGRADE.md)
-- 备份 / 数据清理 / 系统升级的运维方案与命令（`nova-ops` 命令行 + 后台「系统运维」页） → [`docs/OPS.md`](docs/OPS.md)
-- 版本变更明细（改了什么、动了哪些表、要不要手工步骤） → [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
-- 新增模块 / 新增页面的标准做法、踩坑记录 → [`AGENTS.md`](AGENTS.md)
+部分继承文档仍使用 Nova ERP 名称、默认数据库名和原打包文件名；执行命令时以实际配置与脚本为准。
 
----
+## 来源与许可证
 
-## 五、依赖许可
+上游项目：[Nova ERP](https://gitee.com/xy_qcdz/nova-erp)。本仓库导入基于上游 `master` 分支的 `v1.3.1`，对应提交 [`ec0ab0c67c2ff6a6841fc902eb210c0b2f79a804`](https://gitee.com/xy_qcdz/nova-erp/commit/ec0ab0c67c2ff6a6841fc902eb210c0b2f79a804)。感谢上游作者与贡献者。
 
-| 层 | 主要依赖 | 许可 |
-| --- | --- | --- |
-| 后端 | gin, gorm, pgx, golang-jwt/v5, validator/v10, zap | MIT |
-| 后端 | golang.org/x/crypto | BSD-3-Clause |
-| 前端 | vue, vue-router, pinia, element-plus, axios, dayjs, nprogress, @vueuse/core, vite, sass | MIT |
-| 前端 | echarts | Apache-2.0 |
-| 前端 | typescript | Apache-2.0 |
-| 后端 | github.com/xuri/excelize/v2 | BSD-3-Clause |
-
-均为宽松许可，可商用、可闭源分发。本项目自身以 **MIT** 许可发布，全文见 [`LICENSE`](LICENSE)。
+项目采用 [MIT License](LICENSE)，保留原始版权与许可声明。依赖库遵循各自许可证。
