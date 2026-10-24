@@ -1,0 +1,1675 @@
+{
+  "sys_schema_versions": {
+    "appliedAt": {
+      "column": "applied_at",
+      "type": "time",
+      "optional": false
+    },
+    "note": {
+      "column": "note",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    }
+  },
+  "sys_roles": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "name": {
+      "column": "name",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "code": {
+      "column": "code",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "sort": {
+      "column": "sort",
+      "type": "long",
+      "optional": false
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    },
+    "dataScope": {
+      "column": "data_scope",
+      "type": "long",
+      "optional": false
+    },
+    "isBuiltin": {
+      "column": "is_builtin",
+      "type": "bool",
+      "optional": false
+    },
+    "remark": {
+      "column": "remark",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    }
+  },
+  "sys_role_menus": {
+    "roleId": {
+      "column": "role_id",
+      "type": "long",
+      "optional": false
+    },
+    "menuId": {
+      "column": "menu_id",
+      "type": "long",
+      "optional": false
+    }
+  },
+  "sys_menus": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "parentId": {
+      "column": "parent_id",
+      "type": "long",
+      "optional": false
+    },
+    "name": {
+      "column": "name",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "path": {
+      "column": "path",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "component": {
+      "column": "component",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "redirect": {
+      "column": "redirect",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "title": {
+      "column": "title",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "icon": {
+      "column": "icon",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "type": {
+      "column": "type",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "permission": {
+      "column": "permission",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "sort": {
+      "column": "sort",
+      "type": "long",
+      "optional": false
+    },
+    "hidden": {
+      "column": "hidden",
+      "type": "bool",
+      "optional": false
+    },
+    "keepAlive": {
+      "column": "keep_alive",
+      "type": "bool",
+      "optional": false
+    },
+    "isExternal": {
+      "column": "is_external",
+      "type": "bool",
+      "optional": false
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    }
+  },
+  "sys_users": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "username": {
+      "column": "username",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "password": {
+      "column": "password",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "nickname": {
+      "column": "nickname",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "email": {
+      "column": "email",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "phone": {
+      "column": "phone",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "avatar": {
+      "column": "avatar",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "deptId": {
+      "column": "dept_id",
+      "type": "long",
+      "optional": true
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    },
+    "tokenEpoch": {
+      "column": "token_epoch",
+      "type": "long",
+      "optional": false
+    },
+    "remark": {
+      "column": "remark",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "lastLoginAt": {
+      "column": "last_login_at",
+      "type": "time",
+      "optional": true
+    },
+    "lastLoginIp": {
+      "column": "last_login_ip",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    }
+  },
+  "sys_user_roles": {
+    "userId": {
+      "column": "user_id",
+      "type": "long",
+      "optional": false
+    },
+    "roleId": {
+      "column": "role_id",
+      "type": "long",
+      "optional": false
+    }
+  },
+  "inv_customers": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "code": {
+      "column": "code",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "name": {
+      "column": "name",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "contact": {
+      "column": "contact",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "phone": {
+      "column": "phone",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "address": {
+      "column": "address",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "taxNo": {
+      "column": "tax_no",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    },
+    "remark": {
+      "column": "remark",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    }
+  },
+  "inv_suppliers": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "code": {
+      "column": "code",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "name": {
+      "column": "name",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "contact": {
+      "column": "contact",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "phone": {
+      "column": "phone",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "address": {
+      "column": "address",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "taxNo": {
+      "column": "tax_no",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    },
+    "remark": {
+      "column": "remark",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    }
+  },
+  "inv_categories": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "parentId": {
+      "column": "parent_id",
+      "type": "long",
+      "optional": false
+    },
+    "name": {
+      "column": "name",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "sort": {
+      "column": "sort",
+      "type": "long",
+      "optional": false
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    },
+    "remark": {
+      "column": "remark",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    }
+  },
+  "inv_products": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "code": {
+      "column": "code",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "name": {
+      "column": "name",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "categoryId": {
+      "column": "category_id",
+      "type": "long",
+      "optional": false
+    },
+    "barcode": {
+      "column": "barcode",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "refPurchasePrice": {
+      "column": "ref_purchase_price",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    },
+    "refSalePrice": {
+      "column": "ref_sale_price",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    },
+    "remark": {
+      "column": "remark",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    }
+  },
+  "inv_product_specs": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "productId": {
+      "column": "product_id",
+      "type": "long",
+      "optional": false
+    },
+    "spec": {
+      "column": "spec",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "stock": {
+      "column": "stock",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,4)"
+    },
+    "warnStock": {
+      "column": "warn_stock",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,4)"
+    },
+    "sort": {
+      "column": "sort",
+      "type": "long",
+      "optional": false
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    }
+  },
+  "inv_product_units": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "specId": {
+      "column": "spec_id",
+      "type": "long",
+      "optional": false
+    },
+    "unit": {
+      "column": "unit",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "rate": {
+      "column": "rate",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,4)"
+    },
+    "isBase": {
+      "column": "is_base",
+      "type": "bool",
+      "optional": false
+    },
+    "purchasePrice": {
+      "column": "purchase_price",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,4)"
+    },
+    "salePrice": {
+      "column": "sale_price",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,4)"
+    },
+    "sort": {
+      "column": "sort",
+      "type": "long",
+      "optional": false
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    }
+  },
+  "inv_orders": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "orderNo": {
+      "column": "order_no",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "bizType": {
+      "column": "biz_type",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "partyId": {
+      "column": "party_id",
+      "type": "long",
+      "optional": false
+    },
+    "partyName": {
+      "column": "party_name",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "orderDate": {
+      "column": "order_date",
+      "type": "time",
+      "optional": false,
+      "sqlType": "date"
+    },
+    "dueDate": {
+      "column": "due_date",
+      "type": "time",
+      "optional": true,
+      "sqlType": "date"
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    },
+    "totalAmount": {
+      "column": "total_amount",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    },
+    "settledAmount": {
+      "column": "settled_amount",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    },
+    "remark": {
+      "column": "remark",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "salesman": {
+      "column": "salesman",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "createdBy": {
+      "column": "created_by",
+      "type": "long",
+      "optional": false
+    }
+  },
+  "inv_order_items": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "orderId": {
+      "column": "order_id",
+      "type": "long",
+      "optional": false
+    },
+    "productId": {
+      "column": "product_id",
+      "type": "long",
+      "optional": false
+    },
+    "productName": {
+      "column": "product_name",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "specId": {
+      "column": "spec_id",
+      "type": "long",
+      "optional": false
+    },
+    "spec": {
+      "column": "spec",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "unitId": {
+      "column": "unit_id",
+      "type": "long",
+      "optional": false
+    },
+    "unit": {
+      "column": "unit",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "rate": {
+      "column": "rate",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,4)"
+    },
+    "qty": {
+      "column": "qty",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    },
+    "qtyBase": {
+      "column": "qty_base",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,4)"
+    },
+    "price": {
+      "column": "price",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    },
+    "amount": {
+      "column": "amount",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    }
+  },
+  "inv_settlements": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "orderId": {
+      "column": "order_id",
+      "type": "long",
+      "optional": false
+    },
+    "planId": {
+      "column": "plan_id",
+      "type": "long",
+      "optional": false
+    },
+    "source": {
+      "column": "source",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "bizType": {
+      "column": "biz_type",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "partyId": {
+      "column": "party_id",
+      "type": "long",
+      "optional": false
+    },
+    "amount": {
+      "column": "amount",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    },
+    "method": {
+      "column": "method",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "settledAt": {
+      "column": "settled_at",
+      "type": "time",
+      "optional": false,
+      "sqlType": "date"
+    },
+    "remark": {
+      "column": "remark",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "createdBy": {
+      "column": "created_by",
+      "type": "long",
+      "optional": false
+    }
+  },
+  "inv_stock_orders": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "orderNo": {
+      "column": "order_no",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "direction": {
+      "column": "direction",
+      "type": "string",
+      "optional": false,
+      "max": 8
+    },
+    "sourceType": {
+      "column": "source_type",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "sourceId": {
+      "column": "source_id",
+      "type": "long",
+      "optional": false
+    },
+    "orderDate": {
+      "column": "order_date",
+      "type": "time",
+      "optional": false,
+      "sqlType": "date"
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    },
+    "remark": {
+      "column": "remark",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "salesman": {
+      "column": "salesman",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "createdBy": {
+      "column": "created_by",
+      "type": "long",
+      "optional": false
+    }
+  },
+  "inv_stock_items": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "stockOrderId": {
+      "column": "stock_order_id",
+      "type": "long",
+      "optional": false
+    },
+    "productId": {
+      "column": "product_id",
+      "type": "long",
+      "optional": false
+    },
+    "productName": {
+      "column": "product_name",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "specId": {
+      "column": "spec_id",
+      "type": "long",
+      "optional": false
+    },
+    "spec": {
+      "column": "spec",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "unitId": {
+      "column": "unit_id",
+      "type": "long",
+      "optional": false
+    },
+    "unit": {
+      "column": "unit",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "rate": {
+      "column": "rate",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,4)"
+    },
+    "qty": {
+      "column": "qty",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    },
+    "qtyBase": {
+      "column": "qty_base",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,4)"
+    }
+  },
+  "inv_print_templates": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "code": {
+      "column": "code",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "name": {
+      "column": "name",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "docType": {
+      "column": "doc_type",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "paper": {
+      "column": "paper",
+      "type": "string",
+      "optional": false,
+      "max": 8
+    },
+    "content": {
+      "column": "content",
+      "type": "string",
+      "optional": false,
+      "sqlType": "text"
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    },
+    "remark": {
+      "column": "remark",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    }
+  },
+  "inv_contracts": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "contractNo": {
+      "column": "contract_no",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "name": {
+      "column": "name",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "bizType": {
+      "column": "biz_type",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "partyId": {
+      "column": "party_id",
+      "type": "long",
+      "optional": false
+    },
+    "partyName": {
+      "column": "party_name",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "signDate": {
+      "column": "sign_date",
+      "type": "time",
+      "optional": false,
+      "sqlType": "date"
+    },
+    "startDate": {
+      "column": "start_date",
+      "type": "time",
+      "optional": true,
+      "sqlType": "date"
+    },
+    "endDate": {
+      "column": "end_date",
+      "type": "time",
+      "optional": true,
+      "sqlType": "date"
+    },
+    "amount": {
+      "column": "amount",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    },
+    "salesman": {
+      "column": "salesman",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "remark": {
+      "column": "remark",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "createdBy": {
+      "column": "created_by",
+      "type": "long",
+      "optional": false
+    },
+    "auditedAt": {
+      "column": "audited_at",
+      "type": "time",
+      "optional": true
+    },
+    "auditor": {
+      "column": "auditor",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "acceptedAt": {
+      "column": "accepted_at",
+      "type": "time",
+      "optional": true,
+      "sqlType": "date"
+    },
+    "acceptResult": {
+      "column": "accept_result",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "warrantyMonths": {
+      "column": "warranty_months",
+      "type": "long",
+      "optional": false
+    },
+    "warrantyEndAt": {
+      "column": "warranty_end_at",
+      "type": "time",
+      "optional": true,
+      "sqlType": "date"
+    },
+    "retentionRate": {
+      "column": "retention_rate",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(5,2)"
+    },
+    "retentionAmount": {
+      "column": "retention_amount",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    }
+  },
+  "inv_contract_plans": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "contractId": {
+      "column": "contract_id",
+      "type": "long",
+      "optional": false
+    },
+    "bizType": {
+      "column": "biz_type",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "partyId": {
+      "column": "party_id",
+      "type": "long",
+      "optional": false
+    },
+    "partyName": {
+      "column": "party_name",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "seq": {
+      "column": "seq",
+      "type": "long",
+      "optional": false
+    },
+    "name": {
+      "column": "name",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "kind": {
+      "column": "kind",
+      "type": "long",
+      "optional": false
+    },
+    "rate": {
+      "column": "rate",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(5,2)"
+    },
+    "amount": {
+      "column": "amount",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    },
+    "dueDate": {
+      "column": "due_date",
+      "type": "time",
+      "optional": true,
+      "sqlType": "date"
+    },
+    "triggerNode": {
+      "column": "trigger_node",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "settledAmount": {
+      "column": "settled_amount",
+      "type": "decimal",
+      "optional": false,
+      "sqlType": "numeric(14,2)"
+    },
+    "remark": {
+      "column": "remark",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "createdBy": {
+      "column": "created_by",
+      "type": "long",
+      "optional": false
+    }
+  },
+  "inv_attachments": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "bizType": {
+      "column": "biz_type",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "bizId": {
+      "column": "biz_id",
+      "type": "long",
+      "optional": false
+    },
+    "fileName": {
+      "column": "file_name",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "storedPath": {
+      "column": "stored_path",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "size": {
+      "column": "size",
+      "type": "long",
+      "optional": false
+    },
+    "mime": {
+      "column": "mime",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "uploadedBy": {
+      "column": "uploaded_by",
+      "type": "long",
+      "optional": false
+    },
+    "uploader": {
+      "column": "uploader",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    }
+  },
+  "sys_operation_logs": {
+    "id": {
+      "column": "id",
+      "type": "long",
+      "optional": false
+    },
+    "userId": {
+      "column": "user_id",
+      "type": "long",
+      "optional": false
+    },
+    "username": {
+      "column": "username",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "module": {
+      "column": "module",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "action": {
+      "column": "action",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "method": {
+      "column": "method",
+      "type": "string",
+      "optional": false,
+      "max": 16
+    },
+    "path": {
+      "column": "path",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "ip": {
+      "column": "ip",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "userAgent": {
+      "column": "user_agent",
+      "type": "string",
+      "optional": false,
+      "max": 512
+    },
+    "request": {
+      "column": "request",
+      "type": "string",
+      "optional": false,
+      "sqlType": "text"
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    },
+    "latencyMs": {
+      "column": "latency_ms",
+      "type": "long",
+      "optional": false
+    },
+    "errorMsg": {
+      "column": "error_msg",
+      "type": "string",
+      "optional": false,
+      "max": 512
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time",
+      "optional": false
+    }
+  },
+  "sys_login_logs": {
+    "id": {
+      "column": "id",
+      "type": "long",
+      "optional": false
+    },
+    "userId": {
+      "column": "user_id",
+      "type": "long",
+      "optional": false
+    },
+    "username": {
+      "column": "username",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "ip": {
+      "column": "ip",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "userAgent": {
+      "column": "user_agent",
+      "type": "string",
+      "optional": false,
+      "max": 512
+    },
+    "success": {
+      "column": "success",
+      "type": "bool",
+      "optional": false
+    },
+    "message": {
+      "column": "message",
+      "type": "string",
+      "optional": false,
+      "max": 255
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time",
+      "optional": false
+    }
+  },
+  "sys_upgrade_records": {
+    "id": {
+      "column": "id",
+      "type": "long",
+      "optional": false
+    },
+    "planId": {
+      "column": "plan_id",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "fromVersion": {
+      "column": "from_version",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "toVersion": {
+      "column": "to_version",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "packageSha256": {
+      "column": "package_sha256",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "packageSize": {
+      "column": "package_size",
+      "type": "long",
+      "optional": false
+    },
+    "backupPath": {
+      "column": "backup_path",
+      "type": "string",
+      "optional": false,
+      "max": 512
+    },
+    "status": {
+      "column": "status",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "plan": {
+      "column": "plan",
+      "type": "string",
+      "optional": false,
+      "sqlType": "text"
+    },
+    "message": {
+      "column": "message",
+      "type": "string",
+      "optional": false,
+      "max": 512
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time",
+      "optional": false
+    },
+    "appliedAt": {
+      "column": "applied_at",
+      "type": "time",
+      "optional": true
+    },
+    "finishedAt": {
+      "column": "finished_at",
+      "type": "time",
+      "optional": true
+    }
+  },
+  "sys_idempotencies": {
+    "key": {
+      "column": "key",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "scope": {
+      "column": "scope",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    },
+    "statusCode": {
+      "column": "status_code",
+      "type": "long",
+      "optional": false
+    },
+    "expiresAt": {
+      "column": "expires_at",
+      "type": "time",
+      "optional": false
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time",
+      "optional": false
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time",
+      "optional": false
+    }
+  },
+  "sys_depts": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "createdAt": {
+      "column": "created_at",
+      "type": "time"
+    },
+    "updatedAt": {
+      "column": "updated_at",
+      "type": "time"
+    },
+    "deletedAt": {
+      "column": "deleted_at",
+      "type": "time"
+    },
+    "parentId": {
+      "column": "parent_id",
+      "type": "long",
+      "optional": false
+    },
+    "name": {
+      "column": "name",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "leader": {
+      "column": "leader",
+      "type": "string",
+      "optional": false,
+      "max": 64
+    },
+    "phone": {
+      "column": "phone",
+      "type": "string",
+      "optional": false,
+      "max": 32
+    },
+    "email": {
+      "column": "email",
+      "type": "string",
+      "optional": false,
+      "max": 128
+    },
+    "sort": {
+      "column": "sort",
+      "type": "long",
+      "optional": false
+    },
+    "status": {
+      "column": "status",
+      "type": "long",
+      "optional": false
+    }
+  }
+}

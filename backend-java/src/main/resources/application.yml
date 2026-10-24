@@ -1,0 +1,21 @@
+server:
+  address: ${ERP_HOST:127.0.0.1}
+  port: ${ERP_PORT:6085}
+spring:
+  application:
+    name: kasinlo-erp
+  datasource:
+    url: ${ERP_DATABASE_URL:jdbc:h2:file:./data/kasinlo-erp;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH}
+    username: ${ERP_DATABASE_USER:sa}
+    password: ${ERP_DATABASE_PASSWORD:}
+  jackson:
+    deserialization:
+      use-big-decimal-for-floats: true
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 25MB
+erp:
+  demo-data: ${ERP_DEMO_DATA:true}
+  jwt-secret: ${ERP_JWT_SECRET:}
+  attachment-dir: ${ERP_ATTACHMENT_DIR:./data/attachments}

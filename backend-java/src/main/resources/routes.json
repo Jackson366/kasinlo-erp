@@ -1,0 +1,1161 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/profile",
+    "module": "profile",
+    "handler": "Info",
+    "permissions": []
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/profile",
+    "module": "profile",
+    "handler": "Update",
+    "permissions": []
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/profile/password",
+    "module": "profile",
+    "handler": "ChangePassword",
+    "permissions": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/profile/routes",
+    "module": "profile",
+    "handler": "Routes",
+    "permissions": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/menus",
+    "module": "menu",
+    "handler": "List",
+    "permissions": [
+      "system:menu:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/menus/export",
+    "module": "menu",
+    "handler": "Export",
+    "permissions": [
+      "system:menu:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/system/menus",
+    "module": "menu",
+    "handler": "Create",
+    "permissions": [
+      "system:menu:create"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/depts",
+    "module": "dept",
+    "handler": "List",
+    "permissions": [
+      "system:dept:list",
+      "system:user:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/depts/export",
+    "module": "dept",
+    "handler": "Export",
+    "permissions": [
+      "system:dept:list",
+      "system:user:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/system/depts",
+    "module": "dept",
+    "handler": "Create",
+    "permissions": [
+      "system:dept:create"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/roles",
+    "module": "role",
+    "handler": "List",
+    "permissions": [
+      "system:role:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/roles/options",
+    "module": "role",
+    "handler": "Options",
+    "permissions": [
+      "system:role:list",
+      "system:user:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/roles/export",
+    "module": "role",
+    "handler": "Export",
+    "permissions": [
+      "system:role:export"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/system/roles",
+    "module": "role",
+    "handler": "Create",
+    "permissions": [
+      "system:role:create"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/logs/operations",
+    "module": "log",
+    "handler": "Operations",
+    "permissions": [
+      "system:log:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/logs/operations/export",
+    "module": "log",
+    "handler": "ExportOperations",
+    "permissions": [
+      "system:log:export"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/logs/logins",
+    "module": "log",
+    "handler": "Logins",
+    "permissions": [
+      "system:log:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/logs/logins/export",
+    "module": "log",
+    "handler": "ExportLogins",
+    "permissions": [
+      "system:log:export"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/logs/modules",
+    "module": "log",
+    "handler": "Modules",
+    "permissions": [
+      "system:log:list"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/system/logs/operations",
+    "module": "log",
+    "handler": "ClearOperations",
+    "permissions": [
+      "system:log:delete"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/system/logs/logins",
+    "module": "log",
+    "handler": "ClearLogins",
+    "permissions": [
+      "system:log:delete"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/users",
+    "module": "user",
+    "handler": "List",
+    "permissions": [
+      "system:user:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/users/options",
+    "module": "user",
+    "handler": "Options",
+    "permissions": [
+      "system:user:list",
+      "system:role:list",
+      "system:dept:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/users/export",
+    "module": "user",
+    "handler": "Export",
+    "permissions": [
+      "system:user:export"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/users/import-template",
+    "module": "user",
+    "handler": "ImportTemplate",
+    "permissions": [
+      "system:user:import"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/system/users/import",
+    "module": "user",
+    "handler": "Import",
+    "permissions": [
+      "system:user:import"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/system/users",
+    "module": "user",
+    "handler": "Create",
+    "permissions": [
+      "system:user:create"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/overview",
+    "module": "inv",
+    "handler": "Overview",
+    "permissions": [
+      "inv:overview:view"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/export",
+    "module": "inv",
+    "handler": "Export",
+    "permissions": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/customers",
+    "module": "inv",
+    "handler": "CustomerList",
+    "permissions": [
+      "inv:customer:list",
+      "inv:sales:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/customers",
+    "module": "inv",
+    "handler": "CustomerCreate",
+    "permissions": [
+      "inv:customer:create"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/suppliers",
+    "module": "inv",
+    "handler": "SupplierList",
+    "permissions": [
+      "inv:supplier:list",
+      "inv:purchase:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/suppliers",
+    "module": "inv",
+    "handler": "SupplierCreate",
+    "permissions": [
+      "inv:supplier:create"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/categories",
+    "module": "inv",
+    "handler": "CategoryList",
+    "permissions": [
+      "inv:category:list",
+      "inv:product:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/categories/options",
+    "module": "inv",
+    "handler": "CategoryOptions",
+    "permissions": [
+      "inv:category:list",
+      "inv:product:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/categories",
+    "module": "inv",
+    "handler": "CategoryCreate",
+    "permissions": [
+      "inv:category:create"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/products",
+    "module": "inv",
+    "handler": "ProductList",
+    "permissions": [
+      "inv:product:list",
+      "inv:purchase:list",
+      "inv:sales:list",
+      "inv:stock:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/products/pick",
+    "module": "inv",
+    "handler": "ProductPick",
+    "permissions": [
+      "inv:product:list",
+      "inv:purchase:list",
+      "inv:sales:list",
+      "inv:stock:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/products/duplicates",
+    "module": "inv",
+    "handler": "ProductDuplicates",
+    "permissions": [
+      "inv:product:list",
+      "inv:product:create",
+      "inv:product:update"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/products",
+    "module": "inv",
+    "handler": "ProductCreate",
+    "permissions": [
+      "inv:product:create"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/orders",
+    "module": "inv",
+    "handler": "OrderList",
+    "permissions": [
+      "inv:purchase:list",
+      "inv:sales:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/orders",
+    "module": "inv",
+    "handler": "OrderCreate",
+    "permissions": [
+      "inv:purchase:create",
+      "inv:sales:create"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/contracts",
+    "module": "inv",
+    "handler": "ContractList",
+    "permissions": [
+      "inv:contract:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/contracts",
+    "module": "inv",
+    "handler": "ContractCreate",
+    "permissions": [
+      "inv:contract:create"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/contract-plans/settle",
+    "module": "inv",
+    "handler": "ContractPlanSettle",
+    "permissions": [
+      "inv:contract:settle"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/attachments/count",
+    "module": "inv",
+    "handler": "AttachmentCount",
+    "permissions": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/attachments",
+    "module": "inv",
+    "handler": "AttachmentList",
+    "permissions": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/attachments",
+    "module": "inv",
+    "handler": "AttachmentUpload",
+    "permissions": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/stock-orders",
+    "module": "inv",
+    "handler": "StockOrderList",
+    "permissions": [
+      "inv:stock:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/stock-orders",
+    "module": "inv",
+    "handler": "StockOrderCreate",
+    "permissions": [
+      "inv:stock:create"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/inventory",
+    "module": "inv",
+    "handler": "Inventory",
+    "permissions": [
+      "inv:stock:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/finance/receivables",
+    "module": "inv",
+    "handler": "Receivables",
+    "permissions": [
+      "inv:finance:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/finance/payables",
+    "module": "inv",
+    "handler": "Payables",
+    "permissions": [
+      "inv:finance:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/finance/settlements",
+    "module": "inv",
+    "handler": "Settle",
+    "permissions": [
+      "inv:finance:settle"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/finance/settlements/batch",
+    "module": "inv",
+    "handler": "SettleBatch",
+    "permissions": [
+      "inv:finance:settle"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/report/summary",
+    "module": "inv",
+    "handler": "ReportSummary",
+    "permissions": [
+      "inv:report:view"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/report/trend",
+    "module": "inv",
+    "handler": "ReportTrend",
+    "permissions": [
+      "inv:report:view"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/report/ranking",
+    "module": "inv",
+    "handler": "ReportRanking",
+    "permissions": [
+      "inv:report:view"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/report/category",
+    "module": "inv",
+    "handler": "ReportCategory",
+    "permissions": [
+      "inv:report:view"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/report/inventory",
+    "module": "inv",
+    "handler": "ReportInventory",
+    "permissions": [
+      "inv:report:view"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/report/stock-ranking",
+    "module": "inv",
+    "handler": "ReportStockRanking",
+    "permissions": [
+      "inv:report:view"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/report/detail",
+    "module": "inv",
+    "handler": "ReportDetail",
+    "permissions": [
+      "inv:report:view"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/report/contract",
+    "module": "inv",
+    "handler": "ReportContract",
+    "permissions": [
+      "inv:report:view"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/report/contract-ledger",
+    "module": "inv",
+    "handler": "ReportContractLedger",
+    "permissions": [
+      "inv:report:view"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/report/export",
+    "module": "inv",
+    "handler": "ReportExport",
+    "permissions": [
+      "inv:report:view"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/print-templates",
+    "module": "inv",
+    "handler": "PrintTemplateList",
+    "permissions": [
+      "inv:print:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/print-templates",
+    "module": "inv",
+    "handler": "PrintTemplateCreate",
+    "permissions": [
+      "inv:print:create"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ops/backups",
+    "module": "ops",
+    "handler": "Backups",
+    "permissions": [
+      "ops:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ops/backups",
+    "module": "ops",
+    "handler": "RunBackup",
+    "permissions": [
+      "ops:backup"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/ops/backups",
+    "module": "ops",
+    "handler": "DeleteBackup",
+    "permissions": [
+      "ops:backup"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ops/backups/download",
+    "module": "ops",
+    "handler": "DownloadBackup",
+    "permissions": [
+      "ops:backup"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ops/restore",
+    "module": "ops",
+    "handler": "Restore",
+    "permissions": [
+      "ops:restore"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ops/restore/in-place",
+    "module": "ops",
+    "handler": "RestoreInPlace",
+    "permissions": [
+      "ops:restore"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ops/cleanup/preview",
+    "module": "ops",
+    "handler": "CleanupPreview",
+    "permissions": [
+      "ops:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ops/cleanup/apply",
+    "module": "ops",
+    "handler": "CleanupApply",
+    "permissions": [
+      "ops:cleanup"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ops/cleanup/scopes",
+    "module": "ops",
+    "handler": "BizScopes",
+    "permissions": [
+      "ops:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ops/cleanup/business",
+    "module": "ops",
+    "handler": "BusinessCleanup",
+    "permissions": [
+      "ops:reset"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ops/check",
+    "module": "ops",
+    "handler": "Check",
+    "permissions": [
+      "ops:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ops/upgrade",
+    "module": "ops",
+    "handler": "UpgradeStatus",
+    "permissions": [
+      "ops:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/ops/upgrade/records",
+    "module": "ops",
+    "handler": "UpgradeRecords",
+    "permissions": [
+      "ops:list"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ops/upgrade/package",
+    "module": "ops",
+    "handler": "UploadPackage",
+    "permissions": [
+      "ops:upgrade"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ops/upgrade/backup",
+    "module": "ops",
+    "handler": "UpgradeBackup",
+    "permissions": [
+      "ops:upgrade"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/ops/upgrade/apply",
+    "module": "ops",
+    "handler": "ApplyUpgrade",
+    "permissions": [
+      "ops:upgrade"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "module": "auth",
+    "handler": "Login",
+    "permissions": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/refresh",
+    "module": "auth",
+    "handler": "Refresh",
+    "permissions": []
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/auth/logout",
+    "module": "auth",
+    "handler": "Logout",
+    "permissions": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/menus/:id",
+    "module": "menu",
+    "handler": "Detail",
+    "permissions": [
+      "system:menu:list"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/system/menus/:id",
+    "module": "menu",
+    "handler": "Update",
+    "permissions": [
+      "system:menu:update"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/system/menus/:id",
+    "module": "menu",
+    "handler": "Delete",
+    "permissions": [
+      "system:menu:delete"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/depts/:id",
+    "module": "dept",
+    "handler": "Detail",
+    "permissions": [
+      "system:dept:list"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/system/depts/:id",
+    "module": "dept",
+    "handler": "Update",
+    "permissions": [
+      "system:dept:update"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/system/depts/:id",
+    "module": "dept",
+    "handler": "Delete",
+    "permissions": [
+      "system:dept:delete"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/roles/:id",
+    "module": "role",
+    "handler": "Detail",
+    "permissions": [
+      "system:role:list"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/system/roles/:id",
+    "module": "role",
+    "handler": "Update",
+    "permissions": [
+      "system:role:update"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/system/roles/:id",
+    "module": "role",
+    "handler": "Delete",
+    "permissions": [
+      "system:role:delete"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/system/roles/:id/menus",
+    "module": "role",
+    "handler": "AssignMenus",
+    "permissions": [
+      "system:role:assign"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/users/:id",
+    "module": "user",
+    "handler": "Detail",
+    "permissions": [
+      "system:user:list"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/system/users/:id",
+    "module": "user",
+    "handler": "Update",
+    "permissions": [
+      "system:user:update"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/system/users/:id",
+    "module": "user",
+    "handler": "Delete",
+    "permissions": [
+      "system:user:delete"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/system/users/:id/status",
+    "module": "user",
+    "handler": "UpdateStatus",
+    "permissions": [
+      "system:user:update"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/system/users/:id/password",
+    "module": "user",
+    "handler": "ResetPassword",
+    "permissions": [
+      "system:user:reset"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/inv/customers/:id",
+    "module": "inv",
+    "handler": "CustomerUpdate",
+    "permissions": [
+      "inv:customer:update"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/inv/customers/:id",
+    "module": "inv",
+    "handler": "CustomerDelete",
+    "permissions": [
+      "inv:customer:delete"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/inv/suppliers/:id",
+    "module": "inv",
+    "handler": "SupplierUpdate",
+    "permissions": [
+      "inv:supplier:update"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/inv/suppliers/:id",
+    "module": "inv",
+    "handler": "SupplierDelete",
+    "permissions": [
+      "inv:supplier:delete"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/inv/categories/:id",
+    "module": "inv",
+    "handler": "CategoryUpdate",
+    "permissions": [
+      "inv:category:update"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/inv/categories/:id",
+    "module": "inv",
+    "handler": "CategoryDelete",
+    "permissions": [
+      "inv:category:delete"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/products/:id",
+    "module": "inv",
+    "handler": "ProductDetail",
+    "permissions": [
+      "inv:product:list"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/inv/products/:id",
+    "module": "inv",
+    "handler": "ProductUpdate",
+    "permissions": [
+      "inv:product:update"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/inv/products/:id",
+    "module": "inv",
+    "handler": "ProductDelete",
+    "permissions": [
+      "inv:product:delete"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/orders/:id",
+    "module": "inv",
+    "handler": "OrderDetail",
+    "permissions": [
+      "inv:purchase:list",
+      "inv:sales:list"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/inv/orders/:id",
+    "module": "inv",
+    "handler": "OrderUpdate",
+    "permissions": [
+      "inv:purchase:update",
+      "inv:sales:update"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/inv/orders/:id",
+    "module": "inv",
+    "handler": "OrderDelete",
+    "permissions": [
+      "inv:purchase:delete",
+      "inv:sales:delete"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/inv/orders/:id/status",
+    "module": "inv",
+    "handler": "OrderChangeStatus",
+    "permissions": [
+      "inv:purchase:finish",
+      "inv:sales:finish"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/inv/orders/:id/reverse",
+    "module": "inv",
+    "handler": "OrderReverse",
+    "permissions": [
+      "inv:purchase:finish",
+      "inv:sales:finish"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/contracts/:id",
+    "module": "inv",
+    "handler": "ContractDetail",
+    "permissions": [
+      "inv:contract:list"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/inv/contracts/:id",
+    "module": "inv",
+    "handler": "ContractUpdate",
+    "permissions": [
+      "inv:contract:update"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/inv/contracts/:id",
+    "module": "inv",
+    "handler": "ContractDelete",
+    "permissions": [
+      "inv:contract:delete"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/contracts/:id/accept",
+    "module": "inv",
+    "handler": "ContractAccept",
+    "permissions": [
+      "inv:contract:accept"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/contracts/:id/audit",
+    "module": "inv",
+    "handler": "ContractAudit",
+    "permissions": [
+      "inv:contract:audit"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/inv/contracts/:id/unaudit",
+    "module": "inv",
+    "handler": "ContractUnaudit",
+    "permissions": [
+      "inv:contract:audit"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/contracts/:id/logs",
+    "module": "inv",
+    "handler": "ContractLogs",
+    "permissions": [
+      "inv:contract:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/contract-plans/:id/settles",
+    "module": "inv",
+    "handler": "ContractPlanSettles",
+    "permissions": [
+      "inv:contract:list"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/attachments/:id/file",
+    "module": "inv",
+    "handler": "AttachmentFile",
+    "permissions": []
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/inv/attachments/:id",
+    "module": "inv",
+    "handler": "AttachmentDelete",
+    "permissions": []
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/inv/stock-orders/:id",
+    "module": "inv",
+    "handler": "StockOrderDetail",
+    "permissions": [
+      "inv:stock:list"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/inv/stock-orders/:id",
+    "module": "inv",
+    "handler": "StockOrderVoid",
+    "permissions": [
+      "inv:stock:delete"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/inv/print-templates/:id",
+    "module": "inv",
+    "handler": "PrintTemplateUpdate",
+    "permissions": [
+      "inv:print:update"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/inv/print-templates/:id",
+    "module": "inv",
+    "handler": "PrintTemplateDelete",
+    "permissions": [
+      "inv:print:delete"
+    ]
+  }
+]

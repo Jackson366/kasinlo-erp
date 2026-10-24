@@ -1,3 +1,15 @@
+# Kasinlo ERP · Java 迁移分支
+
+当前分支新增独立 Java 后端，保留现有 Vue 3 + TypeScript 页面。
+
+- [Java 启动、验证与迁移边界](backend-java/README.md)
+- 一体化评审启动：`docker compose -f compose.java.yml up --build`，访问 http://localhost:6085。
+- 本地开发：`cd backend-java && mvn spring-boot:run`，前端按原方式运行。
+- 管理员：`admin / admin123456`；只读演示：`demo / demo123456`。
+- 下方为原 Go 版本文档，保留作迁移参考；Java 操作以以上文档为准。
+
+---
+
 # Kasinlo ERP
 
 面向中小企业日常经营的轻量 ERP，围绕采购、销售、库存、合同履约与收付款组织业务，采用 **Go + Vue 3 + TypeScript + PostgreSQL** 技术栈。

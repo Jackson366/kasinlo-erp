@@ -1,0 +1,7 @@
+**/node_modules
+**/target
+**/data
+.git
+frontend/dist
+backend
+docs

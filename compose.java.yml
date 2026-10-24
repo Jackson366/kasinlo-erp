@@ -1,0 +1,15 @@
+services:
+  erp:
+    build:
+      context: .
+      dockerfile: Dockerfile.java
+    ports:
+      - "127.0.0.1:6085:6085"
+    environment:
+      ERP_HOST: 0.0.0.0
+      ERP_DEMO_DATA: "true"
+      ERP_JWT_SECRET: ${ERP_JWT_SECRET:-}
+    volumes:
+      - kasinlo-java-data:/app/data
+volumes:
+  kasinlo-java-data:

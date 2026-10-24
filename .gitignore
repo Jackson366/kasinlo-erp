@@ -51,3 +51,8 @@ Thumbs.db
 # 业务附件（运行时数据：图片 / 文件，不进版本库）
 backend/data/
 data/
+
+# Java migration build and local data
+backend-java/target/
+backend-java/data/
+data/
