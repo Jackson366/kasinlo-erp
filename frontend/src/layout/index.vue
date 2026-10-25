@@ -15,6 +15,7 @@ const permissionStore = usePermissionStore()
 // 不要用「把 refreshKey 拼进 :key」的做法：那会让每次刷新都产生一个**新的 key**，
 // 而 keep-alive 是按 key 存缓存的——旧 key 的实例永远留在缓存里，既不会被复用，
 // 也不会被回收，反复刷新页面就会持续泄漏组件实例（连带它们的定时器、监听、DOM 引用）。
+const sidebarHasSecondary = ref(false)
 const refreshing = ref(false)
 provide('pageRefresh', () => {
   refreshing.value = true
@@ -45,8 +46,8 @@ const viewKey = computed(() => route.path)
 
 <template>
   <div class="layout" :class="{ 'is-collapsed': appStore.sidebarCollapsed }">
-    <aside class="layout__aside">
-      <Sidebar />
+    <aside class="layout__aside" :class="{ 'is-rail-only': !sidebarHasSecondary }">
+      <Sidebar @secondary-change="sidebarHasSecondary = $event" />
     </aside>
 
     <section class="layout__body">
@@ -80,6 +81,8 @@ const viewKey = computed(() => route.path)
   &.is-collapsed &__aside {
     width: var(--layout-sidebar-collapsed);
   }
+
+  &__aside.is-rail-only { width: var(--layout-sidebar-collapsed); }
 
   &__body {
     display: flex;

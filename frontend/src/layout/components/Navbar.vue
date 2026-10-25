@@ -68,7 +68,7 @@ function handleCommand(command: string): void {
   <div class="navbar">
     <div class="navbar__left">
       <el-tooltip :content="collapsed ? '展开菜单' : '收起菜单'" placement="bottom">
-        <button class="navbar__icon-btn" type="button" @click="appStore.toggleSidebar()">
+        <button class="navbar__icon-btn" type="button" :aria-label="collapsed ? '展开菜单' : '收起菜单'" :aria-expanded="!collapsed" @click="appStore.toggleSidebar()">
           <AppIcon :name="collapsed ? 'Expand' : 'Fold'" />
         </button>
       </el-tooltip>

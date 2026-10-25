@@ -1,135 +1,95 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore, usePermissionStore } from '@/store'
+import type { RouteRecord } from '@/types/api'
+import AppIcon from '@/components/AppIcon.vue'
 import SidebarItem from './SidebarItem.vue'
 
+const emit = defineEmits<{ 'secondary-change': [visible: boolean] }>()
 const route = useRoute()
 const appStore = useAppStore()
 const permissionStore = usePermissionStore()
-
-// 隐藏项不进入菜单
-const menus = computed(() => permissionStore.menus.filter((item) => !item.meta?.hidden))
-// 支持页面声明高亮某个菜单项（如详情页高亮列表菜单）
+const menus = computed(() => permissionStore.menus.filter(item => !item.meta?.hidden))
 const activePath = computed<string>(() => (route.meta?.activeMenu as string) || route.path)
+const selectedGroup = ref<number | null>(null)
+const childrenOf = (item: RouteRecord) => (item.children ?? []).filter(child => !child.meta?.hidden)
+function contains(item: RouteRecord, path: string): boolean {
+  return item.path === path || childrenOf(item).some(child => contains(child, path))
+}
+const currentGroup = computed(() => menus.value.find(item => item.id === selectedGroup.value))
+const secondaryItems = computed(() => currentGroup.value ? childrenOf(currentGroup.value) : [])
+watch([menus, activePath], () => {
+  selectedGroup.value = menus.value.find(item => contains(item, activePath.value))?.id ?? menus.value[0]?.id ?? null
+}, { immediate: true })
+watch(() => secondaryItems.value.length > 0, value => emit('secondary-change', value), { immediate: true })
+function openGroup(item: RouteRecord): void {
+  selectedGroup.value = item.id
+  if (appStore.sidebarCollapsed) appStore.toggleSidebar()
+}
 </script>
 
 <template>
-  <div class="sidebar">
-    <div class="sidebar__brand">
-      <div class="sidebar__logo">N</div>
-      <span v-show="!appStore.sidebarCollapsed" class="sidebar__name">Nova ERP</span>
+  <aside class="sidebar" aria-label="主导航">
+    <div class="sidebar__rail">
+      <div class="sidebar__brand"><span class="sidebar__logo">K</span><span>Kasinlo</span></div>
+      <el-scrollbar class="sidebar__scroll">
+        <nav class="sidebar__primary" aria-label="业务分组">
+          <template v-for="item in menus" :key="item.id">
+            <button v-if="childrenOf(item).length" type="button" class="sidebar__primary-item"
+              :class="{ 'is-active': selectedGroup === item.id }"
+              :aria-expanded="selectedGroup === item.id && !appStore.sidebarCollapsed"
+              :aria-controls="selectedGroup === item.id && !appStore.sidebarCollapsed ? 'sidebar-secondary' : undefined"
+              @click="openGroup(item)">
+              <AppIcon :name="item.meta?.icon" /><span>{{ item.meta?.title }}</span>
+            </button>
+            <a v-else-if="item.meta?.isExternal" class="sidebar__primary-item" :href="item.path" target="_blank" rel="noopener noreferrer">
+              <AppIcon :name="item.meta?.icon" /><span>{{ item.meta?.title }}</span>
+            </a>
+            <router-link v-else :to="item.path" class="sidebar__primary-item"
+              :class="{ 'is-active': contains(item, activePath) }" :aria-current="contains(item, activePath) ? 'page' : undefined">
+              <AppIcon :name="item.meta?.icon" /><span>{{ item.meta?.title }}</span>
+            </router-link>
+          </template>
+        </nav>
+      </el-scrollbar>
+      <button v-if="secondaryItems.length" type="button" class="sidebar__toggle" :aria-expanded="!appStore.sidebarCollapsed" @click="appStore.toggleSidebar()">
+        <AppIcon :name="appStore.sidebarCollapsed ? 'Expand' : 'Fold'" />
+        <span>{{ appStore.sidebarCollapsed ? '展开分组' : '收起分组' }}</span>
+      </button>
     </div>
-
-    <el-scrollbar class="sidebar__scroll">
-      <el-menu
-        :default-active="activePath"
-        :collapse="appStore.sidebarCollapsed"
-        :collapse-transition="false"
-        unique-opened
-        router
-        class="sidebar__menu"
-      >
-        <SidebarItem v-for="item in menus" :key="item.id" :item="item" />
-      </el-menu>
-    </el-scrollbar>
-  </div>
+    <section v-if="secondaryItems.length && !appStore.sidebarCollapsed" id="sidebar-secondary" class="sidebar__secondary" :aria-label="currentGroup?.meta?.title">
+      <h2 class="sidebar__heading">{{ currentGroup?.meta?.title }}</h2>
+      <el-scrollbar class="sidebar__scroll">
+        <el-menu :default-active="activePath" :default-openeds="secondaryItems.filter(item => childrenOf(item).length).map(item => item.path || String(item.id))" router class="sidebar__menu">
+          <SidebarItem v-for="item in secondaryItems" :key="item.id" :item="item" />
+        </el-menu>
+      </el-scrollbar>
+    </section>
+  </aside>
 </template>
 
 <style scoped lang="scss">
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: var(--app-surface);
-  border-right: 1px solid var(--app-border-light);
-
-  &__brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    height: var(--layout-navbar-height);
-    padding: 0 16px;
-    flex-shrink: 0;
-    border-bottom: 1px solid var(--app-border-light);
-    overflow: hidden;
-  }
-
-  &__logo {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    flex-shrink: 0;
-    font-size: 16px;
-    font-weight: 700;
-    color: #fff;
-    background: var(--brand-gradient);
-    border-radius: 8px;
-    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
-  }
-
-  &__name {
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: 0.2px;
-    color: var(--app-text);
-    white-space: nowrap;
-  }
-
-  &__scroll {
-    flex: 1;
-    min-height: 0;
-  }
-
-  &__menu {
-    // 让菜单容器融入侧栏底色（Element Plus 默认用 --el-fill-color-blank，
-    // 暗色下会比卡片略亮，出现一条可见的色差带）
-    --el-menu-bg-color: transparent;
-    --el-menu-hover-bg-color: var(--app-fill-hover);
-    --el-menu-active-color: var(--brand-primary);
-    --el-menu-text-color: var(--app-text-secondary);
-
-    padding: 10px;
-    border-right: none;
-
-    &:not(.el-menu--collapse) {
-      width: var(--layout-sidebar-width);
-    }
-  }
+.sidebar { display: flex; height: 100%; min-width: 0; background: var(--app-surface-subtle); border-right: 1px solid var(--app-border-light); }
+.sidebar__rail { width: var(--layout-sidebar-collapsed); flex: none; display: flex; flex-direction: column; min-height: 0; }
+.sidebar__brand { display: flex; align-items: center; gap: 7px; height: var(--layout-navbar-height); padding: 0 12px; flex: none; font-size: 13px; font-weight: 600; white-space: nowrap; color: var(--app-text); }
+.sidebar__logo { display: grid; place-items: center; width: 22px; height: 24px; border-radius: var(--radius-sm); color: var(--brand-primary); background: var(--app-primary-soft); font-size: 15px; }
+.sidebar__scroll { flex: 1; min-height: 0; }
+.sidebar__primary { display: grid; gap: 4px; padding: 8px; }
+.sidebar__primary-item, .sidebar__toggle {
+  appearance: none; display: flex; align-items: center; gap: 9px; width: 100%; min-height: 38px; padding: 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--app-text-secondary); text-align: left; font: inherit; font-size: 13px; line-height: 20px; cursor: pointer;
+  span { overflow-wrap: anywhere; }
+  :deep(.el-icon) { flex: none; font-size: 15px; }
+  &:hover { background: var(--app-fill-hover); color: var(--brand-primary); }
+  &:active { background: var(--app-primary-soft); }
+  &:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: -2px; }
+  &.is-active { background: var(--app-primary-soft); color: var(--brand-primary); font-weight: 600; }
 }
-
-// 菜单项样式：圆角、悬停浅底、选中主色
-:deep(.el-menu-item),
-:deep(.el-sub-menu__title) {
-  height: 42px;
-  line-height: 42px;
-  margin-bottom: 2px;
-  border-radius: var(--radius-sm);
-  color: var(--app-text-secondary);
-  font-weight: 500;
-
-  &:hover {
-    color: var(--brand-primary);
-    background: var(--app-fill-hover);
-  }
-}
-
-:deep(.el-menu-item.is-active) {
-  color: var(--brand-primary);
-  background: var(--app-primary-soft);
-  font-weight: 600;
-}
-
-:deep(.el-sub-menu.is-active > .el-sub-menu__title) {
-  color: var(--brand-primary);
-}
-
-:deep(.el-menu--collapse) {
-  .el-menu-item,
-  .el-sub-menu__title {
-    padding-left: 0 !important;
-  }
-}
+.sidebar__toggle { width: calc(100% - 16px); margin: 8px; flex: none; font-size: 12px; }
+.sidebar__secondary { display: flex; flex: 1; flex-direction: column; min-width: 0; border-left: 1px solid var(--app-border-light); }
+.sidebar__heading { margin: 0; display: flex; align-items: center; height: var(--layout-navbar-height); flex: none; padding: 0 20px; font-size: 15px; font-weight: 600; color: var(--app-text); }
+.sidebar__menu { --el-menu-bg-color: transparent; --el-menu-hover-bg-color: var(--app-fill-hover); --el-menu-active-color: var(--brand-primary); --el-menu-text-color: var(--app-text-secondary); border: 0; padding: 8px; }
+.sidebar__menu :deep(.el-menu-item), .sidebar__menu :deep(.el-sub-menu__title) { height: auto; min-height: 36px; line-height: 20px; padding-top: 8px; padding-bottom: 8px; margin-bottom: 2px; border-radius: var(--radius-sm); white-space: normal; font-size: 13px; }
+.sidebar__menu :deep(.el-menu-item.is-active) { color: var(--brand-primary); background: var(--app-primary-soft); font-weight: 600; }
+.sidebar__menu :deep(.el-sub-menu.is-active > .el-sub-menu__title) { color: var(--app-text); font-weight: 600; }
 </style>

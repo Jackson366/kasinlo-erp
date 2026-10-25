@@ -169,7 +169,7 @@ try {
         roleCodes: ['buyer'],
         roles: [],
       })
-    if (endpoint === '/profile/routes') return ok(menus)
+    if (endpoint === '/profile/routes') return ok([{id:90,name:'Inventory',path:'/inv',component:'',meta:{title:'进销存',icon:'Box'},children:menus}])
     if (endpoint === '/inv/suppliers' || endpoint === '/inv/customers')
       return ok({
         list: [{ id: 1, name: '杭州恒信金属材料有限公司', status: 1 }],
@@ -531,6 +531,27 @@ try {
     await dialog.getByRole('button', { name: '保存采购单' }).click()
     await expect(dialog).not.toBeVisible()
     await expect(review.locator('.detail-head__no')).toHaveText('CG20261025100')
+  })
+  await check('侧栏展开分组与保留文字的收起态', async () => {
+    const rail = page.locator('.sidebar__rail')
+    await expect(rail.getByRole('button', { name: '进销存', exact: true })).toBeVisible()
+    expect((await rail.boundingBox()).width).toBe(112)
+    await rail.getByRole('button', { name: '进销存', exact: true }).click()
+    const secondary = page.locator('.sidebar__secondary')
+    await expect(secondary).toBeVisible()
+    await expect(secondary.getByRole('menuitem', {name:'采购管理'})).toHaveClass(/is-active/)
+    await page.waitForTimeout(250)
+    expect((await page.locator('.layout__aside').boundingBox()).width).toBe(288)
+    await page.screenshot({path:out+'/sidebar-expanded.png',fullPage:true})
+    await rail.getByRole('button', { name: '收起分组', exact: true }).click()
+    await expect(secondary).toHaveCount(0)
+    await expect(rail.getByRole('button', { name: '进销存', exact: true })).toBeVisible()
+    await page.waitForTimeout(250)
+    expect((await page.locator('.layout__aside').boundingBox()).width).toBe(112)
+    await page.screenshot({path:out+'/sidebar-collapsed.png',fullPage:true})
+    await page.reload()
+    await expect(page.locator('.sidebar__secondary')).toHaveCount(0)
+    await expect(rail.getByRole('button', { name: '进销存', exact: true })).toBeVisible()
   })
   await check('标签页菜单由 ElDropdown 正常触发', async () => {
     await page.locator('.tags-view__more-btn').click()
