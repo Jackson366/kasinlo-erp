@@ -765,6 +765,8 @@ try {
         .locator('.layout__aside')
         .evaluate((el) => getComputedStyle(el).transitionDuration),
     ).toBe('0s')
+    await expect(page.locator('.sidebar__rail')).toHaveCSS('transition-duration','0s')
+    await expect(page.locator('.sidebar__primary-label').first()).toHaveCSS('transition-duration','0s')
     await page
       .getByRole('button', { name: '收起二级菜单', exact: true })
       .click()
@@ -782,7 +784,7 @@ try {
     await expect(page.locator('.sidebar__primary .is-active')).toHaveCount(1)
     await page.setViewportSize({ width: 1600, height: 1100 })
   })
-  await check('一级菜单独立收起：图标尺寸稳定、名称提示与偏好恢复', async () => {
+  await check('菜单层级与缩放：一级 20/18px、二级 16px、键盘与偏好恢复', async () => {
     await page.emulateMedia({reducedMotion:'no-preference'})
     await page.evaluate(() => document.documentElement.classList.remove('dark'))
     const sidebar = page.locator('.sidebar')
@@ -798,10 +800,16 @@ try {
       return {width:box.width,height:box.height,x:box.x,font:getComputedStyle(label).fontSize,transform:getComputedStyle(icon).transform}
     })
     const baseline = await metrics()
-    expect(baseline.width).toBe(18)
-    expect(baseline.font).toBe('13px')
+    expect(baseline.width).toBe(20)
+    expect(baseline.font).toBe('14px')
+    const secondaryItem = page.locator('.sidebar__secondary .el-menu-item.is-active')
+    await expect(secondaryItem).toHaveCSS('font-size','13px')
+    await expect(secondaryItem).toHaveCSS('font-weight','500')
+    expect((await secondaryItem.locator('.el-icon').boundingBox()).width).toBe(16)
+    expect((await inventory.boundingBox()).height).toBeGreaterThan((await secondaryItem.boundingBox()).height)
+    expect(await inventory.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(await secondaryItem.evaluate(el => getComputedStyle(el).backgroundColor))
     // Measure during the actual width transition, not just the endpoint.
-    const sampleTransition = async (trigger, width) => {
+    const sampleTransition = async (trigger, width, {icon=20,font=14,resize=false} = {}) => {
       const sampling = inventory.evaluate(async el => {
         const samples = []
         const until = performance.now() + 350
@@ -816,11 +824,27 @@ try {
       if (typeof trigger === 'function') await trigger()
       else await trigger.click()
       await expect(page.locator('.layout__aside')).toHaveCSS('width',width)
-      for (const sample of await sampling) expect(sample).toEqual(baseline)
+      const samples = await sampling
+      for (const sample of samples) {
+        expect(sample.width).toBeGreaterThanOrEqual(17.99)
+        expect(sample.width).toBeLessThanOrEqual(20.01)
+        expect(Number.parseFloat(sample.font)).toBeGreaterThanOrEqual(11.99)
+        expect(Number.parseFloat(sample.font)).toBeLessThanOrEqual(14.01)
+        expect(sample.x + sample.width / 2).toBeCloseTo(baseline.x + baseline.width / 2, 1)
+      }
+      const settled = await metrics()
+      expect(settled.width).toBeCloseTo(icon,1)
+      expect(settled.font).toBe(font+'px')
+      if (resize) {
+        expect(samples.some(sample => sample.width > 18.05 && sample.width < 19.95)).toBe(true)
+        expect(samples.some(sample => Number.parseFloat(sample.font) > 12.05 && Number.parseFloat(sample.font) < 13.95)).toBe(true)
+      } else {
+        for (const sample of samples) expect(sample.width).toBeCloseTo(icon,1)
+      }
     }
     await sampleTransition(page.getByRole('button',{name:'收起二级菜单',exact:true}), '132px')
     await expect(rail).toHaveCSS('width','132px')
-    await sampleTransition(sidebar.getByRole('button',{name:'收起一级菜单',exact:true}), '64px')
+    await sampleTransition(sidebar.getByRole('button',{name:'收起一级菜单',exact:true}), '64px', {icon:18,font:12,resize:true})
     await expect(rail).toHaveCSS('width','64px')
     await expect(inventory.locator('span')).not.toBeVisible()
     await expect(page.locator('.sidebar__wordmark')).not.toBeVisible()
@@ -829,22 +853,24 @@ try {
     await inventory.focus()
     await expect(page.getByRole('tooltip',{name:'进销存',exact:true})).toBeVisible()
     await page.keyboard.press('Escape')
-    await sampleTransition(() => page.keyboard.press('Enter'),'212px')
+    await sampleTransition(() => page.keyboard.press('Enter'),'212px', {icon:18,font:12})
     await expect(inventory.locator('span')).not.toBeVisible()
     await expect(page.locator('.sidebar__secondary')).toBeVisible()
     await page.screenshot({path:out+'/sidebar-primary-icons.png',clip:{x:0,y:0,width:226,height:580}})
-    await sampleTransition(page.getByRole('button',{name:'收起二级菜单',exact:true}), '64px')
+    await sampleTransition(page.getByRole('button',{name:'收起二级菜单',exact:true}), '64px', {icon:18,font:12})
     await page.screenshot({path:out+'/sidebar-icons-only.png',clip:{x:0,y:0,width:80,height:580}})
     await page.reload()
     await expect(rail).toHaveCSS('width','64px')
     await expect(inventory.locator('span')).not.toBeVisible()
     await expect(page.locator('.layout__aside')).toHaveCSS('width','64px')
     await page.locator('.navbar').getByRole('button',{name:'展开一级菜单',exact:true}).focus()
-    await sampleTransition(() => page.keyboard.press('Enter'), '132px')
+    await sampleTransition(() => page.keyboard.press('Enter'), '132px', {icon:20,font:14,resize:true})
     await expect(inventory.locator('span')).toBeVisible()
     await sampleTransition(page.getByRole('button',{name:'展开二级菜单',exact:true}), '280px')
     await expect(rail).toHaveCSS('width','132px')
     await expect(page.locator('.sidebar__secondary .el-menu-item.is-active')).toHaveText('采购管理')
+    await page.mouse.move(500,500)
+    await page.waitForTimeout(200)
     await page.screenshot({path:out+'/sidebar-horizontal-light.png',clip:{x:0,y:0,width:294,height:580}})
     await expect(assertSidebarContrast).toPass({timeout:2000})
     await page.evaluate(() => document.documentElement.classList.add('dark'))
