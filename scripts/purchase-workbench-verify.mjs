@@ -690,7 +690,7 @@ try {
       .locator('.sidebar__primary-item > span')
       .all()) {
       const size = await label.boundingBox()
-      expect(size.height).toBeLessThanOrEqual(18)
+      expect(size.height).toBeLessThanOrEqual(20)
       expect(
         await label.evaluate((el) => el.scrollWidth <= el.clientWidth),
       ).toBe(true)
@@ -704,7 +704,7 @@ try {
       path: out + '/sidebar-full-light.png',
       fullPage: true,
     })
-    await assertSidebarContrast()
+    await expect(assertSidebarContrast).toPass({timeout:2000})
     await page
       .locator('.sidebar')
       .screenshot({ path: out + '/sidebar-detail-light.png' })
@@ -751,7 +751,7 @@ try {
     await page
       .locator('.sidebar')
       .screenshot({ path: out + '/sidebar-detail-dark.png' })
-    await assertSidebarContrast()
+    await expect(assertSidebarContrast).toPass({timeout:2000})
     await page.setViewportSize({ width: 640, height: 900 })
     await expect(page.locator('.sidebar__secondary')).toBeVisible()
     expect(
@@ -781,6 +781,76 @@ try {
     await expect(page.locator('.sidebar__rail')).toHaveCSS('width', '132px')
     await expect(page.locator('.sidebar__primary .is-active')).toHaveCount(1)
     await page.setViewportSize({ width: 1600, height: 1100 })
+  })
+  await check('一级菜单独立收起：图标尺寸稳定、名称提示与偏好恢复', async () => {
+    await page.emulateMedia({reducedMotion:'no-preference'})
+    await page.evaluate(() => document.documentElement.classList.remove('dark'))
+    const sidebar = page.locator('.sidebar')
+    const rail = page.locator('.sidebar__rail')
+    const inventory = rail.getByRole('button', {name:'进销存',exact:true})
+    await inventory.click()
+    await page.locator('.sidebar__secondary').getByRole('menuitem',{name:'采购管理',exact:true}).click()
+    await expect(page.locator('.layout__aside')).toHaveCSS('width','280px')
+    const metrics = () => inventory.evaluate(el => {
+      const icon = el.querySelector('.el-icon')
+      const label = el.querySelector('span')
+      const box = icon.getBoundingClientRect()
+      return {width:box.width,height:box.height,x:box.x,font:getComputedStyle(label).fontSize,transform:getComputedStyle(icon).transform}
+    })
+    const baseline = await metrics()
+    expect(baseline.width).toBe(18)
+    expect(baseline.font).toBe('13px')
+    // Measure during the actual width transition, not just the endpoint.
+    const sampleTransition = async (trigger, width) => {
+      const sampling = inventory.evaluate(async el => {
+        const samples = []
+        const until = performance.now() + 350
+        while (performance.now() < until) {
+          await new Promise(requestAnimationFrame)
+          const icon = el.querySelector('.el-icon'), label = el.querySelector('span')
+          const box = icon.getBoundingClientRect()
+          samples.push({width:box.width,height:box.height,x:box.x,font:getComputedStyle(label).fontSize,transform:getComputedStyle(icon).transform})
+        }
+        return samples
+      })
+      if (typeof trigger === 'function') await trigger()
+      else await trigger.click()
+      await expect(page.locator('.layout__aside')).toHaveCSS('width',width)
+      for (const sample of await sampling) expect(sample).toEqual(baseline)
+    }
+    await sampleTransition(page.getByRole('button',{name:'收起二级菜单',exact:true}), '132px')
+    await expect(rail).toHaveCSS('width','132px')
+    await sampleTransition(sidebar.getByRole('button',{name:'收起一级菜单',exact:true}), '64px')
+    await expect(rail).toHaveCSS('width','64px')
+    await expect(inventory.locator('span')).not.toBeVisible()
+    await expect(page.locator('.sidebar__wordmark')).not.toBeVisible()
+    expect((await page.locator('.sidebar__logo').boundingBox()).width).toBe(30)
+    await page.keyboard.press('Tab')
+    await inventory.focus()
+    await expect(page.getByRole('tooltip',{name:'进销存',exact:true})).toBeVisible()
+    await page.keyboard.press('Escape')
+    await sampleTransition(() => page.keyboard.press('Enter'),'212px')
+    await expect(inventory.locator('span')).not.toBeVisible()
+    await expect(page.locator('.sidebar__secondary')).toBeVisible()
+    await page.screenshot({path:out+'/sidebar-primary-icons.png',clip:{x:0,y:0,width:226,height:580}})
+    await sampleTransition(page.getByRole('button',{name:'收起二级菜单',exact:true}), '64px')
+    await page.screenshot({path:out+'/sidebar-icons-only.png',clip:{x:0,y:0,width:80,height:580}})
+    await page.reload()
+    await expect(rail).toHaveCSS('width','64px')
+    await expect(inventory.locator('span')).not.toBeVisible()
+    await expect(page.locator('.layout__aside')).toHaveCSS('width','64px')
+    await page.locator('.navbar').getByRole('button',{name:'展开一级菜单',exact:true}).focus()
+    await sampleTransition(() => page.keyboard.press('Enter'), '132px')
+    await expect(inventory.locator('span')).toBeVisible()
+    await sampleTransition(page.getByRole('button',{name:'展开二级菜单',exact:true}), '280px')
+    await expect(rail).toHaveCSS('width','132px')
+    await expect(page.locator('.sidebar__secondary .el-menu-item.is-active')).toHaveText('采购管理')
+    await page.screenshot({path:out+'/sidebar-horizontal-light.png',clip:{x:0,y:0,width:294,height:580}})
+    await expect(assertSidebarContrast).toPass({timeout:2000})
+    await page.evaluate(() => document.documentElement.classList.add('dark'))
+    await page.waitForTimeout(250)
+    await expect(assertSidebarContrast).toPass({timeout:2000})
+    await page.screenshot({path:out+'/sidebar-horizontal-dark.png',clip:{x:0,y:0,width:294,height:580}})
   })
   expect(pageErrors).toEqual([])
   console.log(`PASS ${checks.length} scenarios; no uncaught browser errors`)

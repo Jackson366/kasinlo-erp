@@ -60,10 +60,7 @@ function openGroup(item: RouteRecord): void {
 <template>
   <aside
     class="sidebar"
-    :class="{
-      'is-secondary-collapsed': appStore.sidebarCollapsed,
-      'is-primary-only': !secondaryItems.length,
-    }"
+    :class="{ 'is-primary-collapsed': appStore.primarySidebarCollapsed }"
     aria-label="主导航"
   >
     <button
@@ -87,15 +84,33 @@ function openGroup(item: RouteRecord): void {
           width="30"
           height="30"
         />
-        <span class="sidebar__wordmark">Kasinlo</span>
+        <span
+          v-show="!appStore.primarySidebarCollapsed"
+          class="sidebar__wordmark"
+          >Kasinlo</span
+        >
       </div>
       <el-scrollbar class="sidebar__scroll">
-        <nav class="sidebar__primary" aria-label="业务分组">
-          <template v-for="item in menus" :key="item.id">
+        <nav
+          id="sidebar-primary"
+          class="sidebar__primary"
+          aria-label="业务分组"
+        >
+          <el-tooltip
+            v-for="item in menus"
+            :key="item.id"
+            :disabled="!appStore.primarySidebarCollapsed"
+            :content="item.meta?.title"
+            :trigger="['hover', 'focus']"
+            :trigger-keys="[]"
+            placement="right"
+            :show-after="150"
+          >
             <button
               v-if="childrenOf(item).length"
               type="button"
               class="sidebar__primary-item"
+              :aria-label="item.meta?.title"
               :class="{ 'is-active': selectedGroup === item.id }"
               :aria-expanded="
                 selectedGroup === item.id && !appStore.sidebarCollapsed
@@ -107,18 +122,21 @@ function openGroup(item: RouteRecord): void {
               "
               @click="openGroup(item)"
             >
-              <AppIcon :name="item.meta?.icon" /><span>{{
+              <AppIcon :name="item.meta?.icon" />
+              <span v-show="!appStore.primarySidebarCollapsed">{{
                 item.meta?.title
               }}</span>
             </button>
             <a
               v-else-if="item.meta?.isExternal"
               class="sidebar__primary-item"
+              :aria-label="item.meta?.title"
               :href="item.path"
               target="_blank"
               rel="noopener noreferrer"
             >
-              <AppIcon :name="item.meta?.icon" /><span>{{
+              <AppIcon :name="item.meta?.icon" />
+              <span v-show="!appStore.primarySidebarCollapsed">{{
                 item.meta?.title
               }}</span>
             </a>
@@ -126,16 +144,41 @@ function openGroup(item: RouteRecord): void {
               v-else
               :to="item.path"
               class="sidebar__primary-item"
+              :aria-label="item.meta?.title"
               :class="{ 'is-active': contains(item, activePath) }"
               :aria-current="contains(item, activePath) ? 'page' : undefined"
             >
-              <AppIcon :name="item.meta?.icon" /><span>{{
+              <AppIcon :name="item.meta?.icon" />
+              <span v-show="!appStore.primarySidebarCollapsed">{{
                 item.meta?.title
               }}</span>
             </router-link>
-          </template>
+          </el-tooltip>
         </nav>
       </el-scrollbar>
+      <el-tooltip
+        :disabled="!appStore.primarySidebarCollapsed"
+        content="展开一级菜单"
+        :trigger="['hover', 'focus']"
+        :trigger-keys="[]"
+        placement="right"
+      >
+        <button
+          type="button"
+          class="sidebar__primary-item sidebar__primary-toggle"
+          :aria-label="
+            appStore.primarySidebarCollapsed ? '展开一级菜单' : '收起一级菜单'
+          "
+          :aria-expanded="!appStore.primarySidebarCollapsed"
+          aria-controls="sidebar-primary"
+          @click="appStore.togglePrimarySidebar()"
+        >
+          <AppIcon
+            :name="appStore.primarySidebarCollapsed ? 'Expand' : 'Fold'"
+          />
+          <span v-show="!appStore.primarySidebarCollapsed">收起菜单</span>
+        </button>
+      </el-tooltip>
     </div>
     <section
       v-if="secondaryItems.length"
@@ -166,7 +209,7 @@ function openGroup(item: RouteRecord): void {
 
 <style scoped lang="scss">
 .sidebar {
-  --sidebar-header-height: 80px;
+  --sidebar-header-height: var(--layout-navbar-height);
   position: relative;
   display: flex;
   height: 100%;
@@ -176,7 +219,7 @@ function openGroup(item: RouteRecord): void {
 }
 
 .sidebar__rail {
-  width: var(--layout-sidebar-primary-width);
+  width: var(--sidebar-rail-width);
   flex: none;
   display: flex;
   flex-direction: column;
@@ -185,14 +228,14 @@ function openGroup(item: RouteRecord): void {
 
 .sidebar__brand {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
+  gap: 8px;
   height: var(--sidebar-header-height);
-  padding: 10px 8px;
+  padding: 0 17px;
   flex: none;
   color: var(--app-text);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .sidebar__logo {
@@ -205,9 +248,10 @@ function openGroup(item: RouteRecord): void {
 }
 
 .sidebar__wordmark {
-  font-size: 12px;
+  flex: none;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 16px;
+  line-height: 20px;
   letter-spacing: 0.2px;
 }
 
@@ -217,41 +261,41 @@ function openGroup(item: RouteRecord): void {
 }
 .sidebar__primary {
   display: grid;
-  gap: 6px;
-  padding: 4px 10px 12px;
+  gap: 4px;
+  padding: 8px;
 }
 .sidebar__primary-item {
   position: relative;
   appearance: none;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
-  min-height: 64px;
-  padding: 10px 6px;
+  min-height: 40px;
+  padding: 10px 15px;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--app-text-secondary);
-  text-align: center;
+  text-align: left;
   text-decoration: none;
   font: inherit;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 13px;
+  line-height: 20px;
   cursor: pointer;
   transition:
     background-color var(--transition-base),
     color var(--transition-base);
 
   span {
-    max-width: 100%;
-    overflow-wrap: anywhere;
+    flex: none;
+    white-space: nowrap;
   }
   :deep(.el-icon) {
-    flex: none;
-    font-size: 20px;
+    flex: 0 0 18px;
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
   }
   &:hover {
     background: var(--app-fill-hover);
@@ -272,9 +316,9 @@ function openGroup(item: RouteRecord): void {
     &::before {
       content: '';
       position: absolute;
-      left: -10px;
-      top: 22px;
-      bottom: 22px;
+      left: -8px;
+      top: 12px;
+      bottom: 12px;
       width: 3px;
       border-radius: 0 3px 3px 0;
       background: var(--brand-primary);
@@ -282,10 +326,12 @@ function openGroup(item: RouteRecord): void {
   }
 }
 
-.is-secondary-collapsed .sidebar__rail,
-.is-primary-only .sidebar__rail {
-  width: var(--layout-sidebar-collapsed);
+.sidebar__primary-toggle {
+  flex: none;
+  width: calc(100% - 16px);
+  margin: 8px;
 }
+
 .sidebar__toggle {
   position: absolute;
   top: 80px;
@@ -322,7 +368,8 @@ function openGroup(item: RouteRecord): void {
 
 .sidebar__secondary {
   display: flex;
-  flex: 1;
+  flex: none;
+  width: var(--layout-sidebar-secondary-width);
   flex-direction: column;
   min-width: 0;
   background: var(--app-surface);
@@ -349,7 +396,7 @@ function openGroup(item: RouteRecord): void {
   --el-menu-base-level-padding: 12px;
   --el-menu-level-padding: 12px;
   border: 0;
-  padding: 4px 10px 12px;
+  padding: 8px;
 
   :deep(.el-menu-item),
   :deep(.el-sub-menu__title) {
@@ -365,10 +412,11 @@ function openGroup(item: RouteRecord): void {
     font-size: 13px;
 
     .el-icon {
-      flex: none;
+      flex: 0 0 18px;
       width: 18px;
-      margin-right: 10px;
-      font-size: 16px;
+      height: 18px;
+      margin-right: 8px;
+      font-size: 18px;
     }
     .el-sub-menu__icon-arrow {
       width: 12px;

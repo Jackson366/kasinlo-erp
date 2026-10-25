@@ -45,7 +45,7 @@ const viewKey = computed(() => route.path)
 </script>
 
 <template>
-  <div class="layout" :class="{ 'is-collapsed': appStore.sidebarCollapsed }">
+  <div class="layout" :class="{ 'is-collapsed': appStore.sidebarCollapsed, 'is-primary-collapsed': appStore.primarySidebarCollapsed }">
     <aside class="layout__aside" :class="{ 'is-rail-only': !sidebarHasSecondary }">
       <Sidebar @secondary-change="sidebarHasSecondary = $event" />
     </aside>
@@ -68,21 +68,23 @@ const viewKey = computed(() => route.path)
 
 <style scoped lang="scss">
 .layout {
+  --sidebar-rail-width: var(--layout-sidebar-primary-width);
   display: flex;
   height: 100%;
   overflow: hidden;
 
   &__aside {
-    width: var(--layout-sidebar-width);
+    width: calc(var(--sidebar-rail-width) + var(--layout-sidebar-secondary-width));
     flex-shrink: 0;
     transition: width var(--transition-base);
   }
 
   &.is-collapsed &__aside {
-    width: var(--layout-sidebar-collapsed);
+    width: var(--sidebar-rail-width);
   }
 
-  &__aside.is-rail-only { width: var(--layout-sidebar-collapsed); }
+  &.is-primary-collapsed { --sidebar-rail-width: var(--layout-sidebar-primary-collapsed); }
+  &__aside.is-rail-only { width: var(--sidebar-rail-width); }
 
   &__body {
     display: flex;

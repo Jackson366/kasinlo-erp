@@ -15,7 +15,7 @@ const userStore = useUserStore()
 const { logout } = useLogout()
 
 const fullscreen = ref(false)
-const collapsed = computed(() => appStore.sidebarCollapsed)
+const collapsed = computed(() => appStore.primarySidebarCollapsed)
 
 // 由 layout 注入的页面刷新方法；未注入时退化为整页刷新
 const refreshPage = inject<() => void>('pageRefresh', () => window.location.reload())
@@ -67,8 +67,8 @@ function handleCommand(command: string): void {
 <template>
   <div class="navbar">
     <div class="navbar__left">
-      <el-tooltip :content="collapsed ? '展开菜单' : '收起菜单'" placement="bottom">
-        <button class="navbar__icon-btn" type="button" :aria-label="collapsed ? '展开菜单' : '收起菜单'" :aria-expanded="!collapsed" @click="appStore.toggleSidebar()">
+      <el-tooltip :content="collapsed ? '展开一级菜单' : '收起一级菜单'" :trigger="['hover', 'focus']" :trigger-keys="[]" placement="bottom">
+        <button class="navbar__icon-btn" type="button" :aria-label="collapsed ? '展开一级菜单' : '收起一级菜单'" :aria-expanded="!collapsed" aria-controls="sidebar-primary" @click="appStore.togglePrimarySidebar()">
           <AppIcon :name="collapsed ? 'Expand' : 'Fold'" />
         </button>
       </el-tooltip>
