@@ -99,4 +99,7 @@ const viewKey = computed(() => route.path)
     background: var(--app-bg);
   }
 }
+@media (prefers-reduced-motion: reduce) {
+  .layout__aside { transition: none; }
+}
 </style>

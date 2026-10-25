@@ -94,6 +94,15 @@ try {
     price: 120,
     amount: 1200,
   }
+  // The real API returns hydrated product snapshots after both create and edit.
+  const hydrateItem = (it) => ({
+    ...item,
+    ...it,
+    qtyBase: it.qty * (it.unitId === 2 ? 1 : 6),
+    unit: it.unitId === 2 ? '米' : '根',
+    rate: it.unitId === 2 ? 1 : 6,
+    amount: it.qty * it.price,
+  })
   const seed = (i) => ({
     id: i,
     orderNo: `CG20261025${String(i).padStart(3, '0')}`,
@@ -125,6 +134,7 @@ try {
     listCalls: 0,
     auditCalls: 0,
     updateCalls: 0,
+    fullNavigation: false,
   }
   state.orders.push({
     ...seed(13),
@@ -169,7 +179,83 @@ try {
         roleCodes: ['buyer'],
         roles: [],
       })
-    if (endpoint === '/profile/routes') return ok([{id:90,name:'Inventory',path:'/inv',component:'',meta:{title:'进销存',icon:'Box'},children:[{id:91,name:'Trade',path:'/inv/trade',component:'',meta:{title:'单据管理',icon:'Document'},children:menus}]}])
+    if (endpoint === '/profile/routes') {
+      const inventory = {
+        id: 90,
+        name: 'Inventory',
+        path: '/inv',
+        component: '',
+        meta: { title: '进销存', icon: 'Box' },
+        children: [
+          {
+            id: 91,
+            name: 'Trade',
+            path: '/inv/trade',
+            component: '',
+            meta: { title: '单据管理', icon: 'Document' },
+            children: menus,
+          },
+        ],
+      }
+      if (!state.fullNavigation) return ok([inventory])
+      const leaves = [
+        ['InvContract', 'contract', '合同管理', 'Document'],
+        ['InvStock', 'stock', '库存管理', 'Box'],
+        ['InvFinance', 'finance', '应收应付', 'Money'],
+        ['InvReport', 'report', '报表中心', 'TrendCharts'],
+        ['InvPrint', 'print', '打印模板', 'Printer'],
+        ['InvProduct', 'product', '商品档案', 'Goods'],
+        ['InvCustomer', 'customer', '客户管理', 'User'],
+        ['InvSupplier', 'supplier', '供应商管理', 'Van'],
+      ].map(([name, slug, title, icon], i) => ({
+        id: 200 + i,
+        name,
+        path: '/inv/' + slug,
+        component: 'inv/' + slug + '/index',
+        meta: { title, icon },
+      }))
+      return ok([
+        {
+          id: 80,
+          name: 'InvOverview',
+          path: '/inv/overview',
+          component: 'inv/overview/index',
+          meta: { title: '数据概览', icon: 'Odometer' },
+        },
+        { ...inventory, children: [...menus, ...leaves] },
+        {
+          id: 300,
+          name: 'System',
+          path: '/system',
+          component: '',
+          meta: { title: '系统管理', icon: 'Setting' },
+          children: [
+            {
+              id: 301,
+              name: 'SystemUser',
+              path: '/system/user',
+              component: 'system/user/index',
+              meta: { title: '用户管理', icon: 'User' },
+            },
+          ],
+        },
+        {
+          id: 400,
+          name: 'Hidden',
+          path: '/hidden',
+          meta: { title: '隐藏分组', hidden: true },
+        },
+      ])
+    }
+    if (endpoint === '/inv/overview') return ok({})
+    if (
+      [
+        '/inv/report/trend',
+        '/inv/report/ranking',
+        '/inv/report/category',
+      ].includes(endpoint)
+    )
+      return ok([])
     if (endpoint === '/inv/suppliers' || endpoint === '/inv/customers')
       return ok({
         list: [{ id: 1, name: '杭州恒信金属材料有限公司', status: 1 }],
@@ -269,7 +355,8 @@ try {
       if (req.method() === 'PUT') {
         state.updateCalls++
         if (state.failSave) return fail('模拟保存失败')
-        Object.assign(row, req.postDataJSON())
+        const requested = req.postDataJSON()
+        Object.assign(row, requested, {items: requested.items.map(hydrateItem)})
         return ok('已保存')
       }
     }
@@ -280,14 +367,7 @@ try {
         ...seed(100),
         ...requested,
         partyName: '杭州恒信金属材料有限公司',
-        items: requested.items.map((it) => ({
-          ...item,
-          ...it,
-          qtyBase: it.qty * (it.unitId === 2 ? 1 : 6),
-          unit: it.unitId === 2 ? '米' : '根',
-          rate: it.unitId === 2 ? 1 : 6,
-          amount: it.qty * it.price,
-        })),
+        items: requested.items.map(hydrateItem),
       }
       row.totalAmount = row.items.reduce((sum, it) => sum + it.amount, 0)
       state.orders.unshift(row)
@@ -299,6 +379,21 @@ try {
     await fn()
     checks.push(name)
     console.log('PASS ' + name)
+  }
+  const assertSidebarContrast = async () => {
+    const ratios = await page.locator('.sidebar__primary-item.is-active, .sidebar__menu .el-menu-item.is-active').evaluateAll(elements => {
+      const luminance = color => color.match(/[\d.]+/g).slice(0,3).map(Number).map(v => {
+        v /= 255
+        return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+      }).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0)
+      return elements.map(el => {
+        const style = getComputedStyle(el)
+        const [a,b] = [luminance(style.color), luminance(style.backgroundColor)].sort((a,b) => a-b)
+        return (b + 0.05) / (a + 0.05)
+      })
+    })
+    expect(ratios.length).toBe(2)
+    for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(4.5)
   }
   const review = page.locator('.purchase-review')
   const queue = page.locator('.purchase-queue__item')
@@ -572,6 +667,120 @@ try {
       page.getByRole('menuitem', { name: '关闭其它标签' }),
     ).toBeVisible()
     await page.keyboard.press('Escape')
+  })
+  await check('完整侧栏：文字单行、产品图标、当前页面与路由切换', async () => {
+    state.fullNavigation = true
+    await page.reload()
+    await expect(review).toContainText(item.productName)
+    await page
+      .locator('.sidebar__rail')
+      .getByRole('button', { name: '进销存', exact: true })
+      .click()
+    await page.evaluate(() => document.documentElement.classList.remove('dark'))
+    const primary = page.locator('.sidebar__primary')
+    await expect(primary.locator('.sidebar__primary-item')).toHaveCount(3)
+    const logo = page.locator('.sidebar__logo')
+    expect(
+      await logo.evaluate((img) => img.complete && img.naturalWidth > 0),
+    ).toBe(true)
+    expect(await page.locator('link[rel="icon"]').getAttribute('href')).toBe(
+      '/brand/kasinlo-mark.png',
+    )
+    for (const label of await primary
+      .locator('.sidebar__primary-item > span')
+      .all()) {
+      const size = await label.boundingBox()
+      expect(size.height).toBeLessThanOrEqual(18)
+      expect(
+        await label.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      ).toBe(true)
+    }
+    await expect(primary.locator('.is-active')).toHaveCount(1)
+    await expect(
+      page.locator('.sidebar__secondary .el-menu-item.is-active'),
+    ).toHaveText('采购管理')
+    await page.waitForTimeout(250)
+    await page.screenshot({
+      path: out + '/sidebar-full-light.png',
+      fullPage: true,
+    })
+    await assertSidebarContrast()
+    await page
+      .locator('.sidebar')
+      .screenshot({ path: out + '/sidebar-detail-light.png' })
+    await page
+      .locator('.sidebar__secondary')
+      .getByRole('menuitem', { name: '销售管理', exact: true })
+      .click()
+    await expect(page).toHaveURL(/\/inv\/sales/)
+    await expect(
+      page.locator('.sidebar__secondary .el-menu-item.is-active'),
+    ).toHaveText('销售管理')
+    await primary.getByRole('button', { name: '系统管理', exact: true }).click()
+    await expect(page.locator('.sidebar__heading')).toHaveText('系统管理')
+    await expect(page).toHaveURL(/\/inv\/sales/)
+    await primary.getByRole('button', { name: '进销存', exact: true }).click()
+    await page
+      .locator('.sidebar__secondary')
+      .getByRole('menuitem', { name: '采购管理', exact: true })
+      .click()
+    await expect(review).toContainText(item.productName)
+  })
+  await check('侧栏主题、键盘焦点、窄屏与减少动态效果', async () => {
+    const handle = page.getByRole('button', {
+      name: '收起二级菜单',
+      exact: true,
+    })
+    await page.keyboard.press('Tab')
+    await handle.focus()
+    expect(
+      await handle.evaluate((el) => getComputedStyle(el).outlineStyle),
+    ).toBe('solid')
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.sidebar__secondary')).not.toBeVisible()
+    await expect(
+      page.getByRole('button', { name: '展开二级菜单', exact: true }),
+    ).toBeFocused()
+    await page.waitForTimeout(250)
+    await page
+      .locator('.sidebar')
+      .screenshot({ path: out + '/sidebar-detail-collapsed.png' })
+    await page.keyboard.press('Enter')
+    await page.evaluate(() => document.documentElement.classList.add('dark'))
+    await page.waitForTimeout(250)
+    await page
+      .locator('.sidebar')
+      .screenshot({ path: out + '/sidebar-detail-dark.png' })
+    await assertSidebarContrast()
+    await page.setViewportSize({ width: 640, height: 900 })
+    await expect(page.locator('.sidebar__secondary')).toBeVisible()
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    expect(
+      await page
+        .locator('.layout__aside')
+        .evaluate((el) => getComputedStyle(el).transitionDuration),
+    ).toBe('0s')
+    await page
+      .getByRole('button', { name: '收起二级菜单', exact: true })
+      .click()
+    await expect(page.locator('.layout__aside')).toHaveCSS('width', '132px')
+    await page
+      .getByRole('button', { name: '展开二级菜单', exact: true })
+      .click()
+    await page
+      .locator('.sidebar__rail')
+      .getByRole('link', { name: '数据概览', exact: true })
+      .click()
+    await expect(page.locator('.overview-page')).toBeVisible()
+    await expect(page.locator('.sidebar__toggle')).toHaveCount(0)
+    await expect(page.locator('.sidebar__rail')).toHaveCSS('width', '132px')
+    await expect(page.locator('.sidebar__primary .is-active')).toHaveCount(1)
+    await page.setViewportSize({ width: 1600, height: 1100 })
   })
   expect(pageErrors).toEqual([])
   console.log(`PASS ${checks.length} scenarios; no uncaught browser errors`)
