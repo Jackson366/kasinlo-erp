@@ -311,6 +311,19 @@ try {
     await expect(review).not.toContainText('未结清')
     await expect(page).toHaveURL(/view=pending/)
   })
+  await check('紧凑标题与单条待办卡片不拉伸', async () => {
+    const header = page.locator('.purchase-header')
+    expect((await header.boundingBox()).height).toBeLessThanOrEqual(48)
+    await expect(header.locator('p')).toHaveCount(0)
+    expect((await page.locator('.order-page > .page-card').boundingBox()).y).toBeLessThan(190)
+    const input = page.getByPlaceholder('单号 / 往来单位 / 业务员')
+    await input.fill(state.orders[0].orderNo)
+    await expect(queue).toHaveCount(1)
+    expect((await queue.first().boundingBox()).height).toBeLessThan(160)
+    await page.screenshot({path: out + '/purchase-single.png', fullPage: true})
+    await input.fill('')
+    await expect(queue).toHaveCount(10)
+  })
   await page.screenshot({ path: out + '/purchase-desktop.png', fullPage: true })
   await check('选择与慢响应竞态', async () => {
     state.delayed = 2
@@ -426,6 +439,13 @@ try {
     await expect(page.locator('.el-table__body')).toContainText(
       '审核后形成应付',
     )
+    const table = page.locator('.order-page .page-card > .el-table')
+    const dateCell = table.locator('.el-table__body tr').first().locator('td .cell').nth(3)
+    expect((await dateCell.boundingBox()).height).toBeLessThan(30)
+    const detailHeader = table.locator('.el-table__header th .cell').nth(5)
+    expect((await detailHeader.boundingBox()).height).toBeLessThan(30)
+    await page.screenshot({path: out + '/purchase-history.png', fullPage: true})
+
     await page
       .locator('.el-table__body')
       .getByRole('button', { name: state.orders[0].orderNo, exact: true })

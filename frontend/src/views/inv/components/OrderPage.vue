@@ -943,10 +943,15 @@ function onKeywordInput(): void {
 <template>
   <div class="order-page" :class="{ 'purchase-page': isPurchase }">
     <header v-if="isPurchase" class="purchase-header">
-      <div>
-        <h1>采购工作台</h1>
-        <p>核对采购，完成入库，追踪每笔货款。</p>
-      </div>
+      <h1>采购工作台</h1>
+      <el-tabs
+        :model-value="workspaceView"
+        class="purchase-tabs"
+        @tab-change="changeView"
+      >
+        <el-tab-pane label="待处理" name="pending" />
+        <el-tab-pane label="全部单据" name="all" />
+      </el-tabs>
       <el-button
         v-perm="'inv:purchase:create'"
         type="primary"
@@ -955,15 +960,6 @@ function onKeywordInput(): void {
         <AppIcon name="Plus" />新增采购单
       </el-button>
     </header>
-    <el-tabs
-      v-if="isPurchase"
-      :model-value="workspaceView"
-      class="purchase-tabs"
-      @tab-change="changeView"
-    >
-      <el-tab-pane label="待处理" name="pending" />
-      <el-tab-pane label="全部单据" name="all" />
-    </el-tabs>
     <div class="page-card">
       <!-- 搜索与操作合并一行：左侧列表名，中间筛选（自动折行），右侧查询/重置/新建/刷新 -->
       <div class="list-head">
@@ -1185,7 +1181,11 @@ function onKeywordInput(): void {
         >
           <template #default="{ row }">{{ row.partyName }}</template>
         </el-table-column>
-        <el-table-column prop="orderDate" label="单据日期" width="100">
+        <el-table-column
+          prop="orderDate"
+          label="单据日期"
+          :width="isPurchase ? 112 : 100"
+        >
           <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
         </el-table-column>
         <el-table-column
@@ -1195,7 +1195,11 @@ function onKeywordInput(): void {
         >
           <template #default="{ row }">{{ formatDay(row.dueDate) }}</template>
         </el-table-column>
-        <el-table-column label="明细" width="52" align="center">
+        <el-table-column
+          label="明细"
+          :width="isPurchase ? 72 : 52"
+          align="center"
+        >
           <template #default="{ row }">{{ row.itemCount }} 行</template>
         </el-table-column>
         <el-table-column label="金额" width="112" align="right">
@@ -1686,36 +1690,42 @@ function onKeywordInput(): void {
 .purchase-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 16px;
+  gap: 24px;
+  margin-bottom: 12px;
+  min-height: 40px;
   h1 {
     margin: 0;
-    font-size: 24px;
+    flex: none;
+    font-size: 18px;
+    line-height: 32px;
     font-weight: 600;
-    letter-spacing: -0.4px;
-  }
-  p {
-    margin: 8px 0 0;
-    color: var(--app-text-secondary);
-    font-size: 13px;
-    line-height: 1.6;
   }
 }
 .purchase-tabs {
-  margin-bottom: 12px;
+  flex: 1;
+  min-width: 0;
+  :deep(.el-tabs__header) {
+    margin: 0;
+  }
+  :deep(.el-tabs__nav-wrap::after) {
+    display: none;
+  }
 }
 .purchase-page {
   .page-card {
-    padding: 24px;
+    padding: 16px;
   }
   .list-head {
     grid-template-columns: minmax(0, 1fr) auto;
-    margin-bottom: 24px;
-    padding-bottom: 20px;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
     border-bottom: 1px solid var(--app-border-light);
   }
+  :deep(.el-table .cell) {
+    white-space: nowrap;
+  }
   .list-head__title {
+    line-height: 24px;
     grid-column: 1 / -1;
     width: 100%;
     color: var(--app-text);
@@ -1772,11 +1782,18 @@ function onKeywordInput(): void {
 }
 @media (max-width: 800px) {
   .purchase-header {
-    align-items: flex-start;
+    gap: 8px 16px;
     flex-wrap: wrap;
   }
   .purchase-header h1 {
-    font-size: 22px;
+    font-size: 18px;
+  }
+  .purchase-header .purchase-tabs {
+    order: 3;
+    flex-basis: 100%;
+  }
+  .purchase-header > .el-button {
+    margin-left: auto;
   }
   .purchase-page .page-card {
     padding: 16px;

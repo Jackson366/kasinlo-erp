@@ -145,6 +145,8 @@ defineEmits<{
     overflow-y: auto;
     scrollbar-gutter: stable;
     display: grid;
+    align-content: start;
+    grid-auto-rows: max-content;
     gap: 10px;
     padding: 3px 6px 3px 3px;
   }
