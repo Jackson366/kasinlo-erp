@@ -1,3 +1,13 @@
+# MyBatis-Plus 持久层改造（2026-10-25）
+
+ORM 已统一改为 MyBatis-Plus 3.5.17（Spring Boot 3 Starter）。26 张既有表有显式实体和 BaseMapper，幂等请求表另有专用实体。常规 CRUD、关联表条件操作、主键回填和软删除均使用 MyBatis-Plus；库存条件扣减与物理恢复使用 MyBatis Mapper 专用 SQL。Flyway 建表与既有 HTTP 契约保持不变。
+
+本轮新增 7 项持久层集成测试：BaseMapper 主键/禁用值、逻辑删除保留历史、显式 null 与空串、复合关联表、库存精度及防超扣、幂等键、恢复原 ID 与删除时间并拒绝非法标识符。GitHub Actions 继续执行 H2 和 PostgreSQL 各 58 项业务检查。实际结果以本次提交 Actions 为准。
+
+以下保留首次 Java 迁移的历史验证记录，不代表本次 ORM 改造的执行结果。
+
+---
+
 # Java 迁移验证记录
 
 提交基准：`3f65f68`。2026-10-24。

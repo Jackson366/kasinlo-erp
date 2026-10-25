@@ -1,112 +1,202 @@
 package com.kasinlo.erp.persistence;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kasinlo.erp.common.BusinessException;
+import com.kasinlo.erp.persistence.entity.IdentifiedEntity;
+import com.kasinlo.erp.persistence.entity.RequestKey;
+import com.kasinlo.erp.persistence.mapper.*;
+import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
-import java.sql.*;
-import java.time.*;
+import javax.sql.DataSource;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.*;
-import java.util.stream.*;
 import static com.kasinlo.erp.common.Values.*;
 
-/** SQL identifiers come exclusively from the committed schema registry. */
+/** Ordinary CRUD uses typed BaseMapper; specialized SQL lives in mapper interfaces. */
 @Repository
 public class ErpRepository {
-    public final JdbcTemplate jdbc;
-    public final Map<String,Map<String,Map<String,Object>>> schema;
-    public ErpRepository(JdbcTemplate jdbc, ObjectMapper json) throws Exception {
-        this.jdbc=jdbc;
-        schema=json.readValue(new ClassPathResource("schema-metadata.json").getInputStream(),new TypeReference<>(){});
+    private final SqlSessionTemplate sessions;
+    private final ObjectMapper json;
+    private final DataSource dataSource;
+    private final RequestKeyMapper requestKeys;
+    private final StockMutationMapper stock;
+    private final MaintenanceMapper maintenance;
+    private final Map<String, Map<String, Map<String, Object>>> schema;
+
+    public ErpRepository(SqlSessionTemplate sessions, ObjectMapper json, DataSource dataSource,
+                         RequestKeyMapper requestKeys, StockMutationMapper stock,
+                         MaintenanceMapper maintenance) throws Exception {
+        this.sessions = sessions;
+        this.json = json;
+        this.dataSource = dataSource;
+        this.requestKeys = requestKeys;
+        this.stock = stock;
+        this.maintenance = maintenance;
+        schema = json.readValue(new ClassPathResource("schema-metadata.json").getInputStream(), new TypeReference<>() {});
     }
-    public JdbcTemplate jdbc() { return jdbc; }
-    public Map<String,Map<String,Map<String,Object>>> schema() { return schema; }
-    public Map<String,Map<String,Object>> fields(String table) {
-        var f=schema.get(table); if(f==null) throw new IllegalArgumentException("Unknown table"); return f;
+
+    public Map<String, Map<String, Map<String, Object>>> schema() { return schema; }
+    public Map<String, Map<String, Object>> fields(String table) {
+        EntityMappings.require(table);
+        return Objects.requireNonNull(schema.get(table), "Missing schema metadata");
     }
-    public String col(String table,String field) {
-        var f=fields(table).get(field); if(f==null) throw new IllegalArgumentException("Unknown field: "+table+"."+field);return s(f,"column");
+    public String col(String table, String field) {
+        var metadata = fields(table).get(field);
+        if (metadata == null) throw new IllegalArgumentException("Unknown field");
+        return "\"" + s(metadata, "column") + "\"";
     }
-    private Map<String,Object> read(String table,ResultSet rs) throws SQLException {
-        var out=new LinkedHashMap<String,Object>();
-        for(var e:fields(table).entrySet()) {
-            Object v=rs.getObject(s(e.getValue(),"column"));
-            if(v instanceof Clob c) v=c.getSubString(1,(int)c.length());
-            if(v instanceof java.sql.Date d)v=d.toLocalDate().toString();
-            if(v instanceof Timestamp t)v=t.toInstant().atOffset(ZoneOffset.ofHours(8)).toString();
-            if(v instanceof OffsetDateTime t)v=t.toString();
-            if(v==null && "string".equals(s(e.getValue(),"type")))v="";
-            out.put(e.getKey(),v);
-        }
-        return out;
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private BaseMapper<Object> mapper(String table) {
+        return (BaseMapper) sessions.getMapper(EntityMappings.require(table).mapperType());
     }
-    public List<Map<String,Object>> all(String table) {
-        String cond=fields(table).containsKey("deletedAt")?" WHERE deleted_at IS NULL":"";
-        return jdbc.query("SELECT * FROM "+table+cond+(fields(table).containsKey("id")?" ORDER BY id":""),(rs,n)->read(table,rs));
+    private Map<String, Object> record(String table, Object entity) {
+        Map<String, Object> raw = json.convertValue(entity, new TypeReference<>() {});
+        Map<String, Object> result = new LinkedHashMap<>();
+        fields(table).forEach((field, meta) -> {
+            Object value = raw.get(field);
+            if (value == null && "string".equals(s(meta, "type"))) value = "";
+            result.put(field, value);
+        });
+        return result;
     }
-    public List<Map<String,Object>> where(String table,String field,Object value) {
-        return jdbc.query("SELECT * FROM "+table+" WHERE "+col(table,field)+"=?"+(fields(table).containsKey("deletedAt")?" AND deleted_at IS NULL":"")+(fields(table).containsKey("id")?" ORDER BY id":""),(rs,n)->read(table,rs),value);
+    private QueryWrapper<Object> query(String table) {
+        fields(table);
+        QueryWrapper<Object> wrapper = new QueryWrapper<>();
+        if (fields(table).containsKey("id")) wrapper.orderByAsc("id");
+        return wrapper;
     }
-    public Map<String,Object> find(String table,long id) { return find(table,id,false); }
-    public Map<String,Object> lock(String table,long id) { return find(table,id,true); }
-    private Map<String,Object> find(String table,long id,boolean lock) {
-        var found=jdbc.query("SELECT * FROM "+table+" WHERE id=?"+(fields(table).containsKey("deletedAt")?" AND deleted_at IS NULL":"")+(lock?" FOR UPDATE":""),(rs,n)->read(table,rs),id);
-        if(found.isEmpty())throw new BusinessException(404,"记录不存在"); return found.get(0);
+    public List<Map<String, Object>> all(String table) {
+        return mapper(table).selectList(query(table)).stream().map(e -> record(table, e)).toList();
     }
-    public Object convert(Map<String,Object> meta,Object v) {
-        if(v==null)return null;
-        return switch(s(meta,"type")) {
-            case "long" -> id(v);
-            case "decimal" -> dec(v);
-            case "bool" -> bool(v);
+    public List<Map<String, Object>> where(String table, String field, Object value) {
+        return mapper(table).selectList(query(table).eq(col(table, field), value))
+                .stream().map(e -> record(table, e)).toList();
+    }
+    public Map<String, Object> find(String table, long id) { return find(table, id, false); }
+    public Map<String, Object> lock(String table, long id) { return find(table, id, true); }
+    private Map<String, Object> find(String table, long id, boolean lock) {
+        var wrapper = query(table).eq(col(table, "id"), id);
+        if (lock) wrapper.last("FOR UPDATE");
+        Object entity = mapper(table).selectOne(wrapper);
+        if (entity == null) throw new BusinessException(404, "记录不存在");
+        return record(table, entity);
+    }
+    public Object convert(Map<String, Object> meta, Object value) {
+        if (value == null) return null;
+        return switch (s(meta, "type")) {
+            case "long" -> id(value);
+            case "decimal" -> dec(value);
+            case "bool" -> bool(value);
             case "time" -> {
-                String t=str(v); if(t.isBlank())yield null;
-                if("date".equals(s(meta,"sqlType")))yield java.sql.Date.valueOf(date(t));
-                yield t.length()==10?OffsetDateTime.parse(t+"T00:00:00+08:00"):OffsetDateTime.parse(t);
+                String text = str(value);
+                if (text.isBlank()) yield null;
+                if ("date".equals(s(meta, "sqlType"))) yield LocalDate.parse(date(text));
+                yield OffsetDateTime.parse(text.length() == 10 ? text + "T00:00:00+08:00" : text);
             }
-            default -> { String text=str(v); long max=n(meta,"max");BusinessException.require(max==0||text.codePointCount(0,text.length())<=max,"字段长度超限");yield text; }
+            default -> {
+                String text = str(value);
+                long max = n(meta, "max");
+                BusinessException.require(max == 0 || text.codePointCount(0, text.length()) <= max, "字段长度超限");
+                yield text;
+            }
         };
     }
-    public long insert(String table,Map<String,?> input) {
-        var values=new LinkedHashMap<String,Object>();
-        for(var e:input.entrySet())if(fields(table).containsKey(e.getKey())&&!Set.of("id","deletedAt").contains(e.getKey()))values.put(e.getKey(),convert(fields(table).get(e.getKey()),e.getValue()));
-        if(fields(table).containsKey("createdAt")) values.put("createdAt",OffsetDateTime.now());
-        if(fields(table).containsKey("updatedAt")) values.put("updatedAt",OffsetDateTime.now());
-        if(fields(table).containsKey("status"))values.putIfAbsent("status",1);
-        var keys=new ArrayList<>(values.keySet());
-        String sql="INSERT INTO "+table+" ("+keys.stream().map(k->col(table,k)).collect(Collectors.joining(","))+") VALUES ("+String.join(",",Collections.nCopies(keys.size(),"?"))+")";
-        if(!fields(table).containsKey("id")){jdbc.update(sql,values.values().toArray());return 0;}
-        var holder=new GeneratedKeyHolder();
-        jdbc.update(c->{var p=c.prepareStatement(sql,new String[]{"id"});int i=1;for(Object v:values.values())p.setObject(i++,v);return p;},holder);
-        return Objects.requireNonNull(holder.getKey()).longValue();
+    private Map<String, Object> values(String table, Map<String, ?> input, Set<String> excluded) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        input.forEach((key, value) -> {
+            if (fields(table).containsKey(key) && !excluded.contains(key)) {
+                result.put(key, convert(fields(table).get(key), value));
+            }
+        });
+        return result;
     }
-    public void update(String table,long id,Map<String,?> input) {
-        find(table,id);var values=new LinkedHashMap<String,Object>();
-        for(var e:input.entrySet())if(fields(table).containsKey(e.getKey())&&!Set.of("id","createdAt","deletedAt").contains(e.getKey()))values.put(e.getKey(),convert(fields(table).get(e.getKey()),e.getValue()));
-        if(fields(table).containsKey("updatedAt"))values.put("updatedAt",OffsetDateTime.now());
-        if(values.isEmpty())return;
-        var args=new ArrayList<>(values.values());args.add(id);
-        jdbc.update("UPDATE "+table+" SET "+values.keySet().stream().map(k->col(table,k)+"=?").collect(Collectors.joining(","))+" WHERE id=?",args.toArray());
+    public long insert(String table, Map<String, ?> input) {
+        var values = values(table, input, Set.of("id", "deletedAt"));
+        if (fields(table).containsKey("createdAt")) values.put("createdAt", OffsetDateTime.now());
+        if (fields(table).containsKey("updatedAt")) values.put("updatedAt", OffsetDateTime.now());
+        if (fields(table).containsKey("status")) values.putIfAbsent("status", 1L);
+        Object entity = json.convertValue(values, EntityMappings.require(table).entityType());
+        mapper(table).insert(entity);
+        return entity instanceof IdentifiedEntity identified ? identified.getId() : 0;
     }
-    public void delete(String table,long id) {
-        find(table,id);
-        if(fields(table).containsKey("deletedAt"))jdbc.update("UPDATE "+table+" SET deleted_at=CURRENT_TIMESTAMP WHERE id=?",id);
-        else jdbc.update("DELETE FROM "+table+" WHERE id=?",id);
+    public void update(String table, long id, Map<String, ?> input) {
+        find(table, id);
+        var values = values(table, input, Set.of("id", "createdAt", "deletedAt"));
+        if (fields(table).containsKey("updatedAt")) values.put("updatedAt", OffsetDateTime.now());
+        if (values.isEmpty()) return;
+        var wrapper = new UpdateWrapper<Object>().eq(col(table, "id"), id);
+        // Explicit .set preserves PATCH null, empty string, false and zero values.
+        values.forEach((field, value) -> wrapper.set(col(table, field), value));
+        mapper(table).update(null, wrapper);
     }
-    public void deleteWhere(String table,String field,Object value) {
-        String condition=col(table,field)+"=?";
-        if(fields(table).containsKey("deletedAt"))jdbc.update("UPDATE "+table+" SET deleted_at=CURRENT_TIMESTAMP WHERE "+condition,value);
-        else jdbc.update("DELETE FROM "+table+" WHERE "+condition,value);
+    public void delete(String table, long id) {
+        find(table, id);
+        mapper(table).delete(new QueryWrapper<>().eq(col(table, "id"), id));
     }
-    public void unique(String table,String field,String value,long except) {
-        boolean exists=where(table,field,value).stream().anyMatch(r->n(r,"id")!=except);
-        BusinessException.conflict(!exists,"编号或名称已存在");
+    public void deleteWhere(String table, String field, Object value) {
+        mapper(table).delete(new QueryWrapper<>().eq(col(table, field), value));
     }
-    public String number(String table,String field,String prefix) {
-        long max=0;for(var r:all(table)){String v=s(r,field);if(v.startsWith(prefix))try{max=Math.max(max,Long.parseLong(v.substring(prefix.length())));}catch(NumberFormatException ignored){}}
-        return prefix+String.format("%04d",max+1);
+    public void unique(String table, String field, String value, long except) {
+        BusinessException.conflict(where(table, field, value).stream().noneMatch(r -> n(r, "id") != except), "编号或名称已存在");
+    }
+    public String number(String table, String field, String prefix) {
+        long max = 0;
+        for (var row : all(table)) {
+            String value = s(row, field);
+            if (value.startsWith(prefix)) {
+                try { max = Math.max(max, Long.parseLong(value.substring(prefix.length()))); }
+                catch (NumberFormatException ignored) { /* Manual non-sequential code. */ }
+            }
+        }
+        return prefix + String.format("%04d", max + 1);
+    }
+
+    public int ping() { return maintenance.ping(); }
+    public int adjustStock(long id, BigDecimal delta) { return stock.adjust(id, delta); }
+    public void resetStock() { mapper("inv_product_specs").update(null, new UpdateWrapper<>().set("stock", BigDecimal.ZERO)); }
+    public void clearOperations() { mapper("sys_operation_logs").delete(new QueryWrapper<>()); }
+    public void clearSuccessfulLogins() { mapper("sys_login_logs").delete(new QueryWrapper<>().eq("success", true)); }
+    public long countBefore(String table, OffsetDateTime cutoff) {
+        return mapper(table).selectCount(new QueryWrapper<>().lt(col(table, "createdAt"), cutoff));
+    }
+    public int deleteBefore(String table, OffsetDateTime cutoff) {
+        return mapper(table).delete(new QueryWrapper<>().lt(col(table, "createdAt"), cutoff));
+    }
+    public Map<String, Object> lockRequest(String key) {
+        RequestKey entry = requestKeys.selectOne(new QueryWrapper<RequestKey>().eq("request_key", key).last("FOR UPDATE"));
+        return entry == null ? null : map("fingerprint", entry.getFingerprint(), "response", entry.getResponse());
+    }
+    public void createRequest(String key, long uid, String fingerprint) {
+        RequestKey entry = new RequestKey();
+        entry.setRequestKey(key); entry.setUserId(uid); entry.setFingerprint(fingerprint);
+        entry.setCreatedAt(OffsetDateTime.now());
+        requestKeys.insert(entry);
+    }
+    public void finishRequest(String key, String response) {
+        requestKeys.update(null, new UpdateWrapper<RequestKey>().eq("request_key", key).set("response", response));
+    }
+    public long requestCount() { return requestKeys.selectCount(new QueryWrapper<>()); }
+
+    /** Physical operations are reserved for confirmed backup/restore and cleanup. */
+    public void purge(String table) { fields(table); maintenance.purge(table); }
+    public List<Map<String, Object>> physicalRows(String table) { fields(table); return maintenance.physicalRows(table); }
+    public void restoreRow(String table, Map<String, Object> row) {
+        var values = values(table, row, Set.of());
+        if (!values.isEmpty()) maintenance.restore(table, values);
+    }
+    public void resetIdentity(String table, long next) throws Exception {
+        BusinessException.require(next > 0, "序列起点非法");
+        fields(table);
+        try (var connection = dataSource.getConnection()) {
+            if (connection.getMetaData().getDatabaseProductName().contains("H2")) maintenance.resetH2(table, next);
+            else maintenance.resetPostgres(table, next);
+        }
     }
 }

@@ -19,3 +19,12 @@ erp:
   demo-data: ${ERP_DEMO_DATA:true}
   jwt-secret: ${ERP_JWT_SECRET:}
   attachment-dir: ${ERP_ATTACHMENT_DIR:./data/attachments}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    call-setters-on-nulls: true
+    jdbc-type-for-null: "NULL"
+    local-cache-scope: STATEMENT
+  global-config:
+    banner: false

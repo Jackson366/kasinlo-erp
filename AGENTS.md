@@ -1,6 +1,6 @@
 # Java 迁移分支约定（优先适用于 backend-java）
 
-`backend-java/` 为独立 Java 后端，按 module/system、module/inv、module/ops 组织业务；web 只做协议适配，persistence 只做数据访问。原 Go 专属目录、GORM 和 swag 命令约定仅适用于 backend/。Java 的建表统一使用 Flyway，禁止运行 Go AutoMigrate 修改 Java 数据库。保留金额精度、审核事务、库存防超扣、权限与数据范围要求。Java 候选尚需完整等价验收，详见 backend-java/README.md。
+`backend-java/` 为独立 Java 后端，按 module/system、module/inv、module/ops 组织业务；web 只做协议适配，persistence 只做数据访问。原 Go 专属目录、GORM 和 swag 命令约定仅适用于 backend/。Java ORM 统一使用 MyBatis-Plus，CRUD 使用实体 + BaseMapper，专用 SQL 放 Mapper，禁止业务层直接使用 JdbcTemplate。Java 的建表统一使用 Flyway，禁止运行 Go AutoMigrate 修改 Java 数据库。保留金额精度、审核事务、库存防超扣、权限与数据范围要求。Java 候选尚需完整等价验收，详见 backend-java/README.md。
 
 # AGENTS.md — AI 开发约定
 
