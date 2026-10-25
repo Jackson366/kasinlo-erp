@@ -37,6 +37,9 @@ class MybatisPersistenceTest {
         var saved = db.find("sys_roles", role);
         assertEquals(0, n(saved, "status"));
         assertEquals(false, saved.get("isBuiltin"));
+
+        long nullableUser = db.insert("sys_users", map("username", "nullable-department", "deptId", null));
+        assertNull(db.find("sys_users", nullableUser).get("deptId"));
     }
 
     @Test void logicalDeleteFiltersReadsAndRetainsPhysicalHistory() {

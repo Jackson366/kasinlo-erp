@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 import static com.kasinlo.erp.common.Values.*;
 
 /** Ordinary CRUD uses typed BaseMapper; specialized SQL lives in mapper interfaces. */
@@ -73,11 +74,11 @@ public class ErpRepository {
         return wrapper;
     }
     public List<Map<String, Object>> all(String table) {
-        return mapper(table).selectList(query(table)).stream().map(e -> record(table, e)).toList();
+        return mapper(table).selectList(query(table)).stream().map(e -> record(table, e)).collect(Collectors.toCollection(ArrayList::new));
     }
     public List<Map<String, Object>> where(String table, String field, Object value) {
         return mapper(table).selectList(query(table).eq(col(table, field), value))
-                .stream().map(e -> record(table, e)).toList();
+                .stream().map(e -> record(table, e)).collect(Collectors.toCollection(ArrayList::new));
     }
     public Map<String, Object> find(String table, long id) { return find(table, id, false); }
     public Map<String, Object> lock(String table, long id) { return find(table, id, true); }
@@ -124,7 +125,22 @@ public class ErpRepository {
         if (fields(table).containsKey("status")) values.putIfAbsent("status", 1L);
         Object entity = json.convertValue(values, EntityMappings.require(table).entityType());
         mapper(table).insert(entity);
-        return entity instanceof IdentifiedEntity identified ? identified.getId() : 0;
+        if (entity instanceof IdentifiedEntity identified) {
+            long id = identified.getId();
+            // BaseMapper omits null properties on insert. Preserve explicitly supplied
+            // nulls when a column has a non-null database default (e.g. dept_id=0).
+            var explicitNulls = new UpdateWrapper<Object>().eq(col(table, "id"), id);
+            boolean clear = false;
+            for (var entry : values.entrySet()) {
+                if (entry.getValue() == null) {
+                    explicitNulls.set(col(table, entry.getKey()), null);
+                    clear = true;
+                }
+            }
+            if (clear) mapper(table).update(null, explicitNulls);
+            return id;
+        }
+        return 0;
     }
     public void update(String table, long id, Map<String, ?> input) {
         find(table, id);
