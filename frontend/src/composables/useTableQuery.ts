@@ -3,7 +3,10 @@ import type { PageQuery, PageResult } from '@/types/api'
 import { useLatestGuard } from './useLatestGuard'
 
 /** 查询状态：筛选项 F 之上补上必有默认值的分页参数 */
-export type TableQuery<F extends PageQuery> = F & { page: number; pageSize: number }
+export type TableQuery<F extends PageQuery> = F & {
+  page: number
+  pageSize: number
+}
 
 /**
  * 列表页查询状态机。
@@ -37,6 +40,7 @@ export function useTableQuery<F extends PageQuery, R>(
   // 位置（对象字面量不满足 F 的未知成员），断言放在推断之后最稳。
   const query = reactive({ page: 1, pageSize: 10, ...initial }) as TableQuery<F>
   const loading = ref(false)
+  const error = ref(false)
   const rows = ref<R[]>([])
   const total = ref(0)
   const guard = useLatestGuard()
@@ -44,11 +48,15 @@ export function useTableQuery<F extends PageQuery, R>(
   async function load(): Promise<void> {
     const ticket = guard.start()
     loading.value = true
+    error.value = false
     try {
       const data = await fetch(query)
       if (!guard.isCurrent(ticket)) return // 快速连续查询时丢弃过期响应
       rows.value = data.list
       total.value = data.total
+    } catch {
+      // 拦截器负责错误文案；页面仍需区分加载失败与没有数据。
+      if (guard.isCurrent(ticket)) error.value = true
     } finally {
       // 过期请求提前返回会把 loading 提前关掉，让正在飞行的新请求看起来已结束
       if (guard.isCurrent(ticket)) loading.value = false
@@ -67,5 +75,5 @@ export function useTableQuery<F extends PageQuery, R>(
     load()
   }
 
-  return { query, loading, rows, total, load, search, reset }
+  return { query, loading, error, rows, total, load, search, reset }
 }

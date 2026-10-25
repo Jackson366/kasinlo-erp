@@ -11,8 +11,18 @@ import { onBeforeUnmount } from 'vue'
  *    混进来会让「翻页」又把页码重置回 1；
  *  - 组件卸载前清定时器：慢响应回来时页面已经切走，不该再触发请求。
  */
-export function useDebouncedSearch(fn: () => void, delay = 320): { searchSoon: () => void } {
+export function useDebouncedSearch(fn: () => void, delay = 320) {
   let timer: ReturnType<typeof setTimeout> | undefined
+
+  function cancel(): void {
+    if (timer) clearTimeout(timer)
+    timer = undefined
+  }
+
+  function searchNow(): void {
+    cancel()
+    fn()
+  }
 
   function searchSoon(): void {
     if (timer) clearTimeout(timer)
@@ -22,10 +32,7 @@ export function useDebouncedSearch(fn: () => void, delay = 320): { searchSoon: (
     }, delay)
   }
 
-  onBeforeUnmount(() => {
-    if (timer) clearTimeout(timer)
-    timer = undefined
-  })
+  onBeforeUnmount(cancel)
 
-  return { searchSoon }
+  return { searchSoon, searchNow, cancel }
 }

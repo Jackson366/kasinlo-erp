@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * 采购 / 销售单据页面主体。两张页面的字段、列、交互完全一致，
- * 差异只有「走哪条业务线」「往来单位是什么」——收敛成一个组件，两个薄壳页面传 bizType。
+ * 共享单据查询、录入与过账逻辑。采购另提供连续核对工作区，销售保留列表路径。
  */
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -22,9 +22,14 @@ import type {
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
-import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
+import ListPrintDialog, {
+  type ListPrintColumn,
+} from '@/components/ListPrintDialog.vue'
 import OrderPrintDialog from './OrderPrintDialog.vue'
 import AttachmentDrawer from './AttachmentDrawer.vue'
+import PurchaseWorkbench from './PurchaseWorkbench.vue'
+import OrderDetailContent from './OrderDetailContent.vue'
+import { statusMeta, settleMeta } from './orderPresentation'
 import { formatDay, formatMoney, formatQty } from '@/utils/format'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useListTools } from '@/composables/useListTools'
@@ -39,16 +44,31 @@ const props = defineProps<{
 }>()
 
 const isPurchase = computed(() => props.bizType === 'purchase')
+const route = useRoute()
+const router = useRouter()
+const pagePath = route.path
+const workspaceView = ref<'pending' | 'all'>(
+  isPurchase.value && route.query.view !== 'all' ? 'pending' : 'all',
+)
+const isWorkbench = computed(
+  () => isPurchase.value && workspaceView.value === 'pending',
+)
+const dueDateLabel = computed(() =>
+  isPurchase.value ? '付款到期日' : '到期日',
+)
+const composing = ref(false)
+const selectedId = ref<number | null>(null)
+const mobileDetail = ref(false)
+const detailLoading = ref(false)
+const detailError = ref(false)
+const detailTarget = ref<Pick<InvOrderRow, 'id'> | null>(null)
+// 审核后保留已处理单据及结果，用户确认后再选择下一张。
+const keepReviewResult = ref(false)
+const reviewResult = ref('')
 
-const statusMeta: Record<number, { text: string; type: 'warning' | 'success' | 'info' }> = {
-  1: { text: '待处理', type: 'warning' },
-  2: { text: '已审核', type: 'success' },
-  3: { text: '已取消', type: 'info' },
-}
-const settleMeta: Record<string, { text: string; type: 'danger' | 'warning' | 'success' }> = {
-  unpaid: { text: '未结清', type: 'danger' },
-  partial: { text: '部分结算', type: 'warning' },
-  paid: { text: '已结清', type: 'success' },
+function urlNumber(value: unknown, fallback: number, max: number): number {
+  const n = Number(value)
+  return Number.isInteger(n) && n > 0 && n <= max ? n : fallback
 }
 
 // ---------------- 列表 ----------------
@@ -62,8 +82,41 @@ interface OrderQuery {
   dateRange?: string[]
 }
 
-const { query, loading, rows, total, load, search, reset } = useTableQuery<OrderQuery, InvOrderRow>(
-  { keyword: '', status: undefined, settleStatus: undefined, dateRange: [] },
+const {
+  query,
+  loading,
+  error: listError,
+  rows,
+  total,
+  load: loadList,
+} = useTableQuery<OrderQuery, InvOrderRow>(
+  {
+    keyword:
+      isPurchase.value && typeof route.query.q === 'string'
+        ? route.query.q
+        : '',
+    status: isWorkbench.value
+      ? 1
+      : isPurchase.value
+        ? [1, 2, 3].includes(Number(route.query.status))
+          ? Number(route.query.status)
+          : undefined
+        : undefined,
+    settleStatus:
+      !isWorkbench.value &&
+      isPurchase.value &&
+      ['unpaid', 'partial', 'paid'].includes(String(route.query.settle))
+        ? (route.query.settle as InvSettleStatus)
+        : undefined,
+    dateRange:
+      isPurchase.value &&
+      typeof route.query.start === 'string' &&
+      typeof route.query.end === 'string'
+        ? [route.query.start, route.query.end]
+        : [],
+    page: isPurchase.value ? urlNumber(route.query.page, 1, 100000) : 1,
+    pageSize: isPurchase.value ? urlNumber(route.query.size, 10, 200) : 10,
+  },
   (params) =>
     invApi.orders({
       bizType: props.bizType,
@@ -76,6 +129,97 @@ const { query, loading, rows, total, load, search, reset } = useTableQuery<Order
       endDate: params.dateRange?.[1] || undefined,
     }),
 )
+const hasFilters = computed(() =>
+  Boolean(
+    query.keyword ||
+    query.dateRange?.length ||
+    query.settleStatus ||
+    (!isWorkbench.value && query.status),
+  ),
+)
+
+function persistQuery(): void {
+  if (!isPurchase.value || route.path !== pagePath) return
+  void router.replace({
+    path: pagePath,
+    query: {
+      view: workspaceView.value,
+      q: query.keyword || undefined,
+      status:
+        !isWorkbench.value && query.status ? String(query.status) : undefined,
+      settle: query.settleStatus || undefined,
+      start: query.dateRange?.[0] || undefined,
+      end: query.dateRange?.[1] || undefined,
+      page: query.page > 1 ? String(query.page) : undefined,
+      size: query.pageSize !== 10 ? String(query.pageSize) : undefined,
+    },
+  })
+}
+let listLoadSeq = 0
+async function load(): Promise<void> {
+  const seq = ++listLoadSeq
+  clearSelection(tableRef.value)
+  persistQuery()
+  await loadList()
+  if (seq !== listLoadSeq) return
+  // 审核移走最后一行后，回到有效页，避免留在空的末页。
+  const maxPage = Math.max(1, Math.ceil(total.value / query.pageSize))
+  if (!listError.value && query.page > maxPage) {
+    query.page = maxPage
+    persistQuery()
+    await loadList()
+  }
+}
+function search(): void {
+  if (composing.value) return
+  cancelSearch()
+  keepReviewResult.value = false
+  reviewResult.value = ''
+  query.page = 1
+  void load()
+}
+function reset(): void {
+  cancelSearch()
+  Object.assign(query, {
+    keyword: '',
+    dateRange: [],
+    status: isWorkbench.value ? 1 : undefined,
+    settleStatus: undefined,
+    page: 1,
+    pageSize: 10,
+  })
+  keepReviewResult.value = false
+  reviewResult.value = ''
+  void load()
+}
+function changeView(value: string | number): void {
+  workspaceView.value = value === 'all' ? 'all' : 'pending'
+  selectedId.value = null
+  detail.value = null
+  detailViewSeq.value++
+  mobileDetail.value = false
+  keepReviewResult.value = false
+  reviewResult.value = ''
+  query.status = isWorkbench.value ? 1 : undefined
+  query.settleStatus = undefined
+  search()
+}
+function selectOrder(row: InvOrderRow): void {
+  keepReviewResult.value = false
+  reviewResult.value = ''
+  mobileDetail.value = true
+  void openDetail(row)
+}
+function nextOrder(): void {
+  keepReviewResult.value = false
+  reviewResult.value = ''
+  if (rows.value.length) selectOrder(rows.value[0])
+  else {
+    selectedId.value = null
+    detail.value = null
+    mobileDetail.value = false
+  }
+}
 
 // ---------------- 附件 ----------------
 //
@@ -113,7 +257,6 @@ function openAttach(row: InvOrderRow): void {
   attachVisible.value = true
 }
 
-
 // ---------------- 备选数据 ----------------
 const parties = ref<InvPartyRow[]>([])
 /** 往来单位数超过单次上限：下拉里只是一部分，必须说清楚，否则用户以为没这个客户/供应商 */
@@ -135,7 +278,9 @@ const pickLimit = 1000
 
 async function loadOptions(): Promise<void> {
   const [partyRes, pickRes] = await Promise.all([
-    isPurchase.value ? invApi.suppliers({ pageSize: partyLimit }) : invApi.customers({ pageSize: partyLimit }),
+    isPurchase.value
+      ? invApi.suppliers({ pageSize: partyLimit })
+      : invApi.customers({ pageSize: partyLimit }),
     invApi.productPick(),
   ])
   parties.value = partyRes.list
@@ -193,7 +338,8 @@ const pickQuery = ref('')
 function matchProduct(p: InvProductPick, q: string): boolean {
   // 条码也参与匹配：扫码枪就是键盘，扫完等于把整串条码敲进搜索框，
   // 命中的通常只剩一条，回车即选中（el-select filterable 的原生行为）
-  if (p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)) return true
+  if (p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q))
+    return true
   if (p.barcode && p.barcode.toLowerCase().includes(q)) return true
   return p.specs.some((s) => s.spec.toLowerCase().includes(q))
 }
@@ -205,8 +351,12 @@ function applyPickFilter(query: string): void {
   const matched = q ? all.filter((p) => matchProduct(p, q)) : all
   // 已选中的商品必须始终留在选项里：el-select 靠 options 反查 label，
   // 找不到就会把「热轧钢板」显示成数字 3 —— 用户会以为选错了。
-  const picked = new Set(form.items.map((it) => it.productId).filter(Boolean) as number[])
-  const missing = all.filter((p) => picked.has(p.id) && !matched.some((m) => m.id === p.id))
+  const picked = new Set(
+    form.items.map((it) => it.productId).filter(Boolean) as number[],
+  )
+  const missing = all.filter(
+    (p) => picked.has(p.id) && !matched.some((m) => m.id === p.id),
+  )
   filteredPicks.value = missing.length ? [...missing, ...matched] : matched
 }
 
@@ -222,16 +372,6 @@ function filterProducts(query: string): void {
  */
 function qtyBase(item: FormItem): number {
   return (Number(item.qty) || 0) * (unitOf(item)?.rate ?? 1)
-}
-
-/**
- * 规格的基本单位名，用于把「折算成多少」写全（如「×0.1667 = 1 米」）。
- * 明细快照里只有成交单位，基本单位名要从商品档案补；档案已变更则留空，
- * 不因为拿不到名字就让整行显示不出来。
- */
-function baseUnitNameOf(productId: number, specId: number): string {
-  const spec = picks.value.find((p) => p.id === productId)?.specs.find((s) => s.id === specId)
-  return spec?.units.find((u) => u.isBase)?.unit ?? ''
 }
 
 /** 规格一变，单位回到该规格的基本单位，单价跟着刷新 */
@@ -251,7 +391,9 @@ function applyPrice(item: FormItem): void {
   const u = unitOf(item)
   if (!u) return
   const p = picks.value.find((x) => x.id === item.productId)
-  const ref = isPurchase.value ? Number(p?.refPurchasePrice ?? 0) : Number(p?.refSalePrice ?? 0)
+  const ref = isPurchase.value
+    ? Number(p?.refPurchasePrice ?? 0)
+    : Number(p?.refSalePrice ?? 0)
   item.price = ref > 0 ? ref : isPurchase.value ? u.purchasePrice : u.salePrice
 }
 
@@ -259,25 +401,13 @@ const formRef = ref<FormInstance>()
 const dialogVisible = ref(false)
 const dialogMode = ref<'create' | 'edit'>('create')
 const submitting = ref(false)
+const validating = ref(false)
+const saveError = ref(false)
+const formBaseline = ref('')
 const editingId = ref<number | null>(null)
 const detailVisible = ref(false)
 const detail = ref<{ row: InvOrderRow; items: InvOrderItem[] } | null>(null)
 
-/**
- * 明细表的合计行。只合计「金额」一列 ——
- * 数量跨单位（箱 / 个 / 根）相加没有意义，价格相加更没有。
- * 合计取单据头部的 totalAmount 而不是把明细金额再加一遍：
- * 明细是快照，单据金额是审核后的口径，两者不一致时以单据为准。
- */
-function detailSummary(param: { columns: unknown[] }): string[] {
-  const last = param.columns.length - 1
-  const total = detail.value?.row.totalAmount ?? 0
-  return param.columns.map((_, i) => {
-    if (i === 0) return '合计'
-    if (i === last) return formatMoney(total)
-    return ''
-  })
-}
 const printRef = ref<InstanceType<typeof OrderPrintDialog> | null>(null)
 
 const form = reactive<{
@@ -304,7 +434,10 @@ const rules: FormRules = {
 }
 
 const formTotal = computed(() =>
-  form.items.reduce((sum, it) => sum + (Number(it.qty) || 0) * (Number(it.price) || 0), 0),
+  form.items.reduce(
+    (sum, it) => sum + (Number(it.qty) || 0) * (Number(it.price) || 0),
+    0,
+  ),
 )
 
 function today(): string {
@@ -323,12 +456,21 @@ function productLabel(p: InvProductPick): string {
   // 有码就带上：扫码枪敲完一串数字，用户要能一眼确认「选中的是这件货」
   const key = p.barcode ? `${p.code} / ${p.barcode}` : p.code
   const ref = isPurchase.value ? p.refPurchasePrice : p.refSalePrice
-  const refText = ref > 0 ? ` · 参考${isPurchase.value ? '进价' : '售价'} ¥${ref.toFixed(2)}` : ''
+  const refText =
+    ref > 0
+      ? ` · 参考${isPurchase.value ? '进价' : '售价'} ¥${ref.toFixed(2)}`
+      : ''
   return `${p.name}（${key}）${refText}`
 }
 
 function addItem(): void {
-  form.items.push({ productId: undefined, specId: undefined, unitId: undefined, qty: 1, price: 0 })
+  form.items.push({
+    productId: undefined,
+    specId: undefined,
+    unitId: undefined,
+    qty: 1,
+    price: 0,
+  })
 }
 
 function removeItem(index: number): void {
@@ -386,6 +528,8 @@ function openCreate(): void {
   addItem()
   dialogMode.value = 'create'
   editingId.value = null
+  formBaseline.value = JSON.stringify(form)
+  saveError.value = false
   dialogVisible.value = true
   // 重拉档案下拉：客户 / 供应商 / 商品可能在其它页面刚新增过，
   // 只在页面挂载时拉一次的话，弹窗里永远是旧数据（要刷新整页才看得见新档案）。
@@ -427,15 +571,24 @@ async function openEdit(row: InvOrderRow): Promise<void> {
   })
   dialogMode.value = 'edit'
   editingId.value = row.id
+  formBaseline.value = JSON.stringify(form)
+  saveError.value = false
   dialogVisible.value = true
   // 同 openCreate：编辑时换商品也要能看到刚新增的档案
   loadOptions().catch(() => {})
 }
 
 async function submitForm(): Promise<void> {
-  const valid = formRef.value ? await formRef.value.validate().catch(() => false) : false
+  if (submitting.value || validating.value) return
+  validating.value = true
+  const valid = formRef.value
+    ? await formRef.value.validate().catch(() => false)
+    : false
+  validating.value = false
   if (!valid) return
-  const items = form.items.filter((it) => it.productId && it.specId && it.unitId)
+  const items = form.items.filter(
+    (it) => it.productId && it.specId && it.unitId,
+  )
   if (items.length === 0) {
     ElMessage.warning('请至少添加一条明细')
     return
@@ -448,7 +601,10 @@ async function submitForm(): Promise<void> {
   const payload: InvOrderPayload = {
     bizType: props.bizType,
     // 新建时编号留空 = 后端自动生成；编辑时回填原单号原样提交（后端编辑不改单号）
-    orderNo: dialogMode.value === 'create' ? form.orderNo.trim() || undefined : undefined,
+    orderNo:
+      dialogMode.value === 'create'
+        ? form.orderNo.trim() || undefined
+        : undefined,
     partyId: form.partyId as number,
     orderDate: form.orderDate,
     dueDate: form.dueDate || undefined,
@@ -463,16 +619,35 @@ async function submitForm(): Promise<void> {
     })),
   }
   submitting.value = true
+  saveError.value = false
   try {
+    let createdId: number | null = null
     if (dialogMode.value === 'create') {
-      await invApi.createOrder(payload)
+      const created = await invApi.createOrder(payload)
+      createdId = created.id
       ElMessage.success('新增成功')
     } else if (editingId.value) {
       await invApi.updateOrder(editingId.value, payload)
       ElMessage.success('修改成功')
     }
     dialogVisible.value = false
-    load()
+    formBaseline.value = JSON.stringify(form)
+    if (isWorkbench.value && createdId) {
+      // 新单即使不属于当前筛选页，也在核对区保留明确的保存结果。
+      keepReviewResult.value = true
+      reviewResult.value = '采购单已保存，核对后可审核并入库。'
+      mobileDetail.value = true
+      await openDetail({ id: createdId })
+    } else if (
+      isPurchase.value &&
+      detailTarget.value &&
+      (detailVisible.value || keepReviewResult.value)
+    ) {
+      await openDetail(detailTarget.value)
+    }
+    await load()
+  } catch {
+    saveError.value = true
   } finally {
     submitting.value = false
   }
@@ -493,18 +668,38 @@ function openApprove(row: InvOrderRow): void {
 
 async function confirmApprove(): Promise<void> {
   if (!approveRow.value || approveRunning.value) return
+  const target = approveRow.value
   approveRunning.value = true
   try {
-    await invApi.changeOrderStatus(approveRow.value.id, 2, approveSettleNow.value)
-    ElMessage.success(approveSettleNow.value ? '已审核并结清全额款项' : '审核通过')
+    await invApi.changeOrderStatus(target.id, 2, approveSettleNow.value)
+    ElMessage.success(
+      approveSettleNow.value ? '已审核并结清全额款项' : '审核通过',
+    )
     approveVisible.value = false
-    load()
+    if (isWorkbench.value) {
+      keepReviewResult.value = true
+      reviewResult.value = '采购单已审核，已生成入库单并增加库存。'
+      const reviewed = target
+      await openDetail(reviewed)
+    } else if (
+      isPurchase.value &&
+      detailVisible.value &&
+      detail.value?.row.id === target.id
+    ) {
+      await openDetail(target)
+    }
+    await load()
+  } catch {
+    // 请求层显示服务端错误；保留确认与当前单据，允许核实后重试。
   } finally {
     approveRunning.value = false
   }
 }
 
-async function changeStatus(row: InvOrderRow, status: InvOrderStatus): Promise<void> {
+async function changeStatus(
+  row: InvOrderRow,
+  status: InvOrderStatus,
+): Promise<void> {
   if (status === 2) {
     openApprove(row)
     return
@@ -531,23 +726,95 @@ async function reverseOrder(row: InvOrderRow): Promise<void> {
   try {
     await invApi.reverseOrder(row.id)
     ElMessage.success('已反审核')
-    load()
+    await load()
+    if (
+      isPurchase.value &&
+      detailVisible.value &&
+      detailTarget.value?.id === row.id
+    )
+      await openDetail(row)
   } catch {
     // 失败提示（如「已登记收付款，不能反审核」）由响应拦截器统一处理
   }
 }
 
-async function openDetail(row: InvOrderRow): Promise<void> {
+async function openDetail(row: Pick<InvOrderRow, 'id'>): Promise<void> {
   const seq = ++detailViewSeq.value
+  const inline = isWorkbench.value
+  selectedId.value = row.id
+  detailTarget.value = row
+  detailLoading.value = true
+  detailError.value = false
+  if (inline) detail.value = null
   try {
     const data = await invApi.orderDetail(row.id)
     if (seq !== detailViewSeq.value) return
     detail.value = { row: data, items: data.items }
-    detailVisible.value = true
+    if (!inline) detailVisible.value = true
   } catch {
-    // 失败提示由响应拦截器统一处理
+    if (seq === detailViewSeq.value) detailError.value = true
+  } finally {
+    if (seq === detailViewSeq.value) detailLoading.value = false
   }
 }
+function retryDetail(): void {
+  if (detailTarget.value) void openDetail(detailTarget.value)
+}
+watch(rows, (list) => {
+  if (!isWorkbench.value || keepReviewResult.value) return
+  const row = list.find((r) => r.id === selectedId.value) ?? list[0]
+  if (row) void openDetail(row)
+  else {
+    ++detailViewSeq.value
+    detailLoading.value = false
+    detail.value = null
+    selectedId.value = null
+    mobileDetail.value = false
+  }
+})
+
+const hasUnsavedChanges = computed(
+  () =>
+    isPurchase.value &&
+    dialogVisible.value &&
+    JSON.stringify(form) !== formBaseline.value,
+)
+async function canCloseForm(): Promise<boolean> {
+  if (submitting.value || validating.value) return false
+  if (!hasUnsavedChanges.value) return true
+  try {
+    await ElMessageBox.confirm(
+      '采购单尚未保存，离开后本次修改将丢失。',
+      '放弃本次修改？',
+      {
+        confirmButtonText: '放弃修改',
+        cancelButtonText: '继续编辑',
+        type: 'warning',
+        autofocus: false,
+      },
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+async function requestCloseForm(): Promise<void> {
+  if (await canCloseForm()) dialogVisible.value = false
+}
+async function beforeFormClose(done: () => void): Promise<void> {
+  if (await canCloseForm()) done()
+}
+onBeforeRouteLeave(async () => {
+  const allowed = await canCloseForm()
+  if (allowed) dialogVisible.value = false
+  return allowed
+})
+function beforeUnload(event: BeforeUnloadEvent): void {
+  if (!hasUnsavedChanges.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 
 // ---------------- 导出 / 打印 / 批量 ----------------
 const tableRef = ref()
@@ -575,17 +842,31 @@ const {
 
 const printVisible = ref(false)
 /** 有勾选就打印勾选的，没勾选打印当前页 —— 与导出的默认口径一致 */
-const printRows = computed(() => (selection.value.length ? selection.value : rows.value))
+const printRows = computed(() =>
+  selection.value.length ? selection.value : rows.value,
+)
 
 const printColumns = computed<ListPrintColumn<InvOrderRow>[]>(() => [
   { label: '单号', prop: 'orderNo' },
   { label: props.partyLabel, prop: 'partyName' },
   { label: '单据日期', value: (r) => formatDay(r.orderDate) },
-  { label: '到期日', value: (r) => formatDay(r.dueDate) },
+  { label: dueDateLabel.value, value: (r) => formatDay(r.dueDate) },
   { label: '状态', value: (r) => statusMeta[r.status]?.text || '-' },
   { label: '金额', value: (r) => formatMoney(r.totalAmount), align: 'right' },
-  { label: '已结算', value: (r) => formatMoney(r.settledAmount), align: 'right' },
-  { label: '结算', value: (r) => settleMeta[r.settleStatus]?.text || '-' },
+  {
+    label: '已结算',
+    value: (r) => formatMoney(r.settledAmount),
+    align: 'right',
+  },
+  {
+    label: isPurchase.value ? '付款状态' : '结算',
+    value: (r) =>
+      isPurchase.value && r.status !== 2
+        ? r.status === 1
+          ? '审核后形成应付'
+          : '—'
+        : settleMeta[r.settleStatus]?.text || '-',
+  },
   { label: '业务员', value: (r) => r.salesman || '-' },
   { label: '操作人员', value: (r) => r.operator || '-' },
 ])
@@ -593,9 +874,11 @@ const printColumns = computed<ListPrintColumn<InvOrderRow>[]>(() => [
 const printSubtitle = computed(() => {
   const parts: string[] = []
   if (query.keyword) parts.push(`关键字「${query.keyword}」`)
-  if (query.dateRange?.length === 2) parts.push(`日期 ${query.dateRange[0]} ~ ${query.dateRange[1]}`)
+  if (query.dateRange?.length === 2)
+    parts.push(`日期 ${query.dateRange[0]} ~ ${query.dateRange[1]}`)
   if (query.status) parts.push(`状态 ${statusMeta[query.status]?.text}`)
-  if (query.settleStatus) parts.push(`结算 ${settleMeta[query.settleStatus]?.text}`)
+  if (query.settleStatus)
+    parts.push(`结算 ${settleMeta[query.settleStatus]?.text}`)
   if (selection.value.length) parts.push('仅打印勾选')
   return parts.join(' · ') || '全部单据'
 })
@@ -625,7 +908,12 @@ async function batchReverse(): Promise<void> {
     ElMessage.warning('请先勾选已审核的单据')
     return
   }
-  const done = await runBatch('批量反审核', target, (r) => invApi.reverseOrder(r.id), (r) => r.orderNo)
+  const done = await runBatch(
+    '批量反审核',
+    target,
+    (r) => invApi.reverseOrder(r.id),
+    (r) => r.orderNo,
+  )
   if (done) {
     clearSelection(tableRef.value)
     load()
@@ -633,32 +921,78 @@ async function batchReverse(): Promise<void> {
 }
 
 onMounted(() => {
-  load()
-  loadOptions()
+  window.addEventListener('beforeunload', beforeUnload)
+  void load()
+  void loadOptions().catch(() => {})
 })
 // 关键字录入即查询（防抖），不必再按回车
-const { searchSoon } = useDebouncedSearch(search)
+const {
+  searchSoon,
+  searchNow,
+  cancel: cancelSearch,
+} = useDebouncedSearch(search)
+function onCompositionEnd(): void {
+  composing.value = false
+  searchSoon()
+}
+function onKeywordInput(): void {
+  if (!composing.value) searchSoon()
+}
 </script>
 
 <template>
-  <div class="order-page">
+  <div class="order-page" :class="{ 'purchase-page': isPurchase }">
+    <header v-if="isPurchase" class="purchase-header">
+      <div>
+        <h1>采购工作台</h1>
+        <p>核对采购，完成入库，追踪每笔货款。</p>
+      </div>
+      <el-button
+        v-perm="'inv:purchase:create'"
+        type="primary"
+        @click="openCreate"
+      >
+        <AppIcon name="Plus" />新增采购单
+      </el-button>
+    </header>
+    <el-tabs
+      v-if="isPurchase"
+      :model-value="workspaceView"
+      class="purchase-tabs"
+      @tab-change="changeView"
+    >
+      <el-tab-pane label="待处理" name="pending" />
+      <el-tab-pane label="全部单据" name="all" />
+    </el-tabs>
     <div class="page-card">
       <!-- 搜索与操作合并一行：左侧列表名，中间筛选（自动折行），右侧查询/重置/新建/刷新 -->
       <div class="list-head">
         <span class="list-head__title">
-          {{ title }}<em>共 {{ total }} 张单据</em>
+          {{ isWorkbench ? '待处理采购单' : title
+          }}<em>{{ hasFilters ? '筛选结果' : '共' }} {{ total }} 张</em>
           <em v-if="selection.length">
             已选 {{ selection.length }} 项
-            <a @click="clearSelection(tableRef)">清空</a>
+            <el-button link type="primary" @click="clearSelection(tableRef)"
+              >清空</el-button
+            >
           </em>
         </span>
-        <el-form class="filter-form" label-width="76px" @submit.prevent>
+        <el-form
+          class="filter-form"
+          label-width="76px"
+          novalidate
+          @submit.prevent
+        >
           <el-form-item label="关键字">
             <el-input
-              v-model="query.keyword" @input="searchSoon"
+              v-model="query.keyword"
+              @input="onKeywordInput"
+              @compositionstart="composing = true"
+              @compositionend="onCompositionEnd"
+              @clear="searchNow"
               placeholder="单号 / 往来单位 / 业务员"
               clearable
-              @keyup.enter="search"
+              @keyup.enter="searchNow"
             />
           </el-form-item>
           <el-form-item label="单据日期">
@@ -672,15 +1006,22 @@ const { searchSoon } = useDebouncedSearch(search)
               unlink-panels
             />
           </el-form-item>
-          <el-form-item label="单据状态">
+          <el-form-item v-if="!isWorkbench" label="单据状态">
             <el-select v-model="query.status" placeholder="全部" clearable>
               <el-option label="待处理" :value="1" />
               <el-option label="已审核" :value="2" />
               <el-option label="已取消" :value="3" />
             </el-select>
           </el-form-item>
-          <el-form-item label="结算状态">
-            <el-select v-model="query.settleStatus" placeholder="全部" clearable>
+          <el-form-item
+            v-if="!isWorkbench"
+            :label="isPurchase ? '付款状态' : '结算状态'"
+          >
+            <el-select
+              v-model="query.settleStatus"
+              placeholder="全部"
+              clearable
+            >
               <el-option label="未结清" value="unpaid" />
               <el-option label="部分结算" value="partial" />
               <el-option label="已结清" value="paid" />
@@ -688,12 +1029,15 @@ const { searchSoon } = useDebouncedSearch(search)
           </el-form-item>
         </el-form>
         <div class="list-head__actions">
-          <el-button type="primary" @click="search">
+          <el-button
+            :type="isPurchase ? 'default' : 'primary'"
+            @click="searchNow"
+          >
             <AppIcon name="Search" />
             <span>查询</span>
           </el-button>
           <el-button @click="reset">重置</el-button>
-          <span class="list-head__divider" />
+          <span v-if="!isWorkbench" class="list-head__divider" />
           <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
           <el-dropdown v-if="selection.length" trigger="click">
             <el-button v-perm="`inv:${bizType}:finish`" :loading="batchRunning">
@@ -702,26 +1046,121 @@ const { searchSoon } = useDebouncedSearch(search)
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="batchAudit">审核（仅待处理）</el-dropdown-item>
-                <el-dropdown-item @click="batchReverse">反审核（仅已审核）</el-dropdown-item>
-                <el-dropdown-item divided @click="exportRows(selection)">导出选中</el-dropdown-item>
-                <el-dropdown-item @click="printVisible = true">打印选中</el-dropdown-item>
+                <el-dropdown-item @click="batchAudit"
+                  >审核（仅待处理）</el-dropdown-item
+                >
+                <el-dropdown-item @click="batchReverse"
+                  >反审核（仅已审核）</el-dropdown-item
+                >
+                <el-dropdown-item divided @click="exportRows(selection)"
+                  >导出选中</el-dropdown-item
+                >
+                <el-dropdown-item @click="printVisible = true"
+                  >打印选中</el-dropdown-item
+                >
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <el-button :loading="exporting" @click="exportRows()">导出</el-button>
-          <el-button @click="printVisible = true">打印</el-button>
-          <el-button v-perm="`inv:${bizType}:create`" type="primary" @click="openCreate">
+          <el-button
+            v-if="!isWorkbench"
+            :loading="exporting"
+            @click="exportRows()"
+            >导出</el-button
+          >
+          <el-button v-if="!isWorkbench" @click="printVisible = true"
+            >打印</el-button
+          >
+          <el-button
+            v-if="!isPurchase"
+            v-perm="`inv:${bizType}:create`"
+            type="primary"
+            @click="openCreate"
+          >
             <AppIcon name="Plus" />
             <span>{{ createText }}</span>
           </el-button>
-          <el-button @click="load">
+          <el-button aria-label="刷新单据" :loading="loading" @click="load">
             <AppIcon name="Refresh" />
           </el-button>
         </div>
       </div>
 
+      <div v-if="listError" class="purchase-list-error" role="alert">
+        <strong>单据列表加载失败</strong>
+        <p>当前数据可能已变化，请重新加载后继续处理。</p>
+        <el-button @click="load">重新加载</el-button>
+      </div>
+      <PurchaseWorkbench
+        v-else-if="isWorkbench"
+        :rows="rows"
+        :selected-id="selectedId"
+        :loading="loading"
+        :detail-loading="detailLoading"
+        :detail-error="detailError"
+        :has-detail="Boolean(detail)"
+        :filtered="hasFilters"
+        :mobile-detail="mobileDetail"
+        @select="selectOrder"
+        @retry="retryDetail"
+        @reset="reset"
+        @back="mobileDetail = false"
+      >
+        <template v-if="detail">
+          <el-alert
+            v-if="reviewResult"
+            :title="reviewResult"
+            type="success"
+            show-icon
+            :closable="false"
+            class="purchase-result"
+          />
+          <OrderDetailContent
+            :order="detail.row"
+            :items="detail.items"
+            :party-label="partyLabel"
+            :is-purchase="true"
+            :picks="picks"
+          />
+          <div class="purchase-review-actions">
+            <div class="purchase-review-actions__secondary">
+              <el-button @click="openAttach(detail.row)"
+                >附件{{
+                  attachCounts[String(detail.row.id)]
+                    ? ` (${attachCounts[String(detail.row.id)]})`
+                    : ''
+                }}</el-button
+              >
+              <el-button @click="printRef?.open(detail.row)">打印</el-button>
+            </div>
+            <div class="purchase-review-actions__primary">
+              <template v-if="detail.row.status === 1">
+                <el-button
+                  v-perm="'inv:purchase:update'"
+                  :disabled="loading"
+                  @click="openEdit(detail.row)"
+                  >编辑采购单</el-button
+                >
+                <el-button
+                  v-perm="'inv:purchase:finish'"
+                  type="primary"
+                  :disabled="loading"
+                  @click="openApprove(detail.row)"
+                  >审核并入库</el-button
+                >
+              </template>
+              <el-button
+                v-else
+                type="primary"
+                :disabled="loading"
+                @click="nextOrder"
+                >{{ rows.length ? '处理下一张' : '返回待办' }}</el-button
+              >
+            </div>
+          </div>
+        </template>
+      </PurchaseWorkbench>
       <el-table
+        v-else
         ref="tableRef"
         v-loading="loading"
         :data="rows"
@@ -729,14 +1168,31 @@ const { searchSoon } = useDebouncedSearch(search)
         @selection-change="onSelectionChange"
       >
         <el-table-column type="selection" width="44" />
-        <el-table-column prop="orderNo" label="单号" width="138" />
-        <el-table-column :label="partyLabel" min-width="120" show-overflow-tooltip>
+        <el-table-column prop="orderNo" label="单号" width="150">
+          <template #default="{ row }"
+            ><el-button
+              link
+              type="primary"
+              @click="openDetail(row as InvOrderRow)"
+              >{{ row.orderNo }}</el-button
+            ></template
+          >
+        </el-table-column>
+        <el-table-column
+          :label="partyLabel"
+          min-width="120"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{ row.partyName }}</template>
         </el-table-column>
         <el-table-column prop="orderDate" label="单据日期" width="100">
           <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
         </el-table-column>
-        <el-table-column prop="dueDate" label="到期日" width="100">
+        <el-table-column
+          prop="dueDate"
+          :label="dueDateLabel"
+          :width="isPurchase ? 120 : 100"
+        >
           <template #default="{ row }">{{ formatDay(row.dueDate) }}</template>
         </el-table-column>
         <el-table-column label="明细" width="52" align="center">
@@ -749,12 +1205,28 @@ const { searchSoon } = useDebouncedSearch(search)
         </el-table-column>
         <el-table-column label="已结算" width="100" align="right">
           <template #default="{ row }">
-            <span class="text-secondary">{{ formatMoney(row.settledAmount) }}</span>
+            <span class="text-secondary">{{
+              formatMoney(row.settledAmount)
+            }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="结算" width="84" align="center">
+        <el-table-column
+          :label="isPurchase ? '付款状态' : '结算'"
+          :width="isPurchase ? 132 : 84"
+          align="center"
+        >
           <template #default="{ row }">
-            <el-tag :type="settleMeta[row.settleStatus]?.type" size="small" effect="light">
+            <span
+              v-if="isPurchase && row.status !== 2"
+              class="text-secondary"
+              >{{ row.status === 1 ? '审核后形成应付' : '—' }}</span
+            >
+            <el-tag
+              v-else
+              :type="settleMeta[row.settleStatus]?.type"
+              size="small"
+              effect="light"
+            >
               {{ settleMeta[row.settleStatus]?.text }}
             </el-tag>
           </template>
@@ -769,20 +1241,50 @@ const { searchSoon } = useDebouncedSearch(search)
         </el-table-column>
         <el-table-column label="状态" width="84" align="center">
           <template #default="{ row }">
-            <el-tag :type="statusMeta[row.status]?.type" size="small" effect="light">
+            <el-tag
+              :type="statusMeta[row.status]?.type"
+              size="small"
+              effect="light"
+            >
               {{ statusMeta[row.status]?.text }}
             </el-tag>
           </template>
         </el-table-column>
         <!-- 宽度按最多按钮的状态算（待处理单：详情/打印/编辑/审核 4 个，
              已审核单：详情/打印/反审核 3 个），写小了按钮会折成两行 -->
-        <el-table-column label="操作" width="250" fixed="right" align="center">
+        <el-table-column
+          label="操作"
+          :width="isPurchase ? 210 : 250"
+          fixed="right"
+          align="center"
+        >
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row as InvOrderRow)">详情</el-button>
-            <el-button link type="primary" @click="openAttach(row as InvOrderRow)">
-              附件{{ attachCounts[String(row.id)] ? `(${attachCounts[String(row.id)]})` : '' }}
+            <el-button
+              v-if="!isPurchase"
+              link
+              type="primary"
+              @click="openDetail(row as InvOrderRow)"
+              >查看</el-button
+            >
+            <el-button
+              v-if="!isPurchase"
+              link
+              type="primary"
+              @click="openAttach(row as InvOrderRow)"
+            >
+              附件{{
+                attachCounts[String(row.id)]
+                  ? `(${attachCounts[String(row.id)]})`
+                  : ''
+              }}
             </el-button>
-            <el-button link type="primary" @click="printRef?.open(row as InvOrderRow)">打印</el-button>
+            <el-button
+              v-if="!isPurchase"
+              link
+              type="primary"
+              @click="printRef?.open(row as InvOrderRow)"
+              >打印</el-button
+            >
             <el-button
               v-if="row.status === 1"
               v-perm="`inv:${bizType}:update`"
@@ -799,10 +1301,40 @@ const { searchSoon } = useDebouncedSearch(search)
               type="success"
               @click="changeStatus(row as InvOrderRow, 2)"
             >
-              审核
+              {{ isPurchase ? '审核并入库' : '审核' }}
             </el-button>
+            <el-dropdown v-if="isPurchase" trigger="click">
+              <el-button link type="primary"
+                >更多<AppIcon name="ArrowDown"
+              /></el-button>
+              <template #dropdown
+                ><el-dropdown-menu>
+                  <el-dropdown-item @click="openAttach(row as InvOrderRow)"
+                    >附件{{
+                      attachCounts[String(row.id)]
+                        ? ` (${attachCounts[String(row.id)]})`
+                        : ''
+                    }}</el-dropdown-item
+                  >
+                  <el-dropdown-item @click="printRef?.open(row as InvOrderRow)"
+                    >打印</el-dropdown-item
+                  >
+                  <el-dropdown-item
+                    v-if="row.status === 2"
+                    v-perm="'inv:purchase:finish'"
+                    divided
+                    :disabled="row.settledAmount > 0"
+                    @click="reverseOrder(row as InvOrderRow)"
+                  >
+                    {{
+                      row.settledAmount > 0 ? '已有付款，无法反审核' : '反审核'
+                    }}
+                  </el-dropdown-item>
+                </el-dropdown-menu></template
+              >
+            </el-dropdown>
             <el-button
-              v-if="row.status === 2"
+              v-if="row.status === 2 && !isPurchase"
               v-perm="`inv:${bizType}:finish`"
               link
               type="warning"
@@ -814,7 +1346,7 @@ const { searchSoon } = useDebouncedSearch(search)
         </el-table-column>
       </el-table>
 
-      <div class="table-pager">
+      <div v-if="!listError" class="table-pager">
         <Pagination
           v-model:page="query.page"
           v-model:page-size="query.pageSize"
@@ -831,11 +1363,26 @@ const { searchSoon } = useDebouncedSearch(search)
       width="1280px"
       top="6vh"
       :close-on-click-modal="false"
+      :before-close="beforeFormClose"
       destroy-on-close
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
+      <el-alert
+        v-if="saveError"
+        title="保存失败，本次输入已保留。请检查提示后重新保存。"
+        type="error"
+        :closable="false"
+        show-icon
+        class="purchase-result"
+      />
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        :label-width="isPurchase ? '106px' : '88px'"
+        novalidate
+      >
         <el-row :gutter="16">
-          <el-col :span="6">
+          <el-col :xs="24" :sm="12" :lg="6">
             <el-form-item label="单据编号">
               <el-input
                 v-model="form.orderNo"
@@ -846,17 +1393,27 @@ const { searchSoon } = useDebouncedSearch(search)
               />
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col :xs="24" :sm="12" :lg="6">
             <el-form-item :label="partyLabel" prop="partyId">
-              <el-select v-model="form.partyId" filterable placeholder="请选择" style="width: 100%">
-                <el-option v-for="p in parties" :key="p.id" :label="p.name" :value="p.id" />
+              <el-select
+                v-model="form.partyId"
+                filterable
+                placeholder="请选择"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="p in parties"
+                  :key="p.id"
+                  :label="p.name"
+                  :value="p.id"
+                />
               </el-select>
               <div v-if="partyTruncated" class="pick-hint">
                 仅显示前 {{ partyLimit }} 个{{ partyLabel }}，请用关键字搜索其余
               </div>
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col :xs="24" :sm="12" :lg="6">
             <el-form-item label="单据日期" prop="orderDate">
               <el-date-picker
                 v-model="form.orderDate"
@@ -867,8 +1424,8 @@ const { searchSoon } = useDebouncedSearch(search)
               />
             </el-form-item>
           </el-col>
-          <el-col :span="6">
-            <el-form-item label="到期日">
+          <el-col :xs="24" :sm="12" :lg="6">
+            <el-form-item :label="dueDateLabel">
               <el-date-picker
                 v-model="form.dueDate"
                 type="date"
@@ -878,18 +1435,23 @@ const { searchSoon } = useDebouncedSearch(search)
               />
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col :xs="24" :sm="12" :lg="6">
             <!-- 业务员是自由文本而不是人员下拉：跑业务的常常没有后台账号
                  （门店、外包、已离职但历史单据还要能查），挂账号后这些人就录不进单 -->
             <el-form-item label="业务员">
-              <el-input v-model="form.salesman" maxlength="64" placeholder="选填" />
+              <el-input
+                v-model="form.salesman"
+                maxlength="64"
+                placeholder="选填"
+              />
             </el-form-item>
           </el-col>
         </el-row>
 
         <el-form-item label="明细">
           <div v-if="picksTruncated" class="pick-hint">
-            商品超过 {{ pickLimit }} 个，下拉只加载了一部分 —— 可以先在「商品档案」里按关键字找到它
+            商品超过 {{ pickLimit }} 个，下拉只加载了一部分 ——
+            可以先在「商品档案」里按关键字找到它
           </div>
           <div class="item-editor">
             <div class="item-editor__head">
@@ -902,7 +1464,11 @@ const { searchSoon } = useDebouncedSearch(search)
               <span class="col-num">金额</span>
               <span class="col-act" />
             </div>
-            <div v-for="(item, index) in form.items" :key="index" class="item-editor__row">
+            <div
+              v-for="(item, index) in form.items"
+              :key="index"
+              class="item-editor__row"
+            >
               <el-select
                 v-model="item.productId"
                 class="col-product"
@@ -947,14 +1513,34 @@ const { searchSoon } = useDebouncedSearch(search)
                   :value="u.id"
                 />
               </el-select>
-              <el-input-number v-model="item.qty" class="col-num" :min="0.01" :precision="3" :controls="false" />
+              <el-input-number
+                v-model="item.qty"
+                class="col-num"
+                :min="0.01"
+                :precision="3"
+                :controls="false"
+              />
               <span class="col-base">
                 {{ formatQty(qtyBase(item)) }}
                 {{ unitOptions(item).find((u) => u.isBase)?.unit || '' }}
               </span>
-              <el-input-number v-model="item.price" class="col-num" :min="0" :precision="2" :controls="false" />
-              <span class="col-num amount">{{ formatMoney((item.qty || 0) * (item.price || 0)) }}</span>
-              <el-button class="col-act" link type="danger" @click="removeItem(index)">删除</el-button>
+              <el-input-number
+                v-model="item.price"
+                class="col-num"
+                :min="0"
+                :precision="2"
+                :controls="false"
+              />
+              <span class="col-num amount">{{
+                formatMoney((item.qty || 0) * (item.price || 0))
+              }}</span>
+              <el-button
+                class="col-act"
+                link
+                type="danger"
+                @click="removeItem(index)"
+                >删除</el-button
+              >
             </div>
             <div class="item-editor__foot">
               <el-button link type="primary" @click="addItem">
@@ -974,126 +1560,71 @@ const { searchSoon } = useDebouncedSearch(search)
       </el-form>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
+        <el-button :disabled="submitting" @click="requestCloseForm"
+          >取消</el-button
+        >
+        <el-button type="primary" :loading="submitting" @click="submitForm">{{
+          isPurchase ? '保存采购单' : '确定'
+        }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 详情：与新增 / 编辑同宽同档（同一份数据的三种看法，宽度不该跳）。
          版式与「新增商品」等弹窗共用 form-section / form-grid，
          全站的弹窗因此是同一套视觉语言。 -->
-    <el-dialog v-model="detailVisible" :title="`${title}详情`" width="1280px" top="6vh">
+    <el-dialog
+      v-model="detailVisible"
+      :title="`${title}详情`"
+      width="1280px"
+      top="6vh"
+    >
       <template v-if="detail">
-        <!-- 概览条：单号与两个状态在左，金额与结算情况在右 ——
-             这三项是看单据时最先要确认的东西，不该埋在描述表里 -->
-        <div class="detail-head">
-          <div class="detail-head__main">
-            <span class="detail-head__no">{{ detail.row.orderNo }}</span>
-            <el-tag :type="statusMeta[detail.row.status]?.type" size="small" effect="light">
-              {{ statusMeta[detail.row.status]?.text }}
-            </el-tag>
-            <el-tag :type="settleMeta[detail.row.settleStatus]?.type" size="small" effect="light">
-              {{ settleMeta[detail.row.settleStatus]?.text }}
-            </el-tag>
-          </div>
-          <div class="detail-head__amount">
-            <span class="detail-head__label">单据金额</span>
-            <strong>{{ formatMoney(detail.row.totalAmount) }}</strong>
-            <span class="detail-head__sub">
-              已结算 {{ formatMoney(detail.row.settledAmount) }} · 未结
-              {{ formatMoney(detail.row.totalAmount - detail.row.settledAmount) }}
-            </span>
-          </div>
-        </div>
-
-        <section class="form-section">
-          <div class="form-section__head">
-            <div class="form-section__title">基本信息</div>
-          </div>
-          <div class="detail-grid">
-            <div class="detail-field">
-              <span class="detail-field__label">{{ partyLabel }}</span>
-              <div class="detail-field__value">{{ detail.row.partyName }}</div>
-            </div>
-            <div class="detail-field">
-              <span class="detail-field__label">单据日期</span>
-              <div class="detail-field__value">{{ formatDay(detail.row.orderDate) }}</div>
-            </div>
-            <div class="detail-field">
-              <span class="detail-field__label">到期日</span>
-              <div class="detail-field__value">{{ formatDay(detail.row.dueDate) }}</div>
-            </div>
-            <div class="detail-field">
-              <span class="detail-field__label">业务员</span>
-              <div class="detail-field__value">{{ detail.row.salesman || '-' }}</div>
-            </div>
-            <div class="detail-field">
-              <span class="detail-field__label">操作人员</span>
-              <div class="detail-field__value">{{ detail.row.operator || '-' }}</div>
-            </div>
-            <div class="detail-field">
-              <span class="detail-field__label">备注</span>
-              <div class="detail-field__value">{{ detail.row.remark || '-' }}</div>
-            </div>
-          </div>
-        </section>
-
-        <section class="form-section">
-          <div class="form-section__head">
-            <div class="form-section__title">
-              单据明细
-              <small>共 {{ detail.items.length }} 行</small>
-            </div>
-          </div>
-          <!-- 合计做成表格的合计行而不是表格外面的一行文字：
-               金额与「金额」列自然对齐，扫一眼就知道总数对应哪一列 -->
-          <el-table
-            :data="detail.items"
-            size="small"
-            show-summary
-            :summary-method="detailSummary"
-            class="detail-items"
-          >
-            <el-table-column type="index" label="#" width="52" align="center" />
-            <el-table-column prop="productName" label="商品" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="spec" label="规格" width="120" show-overflow-tooltip />
-            <el-table-column label="数量" width="120" align="right">
-              <template #default="{ row }">{{ formatQty(row.qty) }} {{ row.unit }}</template>
-            </el-table-column>
-            <el-table-column label="折算基本数量" width="150" align="right">
-              <template #default="{ row }">
-                <span v-if="row.rate === 1" class="text-muted">—</span>
-                <span v-else>
-                  ×{{ row.rate }} = {{ formatQty(row.qtyBase) }}
-                  {{ baseUnitNameOf(row.productId, row.specId) }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="单价" width="110" align="right">
-              <template #default="{ row }">{{ formatMoney(row.price) }}</template>
-            </el-table-column>
-            <el-table-column label="金额" width="120" align="right">
-              <template #default="{ row }">
-                <strong>{{ formatMoney(row.amount) }}</strong>
-              </template>
-            </el-table-column>
-          </el-table>
-        </section>
+        <OrderDetailContent
+          :order="detail.row"
+          :items="detail.items"
+          :party-label="partyLabel"
+          :is-purchase="isPurchase"
+          :picks="picks"
+        />
       </template>
 
       <template #footer>
         <el-button @click="detailVisible = false">关闭</el-button>
-        <el-button type="primary" @click="detail && printRef?.open(detail.row)">打印单据</el-button>
+        <el-button v-if="isPurchase && detail" @click="openAttach(detail.row)"
+          >附件</el-button
+        >
+        <el-button
+          :type="isPurchase ? 'default' : 'primary'"
+          @click="detail && printRef?.open(detail.row)"
+          >打印单据</el-button
+        >
+        <template v-if="isPurchase && detail?.row.status === 1">
+          <el-button
+            v-perm="'inv:purchase:update'"
+            @click="detail && openEdit(detail.row)"
+            >编辑采购单</el-button
+          >
+          <el-button
+            v-perm="'inv:purchase:finish'"
+            type="primary"
+            @click="detail && openApprove(detail.row)"
+            >审核并入库</el-button
+          >
+        </template>
       </template>
     </el-dialog>
 
     <!-- 打印 -->
-    <OrderPrintDialog ref="printRef" :biz-type="bizType" :party-label="partyLabel" />
+    <OrderPrintDialog
+      ref="printRef"
+      :biz-type="bizType"
+      :party-label="partyLabel"
+    />
 
     <!-- 附件抽屉：采购单与销售单共用，bizType 决定挂在哪类单据上 -->
     <AttachmentDrawer
       v-model="attachVisible"
-      :biz-type="(bizType as InvAttachBizType)"
+      :biz-type="bizType as InvAttachBizType"
       :biz-id="attachBizId"
       :title="attachTitle"
     />
@@ -1108,22 +1639,160 @@ const { searchSoon } = useDebouncedSearch(search)
     />
 
     <!-- 审核确认：可勾选同时结清全额款项 -->
-    <el-dialog v-model="approveVisible" title="审核确认" width="460px">
-      <el-alert type="warning" :closable="false" show-icon class="approve-alert"
-        :title="`审核通过后将为「${approveRow?.orderNo}」生成出入库单并调整库存。`" />
+    <el-dialog
+      v-model="approveVisible"
+      :title="isPurchase ? '审核并入库' : '审核确认'"
+      width="640px"
+      top="6vh"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!approveRunning"
+      :show-close="!approveRunning"
+    >
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        class="approve-alert"
+        :title="
+          isPurchase
+            ? `将为「${approveRow?.orderNo}」生成入库单、增加库存，并形成应付。请确认已收到货物。`
+            : `审核通过后将为「${approveRow?.orderNo}」生成出入库单并调整库存。`
+        "
+      />
       <el-checkbox v-model="approveSettleNow">
         同时结清全额款项
-        <span class="text-muted">（{{ partyLabel === '客户' ? '登记一笔收款' : '登记一笔付款' }}，适合一手交钱一手交货）</span>
+        <span class="text-muted"
+          >（{{
+            partyLabel === '客户' ? '登记一笔收款' : '登记一笔付款'
+          }}，适合一手交钱一手交货）</span
+        >
       </el-checkbox>
       <template #footer>
-        <el-button @click="approveVisible = false">取消</el-button>
-        <el-button type="primary" :loading="approveRunning" @click="confirmApprove">确认审核</el-button>
+        <el-button :disabled="approveRunning" @click="approveVisible = false"
+          >取消</el-button
+        >
+        <el-button
+          type="primary"
+          :loading="approveRunning"
+          @click="confirmApprove"
+          >{{ isPurchase ? '确认审核并入库' : '确认审核' }}</el-button
+        >
       </template>
     </el-dialog>
   </div>
 </template>
 
 <style scoped lang="scss">
+.purchase-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+  h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.4px;
+  }
+  p {
+    margin: 8px 0 0;
+    color: var(--app-text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+}
+.purchase-tabs {
+  margin-bottom: 12px;
+}
+.purchase-page {
+  .page-card {
+    padding: 24px;
+  }
+  .list-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--app-border-light);
+  }
+  .list-head__title {
+    grid-column: 1 / -1;
+    width: 100%;
+    color: var(--app-text);
+  }
+  .list-head .filter-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px 16px;
+  }
+  .list-head .filter-form :deep(.el-form-item) {
+    width: 100%;
+    margin: 0;
+  }
+  .list-head .filter-form :deep(.el-input),
+  .list-head .filter-form :deep(.el-select),
+  .list-head .filter-form :deep(.el-date-editor) {
+    width: 100%;
+    min-width: 0;
+  }
+  .list-head__actions {
+    flex-wrap: wrap;
+  }
+}
+.purchase-review-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-top: 20px;
+  border-top: 1px solid var(--app-border-light);
+  &__primary,
+  &__secondary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
+.purchase-result {
+  margin-bottom: 20px;
+}
+.purchase-list-error {
+  min-height: 280px;
+  padding: 48px 20px;
+  text-align: center;
+}
+.purchase-list-error p {
+  color: var(--app-text-secondary);
+  line-height: 1.6;
+}
+@media (max-width: 800px) {
+  .purchase-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .purchase-header h1 {
+    font-size: 22px;
+  }
+  .purchase-page .page-card {
+    padding: 16px;
+  }
+  .purchase-page .list-head {
+    grid-template-columns: minmax(0, 1fr);
+    margin-bottom: 20px;
+  }
+  .purchase-page .list-head .filter-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .table-pager {
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+}
 .approve-alert {
   margin-bottom: 14px;
 }
@@ -1149,12 +1818,14 @@ const { searchSoon } = useDebouncedSearch(search)
   border: 1px solid var(--app-border-light);
   border-radius: var(--radius-sm);
   padding: 10px;
+  overflow-x: auto;
 
   &__head,
   &__row {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 1050px;
   }
 
   &__head {
@@ -1220,83 +1891,6 @@ const { searchSoon } = useDebouncedSearch(search)
   .amount {
     color: var(--app-text);
     font-weight: 600;
-  }
-}
-
-// ---------------- 详情弹窗 ----------------
-// 概览条：左侧单号 + 状态，右侧金额与结算情况。
-// 用浅色底而不是描边卡片 —— 它只是「抬头」，不该和下面的表格抢层级。
-.detail-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 16px;
-  margin-bottom: 18px;
-  background: var(--app-bg-subtle, #f8fafc);
-  border-radius: var(--radius-md);
-
-  &__main {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-  }
-
-  &__no {
-    font-family: var(--app-font-mono, monospace);
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--app-text);
-  }
-
-  &__amount {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    flex: none;
-  }
-
-  &__label {
-    font-size: 12px;
-    color: var(--app-text-muted);
-  }
-
-  &__amount strong {
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--app-text);
-    font-variant-numeric: tabular-nums;
-  }
-
-  &__sub {
-    font-size: 12px;
-    color: var(--app-text-muted);
-  }
-}
-
-// 详情字段：三列等宽，标签在上、值在下 ——
-// 值的长短差别很大（单号 / 备注），左对齐的标签在右会让右侧全空。
-.detail-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px 20px;
-}
-
-.detail-field {
-  min-width: 0;
-
-  &__label {
-    display: block;
-    margin-bottom: 4px;
-    font-size: 12px;
-    color: var(--app-text-muted);
-  }
-
-  &__value {
-    font-size: 13px;
-    color: var(--app-text);
-    word-break: break-word;
   }
 }
 </style>

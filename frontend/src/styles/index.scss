@@ -30,7 +30,14 @@ a {
   text-decoration: none;
 }
 
-// 滚动条：细、低调
+/* 滚动条：所有滚动区域继承相同主题。 */
+* {
+  scrollbar-color: var(--app-scrollbar) transparent;
+  scrollbar-width: thin;
+}
+@media (forced-colors: active) {
+  * { scrollbar-color: auto; }
+}
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
