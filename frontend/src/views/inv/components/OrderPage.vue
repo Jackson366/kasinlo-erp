@@ -1260,9 +1260,10 @@ function onKeywordInput(): void {
           label="操作"
           :width="isPurchase ? 210 : 250"
           fixed="right"
-          align="center"
+          :align="isPurchase ? 'left' : 'center'"
         >
           <template #default="{ row }">
+            <div :class="{ 'purchase-row-actions': isPurchase }">
             <el-button
               v-if="!isPurchase"
               link
@@ -1346,6 +1347,7 @@ function onKeywordInput(): void {
             >
               反审核
             </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -1748,6 +1750,14 @@ function onKeywordInput(): void {
   .list-head__actions {
     flex-wrap: wrap;
   }
+}
+.purchase-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 24px;
+  :deep(.el-button) { margin: 0; padding: 0; min-height: 24px; line-height: 24px; }
+  :deep(.el-dropdown) { display: inline-flex; align-items: center; vertical-align: middle; }
 }
 .purchase-review-actions {
   display: flex;

@@ -444,6 +444,13 @@ try {
     expect((await dateCell.boundingBox()).height).toBeLessThan(30)
     const detailHeader = table.locator('.el-table__header th .cell').nth(5)
     expect((await detailHeader.boundingBox()).height).toBeLessThan(30)
+    const actionGroup = table.locator('.purchase-row-actions').first()
+    const buttons = await actionGroup.locator('button').all()
+    const boxes = await Promise.all(buttons.map(button => button.boundingBox()))
+    const centers = boxes.map(box => box.y + box.height / 2)
+    expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(2)
+    const otherGroup = table.locator('.purchase-row-actions').nth(1)
+    expect(Math.abs((await actionGroup.boundingBox()).x - (await otherGroup.boundingBox()).x)).toBeLessThan(2)
     await page.screenshot({path: out + '/purchase-history.png', fullPage: true})
 
     await page
