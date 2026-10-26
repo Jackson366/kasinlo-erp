@@ -247,7 +247,7 @@ try {
         },
       ])
     }
-    if (endpoint === '/inv/overview') return ok({})
+    if (endpoint === '/inv/overview') return ok({customerCount:0,productCount:0,pendingOrders:0})
     if (
       [
         '/inv/report/trend',
@@ -256,6 +256,8 @@ try {
       ].includes(endpoint)
     )
       return ok([])
+    if (state.failOptions && ['/inv/suppliers', '/inv/products/pick'].includes(endpoint))
+      return fail('模拟资料加载失败')
     if (endpoint === '/inv/suppliers' || endpoint === '/inv/customers')
       return ok({
         list: [{ id: 1, name: '杭州恒信金属材料有限公司', status: 1 }],
@@ -486,7 +488,7 @@ try {
     await expect(dialog).toBeVisible()
     state.failAudit = false
     await dialog.getByRole('button', { name: '确认审核并入库' }).click()
-    await expect(review).toContainText('已生成入库单并增加库存')
+    await expect(review).toContainText('已生成入库单、增加库存')
     await expect(
       review.getByRole('button', { name: '审核并入库', exact: true }),
     ).toHaveCount(0)
@@ -877,6 +879,62 @@ try {
     await page.waitForTimeout(250)
     await expect(assertSidebarContrast).toPass({timeout:2000})
     await page.screenshot({path:out+'/sidebar-horizontal-dark.png',clip:{x:0,y:0,width:294,height:580}})
+  })
+  await check('首页真实采购待办、快捷新建与刷新保留输入', async () => {
+    state.fullNavigation = true
+    state.readOnly = false
+    state.failList = false
+    await page.goto(app + '/#/inv/overview')
+    await page.reload()
+    const start = page.locator('.purchase-start')
+    await expect(start).toContainText('张采购单待核对')
+    await start.getByRole('button', {name:'新增采购单',exact:true}).focus()
+    await page.keyboard.press('Enter')
+    const dialog = page.getByRole('dialog', {name:'新增采购单',exact:true})
+    await expect(dialog).toBeVisible()
+    await expect(page).not.toHaveURL(/action=create/)
+    await expect(dialog).toContainText('不会增加库存或登记付款')
+    await expect(dialog.getByRole('link', {name:'维护商品（新标签页）'})).toHaveAttribute('target','_blank')
+    await dialog.getByPlaceholder('选填').last().fill('刷新仍保留的采购备注')
+    state.failOptions = true
+    await dialog.getByRole('button', {name:'刷新可选资料'}).click()
+    await expect(dialog).toContainText('资料加载失败，请刷新后再选择')
+    await expect(dialog.getByPlaceholder('选填').last()).toHaveValue('刷新仍保留的采购备注')
+    state.failOptions = false
+    await dialog.getByRole('button', {name:'刷新可选资料'}).click()
+    await expect(dialog).not.toContainText('资料加载失败，请刷新后再选择')
+    await expect(dialog.getByPlaceholder('选填').last()).toHaveValue('刷新仍保留的采购备注')
+    await page.screenshot({path:out+'/purchase-entry.png',fullPage:true})
+    await page.reload()
+    await expect(dialog).not.toBeVisible()
+  })
+  await check('首页待办加载失败、重试与零待办方向', async () => {
+    state.failList = true
+    await page.goto(app + '/#/inv/overview')
+    await page.reload()
+    const start = page.locator('.purchase-start')
+    await expect(start).toContainText('数量加载失败')
+    state.failList = false
+    const saved = state.orders
+    state.orders = []
+    await start.getByRole('button', {name:'重新加载'}).click()
+    await expect(start).toContainText('从一张采购单开始')
+    await expect(start.getByRole('button',{name:'新增采购单'})).toBeVisible()
+    await page.setViewportSize({width:600,height:900})
+    await page.screenshot({path:out+'/purchase-start-narrow.png',fullPage:true})
+    expect(await start.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+    await page.evaluate(() => document.documentElement.classList.remove('dark'))
+    await page.setViewportSize({width:1600,height:1100})
+    await page.screenshot({path:out+'/purchase-start-light.png',fullPage:true})
+    state.orders = saved
+  })
+  await check('无创建权限时隐藏首页新增入口', async () => {
+    state.readOnly = true
+    await page.reload()
+    const start = page.locator('.purchase-start')
+    await expect(start).toBeVisible()
+    await expect(start.getByRole('button',{name:'新增采购单'})).toHaveCount(0)
+    state.readOnly = false
   })
   expect(pageErrors).toEqual([])
   console.log(`PASS ${checks.length} scenarios; no uncaught browser errors`)

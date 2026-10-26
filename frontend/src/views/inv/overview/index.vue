@@ -5,7 +5,13 @@
 import { computed, onMounted, ref } from 'vue'
 import type { EChartsCoreOption } from 'echarts/core'
 import { invApi } from '@/api'
-import type { InvOverview, InvReportCategoryRow, InvReportRankRow, InvReportTrendPoint } from '@/types/api'
+import type {
+  InvOverview,
+  InvReportCategoryRow,
+  InvReportRankRow,
+  InvReportTrendPoint,
+} from '@/types/api'
+import PurchaseStart from '../components/PurchaseStart.vue'
 import EChart from '@/components/EChart.vue'
 import { formatMoney } from '@/utils/format'
 import { chartPalette } from '@/utils/theme'
@@ -142,7 +148,14 @@ const trendOption = computed<EChartsCoreOption>(() => {
 
 const categoryOption = computed<EChartsCoreOption>(() => {
   const p = palette.value
-  const colors = [p.primary, p.success, '#f59e0b', '#7c5cfc', '#ef4444', '#14b8a6']
+  const colors = [
+    p.primary,
+    p.success,
+    '#f59e0b',
+    '#7c5cfc',
+    '#ef4444',
+    '#14b8a6',
+  ]
   return {
     tooltip: {
       trigger: 'item',
@@ -200,69 +213,99 @@ onMounted(loadAll)
 </script>
 
 <template>
-  <div v-loading="loading" class="overview-page">
-    <div class="stat-row">
-      <div v-for="card in cards" :key="card.key" class="stat-card" :class="`tone-${card.tone}`">
-        <div class="stat-card__body">
-          <span class="stat-card__label">{{ card.label }}</span>
-          <strong class="stat-card__value">{{ card.value }}</strong>
-          <span class="stat-card__hint">{{ card.hint }}</span>
+  <div class="overview-page">
+    <PurchaseStart />
+    <div v-loading="loading" class="overview-data">
+      <div class="stat-row">
+        <div
+          v-for="card in cards"
+          :key="card.key"
+          class="stat-card"
+          :class="`tone-${card.tone}`"
+        >
+          <div class="stat-card__body">
+            <span class="stat-card__label">{{ card.label }}</span>
+            <strong class="stat-card__value">{{ card.value }}</strong>
+            <span class="stat-card__hint">{{ card.hint }}</span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="chart-row">
-      <div class="page-card chart-main">
-        <header class="card-head">
-          <h3>近 30 天销售与采购趋势</h3>
-          <span class="text-muted">单位：元</span>
-        </header>
-        <EChart :option="trendOption" height="300px" />
+      <div class="chart-row">
+        <div class="page-card chart-main">
+          <header class="card-head">
+            <h3>近 30 天销售与采购趋势</h3>
+            <span class="text-muted">单位：元</span>
+          </header>
+          <EChart :option="trendOption" height="300px" />
+        </div>
+        <div class="page-card chart-side">
+          <header class="card-head">
+            <h3>品类销售占比</h3>
+            <span class="text-muted">本月</span>
+          </header>
+          <EChart
+            v-if="categories.length"
+            :option="categoryOption"
+            height="300px"
+          />
+          <el-empty v-else description="暂无销售数据" :image-size="80" />
+        </div>
       </div>
-      <div class="page-card chart-side">
-        <header class="card-head">
-          <h3>品类销售占比</h3>
-          <span class="text-muted">本月</span>
-        </header>
-        <EChart v-if="categories.length" :option="categoryOption" height="300px" />
-        <el-empty v-else description="暂无销售数据" :image-size="80" />
-      </div>
-    </div>
 
-    <div class="page-card">
-      <header class="card-head">
-        <h3>本月客户销售排行</h3>
-        <span class="text-muted">Top 5</span>
-      </header>
-      <el-table :data="ranking" size="default" stripe>
-        <el-table-column label="排名" width="80" align="center">
-          <template #default="{ row }">
-            <span class="rank" :class="row.rank <= 3 ? 'rank--top' : ''">{{ row.rank }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="partyName" label="客户" min-width="160" show-overflow-tooltip />
-        <el-table-column label="销售额" width="150" align="right">
-          <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
-        </el-table-column>
-        <el-table-column label="订单数" width="100" align="right">
-          <template #default="{ row }">{{ row.orderCount }}</template>
-        </el-table-column>
-        <el-table-column label="占比" min-width="180">
-          <template #default="{ row }">
-            <div class="ratio">
-              <el-progress :percentage="row.ratio" :stroke-width="8" :show-text="false" />
-              <span>{{ row.ratio }}%</span>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-if="!ranking.length" description="暂无排行数据" :image-size="80" />
+      <div class="page-card">
+        <header class="card-head">
+          <h3>本月客户销售排行</h3>
+          <span class="text-muted">Top 5</span>
+        </header>
+        <el-table :data="ranking" size="default" stripe>
+          <el-table-column label="排名" width="80" align="center">
+            <template #default="{ row }">
+              <span class="rank" :class="row.rank <= 3 ? 'rank--top' : ''">{{
+                row.rank
+              }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            prop="partyName"
+            label="客户"
+            min-width="160"
+            show-overflow-tooltip
+          />
+          <el-table-column label="销售额" width="150" align="right">
+            <template #default="{ row }">{{
+              formatMoney(row.amount)
+            }}</template>
+          </el-table-column>
+          <el-table-column label="订单数" width="100" align="right">
+            <template #default="{ row }">{{ row.orderCount }}</template>
+          </el-table-column>
+          <el-table-column label="占比" min-width="180">
+            <template #default="{ row }">
+              <div class="ratio">
+                <el-progress
+                  :percentage="row.ratio"
+                  :stroke-width="8"
+                  :show-text="false"
+                />
+                <span>{{ row.ratio }}%</span>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty
+          v-if="!ranking.length"
+          description="暂无排行数据"
+          :image-size="80"
+        />
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped lang="scss">
-.overview-page {
+.overview-page,
+.overview-data {
   display: flex;
   flex-direction: column;
   gap: 16px;

@@ -32,6 +32,7 @@ import OrderDetailContent from './OrderDetailContent.vue'
 import { statusMeta, settleMeta } from './orderPresentation'
 import { formatDay, formatMoney, formatQty } from '@/utils/format'
 import { useTableQuery } from '@/composables/useTableQuery'
+import { useUserStore } from '@/store'
 import { useListTools } from '@/composables/useListTools'
 import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
@@ -43,6 +44,7 @@ const props = defineProps<{
   partyLabel: string
 }>()
 
+const userStore = useUserStore()
 const isPurchase = computed(() => props.bizType === 'purchase')
 const route = useRoute()
 const router = useRouter()
@@ -276,24 +278,41 @@ const picksTruncated = ref(false)
 /** 单次上限的实际数值，用于提示文案（后端 pickLimit） */
 const pickLimit = 1000
 
-async function loadOptions(): Promise<void> {
-  const [partyRes, pickRes] = await Promise.all([
-    isPurchase.value
-      ? invApi.suppliers({ pageSize: partyLimit })
-      : invApi.customers({ pageSize: partyLimit }),
-    invApi.productPick(),
-  ])
-  parties.value = partyRes.list
-  partyTruncated.value = partyRes.total > partyRes.list.length
-  picks.value = pickRes.items
-  picksTruncated.value = pickRes.truncated
-  applyPickFilter(pickQuery.value)
-  // 档案是异步拉回来的：用户手快时（新商品刚建完就开单）可能先选了商品、
-  // 而那一瞬间 picks 里还没有它，applyPrice 找不到商品会把单价留成 0。
-  // 拿到档案后补一次，单价才不会再是 0。
-  form.items.forEach((it) => {
-    if (it.productId && !Number(it.price)) applyPrice(it)
-  })
+const optionsLoading = ref(false)
+const optionsError = ref(false)
+let optionsSeq = 0
+async function loadOptions(preservePrices = false): Promise<void> {
+  const seq = ++optionsSeq
+  optionsLoading.value = true
+  optionsError.value = false
+  try {
+    const [partyRes, pickRes] = await Promise.all([
+      isPurchase.value
+        ? invApi.suppliers({ pageSize: partyLimit })
+        : invApi.customers({ pageSize: partyLimit }),
+      invApi.productPick(),
+    ])
+    if (seq !== optionsSeq) return
+    parties.value = partyRes.list
+    partyTruncated.value = partyRes.total > partyRes.list.length
+    picks.value = pickRes.items
+    picksTruncated.value = pickRes.truncated
+    applyPickFilter(pickQuery.value)
+    // 档案是异步拉回来的：用户手快时（新商品刚建完就开单）可能先选了商品、
+    // 而那一瞬间 picks 里还没有它，applyPrice 找不到商品会把单价留成 0。
+    // 拿到档案后补一次，单价才不会再是 0。
+    form.items.forEach((it) => {
+      if (!preservePrices && it.productId && !Number(it.price)) applyPrice(it)
+    })
+  } catch (error) {
+    if (seq === optionsSeq) optionsError.value = true
+    throw error
+  } finally {
+    if (seq === optionsSeq) optionsLoading.value = false
+  }
+}
+function refreshOptions(): void {
+  void loadOptions(true).catch(() => {})
 }
 
 // ---------------- 表单 ----------------
@@ -625,7 +644,9 @@ async function submitForm(): Promise<void> {
     if (dialogMode.value === 'create') {
       const created = await invApi.createOrder(payload)
       createdId = created.id
-      ElMessage.success('新增成功')
+      ElMessage.success(
+        isPurchase.value ? '采购单已保存，尚未入库' : '销售单已保存',
+      )
     } else if (editingId.value) {
       await invApi.updateOrder(editingId.value, payload)
       ElMessage.success('修改成功')
@@ -635,7 +656,8 @@ async function submitForm(): Promise<void> {
     if (isWorkbench.value && createdId) {
       // 新单即使不属于当前筛选页，也在核对区保留明确的保存结果。
       keepReviewResult.value = true
-      reviewResult.value = '采购单已保存，核对后可审核并入库。'
+      reviewResult.value =
+        '采购单已保存，尚未增加库存。确认收到货物并核对后，再审核并入库。'
       mobileDetail.value = true
       await openDetail({ id: createdId })
     } else if (
@@ -678,7 +700,9 @@ async function confirmApprove(): Promise<void> {
     approveVisible.value = false
     if (isWorkbench.value) {
       keepReviewResult.value = true
-      reviewResult.value = '采购单已审核，已生成入库单并增加库存。'
+      reviewResult.value = approveSettleNow.value
+        ? '已生成入库单、增加库存，并登记全额付款。'
+        : '已生成入库单、增加库存，并形成应付；尚未登记付款。'
       const reviewed = target
       await openDetail(reviewed)
     } else if (
@@ -920,7 +944,16 @@ async function batchReverse(): Promise<void> {
   }
 }
 
+function consumeCreateAction(): void {
+  if (route.path !== pagePath || route.query.action !== 'create') return
+  if (!userStore.hasAnyPerm([`inv:${props.bizType}:create`])) return
+  openCreate()
+  const { action: _action, ...rest } = route.query
+  void router.replace({ path: pagePath, query: rest })
+}
+watch(() => route.query.action, consumeCreateAction)
 onMounted(() => {
+  consumeCreateAction()
   window.addEventListener('beforeunload', beforeUnload)
   void load()
   void loadOptions().catch(() => {})
@@ -1264,89 +1297,92 @@ function onKeywordInput(): void {
         >
           <template #default="{ row }">
             <div :class="{ 'purchase-row-actions': isPurchase }">
-            <el-button
-              v-if="!isPurchase"
-              link
-              type="primary"
-              @click="openDetail(row as InvOrderRow)"
-              >查看</el-button
-            >
-            <el-button
-              v-if="!isPurchase"
-              link
-              type="primary"
-              @click="openAttach(row as InvOrderRow)"
-            >
-              附件{{
-                attachCounts[String(row.id)]
-                  ? `(${attachCounts[String(row.id)]})`
-                  : ''
-              }}
-            </el-button>
-            <el-button
-              v-if="!isPurchase"
-              link
-              type="primary"
-              @click="printRef?.open(row as InvOrderRow)"
-              >打印</el-button
-            >
-            <el-button
-              v-if="row.status === 1"
-              v-perm="`inv:${bizType}:update`"
-              link
-              type="primary"
-              @click="openEdit(row as InvOrderRow)"
-            >
-              编辑
-            </el-button>
-            <el-button
-              v-if="row.status === 1"
-              v-perm="`inv:${bizType}:finish`"
-              link
-              type="success"
-              @click="changeStatus(row as InvOrderRow, 2)"
-            >
-              {{ isPurchase ? '审核并入库' : '审核' }}
-            </el-button>
-            <el-dropdown v-if="isPurchase" trigger="click">
-              <el-button link type="primary"
-                >更多<AppIcon name="ArrowDown"
-              /></el-button>
-              <template #dropdown
-                ><el-dropdown-menu>
-                  <el-dropdown-item @click="openAttach(row as InvOrderRow)"
-                    >附件{{
-                      attachCounts[String(row.id)]
-                        ? ` (${attachCounts[String(row.id)]})`
-                        : ''
-                    }}</el-dropdown-item
-                  >
-                  <el-dropdown-item @click="printRef?.open(row as InvOrderRow)"
-                    >打印</el-dropdown-item
-                  >
-                  <el-dropdown-item
-                    v-if="row.status === 2"
-                    v-perm="'inv:purchase:finish'"
-                    divided
-                    :disabled="row.settledAmount > 0"
-                    @click="reverseOrder(row as InvOrderRow)"
-                  >
-                    {{
-                      row.settledAmount > 0 ? '已有付款，无法反审核' : '反审核'
-                    }}
-                  </el-dropdown-item>
-                </el-dropdown-menu></template
+              <el-button
+                v-if="!isPurchase"
+                link
+                type="primary"
+                @click="openDetail(row as InvOrderRow)"
+                >查看</el-button
               >
-            </el-dropdown>
-            <el-button
-              v-if="row.status === 2 && !isPurchase"
-              v-perm="`inv:${bizType}:finish`"
-              link
-              type="warning"
-              @click="reverseOrder(row as InvOrderRow)"
-            >
-              反审核
-            </el-button>
+              <el-button
+                v-if="!isPurchase"
+                link
+                type="primary"
+                @click="openAttach(row as InvOrderRow)"
+              >
+                附件{{
+                  attachCounts[String(row.id)]
+                    ? `(${attachCounts[String(row.id)]})`
+                    : ''
+                }}
+              </el-button>
+              <el-button
+                v-if="!isPurchase"
+                link
+                type="primary"
+                @click="printRef?.open(row as InvOrderRow)"
+                >打印</el-button
+              >
+              <el-button
+                v-if="row.status === 1"
+                v-perm="`inv:${bizType}:update`"
+                link
+                type="primary"
+                @click="openEdit(row as InvOrderRow)"
+              >
+                编辑
+              </el-button>
+              <el-button
+                v-if="row.status === 1"
+                v-perm="`inv:${bizType}:finish`"
+                link
+                type="success"
+                @click="changeStatus(row as InvOrderRow, 2)"
+              >
+                {{ isPurchase ? '审核并入库' : '审核' }}
+              </el-button>
+              <el-dropdown v-if="isPurchase" trigger="click">
+                <el-button link type="primary"
+                  >更多<AppIcon name="ArrowDown"
+                /></el-button>
+                <template #dropdown
+                  ><el-dropdown-menu>
+                    <el-dropdown-item @click="openAttach(row as InvOrderRow)"
+                      >附件{{
+                        attachCounts[String(row.id)]
+                          ? ` (${attachCounts[String(row.id)]})`
+                          : ''
+                      }}</el-dropdown-item
+                    >
+                    <el-dropdown-item
+                      @click="printRef?.open(row as InvOrderRow)"
+                      >打印</el-dropdown-item
+                    >
+                    <el-dropdown-item
+                      v-if="row.status === 2"
+                      v-perm="'inv:purchase:finish'"
+                      divided
+                      :disabled="row.settledAmount > 0"
+                      @click="reverseOrder(row as InvOrderRow)"
+                    >
+                      {{
+                        row.settledAmount > 0
+                          ? '已有付款，无法反审核'
+                          : '反审核'
+                      }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu></template
+                >
+              </el-dropdown>
+              <el-button
+                v-if="row.status === 2 && !isPurchase"
+                v-perm="`inv:${bizType}:finish`"
+                link
+                type="warning"
+                @click="reverseOrder(row as InvOrderRow)"
+              >
+                反审核
+              </el-button>
             </div>
           </template>
         </el-table-column>
@@ -1380,6 +1416,59 @@ function onKeywordInput(): void {
         show-icon
         class="purchase-result"
       />
+      <section
+        v-if="isPurchase"
+        class="purchase-entry-help"
+        aria-label="采购录入说明"
+      >
+        <div>
+          <strong>{{
+            dialogMode === 'create' ? '先录单，再核对入库' : '修改采购信息'
+          }}</strong>
+          <p>
+            选择供应商和商品，填写数量与单价。保存只记录单据，不会增加库存或登记付款。
+          </p>
+        </div>
+        <div class="purchase-entry-help__tools">
+          <router-link
+            v-if="
+              userStore.hasAnyPerm(['inv:supplier:create']) &&
+              router.hasRoute('InvSupplier')
+            "
+            to="/inv/supplier"
+            target="_blank"
+            rel="noopener"
+            >维护供应商（新标签页）</router-link
+          >
+          <router-link
+            v-if="
+              userStore.hasAnyPerm(['inv:product:create']) &&
+              router.hasRoute('InvProduct')
+            "
+            to="/inv/product"
+            target="_blank"
+            rel="noopener"
+            >维护商品（新标签页）</router-link
+          >
+          <el-button :loading="optionsLoading" @click="refreshOptions"
+            >刷新可选资料</el-button
+          >
+        </div>
+        <p class="purchase-entry-help__hint">
+          新增资料后回到这里刷新，当前填写的单据会保留。
+        </p>
+        <p v-if="optionsError" role="alert">
+          资料加载失败，请刷新后再选择供应商和商品。
+        </p>
+        <p
+          v-else-if="!optionsLoading && (!parties.length || !picks.length)"
+          role="status"
+        >
+          {{ !parties.length ? '暂无可选供应商。' : ''
+          }}{{ !picks.length ? '暂无可选商品规格与单位。' : '' }}
+          请先维护缺少的资料；没有维护权限时，请联系管理员。
+        </p>
+      </section>
       <el-form
         ref="formRef"
         :model="form"
@@ -1570,7 +1659,7 @@ function onKeywordInput(): void {
           >取消</el-button
         >
         <el-button type="primary" :loading="submitting" @click="submitForm">{{
-          isPurchase ? '保存采购单' : '确定'
+          isPurchase ? '保存采购单' : '保存销售单'
         }}</el-button>
       </template>
     </el-dialog>
@@ -1689,6 +1778,47 @@ function onKeywordInput(): void {
 </template>
 
 <style scoped lang="scss">
+.purchase-entry-help {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: var(--app-surface-subtle);
+  border-radius: var(--radius-md);
+  strong {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  p {
+    margin: 8px 0 0;
+    line-height: 1.6;
+    color: var(--app-text-secondary);
+  }
+  &__tools {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+  a {
+    color: var(--brand-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  a:hover {
+    color: var(--app-text);
+  }
+  a:focus-visible {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 3px;
+  }
+  a:active {
+    opacity: 0.8;
+  }
+  &__hint {
+    font-size: 12px;
+  }
+}
+
 .purchase-header {
   display: flex;
   align-items: center;
@@ -1756,8 +1886,17 @@ function onKeywordInput(): void {
   align-items: center;
   gap: 12px;
   min-height: 24px;
-  :deep(.el-button) { margin: 0; padding: 0; min-height: 24px; line-height: 24px; }
-  :deep(.el-dropdown) { display: inline-flex; align-items: center; vertical-align: middle; }
+  :deep(.el-button) {
+    margin: 0;
+    padding: 0;
+    min-height: 24px;
+    line-height: 24px;
+  }
+  :deep(.el-dropdown) {
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+  }
 }
 .purchase-review-actions {
   display: flex;
