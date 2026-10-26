@@ -109,20 +109,19 @@ export default defineConfig(({ mode }) => {
   const epComponentsDir = fileURLToPath(
     new URL('./node_modules/element-plus/es/components', import.meta.url),
   )
-  // 只预构建真正的 barrel 目录（同时存在 index 入口与 style/css 样式）：
-  // table-column / option / aside 这类子组件只有 style、没有独立入口；
-  // collection / focus-trap / slot 等内部目录没有对外样式。两者都得跳过，
-  // 否则会在 optimize 时报「Failed to resolve dependency」。
+  // JS 与样式独立判断：form-item / table-column 等子组件虽无独立 JS barrel，
+  // 仍会由解析器导入自己的 style/css。漏掉它们会在首次导航时触发重新预构建，
+  // 旧页面引用的共享 chunk 随即失效，导致懒加载失败。内部无样式目录继续跳过。
   const epDepPaths = readdirSync(epComponentsDir, { withFileTypes: true })
-    .filter((d) => {
-      if (!d.isDirectory()) return false
+    .flatMap((d) => {
+      if (!d.isDirectory()) return []
       const dir = join(epComponentsDir, d.name)
-      return existsSync(join(dir, 'index.mjs')) && existsSync(join(dir, 'style', 'css.mjs'))
+      if (!existsSync(join(dir, 'style', 'css.mjs'))) return []
+      return [
+        ...(existsSync(join(dir, 'index.mjs')) ? [`element-plus/es/components/${d.name}/index`] : []),
+        `element-plus/es/components/${d.name}/style/css`,
+      ]
     })
-    .flatMap((d) => [
-      `element-plus/es/components/${d.name}/index`,
-      `element-plus/es/components/${d.name}/style/css`,
-    ])
 
   return {
     plugins: [
