@@ -68,9 +68,12 @@ function handleCommand(command: string): void {
   <div class="navbar">
     <div class="navbar__left">
       <el-tooltip :content="collapsed ? '展开一级菜单' : '收起一级菜单'" :trigger="['hover', 'focus']" :trigger-keys="[]" placement="bottom">
-        <button class="navbar__icon-btn" type="button" :aria-label="collapsed ? '展开一级菜单' : '收起一级菜单'" :aria-expanded="!collapsed" aria-controls="sidebar-primary" @click="appStore.togglePrimarySidebar()">
-          <AppIcon :name="collapsed ? 'Expand' : 'Fold'" />
-        </button>
+        <!-- 多包一层的原因同 Sidebar：el-tooltip 的 trigger 会剥掉触发元素上的 aria-expanded/aria-controls -->
+        <span class="navbar__toggle-anchor">
+          <button class="navbar__icon-btn" :class="{ 'is-pressed': collapsed }" type="button" :aria-label="collapsed ? '展开一级菜单' : '收起一级菜单'" :aria-expanded="!collapsed" aria-controls="sidebar-primary" @click="appStore.togglePrimarySidebar()">
+            <AppIcon :name="collapsed ? 'Expand' : 'Fold'" />
+          </button>
+        </span>
       </el-tooltip>
       <Breadcrumb />
     </div>
@@ -142,6 +145,11 @@ function handleCommand(command: string): void {
     gap: 6px;
   }
 
+  // el-tooltip 的 trigger 外壳：尺寸由里面的按钮决定，避免多出一块可点区域
+  &__toggle-anchor {
+    display: inline-flex;
+  }
+
   &__icon-btn {
     display: inline-flex;
     align-items: center;
@@ -159,6 +167,13 @@ function handleCommand(command: string): void {
     &:hover {
       color: var(--brand-primary);
       background: var(--app-fill-hover);
+    }
+
+    // 折叠后的常驻态：顶栏按钮只有图标方向变化，太容易看不出「现在是什么状态」。
+    // 顶栏按钮会随轨道宽度左移，点完光标已经不在它身上，更需要一个留存的视觉锚点。
+    &.is-pressed {
+      color: var(--brand-primary);
+      background: var(--app-primary-soft);
     }
 
     // 主题按钮：切换时图标重挂载，借动画表达「翻转」

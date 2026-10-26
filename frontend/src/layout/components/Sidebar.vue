@@ -111,7 +111,10 @@ function openGroup(item: RouteRecord): void {
               type="button"
               class="sidebar__primary-item"
               :aria-label="item.meta?.title"
-              :class="{ 'is-active': selectedGroup === item.id }"
+              :class="{
+                'is-active': contains(item, activePath),
+                'is-browsing': selectedGroup === item.id && !contains(item, activePath),
+              }"
               :aria-expanded="
                 selectedGroup === item.id && !appStore.sidebarCollapsed
               "
@@ -169,25 +172,32 @@ function openGroup(item: RouteRecord): void {
         :trigger-keys="[]"
         placement="right"
       >
-        <button
-          type="button"
-          class="sidebar__primary-item sidebar__primary-toggle"
-          :aria-label="
-            appStore.primarySidebarCollapsed ? '展开一级菜单' : '收起一级菜单'
-          "
-          :aria-expanded="!appStore.primarySidebarCollapsed"
-          aria-controls="sidebar-primary"
-          @click="appStore.togglePrimarySidebar()"
-        >
-          <AppIcon
-            :name="appStore.primarySidebarCollapsed ? 'Expand' : 'Fold'"
-          />
-          <span
-            class="sidebar__primary-label"
-            :aria-hidden="appStore.primarySidebarCollapsed"
-            >收起菜单</span
+        <!--
+          为什么多包一层 span：el-tooltip 的 trigger 会接管 aria-expanded /
+          aria-controls（popper/trigger 里按 tooltip 语义主动 removeAttribute），
+          按钮自己写的这两个属性会被剥掉。把按钮放进 trigger 内部，属性才留得住。
+        -->
+        <span class="sidebar__primary-anchor">
+          <button
+            type="button"
+            class="sidebar__primary-item sidebar__primary-toggle"
+            :aria-label="
+              appStore.primarySidebarCollapsed ? '展开一级菜单' : '收起一级菜单'
+            "
+            :aria-expanded="!appStore.primarySidebarCollapsed"
+            aria-controls="sidebar-primary"
+            @click="appStore.togglePrimarySidebar()"
           >
-        </button>
+            <AppIcon
+              :name="appStore.primarySidebarCollapsed ? 'Expand' : 'Fold'"
+            />
+            <span
+              class="sidebar__primary-label"
+              :aria-hidden="appStore.primarySidebarCollapsed"
+              >收起菜单</span
+            >
+          </button>
+        </span>
       </el-tooltip>
     </div>
     <section
@@ -336,12 +346,20 @@ function openGroup(item: RouteRecord): void {
     &::before {
       content: '';
       position: absolute;
-      left: -8px;
+      left: 0;
       top: 14px;
       bottom: 14px;
       width: 3px;
       border-radius: 0 3px 3px 0;
       background: var(--brand-primary);
+    }
+  }
+  // 「正在浏览的分组」：只让图标变色，不抢白卡。
+  // 之前它和「当前页」共用 is-active，同时命中时轨道上会出现两张白卡，
+  // 读起来像有两个当前位置；而二级栏标题已经写明当前分组，图标足够表达。
+  &.is-browsing {
+    :deep(.el-icon) {
+      color: var(--tone-blue);
     }
   }
 }
@@ -352,6 +370,9 @@ function openGroup(item: RouteRecord): void {
   max-width: 68px;
   overflow: hidden;
   white-space: nowrap;
+  // 116px 的行内宽减去 28px 内边距、20px 图标、8px 间距，文字实际只有 60px：
+  // 五字以上的分组名会超出。没有省略号时是被直角切掉半个字，看不出「还有下文」。
+  text-overflow: ellipsis;
   opacity: 1;
   transition:
     max-width var(--transition-base),
@@ -372,14 +393,27 @@ function openGroup(item: RouteRecord): void {
   }
 }
 
+.sidebar__primary-anchor {
+  display: block;
+  flex: none;
+}
+
 .sidebar__primary-toggle {
   flex: none;
   width: calc(100% - 16px);
   margin: 8px;
-  min-height: 36px;
-  font-size: 12px;
+  min-height: 34px;
+  padding: 7px 14px;
+  font-size: 13px;
   font-weight: 400;
   color: var(--app-text-secondary);
+  // 底部这个按钮是「控件」不是「目的地」。它复用了导航项类名，
+  // 默认 hover 会把文字变深，和菜单项一模一样，容易被读成第 4 个入口；
+  // 这里保持弱一级：只给底色，不参与导航项的悬停强调。
+  &:hover {
+    color: var(--app-text-secondary);
+    background: var(--app-fill-hover);
+  }
   :deep(.el-icon) {
     font-size: 16px;
   }

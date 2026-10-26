@@ -2501,6 +2501,29 @@ HTTP 接口直接把页面传来的 0 透传下去。
 `TRUNCATE ... CASCADE`：它会顺着外键把「本想保留的表」一起清掉
 （保留商品却清空规格，CASCADE 会把商品也带走）。
 
+### 5.107 `el-tooltip` 会剥掉触发元素上的 `aria-expanded`
+
+**症状**：折叠按钮明明写了 `:aria-expanded="!collapsed"` 和 `aria-controls="sidebar-primary"`，
+渲染出来的 DOM 里两个属性都不见了；屏读器读不出「展开/收起」，而类型检查、构建、点击全绿，
+只有看 `outerHTML` 才发现属性缺失。
+
+**原因**：`el-tooltip` 的 `ElPopperTrigger` 把 `aria-controls / aria-describedby / aria-haspopup /
+aria-expanded` 当作**自己的**状态管理（tooltip 语义下 `ariaHaspopup` 为空 → 直接 `removeAttribute`），
+所以写在被它包裹的元素上的同名字段会在挂载时被抹掉。
+
+**做法**：把承载语义的按钮放进 trigger 内部的普通元素里，别让它自己当 trigger：
+
+```vue
+<el-tooltip ...>
+  <span class="xxx-anchor">            <!-- trigger 是这层 span -->
+    <button :aria-expanded="!collapsed" aria-controls="sidebar-primary">…</button>
+  </span>
+</el-tooltip>
+```
+
+`aria-*` 写在按钮上就留得住，悬停/聚焦仍由外层 span 触发 tooltip。
+自查：`document.querySelector(...).outerHTML` 里能看到 `aria-expanded="false"`。
+
 ### 6.1 交互缺陷另跑 `interaction-verify.mjs`
 
 

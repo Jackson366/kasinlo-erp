@@ -34,6 +34,9 @@ scripts/.browser-verify.json
 scripts/p3-result.json
 .api-smoke.log
 
+# 本地临时目录（UI 截图、CDP 浏览器 profile、一次性脚本）
+.tmp/
+
 # 文档生成流水线的中间产物（HTML / 探针 / 状态文件），成品在 docs/ 下
 output/
 
