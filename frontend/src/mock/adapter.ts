@@ -4,14 +4,20 @@ import { createMockService, MockError } from './service'
 export function createMockAdapter(
   service: ReturnType<typeof createMockService>,
   apiPrefix: string,
+  exclusive: (run: () => unknown) => Promise<unknown> = async (run) => run(),
 ): AxiosAdapter {
   return async (config) => {
     await new Promise((resolve) => setTimeout(resolve, 100))
     if (config.signal?.aborted) throw new axios.CanceledError()
     const url = new URL(config.url || '/', 'http://mock.local')
     const base = new URL(apiPrefix, 'http://mock.local').pathname.replace(/\/$/, '')
-    const path = url.pathname.startsWith(`${base}/`) ? url.pathname.slice(base.length) : url.pathname
-    const params = { ...Object.fromEntries(url.searchParams), ...(config.params || {}) }
+    const path = url.pathname.startsWith(`${base}/`)
+      ? url.pathname.slice(base.length)
+      : url.pathname
+    const params = {
+      ...Object.fromEntries(url.searchParams),
+      ...(config.params || {}),
+    }
     let body: unknown = config.data
     if (typeof body === 'string') {
       try {
@@ -21,15 +27,25 @@ export function createMockAdapter(
       }
     }
     try {
-      const data = service.handle({
-        method: (config.method || 'get').toUpperCase(),
-        path,
-        params,
-        body,
-        token: String(config.headers.Authorization || '').replace(/^Bearer /, ''),
+      const data = await exclusive(() => {
+        if (config.signal?.aborted) throw new axios.CanceledError()
+        return service.handle({
+          method: (config.method || 'get').toUpperCase(),
+          path,
+          params,
+          body,
+          token: String(config.headers.Authorization || '').replace(/^Bearer /, ''),
+        })
       })
-      return { config, status: 200, statusText: 'OK', headers: {}, data: { code: 0, message: 'Mock', data } }
+      return {
+        config,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        data: { code: 0, message: 'Mock', data },
+      }
     } catch (error) {
+      if (axios.isCancel(error)) throw error
       const status = error instanceof MockError ? error.status : 500
       const message = error instanceof Error ? error.message : 'Mock 请求失败'
       const response = {

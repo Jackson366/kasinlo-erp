@@ -62,3 +62,7 @@ npm test
 npm run build
 npm run build:mock
 ```
+
+同源标签页的每次请求会读取最新持久数据，并通过 Web Locks 串行执行事务。新增供应商/商品后，回到原采购单点击“刷新可选资料”即可选用；无需整页刷新，不丢失正在填写的单据。并发保存不会用旧页面快照覆盖另一标签页的新增内容。需要支持 Web Locks 的浏览器及 localhost/HTTPS；缺少能力时明确报错，不静默写入。
+
+完整采购路线浏览器回归：`cd frontend && npm run test:purchase:mock`（先执行 `npx playwright install chromium`，或通过 `CHROME_PATH` 指定浏览器）。脚本启动独立 Mock 前端及全新浏览器上下文，验证跨标签页补资料、精确关联、付款返回、暗色窄屏和并发写入，不拦截业务接口。

@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:purchase": "node ../scripts/purchase-workbench-verify.mjs",
     "dev:mock": "vite --mode mock",
-    "build:mock": "vue-tsc --noEmit && vite build --mode mock"
+    "build:mock": "vue-tsc --noEmit && vite build --mode mock",
+    "test:purchase:mock": "node ../scripts/purchase-mock-verify.cjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",

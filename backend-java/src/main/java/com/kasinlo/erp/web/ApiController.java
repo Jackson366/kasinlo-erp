@@ -203,7 +203,7 @@ public class ApiController {
             String keyword = q.getOrDefault("keyword", "").trim().toLowerCase(Locale.ROOT);
             if (!keyword.isBlank()) match = row.entrySet().stream().filter(e -> e.getValue() instanceof String && !Set.of("password",
                 "tokenEpoch").contains(e.getKey())).anyMatch(e -> str(e.getValue()).toLowerCase(Locale.ROOT).contains(keyword));
-            for (String k : List.of("status", "bizType", "direction", "sourceType", "categoryId", "partyId",
+            for (String k : List.of("status", "bizType", "direction", "sourceType", "sourceId", "orderId", "categoryId", "partyId",
                 "deptId", "docType", "stage", "source")) if (q.containsKey(k) && !q.get(k).isBlank() && row.containsKey(k)) match &=
                 q.get(k).equals(str(row.get(k)));
             String settle = q.getOrDefault("settle", "");

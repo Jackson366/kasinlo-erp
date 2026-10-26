@@ -3,7 +3,10 @@
  * 应收应付页：应收（销售）与应付（采购）两个视图，结构一致。
  * 汇总数据随列表接口一并返回，避免多打一次请求。
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { usePurchaseContext } from '@/composables/usePurchaseContext'
+import PurchaseContext from '../components/PurchaseContext.vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import type { FormInstance, FormRules } from 'element-plus'
 import { invApi } from '@/api'
@@ -18,8 +21,14 @@ import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 defineOptions({ name: 'InvFinance' })
 
-const activeTab = ref<'receivable' | 'payable'>('receivable')
+const route = useRoute()
+const router = useRouter()
+const { purchaseId, purchaseNo } = usePurchaseContext()
+const activeTab = ref<'receivable' | 'payable'>(
+  route.query.view === 'payable' ? 'payable' : 'receivable',
+)
 const loading = ref(false)
+const loadError = ref(false)
 const rows = ref<InvFinanceRow[]>([])
 const total = ref(0)
 const summary = ref<InvFinanceSummary>({
@@ -47,9 +56,9 @@ const query = reactive<{
 }>({
   page: 1,
   pageSize: 10,
-  keyword: '',
+  keyword: purchaseId.value ? purchaseNo.value : '',
   settle: '',
-  source: '',
+  source: purchaseId.value ? 'order' : '',
 })
 
 const settleMeta: Record<string, { text: string; type: 'danger' | 'warning' | 'success' }> = {
@@ -59,7 +68,11 @@ const settleMeta: Record<string, { text: string; type: 'danger' | 'warning' | 's
 }
 
 const summaryCards = computed(() => [
-  { label: '应收总额', value: summary.value.total, tone: 'blue' },
+  {
+    label: activeTab.value === 'payable' ? '应付总额' : '应收总额',
+    value: summary.value.total,
+    tone: 'blue',
+  },
   { label: '已结算', value: summary.value.settled, tone: 'green' },
   { label: '未结余额', value: summary.value.outstanding, tone: 'amber' },
   { label: '逾期金额', value: summary.value.overdue, tone: 'red' },
@@ -67,7 +80,8 @@ const summaryCards = computed(() => [
 
 /** 总额的构成：单据 / 合同期次，两个「其中」口径 */
 const summarySplit = computed(
-  () => `其中 单据 ${formatMoney(summary.value.orderTotal)} ｜ 合同 ${formatMoney(summary.value.planTotal)}`,
+  () =>
+    `其中 单据 ${formatMoney(summary.value.orderTotal)} ｜ 合同 ${formatMoney(summary.value.planTotal)}`,
 )
 
 const guard = useLatestGuard()
@@ -75,8 +89,10 @@ const guard = useLatestGuard()
 async function load(): Promise<void> {
   const ticket = guard.start()
   loading.value = true
+  loadError.value = false
   try {
     const params = {
+      orderId: purchaseId.value,
       page: query.page,
       pageSize: query.pageSize,
       keyword: query.keyword || undefined,
@@ -96,6 +112,11 @@ async function load(): Promise<void> {
     selection.value = []
     tableRef.value?.clearSelection()
   } catch {
+    if (guard.isCurrent(ticket)) {
+      loadError.value = true
+      rows.value = []
+      total.value = 0
+    }
     // 失败提示由响应拦截器统一处理
   } finally {
     if (guard.isCurrent(ticket)) loading.value = false
@@ -116,6 +137,10 @@ function reset(): void {
 }
 
 function onTabChange(): void {
+  if (purchaseId.value && activeTab.value !== 'payable') {
+    void router.replace({ path: '/inv/finance', query: { view: activeTab.value } })
+    return
+  }
   query.page = 1
   load()
 }
@@ -192,7 +217,11 @@ async function submitForm(): Promise<void> {
  */
 const batchVisible = ref(false)
 const batchSubmitting = ref(false)
-const batchForm = reactive<{ method: string; settledAt: string; remark: string }>({
+const batchForm = reactive<{
+  method: string
+  settledAt: string
+  remark: string
+}>({
   method: '银行转账',
   settledAt: '',
   remark: '',
@@ -204,7 +233,11 @@ function onSelectionChange(list: InvFinanceRow[]): void {
 
 function openBatch(): void {
   if (!selection.value.length) return
-  Object.assign(batchForm, { method: '银行转账', settledAt: today(), remark: '' })
+  Object.assign(batchForm, {
+    method: '银行转账',
+    settledAt: today(),
+    remark: '',
+  })
   batchVisible.value = true
 }
 
@@ -240,15 +273,31 @@ const printColumns: ListPrintColumn<InvFinanceRow>[] = [
   { label: '来源', value: (r) => (r.source === 'plan' ? '合同' : '单据') },
   {
     label: '单号 / 合同',
-    value: (r) => (r.source === 'plan' ? `${r.contractNo} 第${r.planSeq}期 ${r.planName}` : r.orderNo),
+    value: (r) =>
+      r.source === 'plan' ? `${r.contractNo} 第${r.planSeq}期 ${r.planName}` : r.orderNo,
   },
   { label: '往来单位', prop: 'partyName' },
   { label: '日期', value: (r) => formatDay(r.orderDate) },
   { label: '到期日', value: (r) => formatDay(r.dueDate) },
-  { label: '单据金额', value: (r) => formatMoney(r.totalAmount), align: 'right' },
-  { label: '已结算', value: (r) => formatMoney(r.settledAmount), align: 'right' },
-  { label: '未结余额', value: (r) => formatMoney(r.outstanding), align: 'right' },
-  { label: '状态', value: (r) => (r.overdue ? '已逾期' : settleMeta[r.settleStatus]?.text || '-') },
+  {
+    label: '单据金额',
+    value: (r) => formatMoney(r.totalAmount),
+    align: 'right',
+  },
+  {
+    label: '已结算',
+    value: (r) => formatMoney(r.settledAmount),
+    align: 'right',
+  },
+  {
+    label: '未结余额',
+    value: (r) => formatMoney(r.outstanding),
+    align: 'right',
+  },
+  {
+    label: '状态',
+    value: (r) => (r.overdue ? '已逾期' : settleMeta[r.settleStatus]?.text || '-'),
+  },
 ]
 const printSubtitle = computed(() => {
   const parts = [tabLabel.value]
@@ -262,18 +311,35 @@ async function handleExport(): Promise<void> {
   if (exporting.value) return
   exporting.value = true
   try {
-    await downloadFile('/inv/export', {
-      entity: 'finance',
-      bizType: bizType.value,
-      keyword: query.keyword || undefined,
-      settleStatus: query.settle || undefined,
-      source: query.source || undefined,
-    }, `${tabLabel.value}.xlsx`)
+    await downloadFile(
+      '/inv/export',
+      {
+        entity: 'finance',
+        bizType: bizType.value,
+        keyword: query.keyword || undefined,
+        settleStatus: query.settle || undefined,
+        source: query.source || undefined,
+      },
+      `${tabLabel.value}.xlsx`,
+    )
   } finally {
     exporting.value = false
   }
 }
 
+watch(
+  () => [route.path, route.query.purchaseId, route.query.view],
+  () => {
+    if (route.path !== '/inv/finance') return
+    activeTab.value = route.query.view === 'payable' ? 'payable' : 'receivable'
+    query.keyword = purchaseId.value ? purchaseNo.value : ''
+    query.source = purchaseId.value ? 'order' : ''
+    rows.value = []
+    total.value = 0
+    query.page = 1
+    void load()
+  },
+)
 onMounted(load)
 // 关键字录入即查询（防抖），不必再按回车
 const { searchSoon } = useDebouncedSearch(search)
@@ -281,8 +347,16 @@ const { searchSoon } = useDebouncedSearch(search)
 
 <template>
   <div class="finance-page">
-    <div class="summary-row">
-      <div v-for="card in summaryCards" :key="card.label" class="summary-card" :class="`tone-${card.tone}`">
+    <PurchaseContext />
+    <el-alert v-if="loadError" title="应收应付数据加载失败，请重新加载。" type="error" :closable="false" show-icon />
+    <el-button v-if="loadError" @click="load">重新加载应收应付</el-button>
+    <div v-if="!loadError" v-loading="loading" class="summary-row">
+      <div
+        v-for="card in summaryCards"
+        :key="card.label"
+        class="summary-card"
+        :class="`tone-${card.tone}`"
+      >
         <span class="summary-card__label">{{ card.label }}</span>
         <strong class="summary-card__value">{{ formatMoney(card.value) }}</strong>
       </div>
@@ -297,11 +371,14 @@ const { searchSoon } = useDebouncedSearch(search)
 
       <!-- 搜索与操作合并一行 -->
       <div class="list-head">
-        <span class="list-head__title">{{ tabLabel }}<em>共 {{ total }} 条</em></span>
+        <span class="list-head__title"
+          >{{ tabLabel }}<em>共 {{ total }} 条</em></span
+        >
         <el-form class="filter-form" label-width="76px" @submit.prevent>
           <el-form-item label="关键字">
             <el-input
-              v-model="query.keyword" @input="searchSoon"
+              v-model="query.keyword"
+              @input="searchSoon"
               placeholder="单号 / 往来单位"
               clearable
               @keyup.enter="search"
@@ -336,9 +413,10 @@ const { searchSoon } = useDebouncedSearch(search)
             :disabled="!selection.length"
             @click="openBatch"
           >
-            {{ activeTab === 'receivable' ? '批量收款' : '批量付款' }}{{ selection.length ? `（${selection.length}）` : '' }}
+            {{ activeTab === 'receivable' ? '批量收款' : '批量付款'
+            }}{{ selection.length ? `（${selection.length}）` : '' }}
           </el-button>
-          <el-button :loading="exporting" @click="handleExport">导出</el-button>
+          <el-button v-if="!purchaseId" :loading="exporting" @click="handleExport">导出</el-button>
           <el-button @click="printVisible = true">打印</el-button>
           <el-button @click="load">
             <AppIcon name="Refresh" />
@@ -419,14 +497,27 @@ const { searchSoon } = useDebouncedSearch(search)
               :disabled="row.outstanding <= 0"
               @click="openSettle(row as InvFinanceRow)"
             >
-              {{ row.source === 'plan' ? (activeTab === 'receivable' ? '收款' : '付款') : (activeTab === 'receivable' ? '登记收款' : '登记付款') }}
+              {{
+                row.source === 'plan'
+                  ? activeTab === 'receivable'
+                    ? '收款'
+                    : '付款'
+                  : activeTab === 'receivable'
+                    ? '登记收款'
+                    : '登记付款'
+              }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
 
       <div class="table-pager">
-        <Pagination v-model:page="query.page" v-model:page-size="query.pageSize" :total="total" @change="load" />
+        <Pagination
+          v-model:page="query.page"
+          v-model:page-size="query.pageSize"
+          :total="total"
+          @change="load"
+        />
       </div>
     </div>
 
@@ -455,11 +546,20 @@ const { searchSoon } = useDebouncedSearch(search)
           }}
         </el-descriptions-item>
         <el-descriptions-item label="往来单位">{{ currentRow.partyName }}</el-descriptions-item>
-        <el-descriptions-item label="未结余额">{{ formatMoney(currentRow.outstanding) }}</el-descriptions-item>
+        <el-descriptions-item label="未结余额">{{
+          formatMoney(currentRow.outstanding)
+        }}</el-descriptions-item>
       </el-descriptions>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
         <el-form-item label="金额" prop="amount">
-          <el-input-number v-model="form.amount" :min="0.01" :max="currentRow?.outstanding ?? 0" :precision="2" :controls="false" style="width: 100%" />
+          <el-input-number
+            v-model="form.amount"
+            :min="0.01"
+            :max="currentRow?.outstanding ?? 0"
+            :precision="2"
+            :controls="false"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="结算方式">
           <el-select v-model="form.method" style="width: 100%">
@@ -469,7 +569,12 @@ const { searchSoon } = useDebouncedSearch(search)
           </el-select>
         </el-form-item>
         <el-form-item label="结算日期">
-          <el-date-picker v-model="form.settledAt" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          <el-date-picker
+            v-model="form.settledAt"
+            type="date"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="form.remark" placeholder="选填" />
@@ -509,7 +614,12 @@ const { searchSoon } = useDebouncedSearch(search)
           </el-select>
         </el-form-item>
         <el-form-item label="结算日期">
-          <el-date-picker v-model="batchForm.settledAt" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          <el-date-picker
+            v-model="batchForm.settledAt"
+            type="date"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="batchForm.remark" maxlength="255" />

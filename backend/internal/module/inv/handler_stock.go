@@ -2,6 +2,7 @@ package inv
 
 import (
 	"github.com/gin-gonic/gin"
+	"strconv"
 
 	"nova-erp/internal/middleware"
 	"nova-erp/internal/model"
@@ -17,6 +18,8 @@ import (
 // @Produce      json
 // @Security     BearerAuth
 // @Param        direction  query  string  false  "in 入库 / out 出库"
+// @Param        sourceId query int false "来源单据 ID，须同时指定 sourceType"
+// @Param        sourceType query string false "purchase / sales"
 // @Param        keyword    query  string  false  "单号"
 // @Success      200  {object}  response.Body{data=response.PageData{list=[]inv.StockOrderRow}}
 // @Router       /inv/stock-orders [get]
@@ -27,7 +30,17 @@ func (h *Handler) StockOrderList(c *gin.Context) {
 		response.Fail(c, errcode.Newf(errcode.ErrBadRequest, "参数 direction 非法：%s", direction))
 		return
 	}
-	list, total, err := h.svc.StockOrderList(q, direction, middleware.CurrentIdentity(c))
+	var source StockOrderSource
+	if raw := c.Query("sourceId"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		kind := c.Query("sourceType")
+		if err != nil || id <= 0 || (kind != "purchase" && kind != "sales") {
+			response.Fail(c, errcode.New(errcode.ErrBadRequest, "请提供合法的来源单据 ID 和类型"))
+			return
+		}
+		source = StockOrderSource{SourceType: kind, SourceID: id}
+	}
+	list, total, err := h.svc.StockOrderList(q, direction, middleware.CurrentIdentity(c), source)
 	if err != nil {
 		response.Fail(c, err)
 		return

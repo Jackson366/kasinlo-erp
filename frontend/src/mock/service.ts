@@ -30,7 +30,11 @@ export interface MockRequest {
   body?: unknown
   token?: string
 }
-export function createMockService(initial = createSeed(), save: (data: MockData) => void = () => {}) {
+export function createMockService(
+  initial = createSeed(),
+  save: (data: MockData) => void = () => {},
+  load?: () => MockData | undefined,
+) {
   let db = structuredClone(initial)
   const rowById = <T extends { id: number }>(rows: T[], id: number): T =>
     rows.find((r) => r.id === id) ?? fail('Mock：记录不存在', 404)
@@ -40,7 +44,9 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
       const roleIds = Array.isArray(user.roleIds) ? user.roleIds : []
       Object.assign(user, {
         roleIds,
-        roleNames: db.collections['/system/roles'].filter((r) => roleIds.includes(r.id)).map((r) => r.name),
+        roleNames: db.collections['/system/roles']
+          .filter((r) => roleIds.includes(r.id))
+          .map((r) => r.name),
         deptName: db.collections['/system/depts'].find((d) => d.id === user.deptId)?.name || '',
         email: user.email || '',
         phone: user.phone || '',
@@ -94,7 +100,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
         if (
           q.keyword &&
           !Object.values(r).some(
-            (v) => typeof v === 'string' && v.toLowerCase().includes(String(q.keyword).toLowerCase()),
+            (v) =>
+              typeof v === 'string' && v.toLowerCase().includes(String(q.keyword).toLowerCase()),
           )
         )
           return false
@@ -105,6 +112,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
           'categoryId',
           'direction',
           'sourceType',
+          'sourceId',
+          'orderId',
           'settleStatus',
           'deptId',
           'docType',
@@ -115,7 +124,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
           'success',
           'source',
         ]) {
-          if (q[key] !== undefined && q[key] !== '' && String(q[key]) !== String(r[key])) return false
+          if (q[key] !== undefined && q[key] !== '' && String(q[key]) !== String(r[key]))
+            return false
         }
         if (q.warnOnly && !r.warn) return false
         if (q.overdueOnly && !r.overdue) return false
@@ -133,7 +143,9 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
         const av = (a as Row)[key],
           bv = (b as Row)[key]
         const result =
-          typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv))
+          typeof av === 'number' && typeof bv === 'number'
+            ? av - bv
+            : String(av).localeCompare(String(bv))
         return q.order === 'asc' ? result : -result
       })
   }
@@ -141,7 +153,12 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
     const rows = filtered(list, q),
       page = Math.max(1, num(q.page) || 1),
       pageSize = Math.min(200, Math.max(1, num(q.pageSize) || 20))
-    return { list: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length, page, pageSize }
+    return {
+      list: rows.slice((page - 1) * pageSize, page * pageSize),
+      total: rows.length,
+      page,
+      pageSize,
+    }
   }
   const finance = (bizType: string) => [
     ...db.orders
@@ -253,7 +270,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
         refreshToken: b.refreshToken,
       }
     }
-    if (!['mock-access-admin', 'mock-access-demo'].includes(token || '')) fail('请先登录 Mock 账号', 401)
+    if (!['mock-access-admin', 'mock-access-demo'].includes(token || ''))
+      fail('请先登录 Mock 账号', 401)
     if (isDemo && method !== 'GET' && path !== '/auth/logout')
       fail('Mock 演示账号为只读，请使用 admin 登录操作', 403)
     if (path === '/auth/logout') return '已退出'
@@ -317,7 +335,10 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
     if (path === '/inv/products/duplicates')
       return db.products
         .filter((p) => p.name === q.name && p.id !== num(q.excludeId))
-        .map((p) => ({ ...p, specSummary: p.specs.map((s) => s.spec).join('、') }))
+        .map((p) => ({
+          ...p,
+          specSummary: p.specs.map((s) => s.spec).join('、'),
+        }))
     if (path === '/inv/inventory') return page(inventory(), q)
     if (path.startsWith('/inv/finance/')) {
       if (method === 'GET') {
@@ -402,7 +423,13 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
           const orders = filtered(q.biz === 'purchase' ? purchases : sales, q)
           const groups = new Map<
             number,
-            { id: number; name: string; amount: number; orderIds: Set<number>; quantity: number }
+            {
+              id: number
+              name: string
+              amount: number
+              orderIds: Set<number>
+              quantity: number
+            }
           >()
           for (const order of orders) {
             for (const item of order.items) {
@@ -487,7 +514,10 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
           }
         }
         case 'contract': {
-          const rows = filtered(db.contracts, q).map((c) => ({ ...c, contractId: c.id }))
+          const rows = filtered(db.contracts, q).map((c) => ({
+            ...c,
+            contractId: c.id,
+          }))
           return {
             rows,
             count: rows.length,
@@ -507,7 +537,12 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
     if (path === '/ops/backups' && method === 'GET') return []
     if (path === '/ops/cleanup/scopes') return []
     if (path === '/ops/cleanup/preview')
-      return { dryRun: true, steps: [], vacuumed: [], blocked: 'Mock 模式不执行数据库清理' }
+      return {
+        dryRun: true,
+        steps: [],
+        vacuumed: [],
+        blocked: 'Mock 模式不执行数据库清理',
+      }
     if (path === '/ops/check')
       return {
         report: {
@@ -604,7 +639,9 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
         const payload = body as InvOrderPayload
         if (!['purchase', 'sales'].includes(payload.bizType)) fail('单据类型无效')
         const party = rowById(
-          db.collections[payload.bizType === 'purchase' ? '/inv/suppliers' : '/inv/customers'] as (Row & {
+          db.collections[
+            payload.bizType === 'purchase' ? '/inv/suppliers' : '/inv/customers'
+          ] as (Row & {
             id: number
           })[],
           payload.partyId,
@@ -615,7 +652,9 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
           ...payload,
           id: old?.id || nextId(),
           orderNo:
-            payload.orderNo || old?.orderNo || `${payload.bizType === 'purchase' ? 'CG' : 'XS'}${nextId()}`,
+            payload.orderNo ||
+            old?.orderNo ||
+            `${payload.bizType === 'purchase' ? 'CG' : 'XS'}${nextId()}`,
           partyName: String(party.name),
           dueDate: payload.dueDate || null,
           status: 1,
@@ -637,7 +676,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
         if (method === 'GET') return id ? rowById(db.products, id) : page(db.products, q)
         const old = id ? rowById(db.products, id) : undefined
         if (method === 'DELETE') {
-          if (db.orders.some((o) => o.items.some((i) => i.productId === id))) fail('商品已被单据引用')
+          if (db.orders.some((o) => o.items.some((i) => i.productId === id)))
+            fail('商品已被单据引用')
           db.products = db.products.filter((p) => p.id !== id)
           return '已删除'
         }
@@ -759,7 +799,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
       }
       if (resource === '/inv/stock-orders') {
         const rows = db.collections[resource]
-        if (method === 'GET') return id ? rowById(rows as (Row & { id: number })[], id) : page(rows, q)
+        if (method === 'GET')
+          return id ? rowById(rows as (Row & { id: number })[], id) : page(rows, q)
         if (method === 'DELETE') {
           const s = rowById(rows as (Row & { id: number })[], id)
           if (s.sourceType !== 'manual') fail('关联业务单据请通过反审核撤销')
@@ -847,6 +888,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
   }
   return {
     handle(req: MockRequest): unknown {
+      const latest = load?.()
+      if (latest) db = structuredClone(latest)
       const snapshot = structuredClone(db)
       try {
         refreshSystemRows()

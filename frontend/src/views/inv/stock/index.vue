@@ -8,7 +8,10 @@
  * 库存只有一个数（记在规格上的基本单位数量），单据上的折算是入口的换算，
  * 两者不是两套账，而是「输入」与「结果」。
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { usePurchaseContext } from '@/composables/usePurchaseContext'
+import PurchaseContext from '../components/PurchaseContext.vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -36,7 +39,10 @@ defineOptions({ name: 'InvStock' })
 
 // 默认落在「库存查询」：菜单叫库存管理，进页面先看库存现状，
 // 单据是这个页面的历史记录，需要时再切过去。
-const activeTab = ref('inventory')
+const route = useRoute()
+const router = useRouter()
+const { purchaseId } = usePurchaseContext()
+const activeTab = ref(route.query.view === 'orders' ? 'orders' : 'inventory')
 const printRef = ref<InstanceType<typeof StockPrintDialog> | null>(null)
 
 // ---------------- 出入库单据 ----------------
@@ -47,23 +53,18 @@ interface StockQuery {
   direction?: InvStockDirection
 }
 
-const {
-  query,
-  loading,
-  rows,
-  total,
-  load,
-  search,
-  reset,
-} = useTableQuery<StockQuery, InvStockOrderRow>(
-  { keyword: '', direction: undefined },
-  (params) =>
-    invApi.stockOrders({
-      page: params.page,
-      pageSize: params.pageSize,
-      keyword: params.keyword || undefined,
-      direction: params.direction ?? undefined,
-    }),
+const { query, loading, error: listError, rows, total, load, search, reset } = useTableQuery<
+  StockQuery,
+  InvStockOrderRow
+>({ keyword: '', direction: undefined }, (params) =>
+  invApi.stockOrders({
+    page: params.page,
+    pageSize: params.pageSize,
+    keyword: params.keyword || undefined,
+    direction: params.direction ?? undefined,
+    sourceType: purchaseId.value ? 'purchase' : undefined,
+    sourceId: purchaseId.value,
+  }),
 )
 
 // ---------------- 库存查询 ----------------
@@ -322,8 +323,18 @@ function productLabel(p: InvProductPick): string {
   return `${p.name}（${key}）`
 }
 
+function resetInventory(): void {
+  inventoryKeyword.value = ''
+  void loadInventory()
+}
+
 function onTabChange(name: string | number): void {
+  if (purchaseId.value && name !== 'orders') {
+    void router.replace({ path: '/inv/stock', query: { view: String(name) } })
+    return
+  }
   if (name === 'inventory') loadInventory()
+  else load()
 }
 
 /** 来源文案（模板与打印共用一份，避免两处各写一遍映射） */
@@ -390,6 +401,20 @@ async function batchVoid(): Promise<void> {
   }
 }
 
+watch(
+  () => [route.path, route.query.purchaseId, route.query.view],
+  () => {
+    if (route.path !== '/inv/stock') return
+    activeTab.value = route.query.view === 'orders' ? 'orders' : 'inventory'
+    rows.value = []
+    total.value = 0
+    query.page = 1
+    query.keyword = ''
+    query.direction = undefined
+    void load()
+    void loadInventory()
+  },
+)
 onMounted(() => {
   load()
   loadInventory()
@@ -402,6 +427,10 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
 
 <template>
   <div class="stock-page">
+    <PurchaseContext />
+    <el-alert v-if="purchaseId && listError" title="入库记录加载失败，请重新加载。" type="error" :closable="false" show-icon />
+    <el-button v-if="purchaseId && listError" @click="load">重新加载入库记录</el-button>
+    <el-alert v-else-if="purchaseId && !loading && !total" title="没有找到本单入库记录，请确认采购单已审核。" type="info" :closable="false" show-icon />
     <div class="page-card">
       <el-tabs v-model="activeTab" @tab-change="onTabChange">
         <!-- 库存查询 -->
@@ -410,7 +439,10 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
           <div class="list-head">
             <span class="list-head__title">
               库存查询
-              <em>共 {{ inventory.length }} 条规格 · 预警 {{ warnCount }} 项 · 总值 {{ formatMoney(inventoryTotal) }}</em>
+              <em
+                >共 {{ inventory.length }} 条规格 · 预警 {{ warnCount }} 项 · 总值
+                {{ formatMoney(inventoryTotal) }}</em
+              >
               <em v-if="inventoryTruncated" class="text-warning">
                 仅显示前 {{ inventoryLimit }} 条，请用关键字搜索其余
               </em>
@@ -418,7 +450,8 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
             <el-form class="filter-form" label-width="76px" @submit.prevent>
               <el-form-item label="关键字">
                 <el-input
-                  v-model="inventoryKeyword" @input="searchInventorySoon"
+                  v-model="inventoryKeyword"
+                  @input="searchInventorySoon"
                   placeholder="商品编码 / 名称"
                   clearable
                   @keyup.enter="loadInventory"
@@ -430,7 +463,10 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 <AppIcon name="Search" />
                 <span>查询</span>
               </el-button>
-              <el-button @click="inventoryKeyword = ''; loadInventory()">重置</el-button>
+              <el-button
+                @click="resetInventory"
+                >重置</el-button
+              >
               <span class="list-head__divider" />
               <el-button :loading="inventoryLoading" @click="loadInventory">
                 <AppIcon name="Refresh" />
@@ -491,7 +527,8 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
             <el-form class="filter-form" label-width="76px" @submit.prevent>
               <el-form-item label="关键字">
                 <el-input
-                  v-model="query.keyword" @input="searchSoon"
+                  v-model="query.keyword"
+                  @input="searchSoon"
                   placeholder="单号"
                   clearable
                   @keyup.enter="search"
@@ -511,10 +548,19 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
               </el-button>
               <el-button @click="reset">重置</el-button>
               <span class="list-head__divider" />
-              <el-button v-if="selection.length" v-perm="'inv:stock:delete'" :loading="batchRunning" @click="batchVoid">
+              <el-button
+                v-if="selection.length"
+                v-perm="'inv:stock:delete'"
+                :loading="batchRunning"
+                @click="batchVoid"
+              >
                 批量作废
               </el-button>
-              <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">
+              <el-button
+                v-if="!purchaseId"
+                :loading="exporting"
+                @click="exportRows(selection.length ? selection : undefined)"
+              >
                 导出{{ selection.length ? '选中' : '' }}
               </el-button>
               <el-button @click="printVisible = true">打印</el-button>
@@ -539,7 +585,11 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
             <el-table-column prop="orderNo" label="单号" width="150" />
             <el-table-column label="方向" width="90" align="center">
               <template #default="{ row }">
-                <el-tag :type="row.direction === 'in' ? 'success' : 'warning'" size="small" effect="light">
+                <el-tag
+                  :type="row.direction === 'in' ? 'success' : 'warning'"
+                  size="small"
+                  effect="light"
+                >
                   {{ row.direction === 'in' ? '入库' : '出库' }}
                 </el-tag>
               </template>
@@ -610,7 +660,12 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
         <el-row :gutter="16">
           <el-col :span="6">
             <el-form-item label="单据编号">
-              <el-input v-model="form.orderNo" placeholder="留空自动生成" clearable maxlength="32" />
+              <el-input
+                v-model="form.orderNo"
+                placeholder="留空自动生成"
+                clearable
+                maxlength="32"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="6">
@@ -668,7 +723,12 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 @change="onProductPickChange(item)"
                 @visible-change="onPickVisible"
               >
-                <el-option v-for="p in filteredPicks" :key="p.id" :label="productLabel(p)" :value="p.id" />
+                <el-option
+                  v-for="p in filteredPicks"
+                  :key="p.id"
+                  :label="productLabel(p)"
+                  :value="p.id"
+                />
               </el-select>
               <el-select
                 v-model="item.specId"
@@ -697,12 +757,20 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                   :value="u.id"
                 />
               </el-select>
-              <el-input-number v-model="item.qty" class="col-num" :min="0.01" :precision="3" :controls="false" />
+              <el-input-number
+                v-model="item.qty"
+                class="col-num"
+                :min="0.01"
+                :precision="3"
+                :controls="false"
+              />
               <span class="col-base">
                 {{ formatQty(qtyBase(item)) }}
                 {{ unitOptions(item).find((u) => u.isBase)?.unit || '' }}
               </span>
-              <el-button class="col-act" link type="danger" @click="removeItem(index)">删除</el-button>
+              <el-button class="col-act" link type="danger" @click="removeItem(index)"
+                >删除</el-button
+              >
             </div>
             <div class="item-editor__foot">
               <el-button link type="primary" @click="addItem">

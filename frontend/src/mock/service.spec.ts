@@ -28,7 +28,12 @@ describe('独立 Mock 模式', () => {
     expect(() => request('POST', '/auth/login', { username: 'admin', password: 'wrong' })).toThrow(
       '用户名或密码错误',
     )
-    expect(request('POST', '/auth/login', { username: 'admin', password: 'admin123456' })).toMatchObject({
+    expect(
+      request('POST', '/auth/login', {
+        username: 'admin',
+        password: 'admin123456',
+      }),
+    ).toMatchObject({
       accessToken: 'mock-access-admin',
     })
     expect(() => request('GET', '/profile', undefined, undefined, '')).toThrow('请先登录')
@@ -36,7 +41,9 @@ describe('独立 Mock 模式', () => {
       isSuper: false,
       username: 'demo',
     })
-    expect(() => request('POST', '/inv/orders', orderPayload, undefined, 'mock-access-demo')).toThrow('只读')
+    expect(() =>
+      request('POST', '/inv/orders', orderPayload, undefined, 'mock-access-demo'),
+    ).toThrow('只读')
   })
   it('菜单覆盖后端声明的每个页面且组件都存在', () => {
     const leaves = routes.flatMap((r) => r.children || [r])
@@ -68,7 +75,10 @@ describe('独立 Mock 模式', () => {
       '/system/logs/operations',
       '/system/logs/logins',
     ]) {
-      expect(request('GET', path), path).toMatchObject({ list: expect.any(Array), total: expect.any(Number) })
+      expect(request('GET', path), path).toMatchObject({
+        list: expect.any(Array),
+        total: expect.any(Number),
+      })
     }
     for (const path of [
       '/inv/report/trend',
@@ -82,7 +92,10 @@ describe('独立 Mock 模式', () => {
       '/ops/backups',
     ])
       expect(request('GET', path), path).toBeInstanceOf(Array)
-    expect(request('GET', '/inv/products/pick')).toMatchObject({ items: expect.any(Array), truncated: false })
+    expect(request('GET', '/inv/products/pick')).toMatchObject({
+      items: expect.any(Array),
+      truncated: false,
+    })
     expect(request('GET', '/inv/finance/payables')).toMatchObject({
       summary: { outstanding: expect.any(Number) },
     })
@@ -95,14 +108,29 @@ describe('独立 Mock 模式', () => {
   it('分页、查询、审核、反审核、结算和删除形成闭环', () => {
     const { request } = setup()
     expect(
-      request('GET', '/inv/orders', undefined, { bizType: 'purchase', page: 2, pageSize: 5 }),
-    ).toMatchObject({ total: 16, page: 2, pageSize: 5, list: expect.any(Array) })
-    const { id } = request('POST', '/inv/orders', orderPayload) as { id: number }
+      request('GET', '/inv/orders', undefined, {
+        bizType: 'purchase',
+        page: 2,
+        pageSize: 5,
+      }),
+    ).toMatchObject({
+      total: 16,
+      page: 2,
+      pageSize: 5,
+      list: expect.any(Array),
+    })
+    const { id } = request('POST', '/inv/orders', orderPayload) as {
+      id: number
+    }
     request('PUT', `/inv/orders/${id}`, { ...orderPayload, remark: '已编辑' })
-    expect(request('GET', `/inv/orders/${id}`)).toMatchObject({ totalAmount: 150, remark: '已编辑' })
+    expect(request('GET', `/inv/orders/${id}`)).toMatchObject({
+      totalAmount: 150,
+      remark: '已编辑',
+    })
     const stock = () =>
-      (request('GET', '/inv/inventory') as PageResult<InvInventoryRow>).list.find((r) => r.specId === 1)!
-        .stock
+      (request('GET', '/inv/inventory') as PageResult<InvInventoryRow>).list.find(
+        (r) => r.specId === 1,
+      )!.stock
     const before = stock()
     request('PUT', `/inv/orders/${id}/status`, { status: 2 })
     expect(stock()).toBe(before + 3)
@@ -111,7 +139,10 @@ describe('独立 Mock 模式', () => {
     expect(stock()).toBe(before)
     request('PUT', `/inv/orders/${id}/status`, { status: 2 })
     request('POST', '/inv/finance/settlements', { orderId: id, amount: 150 })
-    expect(request('GET', `/inv/orders/${id}`)).toMatchObject({ settledAmount: 150, settleStatus: 'paid' })
+    expect(request('GET', `/inv/orders/${id}`)).toMatchObject({
+      settledAmount: 150,
+      settleStatus: 'paid',
+    })
     expect(() => request('PUT', `/inv/orders/${id}/reverse`)).toThrow('未收付款')
     const draft = request('POST', '/inv/orders', orderPayload) as { id: number }
     request('DELETE', `/inv/orders/${draft.id}`)
@@ -127,17 +158,26 @@ describe('独立 Mock 模式', () => {
     expect(() => request('PUT', `/inv/orders/${id}/status`, { status: 2 })).toThrow('库存不足')
     expect(request('GET', `/inv/orders/${id}`)).toMatchObject({ status: 1 })
     const o = request('GET', '/inv/orders/4') as InvOrderDetail
-    expect(() => request('POST', '/inv/finance/settlements/batch', { orderIds: [4, 999999] })).toThrow(
-      '不存在',
-    )
-    expect(request('GET', '/inv/orders/4')).toMatchObject({ settledAmount: o.settledAmount })
+    expect(() =>
+      request('POST', '/inv/finance/settlements/batch', {
+        orderIds: [4, 999999],
+      }),
+    ).toThrow('不存在')
+    expect(request('GET', '/inv/orders/4')).toMatchObject({
+      settledAmount: o.settledAmount,
+    })
   })
   it('保存后的数据可重新加载，返回值不会直接修改数据库', () => {
     let saved = createSeed()
     const service = createMockService(saved, (db) => {
       saved = structuredClone(db)
     })
-    const req = { method: 'POST', path: '/inv/orders', body: orderPayload, token: 'mock-access-admin' }
+    const req = {
+      method: 'POST',
+      path: '/inv/orders',
+      body: orderPayload,
+      token: 'mock-access-admin',
+    }
     const { id } = service.handle(req) as { id: number }
     const reloaded = createMockService(saved)
     const read = { method: 'GET', path: `/inv/orders/${id}`, token: req.token }
@@ -160,11 +200,16 @@ describe('独立 Mock 模式', () => {
       avatar: '',
     })
     request('PUT', `/system/users/${id}`, { roleIds: [] })
-    expect(request('GET', `/system/users/${id}`)).toMatchObject({ roleNames: [] })
+    expect(request('GET', `/system/users/${id}`)).toMatchObject({
+      roleNames: [],
+    })
   })
   it('排行按客户或商品聚合，金额与实际已审核单据一致', () => {
     const { request } = setup()
-    const byCustomer = request('GET', '/inv/report/ranking') as { name: string; amount: number }[]
+    const byCustomer = request('GET', '/inv/report/ranking') as {
+      name: string
+      amount: number
+    }[]
     expect(byCustomer.map((r) => r.name).sort()).toEqual(['上海远航制造', '苏州星河工业'])
     const sales = request('GET', '/inv/orders', undefined, {
       bizType: 'sales',
@@ -186,4 +231,72 @@ describe('独立 Mock 模式', () => {
       expect(() => request(method, path)).toThrow(MockError)
     }
   })
+})
+
+it('两个标签页从最新持久数据执行请求，旧页保存不覆盖新资料且失败不撤销其它页成果', () => {
+  let persisted = createSeed()
+  const save = (value: ReturnType<typeof createSeed>) => {
+    persisted = structuredClone(value)
+  }
+  const load = () => structuredClone(persisted)
+  const a = createMockService(persisted, save, load)
+  const b = createMockService(persisted, save, load)
+  const token = 'mock-access-admin'
+  b.handle({
+    method: 'POST',
+    path: '/inv/suppliers',
+    body: { name: '跨标签供应商' },
+    token,
+  })
+  const suppliers = a.handle({
+    method: 'GET',
+    path: '/inv/suppliers',
+    token,
+  }) as PageResult<{ id: number; name: string }>
+  const supplier = suppliers.list.find((r) => r.name === '跨标签供应商')!
+  expect(supplier).toBeDefined()
+  const created = a.handle({
+    method: 'POST',
+    path: '/inv/orders',
+    body: { ...orderPayload, partyId: supplier.id },
+    token,
+  }) as { id: number }
+  expect(persisted.collections['/inv/suppliers'].some((r) => r.id === supplier.id)).toBe(true)
+  expect(() =>
+    b.handle({
+      method: 'POST',
+      path: '/inv/orders',
+      body: { ...orderPayload, items: [] },
+      token,
+    }),
+  ).toThrow()
+  expect(persisted.orders.some((r) => r.id === created.id)).toBe(true)
+  const current = b.handle({
+    method: 'GET',
+    path: `/inv/orders/${created.id}`,
+    token,
+  }) as InvOrderDetail
+  expect(current.partyName).toBe('跨标签供应商')
+  a.handle({
+    method: 'PUT',
+    path: `/inv/orders/${created.id}/status`,
+    body: { status: 2 },
+    token,
+  })
+  const stock = b.handle({
+    method: 'GET',
+    path: '/inv/stock-orders',
+    params: { sourceId: created.id, sourceType: 'purchase' },
+    token,
+  }) as PageResult<{ sourceId: number }>
+  expect(stock.total).toBe(1)
+  expect(stock.list[0].sourceId).toBe(created.id)
+  const finance = b.handle({
+    method: 'GET',
+    path: '/inv/finance/payables',
+    params: { orderId: created.id, source: 'order' },
+    token,
+  }) as PageResult<{ orderId: number }>
+  expect(finance.total).toBe(1)
+  expect(finance.list[0].orderId).toBe(created.id)
 })

@@ -41,6 +41,12 @@ try:
  product=api('POST','/inv/products',{'name':'迁移回归商品'})['id'];p=api('GET',f'/inv/products/{product}');spec=p['specs'][0];unit=spec['units'][0];item={'productId':product,'specId':spec['id'],'unitId':unit['id'],'qty':100,'price':2.35}
  customer=api('POST','/inv/customers',{'name':'迁移测试客户'})['id'];supplier=api('POST','/inv/suppliers',{'name':'迁移测试供应商'})['id']
  order={'bizType':'purchase','partyId':supplier,'orderDate':'2026-10-24','items':[item]};oid=api('POST','/inv/orders',order)['id'];api('PUT',f'/inv/orders/{oid}/status',{'status':2});check('采购审核入库',api('GET',f'/inv/products/{product}')['specs'][0]['stock']==100)
+ related=api('GET',f'/inv/stock-orders?sourceType=purchase&sourceId={oid}')
+ check('入库来源按采购ID精确筛选',related['total']==1 and all(r['sourceId']==oid for r in related['list']))
+ payable=api('GET',f'/inv/finance/payables?source=order&orderId={oid}')
+ check('本单应付明细与汇总一致',payable['total']==1 and payable['list'][0]['orderId']==oid and payable['summary']['total']==235)
+ absent=api('GET','/inv/finance/payables?source=order&orderId=999999999')
+ check('不存在的来源单据不会返回其它应付',absent['total']==0 and absent['summary']['total']==0)
  check('重复审核拒绝',call('PUT',f'/api/v1/inv/orders/{oid}/status',{'status':2})[0]==409)
  api('PUT',f'/inv/orders/{oid}/reverse',{});check('采购反审核回滚库存',api('GET',f'/inv/products/{product}')['specs'][0]['stock']==0)
  api('PUT',f'/inv/orders/{oid}/status',{'status':2})

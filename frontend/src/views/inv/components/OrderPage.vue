@@ -944,6 +944,30 @@ async function batchReverse(): Promise<void> {
   }
 }
 
+function relatedTarget(path: string) {
+  const row = detail.value!.row
+  return {
+    path,
+    query: {
+      purchaseId: String(row.id),
+      purchaseNo: row.orderNo,
+      view: path === '/inv/stock' ? 'orders' : 'payable',
+      returnTo: route.fullPath,
+    },
+  }
+}
+function consumeReviewAction(): void {
+  if (!isPurchase.value || route.path !== pagePath) return
+  const id = Number(route.query.review)
+  if (!Number.isSafeInteger(id) || id <= 0) return
+  keepReviewResult.value = true
+  reviewResult.value = ''
+  mobileDetail.value = true
+  void openDetail({ id })
+  const { review: _review, ...rest } = route.query
+  void router.replace({ path: pagePath, query: rest })
+}
+watch(() => [route.path, route.query.review], consumeReviewAction)
 function consumeCreateAction(): void {
   if (route.path !== pagePath || route.query.action !== 'create') return
   if (!userStore.hasAnyPerm([`inv:${props.bizType}:create`])) return
@@ -954,6 +978,7 @@ function consumeCreateAction(): void {
 watch(() => route.query.action, consumeCreateAction)
 onMounted(() => {
   consumeCreateAction()
+  consumeReviewAction()
   window.addEventListener('beforeunload', beforeUnload)
   void load()
   void loadOptions().catch(() => {})
@@ -1152,6 +1177,24 @@ function onKeywordInput(): void {
           />
           <div class="purchase-review-actions">
             <div class="purchase-review-actions__secondary">
+              <template v-if="detail.row.status === 2">
+                <el-button
+                  v-if="
+                    userStore.hasAnyPerm(['inv:stock:list']) &&
+                    router.hasRoute('InvStock')
+                  "
+                  @click="router.push(relatedTarget('/inv/stock'))"
+                  >查看入库记录</el-button
+                >
+                <el-button
+                  v-if="
+                    userStore.hasAnyPerm(['inv:finance:list']) &&
+                    router.hasRoute('InvFinance')
+                  "
+                  @click="router.push(relatedTarget('/inv/finance'))"
+                  >查看本单应付</el-button
+                >
+              </template>
               <el-button @click="openAttach(detail.row)"
                 >附件{{
                   attachCounts[String(detail.row.id)]

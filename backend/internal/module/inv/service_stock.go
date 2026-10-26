@@ -38,10 +38,19 @@ func (s *Service) stockStats(ids []int64) (map[int64][2]float64, error) {
 	return out, nil
 }
 
+// StockOrderSource 限定来源单据，仍沿用原有数据范围校验。
+type StockOrderSource struct {
+	SourceType string
+	SourceID   int64
+}
+
 // StockOrderList 出入库单据列表。direction 为空表示全部。
-func (s *Service) StockOrderList(q page.Query, direction string, actor *authz.Identity) ([]StockOrderRow, int64, error) {
+func (s *Service) StockOrderList(q page.Query, direction string, actor *authz.Identity, source ...StockOrderSource) ([]StockOrderRow, int64, error) {
 	tx := s.db.Model(&model.InvStockOrder{}).Where("status = 1")
 	tx = s.applyCreator(tx, actor)
+	if len(source) > 0 && source[0].SourceID > 0 {
+		tx = tx.Where("source_type = ? AND source_id = ?", source[0].SourceType, source[0].SourceID)
+	}
 	if direction == model.InvStockIn || direction == model.InvStockOut {
 		tx = tx.Where("direction = ?", direction)
 	}

@@ -1242,6 +1242,20 @@ const docTemplate = `{
                     "进销存-应收应付"
                 ],
                 "summary": "应付明细",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "来源采购/销售单据 ID",
+                        "name": "orderId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "order | plan（空=全部）",
+                        "name": "source",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1298,6 +1312,18 @@ const docTemplate = `{
                         "type": "string",
                         "description": "unpaid | partial | paid | overdue",
                         "name": "settle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "来源采购/销售单据 ID",
+                        "name": "orderId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "order | plan（空=全部）",
+                        "name": "source",
                         "in": "query"
                     }
                 ],
@@ -2857,6 +2883,18 @@ const docTemplate = `{
                         "type": "string",
                         "description": "in 入库 / out 出库",
                         "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "来源单据 ID，须同时指定 sourceType",
+                        "name": "sourceId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "purchase / sales",
+                        "name": "sourceType",
                         "in": "query"
                     },
                     {

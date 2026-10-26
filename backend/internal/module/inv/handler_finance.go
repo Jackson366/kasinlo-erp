@@ -2,9 +2,11 @@ package inv
 
 import (
 	"github.com/gin-gonic/gin"
+	"strconv"
 
 	"nova-erp/internal/middleware"
 	"nova-erp/internal/pkg/bind"
+	"nova-erp/internal/pkg/errcode"
 	"nova-erp/internal/pkg/page"
 	"nova-erp/internal/pkg/response"
 )
@@ -15,6 +17,7 @@ import (
 // @Produce      json
 // @Security     BearerAuth
 // @Param        settle  query  string  false  "unpaid | partial | paid | overdue"
+// @Param        orderId query int false "来源采购/销售单据 ID"
 // @Param        source  query  string  false  "order | plan（空=全部）"
 // @Success      200  {object}  response.Body{data=response.PageData{list=[]inv.FinanceRow}}
 // @Router       /inv/finance/receivables [get]
@@ -25,6 +28,7 @@ func (h *Handler) Receivables(c *gin.Context) { h.financeList(c, true) }
 // @Tags         进销存-应收应付
 // @Produce      json
 // @Security     BearerAuth
+// @Param        orderId query int false "来源采购/销售单据 ID"
 // @Param        source  query  string  false  "order | plan（空=全部）"
 // @Success      200  {object}  response.Body{data=response.PageData{list=[]inv.FinanceRow}}
 // @Router       /inv/finance/payables [get]
@@ -34,6 +38,16 @@ func (h *Handler) financeList(c *gin.Context, receivable bool) {
 	q := page.FromContext(c)
 	settle := c.Query("settle")
 	source := c.Query("source")
+	var orderID int64
+	if raw := c.Query("orderId"); raw != "" {
+		var err error
+		orderID, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || orderID <= 0 {
+			response.Fail(c, errcode.New(errcode.ErrBadRequest, "来源单据 ID 非法"))
+			return
+		}
+	}
+
 	var (
 		rows    []FinanceRow
 		summary FinanceSummary
@@ -41,9 +55,9 @@ func (h *Handler) financeList(c *gin.Context, receivable bool) {
 		err     error
 	)
 	if receivable {
-		rows, summary, total, err = h.svc.Receivables(q, settle, source, middleware.CurrentIdentity(c))
+		rows, summary, total, err = h.svc.Receivables(q, settle, source, middleware.CurrentIdentity(c), orderID)
 	} else {
-		rows, summary, total, err = h.svc.Payables(q, settle, source, middleware.CurrentIdentity(c))
+		rows, summary, total, err = h.svc.Payables(q, settle, source, middleware.CurrentIdentity(c), orderID)
 	}
 	if err != nil {
 		response.Fail(c, err)

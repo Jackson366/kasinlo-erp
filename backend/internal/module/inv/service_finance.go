@@ -86,9 +86,13 @@ func financeUnionArgs(bizType, source string) []any {
 //
 // 汇总与明细共用同一段条件：两处各写一遍，迟早出现「明细筛出 5 条、
 // 汇总却是全表」的错账，而对账时最不该怀疑的就是这两个数。
-func (s *Service) financeWhere(actor *authz.Identity, q page.Query, settle string, today time.Time) (string, []any) {
+func (s *Service) financeWhere(actor *authz.Identity, q page.Query, settle string, today time.Time, orderID ...int64) (string, []any) {
 	var sb strings.Builder
 	var args []any
+	if len(orderID) > 0 && orderID[0] > 0 {
+		sb.WriteString(" AND t.source = 'order' AND t.order_id = ?")
+		args = append(args, orderID[0])
+	}
 	if cond, a, ok := authz.ResolveScope(actor).CreatorCond("t"); ok {
 		sb.WriteString(" AND " + cond)
 		args = append(args, a...)
@@ -120,11 +124,11 @@ func (s *Service) financeWhere(actor *authz.Identity, q page.Query, settle strin
 // financeList 应收 / 应付明细。bizType 取 sales（应收）或 purchase（应付），
 // source 取 "" 全部 / order 单据 / plan 合同期次。
 // 口径：订单只有「已审核」才形成应收应付；合同期次只要合同未终止就计入。
-func (s *Service) financeList(bizType string, q page.Query, settle, source string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
+func (s *Service) financeList(bizType string, q page.Query, settle, source string, actor *authz.Identity, orderID ...int64) ([]FinanceRow, FinanceSummary, int64, error) {
 	now := time.Now().In(database.Location())
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, database.Location())
 
-	where, whereArgs := s.financeWhere(actor, q, settle, today)
+	where, whereArgs := s.financeWhere(actor, q, settle, today, orderID...)
 	unionArgs := financeUnionArgs(bizType, source)
 
 	var summary FinanceSummary
@@ -208,13 +212,13 @@ func (s *Service) financeList(bizType string, q page.Query, settle, source strin
 }
 
 // Receivables 应收明细。
-func (s *Service) Receivables(q page.Query, settle, source string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
-	return s.financeList(model.InvBizSales, q, settle, source, actor)
+func (s *Service) Receivables(q page.Query, settle, source string, actor *authz.Identity, orderID ...int64) ([]FinanceRow, FinanceSummary, int64, error) {
+	return s.financeList(model.InvBizSales, q, settle, source, actor, orderID...)
 }
 
 // Payables 应付明细。
-func (s *Service) Payables(q page.Query, settle, source string, actor *authz.Identity) ([]FinanceRow, FinanceSummary, int64, error) {
-	return s.financeList(model.InvBizPurchase, q, settle, source, actor)
+func (s *Service) Payables(q page.Query, settle, source string, actor *authz.Identity, orderID ...int64) ([]FinanceRow, FinanceSummary, int64, error) {
+	return s.financeList(model.InvBizPurchase, q, settle, source, actor, orderID...)
 }
 
 // SettleBatch 批量登记收付款：一个事务里给每张单据各记一笔。

@@ -914,3 +914,9 @@ ProductName**聚合而不是联表取档案名——商品档案被删后联表�
 | --- | --- |
 | `40000` | 扩展名不是 `.xlsx` / 文件无法解析 / 表头被改动 / 没有可导入的数据行 |
 | `40300` | 无 `system:user:import` 权限 |
+
+### 采购关联结果筛选补充
+
+- `GET /inv/stock-orders?sourceType=purchase&sourceId=<采购单ID>`：仅返回该来源单据的入库记录，保持原有数据范围。Go 后端要求 sourceId 为正整数，并配合 purchase/sales 类型。
+- `GET /inv/finance/payables?orderId=<采购单ID>&source=order`（应收列表同样支持 orderId）：明细、总数及汇总采用同一精确单据筛选。未审核单据不会形成应付。
+- Java 分页过滤与内置 Mock 同步支持 sourceId/orderId。上述条件仅收窄列表，不改变鉴权和过账规则。
