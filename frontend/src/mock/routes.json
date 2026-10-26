@@ -1,0 +1,223 @@
+[
+  {
+    "id": 1,
+    "name": "InvOverview",
+    "path": "/inv/overview",
+    "component": "inv/overview/index",
+    "meta": {
+      "title": "数据概览",
+      "icon": "Odometer",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 2,
+    "name": "InvPurchase",
+    "path": "/inv/purchase",
+    "component": "inv/purchase/index",
+    "meta": {
+      "title": "采购管理",
+      "icon": "ShoppingCart",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 3,
+    "name": "InvSales",
+    "path": "/inv/sales",
+    "component": "inv/sales/index",
+    "meta": {
+      "title": "销售管理",
+      "icon": "Sell",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 4,
+    "name": "InvContract",
+    "path": "/inv/contract",
+    "component": "inv/contract/index",
+    "meta": {
+      "title": "合同管理",
+      "icon": "Document",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 5,
+    "name": "InvStock",
+    "path": "/inv/stock",
+    "component": "inv/stock/index",
+    "meta": {
+      "title": "库存管理",
+      "icon": "Box",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 6,
+    "name": "InvFinance",
+    "path": "/inv/finance",
+    "component": "inv/finance/index",
+    "meta": {
+      "title": "应收应付",
+      "icon": "Money",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 7,
+    "name": "InvReport",
+    "path": "/inv/report",
+    "component": "inv/report/index",
+    "meta": {
+      "title": "报表中心",
+      "icon": "TrendCharts",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 8,
+    "name": "InvPrint",
+    "path": "/inv/print",
+    "component": "inv/print/index",
+    "meta": {
+      "title": "打印模板",
+      "icon": "Printer",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 9,
+    "name": "InvProduct",
+    "path": "/inv/product",
+    "component": "inv/product/index",
+    "meta": {
+      "title": "商品档案",
+      "icon": "GoodsFilled",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 10,
+    "name": "InvCustomer",
+    "path": "/inv/customer",
+    "component": "inv/customer/index",
+    "meta": {
+      "title": "客户管理",
+      "icon": "User",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 11,
+    "name": "InvSupplier",
+    "path": "/inv/supplier",
+    "component": "inv/supplier/index",
+    "meta": {
+      "title": "供应商管理",
+      "icon": "Van",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 12,
+    "name": "SystemUser",
+    "path": "/system/user",
+    "component": "system/user/index",
+    "meta": {
+      "title": "用户管理",
+      "icon": "User",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 13,
+    "name": "SystemRole",
+    "path": "/system/role",
+    "component": "system/role/index",
+    "meta": {
+      "title": "角色管理",
+      "icon": "Key",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 14,
+    "name": "SystemMenu",
+    "path": "/system/menu",
+    "component": "system/menu/index",
+    "meta": {
+      "title": "菜单管理",
+      "icon": "Menu",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 15,
+    "name": "SystemDept",
+    "path": "/system/dept",
+    "component": "system/dept/index",
+    "meta": {
+      "title": "部门管理",
+      "icon": "OfficeBuilding",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 16,
+    "name": "SystemLog",
+    "path": "/system/log",
+    "component": "system/log/index",
+    "meta": {
+      "title": "操作日志",
+      "icon": "Document",
+      "hidden": false,
+      "keepAlive": true,
+      "isExternal": false
+    }
+  },
+  {
+    "id": 17,
+    "name": "SystemOps",
+    "path": "/system/ops",
+    "component": "system/ops/index",
+    "meta": {
+      "title": "系统运维",
+      "icon": "Tools",
+      "hidden": false,
+      "keepAlive": false,
+      "isExternal": false
+    }
+  }
+]

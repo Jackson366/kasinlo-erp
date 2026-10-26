@@ -1,7 +1,8 @@
 import { ref } from 'vue'
 
-const ACCESS_TOKEN_KEY = 'nova_access_token'
-const REFRESH_TOKEN_KEY = 'nova_refresh_token'
+const prefix = import.meta.env.MODE === 'mock' ? 'kasinlo_mock' : 'nova'
+const ACCESS_TOKEN_KEY = `${prefix}_access_token`
+const REFRESH_TOKEN_KEY = `${prefix}_refresh_token`
 
 /**
  * 令牌既持久化在 localStorage（跨会话保留），又同时保存在模块级 ref 里。

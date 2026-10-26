@@ -29,8 +29,16 @@ app.use(ElLoading)
 
 // 路由守卫依赖 Pinia，必须在 createPinia 之后安装
 setupRouterGuard(router)
-app.use(router)
 
 setupPermissionDirective(app)
 
-app.mount('#app')
+// 守卫开始拉取权限前安装，避免首次登录/深链导航抢先请求后端。
+async function bootstrap(): Promise<void> {
+  if (import.meta.env.MODE === 'mock') {
+    const { installMock } = await import('./mock')
+    installMock()
+  }
+  app.use(router)
+  app.mount('#app')
+}
+void bootstrap()

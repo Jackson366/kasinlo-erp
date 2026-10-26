@@ -119,6 +119,16 @@ npm run dev
 
 访问 `http://localhost:6083`。Vite 默认代理后端请求到 `http://127.0.0.1:6085`。
 
+### 不启动后端，直接评审前端页面
+
+```bash
+cd frontend
+npm ci
+npm run dev:mock
+```
+
+访问 `http://localhost:6083`，使用 `admin / admin123456` 操作演示数据，或 `demo / demo123456` 只读浏览。Mock 数据在浏览器中保存，刷新后保留；与真实模式登录信息隔离。支持主要业务页面与单据审核/库存/结算演示，文件和数据库运维操作会明确提示暂不支持。详见 [Mock 使用说明](docs/MOCK.md)。
+
 ### 5. 首次登录
 
 | 账号 | 初始密码 | 用途 |
