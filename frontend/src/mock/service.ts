@@ -398,19 +398,42 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
             salesAmount: i === 0 ? salesAmount : 0,
             purchaseAmount: i === 0 ? purchaseAmount : 0,
           })).reverse()
-        case 'ranking':
-          return db.products.map((p, i) => ({
+        case 'ranking': {
+          const orders = filtered(q.biz === 'purchase' ? purchases : sales, q)
+          const groups = new Map<
+            number,
+            { id: number; name: string; amount: number; orderIds: Set<number>; quantity: number }
+          >()
+          for (const order of orders) {
+            for (const item of order.items) {
+              const id = q.dimension === 'product' ? item.productId : order.partyId
+              const name = q.dimension === 'product' ? item.productName : order.partyName
+              const group = groups.get(id) || {
+                id,
+                name,
+                amount: 0,
+                orderIds: new Set<number>(),
+                quantity: 0,
+              }
+              group.amount += item.amount
+              group.quantity += item.qty
+              group.orderIds.add(order.id)
+              groups.set(id, group)
+            }
+          }
+          const all = [...groups.values()].sort((a, b) => b.amount - a.amount)
+          const total = sum(all, (r) => r.amount)
+          return all.slice(0, num(q.limit) || all.length).map((r, i) => ({
+            id: r.id,
             rank: i + 1,
-            id: p.id,
-            name: p.name,
-            amount: sum(
-              sales.flatMap((o) => o.items).filter((r) => r.productId === p.id),
-              (r) => r.amount,
-            ),
-            orderCount: 4,
-            quantity: 20,
-            ratio: 25,
+            name: r.name,
+            partyName: r.name,
+            amount: money(r.amount),
+            orderCount: r.orderIds.size,
+            quantity: r.quantity,
+            ratio: total ? Math.round((r.amount / total) * 100) : 0,
           }))
+        }
         case 'category':
           return ['工业配件', '电子设备'].map((category) => ({
             category,

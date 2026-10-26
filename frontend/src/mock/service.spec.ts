@@ -145,6 +145,36 @@ describe('独立 Mock 模式', () => {
     result.remark = '不应污染'
     expect((reloaded.handle(read) as InvOrderDetail).remark).not.toBe('不应污染')
   })
+  it('新增系统用户的角色、部门和默认字段可被列表及编辑弹窗读取', () => {
+    const { request } = setup()
+    const { id } = request('POST', '/system/users', {
+      username: 'mock-user',
+      nickname: '新用户',
+      roleIds: [1],
+      deptId: 1,
+    }) as { id: number }
+    expect(request('GET', `/system/users/${id}`)).toMatchObject({
+      roleNames: ['管理员'],
+      deptName: '总部',
+      email: '',
+      avatar: '',
+    })
+    request('PUT', `/system/users/${id}`, { roleIds: [] })
+    expect(request('GET', `/system/users/${id}`)).toMatchObject({ roleNames: [] })
+  })
+  it('排行按客户或商品聚合，金额与实际已审核单据一致', () => {
+    const { request } = setup()
+    const byCustomer = request('GET', '/inv/report/ranking') as { name: string; amount: number }[]
+    expect(byCustomer.map((r) => r.name).sort()).toEqual(['上海远航制造', '苏州星河工业'])
+    const sales = request('GET', '/inv/orders', undefined, {
+      bizType: 'sales',
+      status: 2,
+      pageSize: 200,
+    }) as PageResult<InvOrderDetail>
+    expect(byCustomer.reduce((sum, r) => sum + r.amount, 0)).toBe(
+      sales.list.reduce((sum, r) => sum + r.totalAmount, 0),
+    )
+  })
   it('未知请求与未支持的文件/运维操作明确报错', () => {
     const { request } = setup()
     for (const [method, path] of [
