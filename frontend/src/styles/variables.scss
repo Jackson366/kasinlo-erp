@@ -13,8 +13,11 @@
 // ============================================================
 
 // 布局尺寸（与主题无关，只定义一次）
-$sidebar-width: 232px;
-$sidebar-width-collapsed: 64px;
+$sidebar-width: 280px;
+$sidebar-primary-width: 132px;
+$sidebar-primary-collapsed: 64px;
+$sidebar-secondary-width: $sidebar-width - $sidebar-primary-width;
+$sidebar-width-collapsed: 132px;
 $navbar-height: 56px;
 $tags-height: 38px;
 
@@ -159,6 +162,9 @@ $radius-lg: 14px;
 
   // ---- 布局尺寸 ----
   --layout-sidebar-width: #{$sidebar-width};
+  --layout-sidebar-primary-width: #{$sidebar-primary-width};
+  --layout-sidebar-primary-collapsed: #{$sidebar-primary-collapsed};
+  --layout-sidebar-secondary-width: #{$sidebar-secondary-width};
   --layout-sidebar-collapsed: #{$sidebar-width-collapsed};
   --layout-navbar-height: #{$navbar-height};
   --layout-tags-height: #{$tags-height};

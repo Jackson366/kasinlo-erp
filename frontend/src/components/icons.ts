@@ -1,6 +1,8 @@
 import type { Component } from 'vue'
 import {
   ArrowDown,
+  ArrowLeft,
+  ArrowRight,
   Avatar,
   Bell,
   Box,
@@ -109,6 +111,8 @@ export const iconMap: Record<string, Component> = {
   Expand,
   FullScreen,
   ArrowDown,
+  ArrowLeft,
+  ArrowRight,
   Close,
   CircleCheck,
   CircleClose,

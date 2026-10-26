@@ -10,10 +10,12 @@ export interface TagView {
 }
 
 const SIDEBAR_KEY = 'nova_sidebar_collapsed'
+const PRIMARY_SIDEBAR_KEY = 'nova_sidebar_primary_collapsed'
 
 /** 应用级 UI 状态：侧边栏折叠、标签页、主题 */
 export const useAppStore = defineStore('app', () => {
   const sidebarCollapsed = ref(localStorage.getItem(SIDEBAR_KEY) === '1')
+  const primarySidebarCollapsed = ref(localStorage.getItem(PRIMARY_SIDEBAR_KEY) === '1')
   const tags = ref<TagView[]>([])
 
   /** 当前主题；初始值来自本地存储 / 系统偏好 */
@@ -26,6 +28,12 @@ export const useAppStore = defineStore('app', () => {
   function toggleSidebar(): void {
     sidebarCollapsed.value = !sidebarCollapsed.value
     localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed.value ? '1' : '0')
+  }
+
+  /** 一级图标栏独立于二级菜单折叠，切换分组不会改变此偏好。 */
+  function togglePrimarySidebar(): void {
+    primarySidebarCollapsed.value = !primarySidebarCollapsed.value
+    localStorage.setItem(PRIMARY_SIDEBAR_KEY, primarySidebarCollapsed.value ? '1' : '0')
   }
 
   /** 设置主题：同时更新状态、DOM 与本地存储 */
@@ -70,10 +78,12 @@ export const useAppStore = defineStore('app', () => {
 
   return {
     sidebarCollapsed,
+    primarySidebarCollapsed,
     tags,
     theme,
     isDark,
     toggleSidebar,
+    togglePrimarySidebar,
     setTheme,
     toggleTheme,
     addTag,

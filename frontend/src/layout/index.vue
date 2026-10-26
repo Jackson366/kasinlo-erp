@@ -15,6 +15,7 @@ const permissionStore = usePermissionStore()
 // 不要用「把 refreshKey 拼进 :key」的做法：那会让每次刷新都产生一个**新的 key**，
 // 而 keep-alive 是按 key 存缓存的——旧 key 的实例永远留在缓存里，既不会被复用，
 // 也不会被回收，反复刷新页面就会持续泄漏组件实例（连带它们的定时器、监听、DOM 引用）。
+const sidebarHasSecondary = ref(false)
 const refreshing = ref(false)
 provide('pageRefresh', () => {
   refreshing.value = true
@@ -44,9 +45,9 @@ const viewKey = computed(() => route.path)
 </script>
 
 <template>
-  <div class="layout" :class="{ 'is-collapsed': appStore.sidebarCollapsed }">
-    <aside class="layout__aside">
-      <Sidebar />
+  <div class="layout" :class="{ 'is-collapsed': appStore.sidebarCollapsed, 'is-primary-collapsed': appStore.primarySidebarCollapsed }">
+    <aside class="layout__aside" :class="{ 'is-rail-only': !sidebarHasSecondary }">
+      <Sidebar @secondary-change="sidebarHasSecondary = $event" />
     </aside>
 
     <section class="layout__body">
@@ -67,19 +68,23 @@ const viewKey = computed(() => route.path)
 
 <style scoped lang="scss">
 .layout {
+  --sidebar-rail-width: var(--layout-sidebar-primary-width);
   display: flex;
   height: 100%;
   overflow: hidden;
 
   &__aside {
-    width: var(--layout-sidebar-width);
+    width: calc(var(--sidebar-rail-width) + var(--layout-sidebar-secondary-width));
     flex-shrink: 0;
     transition: width var(--transition-base);
   }
 
   &.is-collapsed &__aside {
-    width: var(--layout-sidebar-collapsed);
+    width: var(--sidebar-rail-width);
   }
+
+  &.is-primary-collapsed { --sidebar-rail-width: var(--layout-sidebar-primary-collapsed); }
+  &__aside.is-rail-only { width: var(--sidebar-rail-width); }
 
   &__body {
     display: flex;
@@ -95,5 +100,8 @@ const viewKey = computed(() => route.path)
     overflow-y: auto;
     background: var(--app-bg);
   }
+}
+@media (prefers-reduced-motion: reduce) {
+  .layout__aside { transition: none; }
 }
 </style>
