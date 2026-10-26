@@ -30,25 +30,59 @@ public class InvPrintTemplates extends SoftDeleteEntity {
     @TableField("\"remark\"")
     private String remark;
 
-    public String getCode() { return code; }
-    public void setCode(String code) { this.code = code; }
+    public String getCode() {
+        return code;
+    }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public void setCode(String code) {
+        this.code = code;
+    }
 
-    public String getDocType() { return docType; }
-    public void setDocType(String docType) { this.docType = docType; }
+    public String getName() {
+        return name;
+    }
 
-    public String getPaper() { return paper; }
-    public void setPaper(String paper) { this.paper = paper; }
+    public void setName(String name) {
+        this.name = name;
+    }
 
-    public String getContent() { return content; }
-    public void setContent(String content) { this.content = content; }
+    public String getDocType() {
+        return docType;
+    }
 
-    public Long getStatus() { return status; }
-    public void setStatus(Long status) { this.status = status; }
+    public void setDocType(String docType) {
+        this.docType = docType;
+    }
 
-    public String getRemark() { return remark; }
-    public void setRemark(String remark) { this.remark = remark; }
+    public String getPaper() {
+        return paper;
+    }
 
+    public void setPaper(String paper) {
+        this.paper = paper;
+    }
+
+    public String getContent() {
+        return content;
+    }
+
+    public void setContent(String content) {
+        this.content = content;
+    }
+
+    public Long getStatus() {
+        return status;
+    }
+
+    public void setStatus(Long status) {
+        this.status = status;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
+    }
 }

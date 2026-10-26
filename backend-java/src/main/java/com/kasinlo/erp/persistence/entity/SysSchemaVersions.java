@@ -15,10 +15,19 @@ public class SysSchemaVersions {
     @TableField("\"note\"")
     private String note;
 
-    public OffsetDateTime getAppliedAt() { return appliedAt; }
-    public void setAppliedAt(OffsetDateTime appliedAt) { this.appliedAt = appliedAt; }
+    public OffsetDateTime getAppliedAt() {
+        return appliedAt;
+    }
 
-    public String getNote() { return note; }
-    public void setNote(String note) { this.note = note; }
+    public void setAppliedAt(OffsetDateTime appliedAt) {
+        this.appliedAt = appliedAt;
+    }
 
+    public String getNote() {
+        return note;
+    }
+
+    public void setNote(String note) {
+        this.note = note;
+    }
 }

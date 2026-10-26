@@ -39,34 +39,83 @@ public class InvStockItems extends SoftDeleteEntity {
     @TableField("\"qty_base\"")
     private BigDecimal qtyBase;
 
-    public Long getStockOrderId() { return stockOrderId; }
-    public void setStockOrderId(Long stockOrderId) { this.stockOrderId = stockOrderId; }
+    public Long getStockOrderId() {
+        return stockOrderId;
+    }
 
-    public Long getProductId() { return productId; }
-    public void setProductId(Long productId) { this.productId = productId; }
+    public void setStockOrderId(Long stockOrderId) {
+        this.stockOrderId = stockOrderId;
+    }
 
-    public String getProductName() { return productName; }
-    public void setProductName(String productName) { this.productName = productName; }
+    public Long getProductId() {
+        return productId;
+    }
 
-    public Long getSpecId() { return specId; }
-    public void setSpecId(Long specId) { this.specId = specId; }
+    public void setProductId(Long productId) {
+        this.productId = productId;
+    }
 
-    public String getSpec() { return spec; }
-    public void setSpec(String spec) { this.spec = spec; }
+    public String getProductName() {
+        return productName;
+    }
 
-    public Long getUnitId() { return unitId; }
-    public void setUnitId(Long unitId) { this.unitId = unitId; }
+    public void setProductName(String productName) {
+        this.productName = productName;
+    }
 
-    public String getUnit() { return unit; }
-    public void setUnit(String unit) { this.unit = unit; }
+    public Long getSpecId() {
+        return specId;
+    }
 
-    public BigDecimal getRate() { return rate; }
-    public void setRate(BigDecimal rate) { this.rate = rate; }
+    public void setSpecId(Long specId) {
+        this.specId = specId;
+    }
 
-    public BigDecimal getQty() { return qty; }
-    public void setQty(BigDecimal qty) { this.qty = qty; }
+    public String getSpec() {
+        return spec;
+    }
 
-    public BigDecimal getQtyBase() { return qtyBase; }
-    public void setQtyBase(BigDecimal qtyBase) { this.qtyBase = qtyBase; }
+    public void setSpec(String spec) {
+        this.spec = spec;
+    }
 
+    public Long getUnitId() {
+        return unitId;
+    }
+
+    public void setUnitId(Long unitId) {
+        this.unitId = unitId;
+    }
+
+    public String getUnit() {
+        return unit;
+    }
+
+    public void setUnit(String unit) {
+        this.unit = unit;
+    }
+
+    public BigDecimal getRate() {
+        return rate;
+    }
+
+    public void setRate(BigDecimal rate) {
+        this.rate = rate;
+    }
+
+    public BigDecimal getQty() {
+        return qty;
+    }
+
+    public void setQty(BigDecimal qty) {
+        this.qty = qty;
+    }
+
+    public BigDecimal getQtyBase() {
+        return qtyBase;
+    }
+
+    public void setQtyBase(BigDecimal qtyBase) {
+        this.qtyBase = qtyBase;
+    }
 }

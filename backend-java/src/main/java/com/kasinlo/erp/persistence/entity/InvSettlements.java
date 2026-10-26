@@ -39,34 +39,83 @@ public class InvSettlements extends SoftDeleteEntity {
     @TableField("\"created_by\"")
     private Long createdBy;
 
-    public Long getOrderId() { return orderId; }
-    public void setOrderId(Long orderId) { this.orderId = orderId; }
+    public Long getOrderId() {
+        return orderId;
+    }
 
-    public Long getPlanId() { return planId; }
-    public void setPlanId(Long planId) { this.planId = planId; }
+    public void setOrderId(Long orderId) {
+        this.orderId = orderId;
+    }
 
-    public String getSource() { return source; }
-    public void setSource(String source) { this.source = source; }
+    public Long getPlanId() {
+        return planId;
+    }
 
-    public String getBizType() { return bizType; }
-    public void setBizType(String bizType) { this.bizType = bizType; }
+    public void setPlanId(Long planId) {
+        this.planId = planId;
+    }
 
-    public Long getPartyId() { return partyId; }
-    public void setPartyId(Long partyId) { this.partyId = partyId; }
+    public String getSource() {
+        return source;
+    }
 
-    public BigDecimal getAmount() { return amount; }
-    public void setAmount(BigDecimal amount) { this.amount = amount; }
+    public void setSource(String source) {
+        this.source = source;
+    }
 
-    public String getMethod() { return method; }
-    public void setMethod(String method) { this.method = method; }
+    public String getBizType() {
+        return bizType;
+    }
 
-    public LocalDate getSettledAt() { return settledAt; }
-    public void setSettledAt(LocalDate settledAt) { this.settledAt = settledAt; }
+    public void setBizType(String bizType) {
+        this.bizType = bizType;
+    }
 
-    public String getRemark() { return remark; }
-    public void setRemark(String remark) { this.remark = remark; }
+    public Long getPartyId() {
+        return partyId;
+    }
 
-    public Long getCreatedBy() { return createdBy; }
-    public void setCreatedBy(Long createdBy) { this.createdBy = createdBy; }
+    public void setPartyId(Long partyId) {
+        this.partyId = partyId;
+    }
 
+    public BigDecimal getAmount() {
+        return amount;
+    }
+
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
+    }
+
+    public String getMethod() {
+        return method;
+    }
+
+    public void setMethod(String method) {
+        this.method = method;
+    }
+
+    public LocalDate getSettledAt() {
+        return settledAt;
+    }
+
+    public void setSettledAt(LocalDate settledAt) {
+        this.settledAt = settledAt;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
+    }
+
+    public Long getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(Long createdBy) {
+        this.createdBy = createdBy;
+    }
 }

@@ -3,4 +3,5 @@ package com.kasinlo.erp.persistence.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.kasinlo.erp.persistence.entity.InvOrders;
 
-public interface InvOrdersMapper extends BaseMapper<InvOrders> {}
+public interface InvOrdersMapper extends BaseMapper<InvOrders> {
+}

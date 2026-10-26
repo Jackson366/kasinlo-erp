@@ -45,40 +45,99 @@ public class SysUsers extends SoftDeleteEntity {
     @TableField("\"last_login_ip\"")
     private String lastLoginIp;
 
-    public String getUsername() { return username; }
-    public void setUsername(String username) { this.username = username; }
+    public String getUsername() {
+        return username;
+    }
 
-    public String getPassword() { return password; }
-    public void setPassword(String password) { this.password = password; }
+    public void setUsername(String username) {
+        this.username = username;
+    }
 
-    public String getNickname() { return nickname; }
-    public void setNickname(String nickname) { this.nickname = nickname; }
+    public String getPassword() {
+        return password;
+    }
 
-    public String getEmail() { return email; }
-    public void setEmail(String email) { this.email = email; }
+    public void setPassword(String password) {
+        this.password = password;
+    }
 
-    public String getPhone() { return phone; }
-    public void setPhone(String phone) { this.phone = phone; }
+    public String getNickname() {
+        return nickname;
+    }
 
-    public String getAvatar() { return avatar; }
-    public void setAvatar(String avatar) { this.avatar = avatar; }
+    public void setNickname(String nickname) {
+        this.nickname = nickname;
+    }
 
-    public Long getDeptId() { return deptId; }
-    public void setDeptId(Long deptId) { this.deptId = deptId; }
+    public String getEmail() {
+        return email;
+    }
 
-    public Long getStatus() { return status; }
-    public void setStatus(Long status) { this.status = status; }
+    public void setEmail(String email) {
+        this.email = email;
+    }
 
-    public Long getTokenEpoch() { return tokenEpoch; }
-    public void setTokenEpoch(Long tokenEpoch) { this.tokenEpoch = tokenEpoch; }
+    public String getPhone() {
+        return phone;
+    }
 
-    public String getRemark() { return remark; }
-    public void setRemark(String remark) { this.remark = remark; }
+    public void setPhone(String phone) {
+        this.phone = phone;
+    }
 
-    public OffsetDateTime getLastLoginAt() { return lastLoginAt; }
-    public void setLastLoginAt(OffsetDateTime lastLoginAt) { this.lastLoginAt = lastLoginAt; }
+    public String getAvatar() {
+        return avatar;
+    }
 
-    public String getLastLoginIp() { return lastLoginIp; }
-    public void setLastLoginIp(String lastLoginIp) { this.lastLoginIp = lastLoginIp; }
+    public void setAvatar(String avatar) {
+        this.avatar = avatar;
+    }
 
+    public Long getDeptId() {
+        return deptId;
+    }
+
+    public void setDeptId(Long deptId) {
+        this.deptId = deptId;
+    }
+
+    public Long getStatus() {
+        return status;
+    }
+
+    public void setStatus(Long status) {
+        this.status = status;
+    }
+
+    public Long getTokenEpoch() {
+        return tokenEpoch;
+    }
+
+    public void setTokenEpoch(Long tokenEpoch) {
+        this.tokenEpoch = tokenEpoch;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
+    }
+
+    public OffsetDateTime getLastLoginAt() {
+        return lastLoginAt;
+    }
+
+    public void setLastLoginAt(OffsetDateTime lastLoginAt) {
+        this.lastLoginAt = lastLoginAt;
+    }
+
+    public String getLastLoginIp() {
+        return lastLoginIp;
+    }
+
+    public void setLastLoginIp(String lastLoginIp) {
+        this.lastLoginIp = lastLoginIp;
+    }
 }
