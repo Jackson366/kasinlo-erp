@@ -30,25 +30,59 @@ public class SysIdempotencies {
     @TableField("\"updated_at\"")
     private OffsetDateTime updatedAt;
 
-    public String getKey() { return key; }
-    public void setKey(String key) { this.key = key; }
+    public String getKey() {
+        return key;
+    }
 
-    public String getScope() { return scope; }
-    public void setScope(String scope) { this.scope = scope; }
+    public void setKey(String key) {
+        this.key = key;
+    }
 
-    public Long getStatus() { return status; }
-    public void setStatus(Long status) { this.status = status; }
+    public String getScope() {
+        return scope;
+    }
 
-    public Long getStatusCode() { return statusCode; }
-    public void setStatusCode(Long statusCode) { this.statusCode = statusCode; }
+    public void setScope(String scope) {
+        this.scope = scope;
+    }
 
-    public OffsetDateTime getExpiresAt() { return expiresAt; }
-    public void setExpiresAt(OffsetDateTime expiresAt) { this.expiresAt = expiresAt; }
+    public Long getStatus() {
+        return status;
+    }
 
-    public OffsetDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
+    public void setStatus(Long status) {
+        this.status = status;
+    }
 
-    public OffsetDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(OffsetDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public Long getStatusCode() {
+        return statusCode;
+    }
 
+    public void setStatusCode(Long statusCode) {
+        this.statusCode = statusCode;
+    }
+
+    public OffsetDateTime getExpiresAt() {
+        return expiresAt;
+    }
+
+    public void setExpiresAt(OffsetDateTime expiresAt) {
+        this.expiresAt = expiresAt;
+    }
+
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(OffsetDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public OffsetDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(OffsetDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
 }

@@ -51,46 +51,115 @@ public class InvContractPlans extends SoftDeleteEntity {
     @TableField("\"created_by\"")
     private Long createdBy;
 
-    public Long getContractId() { return contractId; }
-    public void setContractId(Long contractId) { this.contractId = contractId; }
+    public Long getContractId() {
+        return contractId;
+    }
 
-    public String getBizType() { return bizType; }
-    public void setBizType(String bizType) { this.bizType = bizType; }
+    public void setContractId(Long contractId) {
+        this.contractId = contractId;
+    }
 
-    public Long getPartyId() { return partyId; }
-    public void setPartyId(Long partyId) { this.partyId = partyId; }
+    public String getBizType() {
+        return bizType;
+    }
 
-    public String getPartyName() { return partyName; }
-    public void setPartyName(String partyName) { this.partyName = partyName; }
+    public void setBizType(String bizType) {
+        this.bizType = bizType;
+    }
 
-    public Long getSeq() { return seq; }
-    public void setSeq(Long seq) { this.seq = seq; }
+    public Long getPartyId() {
+        return partyId;
+    }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public void setPartyId(Long partyId) {
+        this.partyId = partyId;
+    }
 
-    public Long getKind() { return kind; }
-    public void setKind(Long kind) { this.kind = kind; }
+    public String getPartyName() {
+        return partyName;
+    }
 
-    public BigDecimal getRate() { return rate; }
-    public void setRate(BigDecimal rate) { this.rate = rate; }
+    public void setPartyName(String partyName) {
+        this.partyName = partyName;
+    }
 
-    public BigDecimal getAmount() { return amount; }
-    public void setAmount(BigDecimal amount) { this.amount = amount; }
+    public Long getSeq() {
+        return seq;
+    }
 
-    public LocalDate getDueDate() { return dueDate; }
-    public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
+    public void setSeq(Long seq) {
+        this.seq = seq;
+    }
 
-    public String getTriggerNode() { return triggerNode; }
-    public void setTriggerNode(String triggerNode) { this.triggerNode = triggerNode; }
+    public String getName() {
+        return name;
+    }
 
-    public BigDecimal getSettledAmount() { return settledAmount; }
-    public void setSettledAmount(BigDecimal settledAmount) { this.settledAmount = settledAmount; }
+    public void setName(String name) {
+        this.name = name;
+    }
 
-    public String getRemark() { return remark; }
-    public void setRemark(String remark) { this.remark = remark; }
+    public Long getKind() {
+        return kind;
+    }
 
-    public Long getCreatedBy() { return createdBy; }
-    public void setCreatedBy(Long createdBy) { this.createdBy = createdBy; }
+    public void setKind(Long kind) {
+        this.kind = kind;
+    }
 
+    public BigDecimal getRate() {
+        return rate;
+    }
+
+    public void setRate(BigDecimal rate) {
+        this.rate = rate;
+    }
+
+    public BigDecimal getAmount() {
+        return amount;
+    }
+
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
+    }
+
+    public LocalDate getDueDate() {
+        return dueDate;
+    }
+
+    public void setDueDate(LocalDate dueDate) {
+        this.dueDate = dueDate;
+    }
+
+    public String getTriggerNode() {
+        return triggerNode;
+    }
+
+    public void setTriggerNode(String triggerNode) {
+        this.triggerNode = triggerNode;
+    }
+
+    public BigDecimal getSettledAmount() {
+        return settledAmount;
+    }
+
+    public void setSettledAmount(BigDecimal settledAmount) {
+        this.settledAmount = settledAmount;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
+    }
+
+    public Long getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(Long createdBy) {
+        this.createdBy = createdBy;
+    }
 }

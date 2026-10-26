@@ -9,5 +9,9 @@ public interface StockMutationMapper {
         UPDATE inv_product_specs SET stock = stock + #{delta}
         WHERE id = #{id} AND deleted_at IS NULL AND stock + #{delta} >= 0
         """)
-    int adjust(@Param("id") long id, @Param("delta") BigDecimal delta);
+    int adjust(
+    @Param("id")
+    long id,
+    @Param("delta")
+    BigDecimal delta);
 }

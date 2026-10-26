@@ -24,19 +24,43 @@ public class InvCategories extends SoftDeleteEntity {
     @TableField("\"remark\"")
     private String remark;
 
-    public Long getParentId() { return parentId; }
-    public void setParentId(Long parentId) { this.parentId = parentId; }
+    public Long getParentId() {
+        return parentId;
+    }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public void setParentId(Long parentId) {
+        this.parentId = parentId;
+    }
 
-    public Long getSort() { return sort; }
-    public void setSort(Long sort) { this.sort = sort; }
+    public String getName() {
+        return name;
+    }
 
-    public Long getStatus() { return status; }
-    public void setStatus(Long status) { this.status = status; }
+    public void setName(String name) {
+        this.name = name;
+    }
 
-    public String getRemark() { return remark; }
-    public void setRemark(String remark) { this.remark = remark; }
+    public Long getSort() {
+        return sort;
+    }
 
+    public void setSort(Long sort) {
+        this.sort = sort;
+    }
+
+    public Long getStatus() {
+        return status;
+    }
+
+    public void setStatus(Long status) {
+        this.status = status;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
+    }
 }

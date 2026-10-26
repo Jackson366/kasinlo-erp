@@ -33,28 +33,67 @@ public class InvProductUnits extends SoftDeleteEntity {
     @TableField("\"status\"")
     private Long status;
 
-    public Long getSpecId() { return specId; }
-    public void setSpecId(Long specId) { this.specId = specId; }
+    public Long getSpecId() {
+        return specId;
+    }
 
-    public String getUnit() { return unit; }
-    public void setUnit(String unit) { this.unit = unit; }
+    public void setSpecId(Long specId) {
+        this.specId = specId;
+    }
 
-    public BigDecimal getRate() { return rate; }
-    public void setRate(BigDecimal rate) { this.rate = rate; }
+    public String getUnit() {
+        return unit;
+    }
 
-    public Boolean getIsBase() { return isBase; }
-    public void setIsBase(Boolean isBase) { this.isBase = isBase; }
+    public void setUnit(String unit) {
+        this.unit = unit;
+    }
 
-    public BigDecimal getPurchasePrice() { return purchasePrice; }
-    public void setPurchasePrice(BigDecimal purchasePrice) { this.purchasePrice = purchasePrice; }
+    public BigDecimal getRate() {
+        return rate;
+    }
 
-    public BigDecimal getSalePrice() { return salePrice; }
-    public void setSalePrice(BigDecimal salePrice) { this.salePrice = salePrice; }
+    public void setRate(BigDecimal rate) {
+        this.rate = rate;
+    }
 
-    public Long getSort() { return sort; }
-    public void setSort(Long sort) { this.sort = sort; }
+    public Boolean getIsBase() {
+        return isBase;
+    }
 
-    public Long getStatus() { return status; }
-    public void setStatus(Long status) { this.status = status; }
+    public void setIsBase(Boolean isBase) {
+        this.isBase = isBase;
+    }
 
+    public BigDecimal getPurchasePrice() {
+        return purchasePrice;
+    }
+
+    public void setPurchasePrice(BigDecimal purchasePrice) {
+        this.purchasePrice = purchasePrice;
+    }
+
+    public BigDecimal getSalePrice() {
+        return salePrice;
+    }
+
+    public void setSalePrice(BigDecimal salePrice) {
+        this.salePrice = salePrice;
+    }
+
+    public Long getSort() {
+        return sort;
+    }
+
+    public void setSort(Long sort) {
+        this.sort = sort;
+    }
+
+    public Long getStatus() {
+        return status;
+    }
+
+    public void setStatus(Long status) {
+        this.status = status;
+    }
 }

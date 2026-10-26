@@ -33,28 +33,67 @@ public class InvAttachments extends SoftDeleteEntity {
     @TableField("\"uploader\"")
     private String uploader;
 
-    public String getBizType() { return bizType; }
-    public void setBizType(String bizType) { this.bizType = bizType; }
+    public String getBizType() {
+        return bizType;
+    }
 
-    public Long getBizId() { return bizId; }
-    public void setBizId(Long bizId) { this.bizId = bizId; }
+    public void setBizType(String bizType) {
+        this.bizType = bizType;
+    }
 
-    public String getFileName() { return fileName; }
-    public void setFileName(String fileName) { this.fileName = fileName; }
+    public Long getBizId() {
+        return bizId;
+    }
 
-    public String getStoredPath() { return storedPath; }
-    public void setStoredPath(String storedPath) { this.storedPath = storedPath; }
+    public void setBizId(Long bizId) {
+        this.bizId = bizId;
+    }
 
-    public Long getSize() { return size; }
-    public void setSize(Long size) { this.size = size; }
+    public String getFileName() {
+        return fileName;
+    }
 
-    public String getMime() { return mime; }
-    public void setMime(String mime) { this.mime = mime; }
+    public void setFileName(String fileName) {
+        this.fileName = fileName;
+    }
 
-    public Long getUploadedBy() { return uploadedBy; }
-    public void setUploadedBy(Long uploadedBy) { this.uploadedBy = uploadedBy; }
+    public String getStoredPath() {
+        return storedPath;
+    }
 
-    public String getUploader() { return uploader; }
-    public void setUploader(String uploader) { this.uploader = uploader; }
+    public void setStoredPath(String storedPath) {
+        this.storedPath = storedPath;
+    }
 
+    public Long getSize() {
+        return size;
+    }
+
+    public void setSize(Long size) {
+        this.size = size;
+    }
+
+    public String getMime() {
+        return mime;
+    }
+
+    public void setMime(String mime) {
+        this.mime = mime;
+    }
+
+    public Long getUploadedBy() {
+        return uploadedBy;
+    }
+
+    public void setUploadedBy(Long uploadedBy) {
+        this.uploadedBy = uploadedBy;
+    }
+
+    public String getUploader() {
+        return uploader;
+    }
+
+    public void setUploader(String uploader) {
+        this.uploader = uploader;
+    }
 }

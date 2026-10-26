@@ -51,46 +51,115 @@ public class SysMenus extends SoftDeleteEntity {
     @TableField("\"status\"")
     private Long status;
 
-    public Long getParentId() { return parentId; }
-    public void setParentId(Long parentId) { this.parentId = parentId; }
+    public Long getParentId() {
+        return parentId;
+    }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public void setParentId(Long parentId) {
+        this.parentId = parentId;
+    }
 
-    public String getPath() { return path; }
-    public void setPath(String path) { this.path = path; }
+    public String getName() {
+        return name;
+    }
 
-    public String getComponent() { return component; }
-    public void setComponent(String component) { this.component = component; }
+    public void setName(String name) {
+        this.name = name;
+    }
 
-    public String getRedirect() { return redirect; }
-    public void setRedirect(String redirect) { this.redirect = redirect; }
+    public String getPath() {
+        return path;
+    }
 
-    public String getTitle() { return title; }
-    public void setTitle(String title) { this.title = title; }
+    public void setPath(String path) {
+        this.path = path;
+    }
 
-    public String getIcon() { return icon; }
-    public void setIcon(String icon) { this.icon = icon; }
+    public String getComponent() {
+        return component;
+    }
 
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
+    public void setComponent(String component) {
+        this.component = component;
+    }
 
-    public String getPermission() { return permission; }
-    public void setPermission(String permission) { this.permission = permission; }
+    public String getRedirect() {
+        return redirect;
+    }
 
-    public Long getSort() { return sort; }
-    public void setSort(Long sort) { this.sort = sort; }
+    public void setRedirect(String redirect) {
+        this.redirect = redirect;
+    }
 
-    public Boolean getHidden() { return hidden; }
-    public void setHidden(Boolean hidden) { this.hidden = hidden; }
+    public String getTitle() {
+        return title;
+    }
 
-    public Boolean getKeepAlive() { return keepAlive; }
-    public void setKeepAlive(Boolean keepAlive) { this.keepAlive = keepAlive; }
+    public void setTitle(String title) {
+        this.title = title;
+    }
 
-    public Boolean getIsExternal() { return isExternal; }
-    public void setIsExternal(Boolean isExternal) { this.isExternal = isExternal; }
+    public String getIcon() {
+        return icon;
+    }
 
-    public Long getStatus() { return status; }
-    public void setStatus(Long status) { this.status = status; }
+    public void setIcon(String icon) {
+        this.icon = icon;
+    }
 
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
+    }
+
+    public String getPermission() {
+        return permission;
+    }
+
+    public void setPermission(String permission) {
+        this.permission = permission;
+    }
+
+    public Long getSort() {
+        return sort;
+    }
+
+    public void setSort(Long sort) {
+        this.sort = sort;
+    }
+
+    public Boolean getHidden() {
+        return hidden;
+    }
+
+    public void setHidden(Boolean hidden) {
+        this.hidden = hidden;
+    }
+
+    public Boolean getKeepAlive() {
+        return keepAlive;
+    }
+
+    public void setKeepAlive(Boolean keepAlive) {
+        this.keepAlive = keepAlive;
+    }
+
+    public Boolean getIsExternal() {
+        return isExternal;
+    }
+
+    public void setIsExternal(Boolean isExternal) {
+        this.isExternal = isExternal;
+    }
+
+    public Long getStatus() {
+        return status;
+    }
+
+    public void setStatus(Long status) {
+        this.status = status;
+    }
 }

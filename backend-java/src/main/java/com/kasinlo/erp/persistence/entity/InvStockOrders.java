@@ -36,31 +36,75 @@ public class InvStockOrders extends SoftDeleteEntity {
     @TableField("\"created_by\"")
     private Long createdBy;
 
-    public String getOrderNo() { return orderNo; }
-    public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
+    public String getOrderNo() {
+        return orderNo;
+    }
 
-    public String getDirection() { return direction; }
-    public void setDirection(String direction) { this.direction = direction; }
+    public void setOrderNo(String orderNo) {
+        this.orderNo = orderNo;
+    }
 
-    public String getSourceType() { return sourceType; }
-    public void setSourceType(String sourceType) { this.sourceType = sourceType; }
+    public String getDirection() {
+        return direction;
+    }
 
-    public Long getSourceId() { return sourceId; }
-    public void setSourceId(Long sourceId) { this.sourceId = sourceId; }
+    public void setDirection(String direction) {
+        this.direction = direction;
+    }
 
-    public LocalDate getOrderDate() { return orderDate; }
-    public void setOrderDate(LocalDate orderDate) { this.orderDate = orderDate; }
+    public String getSourceType() {
+        return sourceType;
+    }
 
-    public Long getStatus() { return status; }
-    public void setStatus(Long status) { this.status = status; }
+    public void setSourceType(String sourceType) {
+        this.sourceType = sourceType;
+    }
 
-    public String getRemark() { return remark; }
-    public void setRemark(String remark) { this.remark = remark; }
+    public Long getSourceId() {
+        return sourceId;
+    }
 
-    public String getSalesman() { return salesman; }
-    public void setSalesman(String salesman) { this.salesman = salesman; }
+    public void setSourceId(Long sourceId) {
+        this.sourceId = sourceId;
+    }
 
-    public Long getCreatedBy() { return createdBy; }
-    public void setCreatedBy(Long createdBy) { this.createdBy = createdBy; }
+    public LocalDate getOrderDate() {
+        return orderDate;
+    }
 
+    public void setOrderDate(LocalDate orderDate) {
+        this.orderDate = orderDate;
+    }
+
+    public Long getStatus() {
+        return status;
+    }
+
+    public void setStatus(Long status) {
+        this.status = status;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
+    }
+
+    public String getSalesman() {
+        return salesman;
+    }
+
+    public void setSalesman(String salesman) {
+        this.salesman = salesman;
+    }
+
+    public Long getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(Long createdBy) {
+        this.createdBy = createdBy;
+    }
 }

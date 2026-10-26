@@ -72,67 +72,171 @@ public class InvContracts extends SoftDeleteEntity {
     @TableField("\"retention_amount\"")
     private BigDecimal retentionAmount;
 
-    public String getContractNo() { return contractNo; }
-    public void setContractNo(String contractNo) { this.contractNo = contractNo; }
+    public String getContractNo() {
+        return contractNo;
+    }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public void setContractNo(String contractNo) {
+        this.contractNo = contractNo;
+    }
 
-    public String getBizType() { return bizType; }
-    public void setBizType(String bizType) { this.bizType = bizType; }
+    public String getName() {
+        return name;
+    }
 
-    public Long getPartyId() { return partyId; }
-    public void setPartyId(Long partyId) { this.partyId = partyId; }
+    public void setName(String name) {
+        this.name = name;
+    }
 
-    public String getPartyName() { return partyName; }
-    public void setPartyName(String partyName) { this.partyName = partyName; }
+    public String getBizType() {
+        return bizType;
+    }
 
-    public LocalDate getSignDate() { return signDate; }
-    public void setSignDate(LocalDate signDate) { this.signDate = signDate; }
+    public void setBizType(String bizType) {
+        this.bizType = bizType;
+    }
 
-    public LocalDate getStartDate() { return startDate; }
-    public void setStartDate(LocalDate startDate) { this.startDate = startDate; }
+    public Long getPartyId() {
+        return partyId;
+    }
 
-    public LocalDate getEndDate() { return endDate; }
-    public void setEndDate(LocalDate endDate) { this.endDate = endDate; }
+    public void setPartyId(Long partyId) {
+        this.partyId = partyId;
+    }
 
-    public BigDecimal getAmount() { return amount; }
-    public void setAmount(BigDecimal amount) { this.amount = amount; }
+    public String getPartyName() {
+        return partyName;
+    }
 
-    public Long getStatus() { return status; }
-    public void setStatus(Long status) { this.status = status; }
+    public void setPartyName(String partyName) {
+        this.partyName = partyName;
+    }
 
-    public String getSalesman() { return salesman; }
-    public void setSalesman(String salesman) { this.salesman = salesman; }
+    public LocalDate getSignDate() {
+        return signDate;
+    }
 
-    public String getRemark() { return remark; }
-    public void setRemark(String remark) { this.remark = remark; }
+    public void setSignDate(LocalDate signDate) {
+        this.signDate = signDate;
+    }
 
-    public Long getCreatedBy() { return createdBy; }
-    public void setCreatedBy(Long createdBy) { this.createdBy = createdBy; }
+    public LocalDate getStartDate() {
+        return startDate;
+    }
 
-    public OffsetDateTime getAuditedAt() { return auditedAt; }
-    public void setAuditedAt(OffsetDateTime auditedAt) { this.auditedAt = auditedAt; }
+    public void setStartDate(LocalDate startDate) {
+        this.startDate = startDate;
+    }
 
-    public String getAuditor() { return auditor; }
-    public void setAuditor(String auditor) { this.auditor = auditor; }
+    public LocalDate getEndDate() {
+        return endDate;
+    }
 
-    public LocalDate getAcceptedAt() { return acceptedAt; }
-    public void setAcceptedAt(LocalDate acceptedAt) { this.acceptedAt = acceptedAt; }
+    public void setEndDate(LocalDate endDate) {
+        this.endDate = endDate;
+    }
 
-    public String getAcceptResult() { return acceptResult; }
-    public void setAcceptResult(String acceptResult) { this.acceptResult = acceptResult; }
+    public BigDecimal getAmount() {
+        return amount;
+    }
 
-    public Long getWarrantyMonths() { return warrantyMonths; }
-    public void setWarrantyMonths(Long warrantyMonths) { this.warrantyMonths = warrantyMonths; }
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
+    }
 
-    public LocalDate getWarrantyEndAt() { return warrantyEndAt; }
-    public void setWarrantyEndAt(LocalDate warrantyEndAt) { this.warrantyEndAt = warrantyEndAt; }
+    public Long getStatus() {
+        return status;
+    }
 
-    public BigDecimal getRetentionRate() { return retentionRate; }
-    public void setRetentionRate(BigDecimal retentionRate) { this.retentionRate = retentionRate; }
+    public void setStatus(Long status) {
+        this.status = status;
+    }
 
-    public BigDecimal getRetentionAmount() { return retentionAmount; }
-    public void setRetentionAmount(BigDecimal retentionAmount) { this.retentionAmount = retentionAmount; }
+    public String getSalesman() {
+        return salesman;
+    }
 
+    public void setSalesman(String salesman) {
+        this.salesman = salesman;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
+    }
+
+    public Long getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(Long createdBy) {
+        this.createdBy = createdBy;
+    }
+
+    public OffsetDateTime getAuditedAt() {
+        return auditedAt;
+    }
+
+    public void setAuditedAt(OffsetDateTime auditedAt) {
+        this.auditedAt = auditedAt;
+    }
+
+    public String getAuditor() {
+        return auditor;
+    }
+
+    public void setAuditor(String auditor) {
+        this.auditor = auditor;
+    }
+
+    public LocalDate getAcceptedAt() {
+        return acceptedAt;
+    }
+
+    public void setAcceptedAt(LocalDate acceptedAt) {
+        this.acceptedAt = acceptedAt;
+    }
+
+    public String getAcceptResult() {
+        return acceptResult;
+    }
+
+    public void setAcceptResult(String acceptResult) {
+        this.acceptResult = acceptResult;
+    }
+
+    public Long getWarrantyMonths() {
+        return warrantyMonths;
+    }
+
+    public void setWarrantyMonths(Long warrantyMonths) {
+        this.warrantyMonths = warrantyMonths;
+    }
+
+    public LocalDate getWarrantyEndAt() {
+        return warrantyEndAt;
+    }
+
+    public void setWarrantyEndAt(LocalDate warrantyEndAt) {
+        this.warrantyEndAt = warrantyEndAt;
+    }
+
+    public BigDecimal getRetentionRate() {
+        return retentionRate;
+    }
+
+    public void setRetentionRate(BigDecimal retentionRate) {
+        this.retentionRate = retentionRate;
+    }
+
+    public BigDecimal getRetentionAmount() {
+        return retentionAmount;
+    }
+
+    public void setRetentionAmount(BigDecimal retentionAmount) {
+        this.retentionAmount = retentionAmount;
+    }
 }

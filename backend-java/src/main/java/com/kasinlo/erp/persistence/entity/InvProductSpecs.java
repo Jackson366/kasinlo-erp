@@ -27,22 +27,51 @@ public class InvProductSpecs extends SoftDeleteEntity {
     @TableField("\"status\"")
     private Long status;
 
-    public Long getProductId() { return productId; }
-    public void setProductId(Long productId) { this.productId = productId; }
+    public Long getProductId() {
+        return productId;
+    }
 
-    public String getSpec() { return spec; }
-    public void setSpec(String spec) { this.spec = spec; }
+    public void setProductId(Long productId) {
+        this.productId = productId;
+    }
 
-    public BigDecimal getStock() { return stock; }
-    public void setStock(BigDecimal stock) { this.stock = stock; }
+    public String getSpec() {
+        return spec;
+    }
 
-    public BigDecimal getWarnStock() { return warnStock; }
-    public void setWarnStock(BigDecimal warnStock) { this.warnStock = warnStock; }
+    public void setSpec(String spec) {
+        this.spec = spec;
+    }
 
-    public Long getSort() { return sort; }
-    public void setSort(Long sort) { this.sort = sort; }
+    public BigDecimal getStock() {
+        return stock;
+    }
 
-    public Long getStatus() { return status; }
-    public void setStatus(Long status) { this.status = status; }
+    public void setStock(BigDecimal stock) {
+        this.stock = stock;
+    }
 
+    public BigDecimal getWarnStock() {
+        return warnStock;
+    }
+
+    public void setWarnStock(BigDecimal warnStock) {
+        this.warnStock = warnStock;
+    }
+
+    public Long getSort() {
+        return sort;
+    }
+
+    public void setSort(Long sort) {
+        this.sort = sort;
+    }
+
+    public Long getStatus() {
+        return status;
+    }
+
+    public void setStatus(Long status) {
+        this.status = status;
+    }
 }

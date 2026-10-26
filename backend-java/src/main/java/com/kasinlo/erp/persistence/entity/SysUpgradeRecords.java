@@ -45,40 +45,99 @@ public class SysUpgradeRecords extends IdentifiedEntity {
     @TableField("\"finished_at\"")
     private OffsetDateTime finishedAt;
 
-    public String getPlanId() { return planId; }
-    public void setPlanId(String planId) { this.planId = planId; }
+    public String getPlanId() {
+        return planId;
+    }
 
-    public String getFromVersion() { return fromVersion; }
-    public void setFromVersion(String fromVersion) { this.fromVersion = fromVersion; }
+    public void setPlanId(String planId) {
+        this.planId = planId;
+    }
 
-    public String getToVersion() { return toVersion; }
-    public void setToVersion(String toVersion) { this.toVersion = toVersion; }
+    public String getFromVersion() {
+        return fromVersion;
+    }
 
-    public String getPackageSha256() { return packageSha256; }
-    public void setPackageSha256(String packageSha256) { this.packageSha256 = packageSha256; }
+    public void setFromVersion(String fromVersion) {
+        this.fromVersion = fromVersion;
+    }
 
-    public Long getPackageSize() { return packageSize; }
-    public void setPackageSize(Long packageSize) { this.packageSize = packageSize; }
+    public String getToVersion() {
+        return toVersion;
+    }
 
-    public String getBackupPath() { return backupPath; }
-    public void setBackupPath(String backupPath) { this.backupPath = backupPath; }
+    public void setToVersion(String toVersion) {
+        this.toVersion = toVersion;
+    }
 
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
+    public String getPackageSha256() {
+        return packageSha256;
+    }
 
-    public String getPlan() { return plan; }
-    public void setPlan(String plan) { this.plan = plan; }
+    public void setPackageSha256(String packageSha256) {
+        this.packageSha256 = packageSha256;
+    }
 
-    public String getMessage() { return message; }
-    public void setMessage(String message) { this.message = message; }
+    public Long getPackageSize() {
+        return packageSize;
+    }
 
-    public OffsetDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
+    public void setPackageSize(Long packageSize) {
+        this.packageSize = packageSize;
+    }
 
-    public OffsetDateTime getAppliedAt() { return appliedAt; }
-    public void setAppliedAt(OffsetDateTime appliedAt) { this.appliedAt = appliedAt; }
+    public String getBackupPath() {
+        return backupPath;
+    }
 
-    public OffsetDateTime getFinishedAt() { return finishedAt; }
-    public void setFinishedAt(OffsetDateTime finishedAt) { this.finishedAt = finishedAt; }
+    public void setBackupPath(String backupPath) {
+        this.backupPath = backupPath;
+    }
 
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getPlan() {
+        return plan;
+    }
+
+    public void setPlan(String plan) {
+        this.plan = plan;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(OffsetDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public OffsetDateTime getAppliedAt() {
+        return appliedAt;
+    }
+
+    public void setAppliedAt(OffsetDateTime appliedAt) {
+        this.appliedAt = appliedAt;
+    }
+
+    public OffsetDateTime getFinishedAt() {
+        return finishedAt;
+    }
+
+    public void setFinishedAt(OffsetDateTime finishedAt) {
+        this.finishedAt = finishedAt;
+    }
 }

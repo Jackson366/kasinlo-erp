@@ -33,28 +33,67 @@ public class InvProducts extends SoftDeleteEntity {
     @TableField("\"remark\"")
     private String remark;
 
-    public String getCode() { return code; }
-    public void setCode(String code) { this.code = code; }
+    public String getCode() {
+        return code;
+    }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public void setCode(String code) {
+        this.code = code;
+    }
 
-    public Long getCategoryId() { return categoryId; }
-    public void setCategoryId(Long categoryId) { this.categoryId = categoryId; }
+    public String getName() {
+        return name;
+    }
 
-    public String getBarcode() { return barcode; }
-    public void setBarcode(String barcode) { this.barcode = barcode; }
+    public void setName(String name) {
+        this.name = name;
+    }
 
-    public BigDecimal getRefPurchasePrice() { return refPurchasePrice; }
-    public void setRefPurchasePrice(BigDecimal refPurchasePrice) { this.refPurchasePrice = refPurchasePrice; }
+    public Long getCategoryId() {
+        return categoryId;
+    }
 
-    public BigDecimal getRefSalePrice() { return refSalePrice; }
-    public void setRefSalePrice(BigDecimal refSalePrice) { this.refSalePrice = refSalePrice; }
+    public void setCategoryId(Long categoryId) {
+        this.categoryId = categoryId;
+    }
 
-    public Long getStatus() { return status; }
-    public void setStatus(Long status) { this.status = status; }
+    public String getBarcode() {
+        return barcode;
+    }
 
-    public String getRemark() { return remark; }
-    public void setRemark(String remark) { this.remark = remark; }
+    public void setBarcode(String barcode) {
+        this.barcode = barcode;
+    }
 
+    public BigDecimal getRefPurchasePrice() {
+        return refPurchasePrice;
+    }
+
+    public void setRefPurchasePrice(BigDecimal refPurchasePrice) {
+        this.refPurchasePrice = refPurchasePrice;
+    }
+
+    public BigDecimal getRefSalePrice() {
+        return refSalePrice;
+    }
+
+    public void setRefSalePrice(BigDecimal refSalePrice) {
+        this.refSalePrice = refSalePrice;
+    }
+
+    public Long getStatus() {
+        return status;
+    }
+
+    public void setStatus(Long status) {
+        this.status = status;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
+    }
 }

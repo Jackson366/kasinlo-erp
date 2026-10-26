@@ -45,40 +45,99 @@ public class InvOrders extends SoftDeleteEntity {
     @TableField("\"created_by\"")
     private Long createdBy;
 
-    public String getOrderNo() { return orderNo; }
-    public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
+    public String getOrderNo() {
+        return orderNo;
+    }
 
-    public String getBizType() { return bizType; }
-    public void setBizType(String bizType) { this.bizType = bizType; }
+    public void setOrderNo(String orderNo) {
+        this.orderNo = orderNo;
+    }
 
-    public Long getPartyId() { return partyId; }
-    public void setPartyId(Long partyId) { this.partyId = partyId; }
+    public String getBizType() {
+        return bizType;
+    }
 
-    public String getPartyName() { return partyName; }
-    public void setPartyName(String partyName) { this.partyName = partyName; }
+    public void setBizType(String bizType) {
+        this.bizType = bizType;
+    }
 
-    public LocalDate getOrderDate() { return orderDate; }
-    public void setOrderDate(LocalDate orderDate) { this.orderDate = orderDate; }
+    public Long getPartyId() {
+        return partyId;
+    }
 
-    public LocalDate getDueDate() { return dueDate; }
-    public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
+    public void setPartyId(Long partyId) {
+        this.partyId = partyId;
+    }
 
-    public Long getStatus() { return status; }
-    public void setStatus(Long status) { this.status = status; }
+    public String getPartyName() {
+        return partyName;
+    }
 
-    public BigDecimal getTotalAmount() { return totalAmount; }
-    public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
+    public void setPartyName(String partyName) {
+        this.partyName = partyName;
+    }
 
-    public BigDecimal getSettledAmount() { return settledAmount; }
-    public void setSettledAmount(BigDecimal settledAmount) { this.settledAmount = settledAmount; }
+    public LocalDate getOrderDate() {
+        return orderDate;
+    }
 
-    public String getRemark() { return remark; }
-    public void setRemark(String remark) { this.remark = remark; }
+    public void setOrderDate(LocalDate orderDate) {
+        this.orderDate = orderDate;
+    }
 
-    public String getSalesman() { return salesman; }
-    public void setSalesman(String salesman) { this.salesman = salesman; }
+    public LocalDate getDueDate() {
+        return dueDate;
+    }
 
-    public Long getCreatedBy() { return createdBy; }
-    public void setCreatedBy(Long createdBy) { this.createdBy = createdBy; }
+    public void setDueDate(LocalDate dueDate) {
+        this.dueDate = dueDate;
+    }
 
+    public Long getStatus() {
+        return status;
+    }
+
+    public void setStatus(Long status) {
+        this.status = status;
+    }
+
+    public BigDecimal getTotalAmount() {
+        return totalAmount;
+    }
+
+    public void setTotalAmount(BigDecimal totalAmount) {
+        this.totalAmount = totalAmount;
+    }
+
+    public BigDecimal getSettledAmount() {
+        return settledAmount;
+    }
+
+    public void setSettledAmount(BigDecimal settledAmount) {
+        this.settledAmount = settledAmount;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
+    }
+
+    public String getSalesman() {
+        return salesman;
+    }
+
+    public void setSalesman(String salesman) {
+        this.salesman = salesman;
+    }
+
+    public Long getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(Long createdBy) {
+        this.createdBy = createdBy;
+    }
 }

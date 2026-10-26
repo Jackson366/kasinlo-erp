@@ -30,25 +30,59 @@ public class SysRoles extends SoftDeleteEntity {
     @TableField("\"remark\"")
     private String remark;
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public String getName() {
+        return name;
+    }
 
-    public String getCode() { return code; }
-    public void setCode(String code) { this.code = code; }
+    public void setName(String name) {
+        this.name = name;
+    }
 
-    public Long getSort() { return sort; }
-    public void setSort(Long sort) { this.sort = sort; }
+    public String getCode() {
+        return code;
+    }
 
-    public Long getStatus() { return status; }
-    public void setStatus(Long status) { this.status = status; }
+    public void setCode(String code) {
+        this.code = code;
+    }
 
-    public Long getDataScope() { return dataScope; }
-    public void setDataScope(Long dataScope) { this.dataScope = dataScope; }
+    public Long getSort() {
+        return sort;
+    }
 
-    public Boolean getIsBuiltin() { return isBuiltin; }
-    public void setIsBuiltin(Boolean isBuiltin) { this.isBuiltin = isBuiltin; }
+    public void setSort(Long sort) {
+        this.sort = sort;
+    }
 
-    public String getRemark() { return remark; }
-    public void setRemark(String remark) { this.remark = remark; }
+    public Long getStatus() {
+        return status;
+    }
 
+    public void setStatus(Long status) {
+        this.status = status;
+    }
+
+    public Long getDataScope() {
+        return dataScope;
+    }
+
+    public void setDataScope(Long dataScope) {
+        this.dataScope = dataScope;
+    }
+
+    public Boolean getIsBuiltin() {
+        return isBuiltin;
+    }
+
+    public void setIsBuiltin(Boolean isBuiltin) {
+        this.isBuiltin = isBuiltin;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
+    }
 }
