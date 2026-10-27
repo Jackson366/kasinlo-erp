@@ -513,7 +513,18 @@ try {
     await expect(queue).toHaveCount(1)
     expect(state.listCalls - before).toBe(1)
     await expect(page).toHaveURL(/page=2/)
+    // A document reload finishes before Vue's lazy route and initial query do.
+    // Assert the restored query response first, then the rendered queue.
+    const restoredPage = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return url.pathname.endsWith('/inv/orders') &&
+        url.searchParams.get('page') === '2' &&
+        response.request().method() === 'GET'
+    })
     await page.reload()
+    const restored = await restoredPage
+    expect(restored.ok()).toBe(true)
+    expect((await restored.json()).data.list).toHaveLength(1)
     await expect(queue).toHaveCount(1)
   })
   await check('列表失败独立于空队列并可恢复', async () => {
