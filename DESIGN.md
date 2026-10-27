@@ -66,7 +66,7 @@ components:
 
 ## Components
 
-按钮用 ElButton，页面级新增与当前单据审核分别属于独立决策区。打印、附件等辅助动作低强调；反审核在更多菜单中，确认时说明库存回滚及限制。队列使用原生 button，具有 hover、focus-visible、pressed、selected、disabled 状态。
+按钮用 ElButton，页面级新增与当前单据审核分别属于独立决策区。打印、附件等辅助动作低强调；反审核在列表更多菜单、已审核详情及核对区的次要操作区可用，确认时说明库存回滚及限制。审核历史默认折叠，入库与应付使用紧凑文字摘要，避免增加常驻说明卡片。队列使用原生 button，具有 hover、focus-visible、pressed、selected、disabled 状态。
 
 列表/日期/下拉/表单使用现有 Element Plus 组件与中文 locale。异步使用现有 loading 指令；错误、无结果与业务空队列分别表达。弹窗沿用全局最大高度和内部滚动，采购编辑关闭前保护未保存输入。导航图标沿用 AppIcon 注册表。产品标识使用 `frontend/public/brand/kasinlo-mark.png`，由内置 imagegen 生成，侧栏与浏览器图标共用同一资源；固定宽高防止图片加载时跳动。生成提示：蓝底白色几何 K，由三个相连模块构成，适合 24–32px，简洁平面，无文字或场景。侧栏颜色继续直接消费 `variables.scss` 语义令牌，不增加独立配色；尊重 reduced-motion，禁用侧栏宽度、文字和图标的所有过渡。
 

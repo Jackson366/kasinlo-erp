@@ -482,7 +482,7 @@ try {
       .getByRole('button', { name: '审核并入库', exact: true })
       .click()
     const dialog = page.getByRole('dialog', { name: '审核并入库', exact: true })
-    await expect(dialog).toContainText('请确认已收到货物')
+    await expect(dialog).toContainText('请确认已取得收货确认依据')
     state.failAudit = true
     await dialog.getByRole('button', { name: '确认审核并入库' }).click()
     await expect(dialog).toBeVisible()
@@ -814,6 +814,17 @@ try {
     const sampleTransition = async (trigger, width, {icon=20,font=14,resize=false} = {}) => {
       const sampling = inventory.evaluate(async el => {
         const samples = []
+        // Start at the real input event: Playwright actionability can consume the
+        // whole sampling window before click()/press() actually dispatches input.
+        await new Promise(resolve => {
+          const start = () => {
+            document.removeEventListener('click', start, true)
+            document.removeEventListener('keydown', start, true)
+            resolve()
+          }
+          document.addEventListener('click', start, true)
+          document.addEventListener('keydown', start, true)
+        })
         const until = performance.now() + 350
         while (performance.now() < until) {
           await new Promise(requestAnimationFrame)

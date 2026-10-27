@@ -262,7 +262,7 @@ public class ApiController {
                         auth.require(a, "inv:supplier:list");
                         yield master.handle("SupplierList", 0, map(), q);
                     }
-                    case "orders" -> trade.orders(a, q.getOrDefault("bizType", "sales"));
+                    case "orders" -> trade.orders(a, q.getOrDefault("bizType", "sales"), q.getOrDefault("handoff", ""));
                     case "stock-orders" -> {
                         auth.require(a, "inv:stock:list");
                         yield trade.handle("StockOrderList", 0, map(), q, a);

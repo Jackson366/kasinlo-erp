@@ -31,7 +31,7 @@ const (
 // 单据状态
 const (
 	InvStatusPending  int16 = 1 // 待处理（待入库 / 待出库）
-	InvStatusDone     int16 = 2 // 已完成（已入库 / 已出库）
+	InvStatusDone     int16 = 2 // 已审核（已入库 / 已出库）
 	InvStatusCanceled int16 = 3 // 已取消
 )
 
@@ -232,7 +232,7 @@ type InvOrder struct {
 	// 的单据一并算进去，打印纸面也会多出一行「到期日：0001-01-01」。
 	// 指针 + 可空列让「未填」在数据库里就是 NULL，任何比较都天然为假。
 	DueDate       *time.Time `gorm:"type:date" json:"dueDate"`
-	Status        int16      `gorm:"not null;index" json:"status"` // 1 待处理 2 已完成 3 已取消
+	Status        int16      `gorm:"not null;index" json:"status"` // 1 待处理 2 已审核 3 已取消
 	TotalAmount   float64    `gorm:"type:numeric(14,2);default:0" json:"totalAmount"`
 	SettledAmount float64    `gorm:"type:numeric(14,2);default:0" json:"settledAmount"`
 	Remark        string     `gorm:"size:255" json:"remark"`
@@ -242,8 +242,13 @@ type InvOrder struct {
 	// 不建成外键指向 sys_users：跑业务的常常是没有后台账号的人（门店、外包、
 	// 已经离职但历史单据还要能查的人）。挂外键后这类人要么建不出单，要么
 	// 离职删账号时连带把历史单据的归属抹掉 —— 那正是最需要留痕的地方。
-	Salesman  string `gorm:"size:64" json:"salesman"`
-	CreatedBy int64  `json:"createdBy"`
+	Salesman     string     `gorm:"size:64" json:"salesman"`
+	CreatedBy    int64      `json:"createdBy"`
+	AuditorID    *int64     `json:"auditorId"`
+	AuditedAt    *time.Time `json:"auditedAt"`
+	ReversedBy   *int64     `json:"reversedBy"`
+	ReversedAt   *time.Time `json:"reversedAt"`
+	PendingSince *time.Time `json:"pendingSince"`
 }
 
 // TableName 指定表名。
@@ -480,3 +485,17 @@ type InvAttachment struct {
 
 // TableName 指定表名。
 func (InvAttachment) TableName() string { return "inv_attachments" }
+
+// InvOrderAudit is append-only through business APIs; failures roll back with the order.
+type InvOrderAudit struct {
+	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	OrderID      int64     `gorm:"not null;index" json:"orderId"`
+	OrderNo      string    `gorm:"size:32;not null" json:"orderNo"`
+	Action       string    `gorm:"size:16;not null" json:"action"`
+	ActorID      int64     `gorm:"not null" json:"actorId"`
+	ActorName    string    `gorm:"size:128;not null" json:"actorName"`
+	OccurredAt   time.Time `gorm:"not null" json:"occurredAt"`
+	StockOrderID *int64    `json:"stockOrderId"`
+}
+
+func (InvOrderAudit) TableName() string { return "inv_order_audits" }

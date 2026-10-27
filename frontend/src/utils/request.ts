@@ -1,10 +1,25 @@
-import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios'
+import axios, {
+  type AxiosInstance,
+  type AxiosRequestConfig,
+  type AxiosResponse,
+} from 'axios'
 // 值一律从子路径导入：element-plus 根入口引用全部组件，会禁用 tree-shaking
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { ApiResult, LoginResult } from '@/types/api'
 import { API_PREFIX } from '@/utils/api'
-import { clearTokens, getAccessToken, getRefreshToken, setTokens } from '@/utils/auth'
+import {
+  clearTokens,
+  getAccessToken,
+  getRefreshToken,
+  setTokens,
+} from '@/utils/auth'
+
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    silent?: boolean
+  }
+}
 
 /** 业务错误：携带后端返回的业务码与链路 ID */
 export class ApiError extends Error {
@@ -127,7 +142,11 @@ export function resetSessionExpiredGuard(): void {
   sessionExpiredNotified = false
 }
 
-function notifySessionExpired(code: number, message: string, traceId?: string): Promise<never> {
+function notifySessionExpired(
+  code: number,
+  message: string,
+  traceId?: string,
+): Promise<never> {
   if (!sessionExpiredNotified) {
     sessionExpiredNotified = true
     ElMessageBox.confirm('登录状态已失效，请重新登录', '提示', {
@@ -160,7 +179,10 @@ instance.interceptors.response.use(
 
     // 网络层错误（后端未启动、超时等）
     if (!response) {
-      const message = error.code === 'ECONNABORTED' ? '请求超时，请稍后重试' : '网络异常，请检查后端服务是否已启动'
+      const message =
+        error.code === 'ECONNABORTED'
+          ? '请求超时，请稍后重试'
+          : '网络异常，请检查后端服务是否已启动'
       ElMessage.error(message)
       return Promise.reject(new ApiError(-1, message))
     }
@@ -168,7 +190,10 @@ instance.interceptors.response.use(
     const raw = response.data as unknown
     // 文件下载（responseType: 'blob'）出错时，响应体是被包成 Blob 的 JSON 错误体，
     // 必须先解出文本，否则拿不到业务码，用户只能看到「请求失败（HTTP 400）」。
-    const body = raw instanceof Blob ? await readBlobError(raw) : (raw as ApiResult | undefined)
+    const body =
+      raw instanceof Blob
+        ? await readBlobError(raw)
+        : (raw as ApiResult | undefined)
     const code = body?.code ?? response.status
     const message = body?.message || `请求失败（HTTP ${response.status}）`
     const traceId = body?.traceId
@@ -177,14 +202,18 @@ instance.interceptors.response.use(
     // 裸 HTTP 401（无业务响应体，如被网关/代理直接拦截）也按会话失效处理：
     // 此时 code 回退为 response.status，不在业务码清单里，若落进通用 toast，
     // 用户会卡在注定失败的页面上反复看到「请求失败（HTTP 401）」却回不到登录页。
-    const authFailed = AUTH_ERROR_CODES.includes(code) || response.status === 401
+    const authFailed =
+      AUTH_ERROR_CODES.includes(code) || response.status === 401
     if (authFailed && !isAuthEndpoint(error.config?.url)) {
       const original = error.config as AxiosRequestConfig & { _retry?: boolean }
       if (!original._retry && getRefreshToken()) {
         original._retry = true
         try {
           const token = await refreshAccessToken()
-          original.headers = { ...(original.headers || {}), Authorization: `Bearer ${token}` }
+          original.headers = {
+            ...(original.headers || {}),
+            Authorization: `Bearer ${token}`,
+          }
           return instance.request(original)
         } catch {
           // 刷新失败，走下面的统一登出逻辑
@@ -206,7 +235,9 @@ instance.interceptors.response.use(
 )
 
 /** 统一解包：成功返回 data，失败抛出 ApiError */
-async function unwrap<T>(promise: Promise<AxiosResponse<ApiResult<T>>>): Promise<T> {
+async function unwrap<T>(
+  promise: Promise<AxiosResponse<ApiResult<T>>>,
+): Promise<T> {
   const response = await promise
   const body = response.data
   if (body.code !== 0) {
@@ -217,16 +248,28 @@ async function unwrap<T>(promise: Promise<AxiosResponse<ApiResult<T>>>): Promise
 
 /** 类型安全的请求方法集合 */
 export const http = {
-  get<T>(url: string, params?: Record<string, unknown>, config?: AxiosRequestConfig): Promise<T> {
+  get<T>(
+    url: string,
+    params?: Record<string, unknown>,
+    config?: AxiosRequestConfig,
+  ): Promise<T> {
     return unwrap<T>(instance.get(url, { params, ...config }))
   },
-  post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  post<T>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig,
+  ): Promise<T> {
     return unwrap<T>(instance.post(url, data, config))
   },
   put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     return unwrap<T>(instance.put(url, data, config))
   },
-  delete<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  delete<T>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig,
+  ): Promise<T> {
     return unwrap<T>(instance.delete(url, { data, ...config }))
   },
 }

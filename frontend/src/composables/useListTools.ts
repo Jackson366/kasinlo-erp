@@ -3,6 +3,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { downloadFile } from '@/utils/download'
 import { ApiError } from '@/utils/request'
 
+export interface BatchOutcome<Row> {
+  succeeded: number
+  failures: { row: Row; name: string; reason: string }[]
+}
+export interface BatchOptions<Row> {
+  consequences?: string
+  onResult?: (result: BatchOutcome<Row>) => void
+}
+
 /** 表格实例上用到的最小接口（el-table 的实例方法） */
 interface TableLike {
   clearSelection: () => void
@@ -63,11 +72,12 @@ export function useListTools<Row extends { id: number }>(options: {
     rows: Row[],
     run: (row: Row) => Promise<unknown>,
     nameOf: (row: Row) => string,
+    batchOptions?: BatchOptions<Row>,
   ): Promise<boolean> {
     if (!rows.length || batchRunning.value) return false
     batchRunning.value = true
     try {
-      return await runBatchAction(actionLabel, rows, run, nameOf)
+      return await runBatchAction(actionLabel, rows, run, nameOf, batchOptions)
     } finally {
       batchRunning.value = false
     }
@@ -97,15 +107,16 @@ export async function runBatchAction<Row>(
   rows: Row[],
   run: (row: Row) => Promise<unknown>,
   nameOf: (row: Row) => string,
+  options?: BatchOptions<Row>,
 ): Promise<boolean> {
   if (!rows.length) return false
   const names = rows.slice(0, 5).map(nameOf)
   const more = rows.length > 5 ? ` 等 ${rows.length} 条` : ''
   try {
     await ElMessageBox.confirm(
-      `确定对以下 ${rows.length} 条记录执行「${actionLabel}」吗？\n${names.join('、')}${more}`,
+      `确定对以下 ${rows.length} 条记录执行「${actionLabel}」吗？\n${names.join('、')}${more}${options?.consequences ? `\n${options.consequences}` : ''}`,
       `${actionLabel}确认`,
-      { type: 'warning', confirmButtonText: actionLabel },
+      { type: 'warning', confirmButtonText: actionLabel, autofocus: false },
     )
   } catch {
     return false
@@ -117,11 +128,23 @@ export async function runBatchAction<Row>(
     .filter((x) => x.r.status === 'rejected')
   const okCount = results.length - failed.length
 
+  options?.onResult?.({
+    succeeded: okCount,
+    failures: failed.map(({ row, r }) => ({
+      row,
+      name: nameOf(row),
+      reason:
+        r.status === 'rejected' && r.reason instanceof Error
+          ? r.reason.message
+          : '请求失败，请刷新核实后重试',
+    })),
+  })
   if (failed.length === 0) {
     ElMessage.success(`${actionLabel}成功 ${okCount} 条`)
   } else {
     const first = failed[0].r as PromiseRejectedResult
-    const reason = first.reason instanceof ApiError ? first.reason.message : '未知原因'
+    const reason =
+      first.reason instanceof ApiError ? first.reason.message : '未知原因'
     ElMessage.warning(
       `${actionLabel}完成：成功 ${okCount} 条，失败 ${failed.length} 条（${nameOf(failed[0].row)}：${reason}）`,
     )

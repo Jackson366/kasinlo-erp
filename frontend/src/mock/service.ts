@@ -6,7 +6,14 @@ import type {
   InvContractRow,
   InvStockOrderPayload,
 } from '@/types/api'
-import { createSeed, routes, today, timestamp, type MockData, type Row } from './seed'
+import {
+  createSeed,
+  routes,
+  today,
+  timestamp,
+  type MockData,
+  type Row,
+} from './seed'
 
 export class MockError extends Error {
   constructor(
@@ -21,7 +28,8 @@ const fail = (message: string, status = 400): never => {
 }
 const num = (value: unknown) => Number(value) || 0
 const money = (value: number) => Math.round(value * 100) / 100
-const sum = <T>(list: T[], fn: (item: T) => number) => money(list.reduce((s, r) => s + fn(r), 0))
+const sum = <T>(list: T[], fn: (item: T) => number) =>
+  money(list.reduce((s, r) => s + fn(r), 0))
 
 export interface MockRequest {
   method: string
@@ -30,7 +38,10 @@ export interface MockRequest {
   body?: unknown
   token?: string
 }
-export function createMockService(initial = createSeed(), save: (data: MockData) => void = () => {}) {
+export function createMockService(
+  initial = createSeed(),
+  save: (data: MockData) => void = () => {},
+) {
   let db = structuredClone(initial)
   const rowById = <T extends { id: number }>(rows: T[], id: number): T =>
     rows.find((r) => r.id === id) ?? fail('Mock：记录不存在', 404)
@@ -40,8 +51,12 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
       const roleIds = Array.isArray(user.roleIds) ? user.roleIds : []
       Object.assign(user, {
         roleIds,
-        roleNames: db.collections['/system/roles'].filter((r) => roleIds.includes(r.id)).map((r) => r.name),
-        deptName: db.collections['/system/depts'].find((d) => d.id === user.deptId)?.name || '',
+        roleNames: db.collections['/system/roles']
+          .filter((r) => roleIds.includes(r.id))
+          .map((r) => r.name),
+        deptName:
+          db.collections['/system/depts'].find((d) => d.id === user.deptId)
+            ?.name || '',
         email: user.email || '',
         phone: user.phone || '',
         avatar: user.avatar || '',
@@ -94,7 +109,9 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
         if (
           q.keyword &&
           !Object.values(r).some(
-            (v) => typeof v === 'string' && v.toLowerCase().includes(String(q.keyword).toLowerCase()),
+            (v) =>
+              typeof v === 'string' &&
+              v.toLowerCase().includes(String(q.keyword).toLowerCase()),
           )
         )
           return false
@@ -115,13 +132,19 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
           'success',
           'source',
         ]) {
-          if (q[key] !== undefined && q[key] !== '' && String(q[key]) !== String(r[key])) return false
+          if (
+            q[key] !== undefined &&
+            q[key] !== '' &&
+            String(q[key]) !== String(r[key])
+          )
+            return false
         }
         if (q.warnOnly && !r.warn) return false
         if (q.overdueOnly && !r.overdue) return false
         if (q.onlyUnsettled && !(num(r.outstanding) > 0)) return false
         if (q.settle === 'overdue' && !r.overdue) return false
-        if (q.settle && q.settle !== 'overdue' && q.settle !== r.settleStatus) return false
+        if (q.settle && q.settle !== 'overdue' && q.settle !== r.settleStatus)
+          return false
         const date = String(r.orderDate || r.signDate || r.createdAt || '')
         if (q.startDate && date.slice(0, 10) < String(q.startDate)) return false
         if (q.endDate && date.slice(0, 10) > String(q.endDate)) return false
@@ -129,11 +152,15 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
       })
       .sort((a, b) => {
         if (!q.orderBy) return 0
-        const key = String(q.orderBy).replace(/_([a-z])/g, (_, ch: string) => ch.toUpperCase())
+        const key = String(q.orderBy).replace(/_([a-z])/g, (_, ch: string) =>
+          ch.toUpperCase(),
+        )
         const av = (a as Row)[key],
           bv = (b as Row)[key]
         const result =
-          typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv))
+          typeof av === 'number' && typeof bv === 'number'
+            ? av - bv
+            : String(av).localeCompare(String(bv))
         return q.order === 'asc' ? result : -result
       })
   }
@@ -141,7 +168,12 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
     const rows = filtered(list, q),
       page = Math.max(1, num(q.page) || 1),
       pageSize = Math.min(200, Math.max(1, num(q.pageSize) || 20))
-    return { list: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length, page, pageSize }
+    return {
+      list: rows.slice((page - 1) * pageSize, page * pageSize),
+      total: rows.length,
+      page,
+      pageSize,
+    }
   }
   const finance = (bizType: string) => [
     ...db.orders
@@ -156,7 +188,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
         planSeq: 0,
         planName: '',
         outstanding: money(o.totalAmount - o.settledAmount),
-        overdue: !!o.dueDate && o.dueDate < today() && o.settledAmount < o.totalAmount,
+        overdue:
+          !!o.dueDate && o.dueDate < today() && o.settledAmount < o.totalAmount,
       })),
     ...db.contracts
       .filter((c) => c.bizType === bizType && c.status === 1)
@@ -179,7 +212,12 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
             totalAmount: p.amount,
             settledAmount: p.settledAmount,
             outstanding: p.outstanding,
-            settleStatus: p.outstanding === 0 ? 'paid' : p.settledAmount > 0 ? 'partial' : 'unpaid',
+            settleStatus:
+              p.outstanding === 0
+                ? 'paid'
+                : p.settledAmount > 0
+                  ? 'partial'
+                  : 'unpaid',
             overdue: !!p.dueDate && p.dueDate < today() && p.outstanding > 0,
           })),
       ),
@@ -190,7 +228,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
       const p = rowById(db.products, i.productId),
         s = rowById(p.specs, i.specId),
         u = rowById(s.units, i.unitId)
-      if (p.status !== 1 || s.status !== 1 || u.status !== 1) fail('商品、规格或单位已停用')
+      if (p.status !== 1 || s.status !== 1 || u.status !== 1)
+        fail('商品、规格或单位已停用')
       if (!(i.qty > 0) || i.price < 0) fail('数量必须大于零，价格不能为负数')
       return {
         ...i,
@@ -208,7 +247,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
   function stockChange(order: InvOrderDetail, reverse = false) {
     for (const i of order.items) {
       const s = rowById(rowById(db.products, i.productId).specs, i.specId)
-      const delta = (order.bizType === 'purchase' ? 1 : -1) * (reverse ? -1 : 1) * i.qtyBase
+      const delta =
+        (order.bizType === 'purchase' ? 1 : -1) * (reverse ? -1 : 1) * i.qtyBase
       if (s.stock + delta < 0) fail('Mock：库存不足，无法执行此操作')
       s.stock = money(s.stock + delta)
     }
@@ -216,16 +256,29 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
   }
   function settleOrder(id: number, amount: number) {
     const o = rowById(db.orders, id)
-    if (o.status !== 2 || amount <= 0 || amount > money(o.totalAmount - o.settledAmount))
+    if (
+      o.status !== 2 ||
+      amount <= 0 ||
+      amount > money(o.totalAmount - o.settledAmount)
+    )
       fail('收付款金额必须大于零且不超过已审核单据的未结余额')
     o.settledAmount = money(o.settledAmount + amount)
     o.settleStatus = o.settledAmount === o.totalAmount ? 'paid' : 'partial'
   }
-  function dispatch({ method, path, params: q = {}, body, token }: MockRequest): unknown {
+  function dispatch({
+    method,
+    path,
+    params: q = {},
+    body,
+    token,
+  }: MockRequest): unknown {
     const b = (body || {}) as Row
     const isDemo = token === 'mock-access-demo'
     if (path === '/auth/login' && method === 'POST') {
-      if (!['admin', 'demo'].includes(String(b.username)) || b.password !== `${b.username}123456`)
+      if (
+        !['admin', 'demo'].includes(String(b.username)) ||
+        b.password !== `${b.username}123456`
+      )
         fail('用户名或密码错误（Mock 账号：admin / demo）', 401)
       return {
         accessToken: `mock-access-${b.username}`,
@@ -246,14 +299,19 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
       }
     }
     if (path === '/auth/refresh' && method === 'POST') {
-      if (!['mock-refresh-admin', 'mock-refresh-demo'].includes(String(b.refreshToken)))
+      if (
+        !['mock-refresh-admin', 'mock-refresh-demo'].includes(
+          String(b.refreshToken),
+        )
+      )
         fail('Mock 会话已失效', 401)
       return {
         accessToken: String(b.refreshToken).replace('refresh', 'access'),
         refreshToken: b.refreshToken,
       }
     }
-    if (!['mock-access-admin', 'mock-access-demo'].includes(token || '')) fail('请先登录 Mock 账号', 401)
+    if (!['mock-access-admin', 'mock-access-demo'].includes(token || ''))
+      fail('请先登录 Mock 账号', 401)
     if (isDemo && method !== 'GET' && path !== '/auth/logout')
       fail('Mock 演示账号为只读，请使用 admin 登录操作', 403)
     if (path === '/auth/logout') return '已退出'
@@ -283,7 +341,9 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
                 'customer',
                 'supplier',
               ].map((s) => `inv:${s}:list`),
-              ...['user', 'role', 'menu', 'dept', 'log'].map((s) => `system:${s}:list`),
+              ...['user', 'role', 'menu', 'dept', 'log'].map(
+                (s) => `system:${s}:list`,
+              ),
               'ops:list',
             ],
           }
@@ -292,9 +352,15 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
       Object.assign(db.profile, b)
       return '资料已更新'
     }
-    if (path === '/profile/password' || /\/system\/users\/\d+\/password$/.test(path))
+    if (
+      path === '/profile/password' ||
+      /\/system\/users\/\d+\/password$/.test(path)
+    )
       fail('Mock 模式不支持修改密码，请使用固定演示密码', 501)
-    if (/export|import|\/file$/.test(path) || (path === '/inv/attachments' && method === 'POST'))
+    if (
+      /export|import|\/file$/.test(path) ||
+      (path === '/inv/attachments' && method === 'POST')
+    )
       fail('Mock 模式暂不支持文件导入、导出和附件上传下载，请切换真实后端', 501)
     if (path === '/inv/attachments/count') return {}
     if (path === '/inv/attachments') return []
@@ -317,11 +383,17 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
     if (path === '/inv/products/duplicates')
       return db.products
         .filter((p) => p.name === q.name && p.id !== num(q.excludeId))
-        .map((p) => ({ ...p, specSummary: p.specs.map((s) => s.spec).join('、') }))
+        .map((p) => ({
+          ...p,
+          specSummary: p.specs.map((s) => s.spec).join('、'),
+        }))
     if (path === '/inv/inventory') return page(inventory(), q)
     if (path.startsWith('/inv/finance/')) {
       if (method === 'GET') {
-        const all = filtered(finance(path.endsWith('payables') ? 'purchase' : 'sales'), q)
+        const all = filtered(
+          finance(path.endsWith('payables') ? 'purchase' : 'sales'),
+          q,
+        )
         return {
           ...page(all, q),
           summary: {
@@ -360,8 +432,12 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
         return { count: ids.length, amount: money(amount) }
       }
     }
-    const sales = db.orders.filter((o) => o.bizType === 'sales' && o.status === 2),
-      purchases = db.orders.filter((o) => o.bizType === 'purchase' && o.status === 2)
+    const sales = db.orders.filter(
+        (o) => o.bizType === 'sales' && o.status === 2,
+      ),
+      purchases = db.orders.filter(
+        (o) => o.bizType === 'purchase' && o.status === 2,
+      )
     const salesAmount = sum(sales, (o) => o.totalAmount),
       purchaseAmount = sum(purchases, (o) => o.totalAmount)
     if (path === '/inv/overview')
@@ -387,27 +463,42 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
             salesAmount,
             costAmount: purchaseAmount,
             grossProfit: salesAmount - purchaseAmount,
-            grossRate: salesAmount ? ((salesAmount - purchaseAmount) / salesAmount) * 100 : 0,
+            grossRate: salesAmount
+              ? ((salesAmount - purchaseAmount) / salesAmount) * 100
+              : 0,
             salesOrders: sales.length,
             purchaseOrders: purchases.length,
             purchases: purchaseAmount,
           }
         case 'trend':
-          return Array.from({ length: Math.min(90, num(q.days) || 30) }, (_, i) => ({
-            date: new Date(Date.now() - i * 86400000).toISOString().slice(0, 10),
-            salesAmount: i === 0 ? salesAmount : 0,
-            purchaseAmount: i === 0 ? purchaseAmount : 0,
-          })).reverse()
+          return Array.from(
+            { length: Math.min(90, num(q.days) || 30) },
+            (_, i) => ({
+              date: new Date(Date.now() - i * 86400000)
+                .toISOString()
+                .slice(0, 10),
+              salesAmount: i === 0 ? salesAmount : 0,
+              purchaseAmount: i === 0 ? purchaseAmount : 0,
+            }),
+          ).reverse()
         case 'ranking': {
           const orders = filtered(q.biz === 'purchase' ? purchases : sales, q)
           const groups = new Map<
             number,
-            { id: number; name: string; amount: number; orderIds: Set<number>; quantity: number }
+            {
+              id: number
+              name: string
+              amount: number
+              orderIds: Set<number>
+              quantity: number
+            }
           >()
           for (const order of orders) {
             for (const item of order.items) {
-              const id = q.dimension === 'product' ? item.productId : order.partyId
-              const name = q.dimension === 'product' ? item.productName : order.partyName
+              const id =
+                q.dimension === 'product' ? item.productId : order.partyId
+              const name =
+                q.dimension === 'product' ? item.productName : order.partyName
               const group = groups.get(id) || {
                 id,
                 name,
@@ -440,7 +531,10 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
             amount: sum(
               sales
                 .flatMap((o) => o.items)
-                .filter((r) => rowById(db.products, r.productId).categoryName === category),
+                .filter(
+                  (r) =>
+                    rowById(db.products, r.productId).categoryName === category,
+                ),
               (r) => r.amount,
             ),
             ratio: 50,
@@ -465,7 +559,9 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
             ...s,
             rank: i + 1,
             value: money(s.stock * s.purchasePrice),
-            ratio: totalValue ? ((s.stock * s.purchasePrice) / totalValue) * 100 : 0,
+            ratio: totalValue
+              ? ((s.stock * s.purchasePrice) / totalValue) * 100
+              : 0,
           }))
         case 'detail': {
           const rows = filtered(db.orders, q).flatMap((o) =>
@@ -487,7 +583,10 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
           }
         }
         case 'contract': {
-          const rows = filtered(db.contracts, q).map((c) => ({ ...c, contractId: c.id }))
+          const rows = filtered(db.contracts, q).map((c) => ({
+            ...c,
+            contractId: c.id,
+          }))
           return {
             rows,
             count: rows.length,
@@ -507,7 +606,12 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
     if (path === '/ops/backups' && method === 'GET') return []
     if (path === '/ops/cleanup/scopes') return []
     if (path === '/ops/cleanup/preview')
-      return { dryRun: true, steps: [], vacuumed: [], blocked: 'Mock 模式不执行数据库清理' }
+      return {
+        dryRun: true,
+        steps: [],
+        vacuumed: [],
+        blocked: 'Mock 模式不执行数据库清理',
+      }
     if (path === '/ops/check')
       return {
         report: {
@@ -548,7 +652,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
         restartHint: '',
       }
     if (path === '/ops/upgrade/records') return []
-    if (path.startsWith('/ops/')) fail('Mock 模式不执行备份、恢复、清理或系统升级', 501)
+    if (path.startsWith('/ops/'))
+      fail('Mock 模式不执行备份、恢复、清理或系统升级', 501)
 
     const match =
       /^(\/inv\/(?:products|orders|contracts|stock-orders)|\/system\/users)(?:\/(\d+))?(?:\/(\w+))?$/.exec(
@@ -558,19 +663,77 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
       const [, resource, rawId, action] = match,
         id = num(rawId)
       if (resource === '/inv/orders') {
-        if (method === 'GET') return id ? rowById(db.orders, id) : page(db.orders, q)
+        if (method === 'GET') {
+          const enrich = (o: InvOrderDetail): InvOrderDetail => ({
+            ...o,
+            downstream: {
+              visibility: 'visible',
+              stockOrders: db.collections['/inv/stock-orders']
+                .filter(
+                  (stock) =>
+                    stock.sourceId === o.id && stock.sourceType === o.bizType,
+                )
+                .map((stock) => ({
+                  id: num(stock.id),
+                  orderNo: String(stock.orderNo),
+                  status: num(stock.status),
+                })),
+            },
+          })
+          if (id) return enrich(rowById(db.orders, id))
+          if (
+            q.handoff &&
+            !['auditable', 'created', 'reversed'].includes(String(q.handoff))
+          )
+            fail('交接筛选非法')
+          return page(
+            db.orders
+              .filter(
+                (o) =>
+                  !q.handoff ||
+                  (q.handoff === 'created' &&
+                    o.createdBy === (isDemo ? 2 : 1)) ||
+                  (q.handoff === 'reversed' &&
+                    o.status === 1 &&
+                    Boolean(o.reversedAt)) ||
+                  (q.handoff === 'auditable' && !isDemo && o.status === 1),
+              )
+              .map(enrich),
+            q,
+          )
+        }
         const old = id ? rowById(db.orders, id) : undefined
         if (action === 'status' || action === 'reverse') {
           const o = old!
           if (action === 'reverse') {
-            if (o.status !== 2 || o.settledAmount > 0) fail('仅可反审核未收付款的已完成单据')
+            if (o.status !== 2 || o.settledAmount > 0)
+              fail('仅可反审核未收付款的已审核单据')
             stockChange(o, true)
             o.status = 1
-            db.collections['/inv/stock-orders'] = db.collections['/inv/stock-orders'].filter(
-              (s) => s.sourceId !== o.id || s.sourceType !== o.bizType,
+            const stock = db.collections['/inv/stock-orders'].find(
+              (s) =>
+                s.sourceId === o.id &&
+                s.sourceType === o.bizType &&
+                s.status === 1,
             )
+            if (stock) stock.status = 2
+            o.reversedBy = 1
+            o.reversedByName = '模拟管理员'
+            o.reversedAt = timestamp()
+            o.pendingSince = o.reversedAt
+            ;(o.auditHistory ||= []).push({
+              id: nextId(),
+              orderId: o.id,
+              orderNo: o.orderNo,
+              action: 'reverse',
+              actorId: 1,
+              actorName: '模拟管理员',
+              occurredAt: o.reversedAt,
+              stockOrderId: stock ? num(stock.id) : null,
+            })
           } else {
-            if (o.status !== 1 || ![2, 3].includes(num(b.status))) fail('仅可审核或取消待处理单据')
+            if (o.status !== 1 || ![2, 3].includes(num(b.status)))
+              fail('仅可审核或取消待处理单据')
             if (num(b.status) === 2) {
               stockChange(o)
               db.collections['/inv/stock-orders'].unshift({
@@ -592,7 +755,26 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
               })
             }
             o.status = num(b.status) as 2 | 3
-            if (o.status === 2 && b.settleNow) settleOrder(o.id, o.totalAmount)
+            if (o.status === 2) {
+              o.auditorId = 1
+              o.auditorName = '模拟管理员'
+              o.auditedAt = timestamp()
+              o.selfAudit = o.createdBy === 1
+              o.pendingSince = null
+              const stock = db.collections['/inv/stock-orders'][0]
+              ;(o.auditHistory ||= []).push({
+                id: nextId(),
+                orderId: o.id,
+                orderNo: o.orderNo,
+                action: 'audit',
+                actorId: 1,
+                actorName: '模拟管理员',
+                occurredAt: o.auditedAt,
+                stockOrderId: num(stock.id),
+              })
+              if (b.settleNow && o.totalAmount > 0)
+                settleOrder(o.id, o.totalAmount)
+            }
           }
           return '操作成功'
         }
@@ -602,9 +784,12 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
           return '已删除'
         }
         const payload = body as InvOrderPayload
-        if (!['purchase', 'sales'].includes(payload.bizType)) fail('单据类型无效')
+        if (!['purchase', 'sales'].includes(payload.bizType))
+          fail('单据类型无效')
         const party = rowById(
-          db.collections[payload.bizType === 'purchase' ? '/inv/suppliers' : '/inv/customers'] as (Row & {
+          db.collections[
+            payload.bizType === 'purchase' ? '/inv/suppliers' : '/inv/customers'
+          ] as (Row & {
             id: number
           })[],
           payload.partyId,
@@ -615,7 +800,9 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
           ...payload,
           id: old?.id || nextId(),
           orderNo:
-            payload.orderNo || old?.orderNo || `${payload.bizType === 'purchase' ? 'CG' : 'XS'}${nextId()}`,
+            payload.orderNo ||
+            old?.orderNo ||
+            `${payload.bizType === 'purchase' ? 'CG' : 'XS'}${nextId()}`,
           partyName: String(party.name),
           dueDate: payload.dueDate || null,
           status: 1,
@@ -628,21 +815,28 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
           salesman: payload.salesman || '',
           operator: '模拟管理员',
           createdAt: old?.createdAt || timestamp(),
+          createdBy: old?.createdBy || 1,
+          pendingSince: old?.pendingSince || timestamp(),
         }
         if (old) Object.assign(old, order)
         else db.orders.unshift(order)
         return method === 'POST' ? { id: order.id } : '已更新'
       }
       if (resource === '/inv/products') {
-        if (method === 'GET') return id ? rowById(db.products, id) : page(db.products, q)
+        if (method === 'GET')
+          return id ? rowById(db.products, id) : page(db.products, q)
         const old = id ? rowById(db.products, id) : undefined
         if (method === 'DELETE') {
-          if (db.orders.some((o) => o.items.some((i) => i.productId === id))) fail('商品已被单据引用')
+          if (db.orders.some((o) => o.items.some((i) => i.productId === id)))
+            fail('商品已被单据引用')
           db.products = db.products.filter((p) => p.id !== id)
           return '已删除'
         }
         const payload = body as InvProductPayload
-        if (!payload.specs?.length || payload.specs.some((s) => !s.units?.length))
+        if (
+          !payload.specs?.length ||
+          payload.specs.some((s) => !s.units?.length)
+        )
           fail('请至少添加一项规格和计量单位')
         const p = {
           ...createSeed().products[0],
@@ -652,7 +846,9 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
           code: payload.code || old?.code || `SP${nextId()}`,
           categoryId: payload.categoryId || 0,
           categoryName: String(
-            db.collections['/inv/categories'].find((c) => c.id === payload.categoryId)?.name || '',
+            db.collections['/inv/categories'].find(
+              (c) => c.id === payload.categoryId,
+            )?.name || '',
           ),
           createdAt: old?.createdAt || timestamp(),
           specs: payload.specs.map((s) => ({
@@ -678,7 +874,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
       }
       if (resource === '/inv/contracts') {
         if (action === 'logs') return []
-        if (method === 'GET') return id ? rowById(db.contracts, id) : page(db.contracts, q)
+        if (method === 'GET')
+          return id ? rowById(db.contracts, id) : page(db.contracts, q)
         const old = id ? rowById(db.contracts, id) : undefined
         if (action) {
           const c = old!
@@ -696,7 +893,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
               }
             })
           } else if (action === 'unaudit') {
-            if (c.status !== 1 || c.settledAmount) fail('仅可反审核未收付款的执行中合同')
+            if (c.status !== 1 || c.settledAmount)
+              fail('仅可反审核未收付款的执行中合同')
             c.status = 0
             c.stage = 'unaudited'
             c.stageLabel = '待审核'
@@ -725,9 +923,9 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
           id: old?.id || nextId(),
           contractNo: p.contractNo || old?.contractNo || `HT${nextId()}`,
           partyName: String(
-            db.collections[p.bizType === 'purchase' ? '/inv/suppliers' : '/inv/customers'].find(
-              (r) => r.id === p.partyId,
-            )?.name || '',
+            db.collections[
+              p.bizType === 'purchase' ? '/inv/suppliers' : '/inv/customers'
+            ].find((r) => r.id === p.partyId)?.name || '',
           ),
           amount: p.amount || 0,
           status: 0,
@@ -744,7 +942,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
             dueDate: v.dueDate || null,
             triggerNode: v.triggerNode || '',
             settledAmount: 0,
-            outstanding: v.amount || money(((p.amount || 0) * (v.rate || 0)) / 100),
+            outstanding:
+              v.amount || money(((p.amount || 0) * (v.rate || 0)) / 100),
             status: 'pending',
             statusLabel: '未到期',
             remark: v.remark || '',
@@ -759,7 +958,10 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
       }
       if (resource === '/inv/stock-orders') {
         const rows = db.collections[resource]
-        if (method === 'GET') return id ? rowById(rows as (Row & { id: number })[], id) : page(rows, q)
+        if (method === 'GET')
+          return id
+            ? rowById(rows as (Row & { id: number })[], id)
+            : page(rows, q)
         if (method === 'DELETE') {
           const s = rowById(rows as (Row & { id: number })[], id)
           if (s.sourceType !== 'manual') fail('关联业务单据请通过反审核撤销')
@@ -797,7 +999,10 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
         return { id: s.id }
       }
     }
-    if (path === '/inv/contract-plans/settle' || /^\/inv\/contract-plans\/\d+\/settles$/.test(path))
+    if (
+      path === '/inv/contract-plans/settle' ||
+      /^\/inv\/contract-plans\/\d+\/settles$/.test(path)
+    )
       fail('Mock 暂不支持合同期次收付款流水，请连接真实后端', 501)
     for (const [resource, list] of Object.entries(db.collections)) {
       if (path !== resource && !path.startsWith(`${resource}/`)) continue
@@ -838,7 +1043,8 @@ export function createMockService(initial = createSeed(), save: (data: MockData)
         db.collections[resource] = list.filter((r) => r.id !== id)
         return '已删除'
       }
-      if (action && !['status', 'menus'].includes(action)) fail('Mock 暂不支持此操作', 501)
+      if (action && !['status', 'menus'].includes(action))
+        fail('Mock 暂不支持此操作', 501)
       Object.assign(r, b)
       delete r.password
       return '已更新'

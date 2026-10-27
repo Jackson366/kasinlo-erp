@@ -17,6 +17,7 @@ import (
 // @Param        bizType  query  string  true   "purchase | sales"
 // @Param        keyword  query  string  false  "单号 / 往来单位"
 // @Param        status   query  int     false  "1 待处理 2 已审核 3 已取消"
+// @Param        handoff  query  string  false  "auditable 我可审核 / created 我发起的 / reversed 反审核后待处理"
 // @Success      200  {object}  response.Body{data=response.PageData{list=[]inv.OrderRow}}
 // @Router       /inv/orders [get]
 func (h *Handler) OrderList(c *gin.Context) {
@@ -45,7 +46,7 @@ func (h *Handler) OrderList(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	filter := OrderFilter{BizType: bizType, Status: status, Settle: settle, Start: start, End: end}
+	filter := OrderFilter{BizType: bizType, Status: status, Settle: settle, Start: start, End: end, Handoff: c.Query("handoff")}
 	list, total, err := h.svc.OrderList(filter, q, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)

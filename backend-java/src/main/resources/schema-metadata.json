@@ -711,6 +711,26 @@
       "column": "created_by",
       "type": "long",
       "optional": false
+    },
+    "auditorId": {
+      "column": "auditor_id",
+      "type": "long"
+    },
+    "auditedAt": {
+      "column": "audited_at",
+      "type": "time"
+    },
+    "reversedBy": {
+      "column": "reversed_by",
+      "type": "long"
+    },
+    "reversedAt": {
+      "column": "reversed_at",
+      "type": "time"
+    },
+    "pendingSince": {
+      "column": "pending_since",
+      "type": "time"
     }
   },
   "inv_order_items": {
@@ -1670,6 +1690,40 @@
       "column": "status",
       "type": "long",
       "optional": false
+    }
+  },
+  "inv_order_audits": {
+    "id": {
+      "column": "id",
+      "type": "long"
+    },
+    "orderId": {
+      "column": "order_id",
+      "type": "long"
+    },
+    "orderNo": {
+      "column": "order_no",
+      "type": "string"
+    },
+    "action": {
+      "column": "action",
+      "type": "string"
+    },
+    "actorId": {
+      "column": "actor_id",
+      "type": "long"
+    },
+    "actorName": {
+      "column": "actor_name",
+      "type": "string"
+    },
+    "occurredAt": {
+      "column": "occurred_at",
+      "type": "time"
+    },
+    "stockOrderId": {
+      "column": "stock_order_id",
+      "type": "long"
     }
   }
 }

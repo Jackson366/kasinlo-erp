@@ -13,6 +13,8 @@ import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { FormInstance, FormRules } from 'element-plus'
 import { invApi } from '@/api'
+import { useRouter } from 'vue-router'
+import { useUserStore } from '@/store'
 import type {
   InvInventoryRow,
   InvPickSpec,
@@ -24,7 +26,9 @@ import type {
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
-import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
+import ListPrintDialog, {
+  type ListPrintColumn,
+} from '@/components/ListPrintDialog.vue'
 import { formatDay, formatMoney, formatQty } from '@/utils/format'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useListTools } from '@/composables/useListTools'
@@ -36,6 +40,21 @@ defineOptions({ name: 'InvStock' })
 
 // 默认落在「库存查询」：菜单叫库存管理，进页面先看库存现状，
 // 单据是这个页面的历史记录，需要时再切过去。
+const router = useRouter()
+const userStore = useUserStore()
+function openSource(row: InvStockOrderRow): void {
+  const biz = row.sourceType
+  if (!['purchase', 'sales'].includes(biz)) return
+  if (!userStore.hasAnyPerm([`inv:${biz}:list`])) {
+    ElMessage.warning('没有原单据查看权限，请联系业务负责人')
+    return
+  }
+  void router.push({
+    path: `/inv/${biz}`,
+    query: { view: 'all', order: String(row.sourceId) },
+  })
+}
+
 const activeTab = ref('inventory')
 const printRef = ref<InstanceType<typeof StockPrintDialog> | null>(null)
 
@@ -47,23 +66,16 @@ interface StockQuery {
   direction?: InvStockDirection
 }
 
-const {
-  query,
-  loading,
-  rows,
-  total,
-  load,
-  search,
-  reset,
-} = useTableQuery<StockQuery, InvStockOrderRow>(
-  { keyword: '', direction: undefined },
-  (params) =>
-    invApi.stockOrders({
-      page: params.page,
-      pageSize: params.pageSize,
-      keyword: params.keyword || undefined,
-      direction: params.direction ?? undefined,
-    }),
+const { query, loading, rows, total, load, search, reset } = useTableQuery<
+  StockQuery,
+  InvStockOrderRow
+>({ keyword: '', direction: undefined }, (params) =>
+  invApi.stockOrders({
+    page: params.page,
+    pageSize: params.pageSize,
+    keyword: params.keyword || undefined,
+    direction: params.direction ?? undefined,
+  }),
 )
 
 // ---------------- 库存查询 ----------------
@@ -96,6 +108,10 @@ async function loadInventory(): Promise<void> {
 }
 
 const warnCount = computed(() => inventory.value.filter((it) => it.warn).length)
+function resetInventory(): void {
+  inventoryKeyword.value = ''
+  void loadInventory()
+}
 const inventoryTotal = computed(() =>
   inventory.value.reduce((sum, it) => sum + it.stock * it.purchasePrice, 0),
 )
@@ -209,9 +225,13 @@ function syncUnit(item: StockFormItem): void {
 }
 
 async function submitForm(): Promise<void> {
-  const valid = formRef.value ? await formRef.value.validate().catch(() => false) : false
+  const valid = formRef.value
+    ? await formRef.value.validate().catch(() => false)
+    : false
   if (!valid) return
-  const items = form.items.filter((it) => it.productId && it.specId && it.unitId)
+  const items = form.items.filter(
+    (it) => it.productId && it.specId && it.unitId,
+  )
   if (items.length === 0) {
     ElMessage.warning('请至少添加一条明细')
     return
@@ -247,6 +267,10 @@ async function submitForm(): Promise<void> {
 }
 
 async function voidRow(row: InvStockOrderRow): Promise<void> {
+  if (row.sourceType !== 'manual') {
+    ElMessage.warning('请到原单据执行反审核')
+    return
+  }
   try {
     await ElMessageBox.confirm(
       `确定作废单据「${row.orderNo}」吗？系统会按反方向回滚库存。`,
@@ -285,7 +309,8 @@ const pickQuery = ref('')
 function matchProduct(p: InvProductPick, q: string): boolean {
   // 条码也参与匹配：扫码枪就是键盘，扫完等于把整串条码敲进搜索框，
   // 命中的通常只剩一条，回车即选中（el-select filterable 的原生行为）
-  if (p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)) return true
+  if (p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q))
+    return true
   if (p.barcode && p.barcode.toLowerCase().includes(q)) return true
   return p.specs.some((s) => s.spec.toLowerCase().includes(q))
 }
@@ -296,8 +321,12 @@ function applyPickFilter(query: string): void {
   const all = picks.value
   const matched = q ? all.filter((p) => matchProduct(p, q)) : all
   // 已选中的商品必须始终留在选项里，否则 el-select 反查不到 label、显示成数字
-  const picked = new Set(form.items.map((it) => it.productId).filter(Boolean) as number[])
-  const missing = all.filter((p) => picked.has(p.id) && !matched.some((m) => m.id === p.id))
+  const picked = new Set(
+    form.items.map((it) => it.productId).filter(Boolean) as number[],
+  )
+  const missing = all.filter(
+    (p) => picked.has(p.id) && !matched.some((m) => m.id === p.id),
+  )
   filteredPicks.value = missing.length ? [...missing, ...matched] : matched
 }
 
@@ -352,7 +381,9 @@ const {
 })
 
 const printVisible = ref(false)
-const printRows = computed(() => (selection.value.length ? selection.value : rows.value))
+const printRows = computed(() =>
+  selection.value.length ? selection.value : rows.value,
+)
 
 const printColumns = computed<ListPrintColumn<InvStockOrderRow>[]>(() => [
   { label: '单号', prop: 'orderNo' },
@@ -377,9 +408,16 @@ const printSubtitle = computed(() => {
 /** 批量作废：逐条回滚库存，失败项汇总提示（已被引用的单据会拒绝） */
 async function batchVoid(): Promise<void> {
   if (!selection.value.length) return
+  const target = selection.value.filter(
+    (r) => r.sourceType === 'manual' && r.status === 1,
+  )
+  if (!target.length) {
+    ElMessage.warning('仅手工出入库单可直接作废；关联单据请到原单据反审核')
+    return
+  }
   const done = await runBatch(
     '批量作废',
-    selection.value,
+    target,
     (r) => invApi.voidStockOrder(r.id),
     (r) => r.orderNo,
   )
@@ -410,7 +448,10 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
           <div class="list-head">
             <span class="list-head__title">
               库存查询
-              <em>共 {{ inventory.length }} 条规格 · 预警 {{ warnCount }} 项 · 总值 {{ formatMoney(inventoryTotal) }}</em>
+              <em
+                >共 {{ inventory.length }} 条规格 · 预警 {{ warnCount }} 项 ·
+                总值 {{ formatMoney(inventoryTotal) }}</em
+              >
               <em v-if="inventoryTruncated" class="text-warning">
                 仅显示前 {{ inventoryLimit }} 条，请用关键字搜索其余
               </em>
@@ -418,7 +459,8 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
             <el-form class="filter-form" label-width="76px" @submit.prevent>
               <el-form-item label="关键字">
                 <el-input
-                  v-model="inventoryKeyword" @input="searchInventorySoon"
+                  v-model="inventoryKeyword"
+                  @input="searchInventorySoon"
                   placeholder="商品编码 / 名称"
                   clearable
                   @keyup.enter="loadInventory"
@@ -430,7 +472,10 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 <AppIcon name="Search" />
                 <span>查询</span>
               </el-button>
-              <el-button @click="inventoryKeyword = ''; loadInventory()">重置</el-button>
+              <el-button
+                @click="resetInventory"
+                >重置</el-button
+              >
               <span class="list-head__divider" />
               <el-button :loading="inventoryLoading" @click="loadInventory">
                 <AppIcon name="Refresh" />
@@ -449,19 +494,30 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
             <el-table-column prop="spec" label="规格" width="130" />
             <!-- 单位单列出来：它是库存的**计数单位**（基本单位），
                  决定「12」是 12 张还是 12 吨；塞在库存数字后面会被当成数量的一部分读过去 -->
-            <el-table-column prop="unit" label="基本单位" width="100" align="center">
+            <el-table-column
+              prop="unit"
+              label="基本单位"
+              width="100"
+              align="center"
+            >
               <template #default="{ row }">{{ row.unit || '-' }}</template>
             </el-table-column>
             <el-table-column prop="categoryName" label="分类" width="110">
-              <template #default="{ row }">{{ row.categoryName || '-' }}</template>
+              <template #default="{ row }">{{
+                row.categoryName || '-'
+              }}</template>
             </el-table-column>
             <el-table-column label="库存" width="120" align="right">
               <template #default="{ row }">
-                <span :class="row.warn ? 'stock-warn' : ''">{{ formatQty(row.stock) }}</span>
+                <span :class="row.warn ? 'stock-warn' : ''">{{
+                  formatQty(row.stock)
+                }}</span>
               </template>
             </el-table-column>
             <el-table-column label="预警下限" width="110" align="right">
-              <template #default="{ row }">{{ formatQty(row.warnStock) }}</template>
+              <template #default="{ row }">{{
+                formatQty(row.warnStock)
+              }}</template>
             </el-table-column>
             <el-table-column label="库存成本" width="130" align="right">
               <template #default="{ row }">
@@ -470,8 +526,16 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
             </el-table-column>
             <el-table-column label="状态" width="100" align="center">
               <template #default="{ row }">
-                <el-tag v-if="row.warn" type="danger" size="small" effect="light">库存预警</el-tag>
-                <el-tag v-else type="success" size="small" effect="light">正常</el-tag>
+                <el-tag
+                  v-if="row.warn"
+                  type="danger"
+                  size="small"
+                  effect="light"
+                  >库存预警</el-tag
+                >
+                <el-tag v-else type="success" size="small" effect="light"
+                  >正常</el-tag
+                >
               </template>
             </el-table-column>
           </el-table>
@@ -491,14 +555,19 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
             <el-form class="filter-form" label-width="76px" @submit.prevent>
               <el-form-item label="关键字">
                 <el-input
-                  v-model="query.keyword" @input="searchSoon"
+                  v-model="query.keyword"
+                  @input="searchSoon"
                   placeholder="单号"
                   clearable
                   @keyup.enter="search"
                 />
               </el-form-item>
               <el-form-item label="方向">
-                <el-select v-model="query.direction" placeholder="全部方向" clearable>
+                <el-select
+                  v-model="query.direction"
+                  placeholder="全部方向"
+                  clearable
+                >
                   <el-option label="入库" value="in" />
                   <el-option label="出库" value="out" />
                 </el-select>
@@ -511,14 +580,26 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
               </el-button>
               <el-button @click="reset">重置</el-button>
               <span class="list-head__divider" />
-              <el-button v-if="selection.length" v-perm="'inv:stock:delete'" :loading="batchRunning" @click="batchVoid">
+              <el-button
+                v-if="selection.length"
+                v-perm="'inv:stock:delete'"
+                :loading="batchRunning"
+                @click="batchVoid"
+              >
                 批量作废
               </el-button>
-              <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">
+              <el-button
+                :loading="exporting"
+                @click="exportRows(selection.length ? selection : undefined)"
+              >
                 导出{{ selection.length ? '选中' : '' }}
               </el-button>
               <el-button @click="printVisible = true">打印</el-button>
-              <el-button v-perm="'inv:stock:create'" type="primary" @click="openCreate">
+              <el-button
+                v-perm="'inv:stock:create'"
+                type="primary"
+                @click="openCreate"
+              >
                 <AppIcon name="Plus" />
                 <span>新增出入库单</span>
               </el-button>
@@ -539,7 +620,11 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
             <el-table-column prop="orderNo" label="单号" width="150" />
             <el-table-column label="方向" width="90" align="center">
               <template #default="{ row }">
-                <el-tag :type="row.direction === 'in' ? 'success' : 'warning'" size="small" effect="light">
+                <el-tag
+                  :type="row.direction === 'in' ? 'success' : 'warning'"
+                  size="small"
+                  effect="light"
+                >
                   {{ row.direction === 'in' ? '入库' : '出库' }}
                 </el-tag>
               </template>
@@ -549,14 +634,27 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 {{ sourceLabel(row.sourceType) }}
               </template>
             </el-table-column>
+            <el-table-column label="状态" width="100"
+              ><template #default="{ row }"
+                ><el-tag
+                  size="small"
+                  :type="row.status === 1 ? 'success' : 'info'"
+                  >{{ row.status === 1 ? '已过账' : '已作废' }}</el-tag
+                ></template
+              ></el-table-column
+            >
             <el-table-column prop="orderDate" label="单据日期" width="130">
-              <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
+              <template #default="{ row }">{{
+                formatDay(row.orderDate)
+              }}</template>
             </el-table-column>
             <el-table-column label="明细" width="80" align="center">
               <template #default="{ row }">{{ row.itemCount }} 行</template>
             </el-table-column>
             <el-table-column label="总数量" width="110" align="right">
-              <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
+              <template #default="{ row }">{{
+                formatQty(row.totalQty)
+              }}</template>
             </el-table-column>
             <el-table-column label="业务员" width="90" show-overflow-tooltip>
               <template #default="{ row }">{{ row.salesman || '-' }}</template>
@@ -565,15 +663,37 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
               <template #default="{ row }">{{ row.operator || '-' }}</template>
             </el-table-column>
             <!-- 备注只是辅助信息，不该按主数据列的宽度占位 -->
-            <el-table-column prop="remark" label="备注" min-width="100" show-overflow-tooltip>
+            <el-table-column
+              prop="remark"
+              label="备注"
+              min-width="100"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">{{ row.remark || '-' }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="130" fixed="right" align="center">
+            <el-table-column
+              label="操作"
+              width="180"
+              fixed="right"
+              align="center"
+            >
               <template #default="{ row }">
-                <el-button link type="primary" @click="printRef?.open(row as InvStockOrderRow)">
+                <el-button
+                  link
+                  type="primary"
+                  @click="printRef?.open(row as InvStockOrderRow)"
+                >
                   打印
                 </el-button>
                 <el-button
+                  v-if="row.sourceType !== 'manual'"
+                  link
+                  type="primary"
+                  @click="openSource(row as InvStockOrderRow)"
+                  >原单反审核</el-button
+                >
+                <el-button
+                  v-if="row.sourceType === 'manual' && row.status === 1"
                   v-perm="'inv:stock:delete'"
                   link
                   type="danger"
@@ -610,7 +730,12 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
         <el-row :gutter="16">
           <el-col :span="6">
             <el-form-item label="单据编号">
-              <el-input v-model="form.orderNo" placeholder="留空自动生成" clearable maxlength="32" />
+              <el-input
+                v-model="form.orderNo"
+                placeholder="留空自动生成"
+                clearable
+                maxlength="32"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="6">
@@ -635,7 +760,11 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
           <el-col :span="6">
             <!-- 与采购 / 销售单一致：业务员是自由文本，不挂账号 -->
             <el-form-item label="业务员">
-              <el-input v-model="form.salesman" maxlength="64" placeholder="选填" />
+              <el-input
+                v-model="form.salesman"
+                maxlength="64"
+                placeholder="选填"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="6">
@@ -647,7 +776,8 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
 
         <el-form-item label="明细">
           <div v-if="picksTruncated" class="pick-hint">
-            商品超过 {{ pickLimit }} 个，下拉只加载了一部分 —— 可以先在「商品档案」里按关键字找到它
+            商品超过 {{ pickLimit }} 个，下拉只加载了一部分 ——
+            可以先在「商品档案」里按关键字找到它
           </div>
           <div class="item-editor">
             <div class="item-editor__head">
@@ -658,7 +788,11 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
               <span class="col-base">折算</span>
               <span class="col-act" />
             </div>
-            <div v-for="(item, index) in form.items" :key="index" class="item-editor__row">
+            <div
+              v-for="(item, index) in form.items"
+              :key="index"
+              class="item-editor__row"
+            >
               <el-select
                 v-model="item.productId"
                 class="col-product"
@@ -668,7 +802,12 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 @change="onProductPickChange(item)"
                 @visible-change="onPickVisible"
               >
-                <el-option v-for="p in filteredPicks" :key="p.id" :label="productLabel(p)" :value="p.id" />
+                <el-option
+                  v-for="p in filteredPicks"
+                  :key="p.id"
+                  :label="productLabel(p)"
+                  :value="p.id"
+                />
               </el-select>
               <el-select
                 v-model="item.specId"
@@ -697,12 +836,24 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                   :value="u.id"
                 />
               </el-select>
-              <el-input-number v-model="item.qty" class="col-num" :min="0.01" :precision="3" :controls="false" />
+              <el-input-number
+                v-model="item.qty"
+                class="col-num"
+                :min="0.01"
+                :precision="3"
+                :controls="false"
+              />
               <span class="col-base">
                 {{ formatQty(qtyBase(item)) }}
                 {{ unitOptions(item).find((u) => u.isBase)?.unit || '' }}
               </span>
-              <el-button class="col-act" link type="danger" @click="removeItem(index)">删除</el-button>
+              <el-button
+                class="col-act"
+                link
+                type="danger"
+                @click="removeItem(index)"
+                >删除</el-button
+              >
             </div>
             <div class="item-editor__foot">
               <el-button link type="primary" @click="addItem">
@@ -716,7 +867,9 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
 
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitForm"
+          >确定</el-button
+        >
       </template>
     </el-dialog>
 

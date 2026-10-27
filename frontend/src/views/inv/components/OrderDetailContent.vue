@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import type { InvOrderRow, InvOrderItem, InvProductPick } from '@/types/api'
-import { formatDay, formatMoney, formatQty } from '@/utils/format'
+import type { InvOrderDetail, InvOrderItem, InvProductPick } from '@/types/api'
+import {
+  formatDay,
+  formatMoney,
+  formatQty,
+  formatDateTime,
+} from '@/utils/format'
+import OrderAuditTrail from './OrderAuditTrail.vue'
 import { statusMeta, settleMeta } from './orderPresentation'
 
 const props = defineProps<{
-  order: InvOrderRow
+  order: InvOrderDetail
   items: InvOrderItem[]
   partyLabel: string
   isPurchase: boolean
@@ -63,6 +69,21 @@ function detailSummary(param: { columns: unknown[] }): string[] {
 
     <p v-if="isPurchase && order.status === 1" class="detail-stage-note">
       待核对 · 审核后将生成入库单、增加库存，并形成应付。
+    </p>
+    <p v-if="isPurchase" class="audit-summary">
+      {{ order.status === 2 ? '审核' : '上次审核' }}：
+      <template v-if="order.auditedAt"
+        >{{ order.auditorName || `账号 #${order.auditorId}` }} ·
+        {{ formatDateTime(order.auditedAt) }}（本地时间）</template
+      >
+      <template v-else>{{
+        order.status === 2 || order.reversedAt ? '历史数据未记录' : '尚未审核'
+      }}</template>
+      <el-tag v-if="order.selfAudit" size="small" type="info">自审</el-tag>
+      <span v-if="order.reversedAt"
+        >上次反审核：{{ order.reversedByName || `账号 #${order.reversedBy}` }} ·
+        {{ formatDateTime(order.reversedAt) }}（本地时间）</span
+      >
     </p>
     <section class="form-section">
       <div class="form-section__head">
@@ -159,10 +180,21 @@ function detailSummary(param: { columns: unknown[] }): string[] {
         </el-table-column>
       </el-table>
     </section>
+    <OrderAuditTrail v-if="isPurchase" :order="order" />
   </div>
 </template>
 
 <style scoped lang="scss">
+.audit-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 0 0 20px;
+}
 .detail-head {
   display: flex;
   align-items: center;

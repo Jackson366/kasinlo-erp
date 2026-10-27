@@ -107,7 +107,7 @@ func exportQuery(c *gin.Context, entity string, q page.Query) (ExportQuery, erro
 		if err != nil {
 			return f, err
 		}
-		f.Order = OrderFilter{BizType: bizType, Status: status, Settle: settle, Start: start, End: end}
+		f.Order = OrderFilter{BizType: bizType, Status: status, Settle: settle, Start: start, End: end, Handoff: c.Query("handoff")}
 	case exportFinance:
 		// 应收应付的筛选比单据多一个「已逾期」，用单独的解析器
 		settle, err := financeSettleQuery(c)

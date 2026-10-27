@@ -215,6 +215,116 @@ definitions:
       status:
         type: integer
     type: object
+  inv.ContractAcceptReq:
+    properties:
+      acceptResult:
+        enum:
+        - 合格
+        - 不合格
+        - 整改
+        type: string
+      acceptedAt:
+        type: string
+      remark:
+        maxLength: 255
+        type: string
+      warrantyMonths:
+        maximum: 120
+        minimum: 0
+        type: integer
+    required:
+    - acceptResult
+    - acceptedAt
+    type: object
+  inv.ContractLogRow:
+    properties:
+      action:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: integer
+      ip:
+        type: string
+      method:
+        type: string
+      status:
+        type: integer
+      username:
+        type: string
+    type: object
+  inv.ContractPlanItem:
+    properties:
+      amount:
+        type: number
+      dueDate:
+        type: string
+      id:
+        type: integer
+      kind:
+        type: integer
+      kindLabel:
+        type: string
+      name:
+        type: string
+      outstanding:
+        type: number
+      rate:
+        type: number
+      remark:
+        type: string
+      seq:
+        type: integer
+      settledAmount:
+        type: number
+      status:
+        type: string
+      statusLabel:
+        type: string
+      triggerNode:
+        type: string
+    type: object
+  inv.ContractPlanReq:
+    properties:
+      amount:
+        minimum: 0
+        type: number
+      dueDate:
+        type: string
+      id:
+        type: integer
+      kind:
+        enum:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        type: integer
+      name:
+        maxLength: 32
+        type: string
+      rate:
+        maximum: 100
+        minimum: 0
+        type: number
+      remark:
+        maxLength: 255
+        type: string
+      seq:
+        maximum: 99
+        minimum: 1
+        type: integer
+      triggerNode:
+        enum:
+        - sign
+        - accept
+        - warranty_end
+        type: string
+    required:
+    - name
+    - seq
+    type: object
   inv.ContractReq:
     properties:
       amount:
@@ -236,9 +346,24 @@ definitions:
         type: string
       partyId:
         type: integer
+      plans:
+        description: |-
+          Plans 付款计划：整份替换语义 —— 传什么就是什么，
+          没出现的既有期次在「未发生收付款」时被删除，已发生收付款则拒绝。
+        items:
+          $ref: '#/definitions/inv.ContractPlanReq'
+        maxItems: 20
+        type: array
       remark:
         maxLength: 255
         type: string
+      retentionAmount:
+        minimum: 0
+        type: number
+      retentionRate:
+        maximum: 100
+        minimum: 0
+        type: number
       salesman:
         maxLength: 64
         type: string
@@ -253,6 +378,13 @@ definitions:
         - 2
         - 3
         type: integer
+      warrantyMonths:
+        description: |-
+          质保条款：质保期按月填，质保金可按比例折算成金额。
+          两个都填时以金额为准（有的合同直接写「质保金 5 万元」而不是百分比）。
+        maximum: 120
+        minimum: 0
+        type: integer
     required:
     - bizType
     - name
@@ -261,11 +393,21 @@ definitions:
     type: object
   inv.ContractRow:
     properties:
+      acceptResult:
+        type: string
+      acceptedAt:
+        description: 验收与质保
+        type: string
       amount:
         type: number
       attachmentCount:
         description: AttachmentCount 附件数量，列表按钮上显示角标（一次批量查出，不逐行请求）
         type: integer
+      auditedAt:
+        description: 审核：谁在什么时候放行。待审核时两列为空。
+        type: string
+      auditor:
+        type: string
       bizType:
         type: string
       contractNo:
@@ -280,29 +422,65 @@ definitions:
         type: string
       operator:
         type: string
+      outstanding:
+        type: number
       partyId:
         type: integer
       partyName:
         type: string
+      planAmount:
+        type: number
+      planCount:
+        description: 收付进度（合同期次汇总；没有计划时全为 0）
+        type: integer
+      plans:
+        description: Plans 仅详情返回，列表不带（避免一页 20 条合同拉出上百行期次）
+        items:
+          $ref: '#/definitions/inv.ContractPlanItem'
+        type: array
       remark:
         type: string
+      retentionAmount:
+        type: number
+      retentionOutstanding:
+        description: RetentionOutstanding 质保金尚未收付的部分，单列因为它是「以后才能要的钱」
+        type: number
+      retentionRate:
+        type: number
       salesman:
         type: string
+      settledAmount:
+        type: number
       signDate:
+        type: string
+      stage:
+        description: 履约阶段（派生）：待审核 / 待验收 / 已验收 / 质保中 / 质保到期 / 已完成 / 已终止
+        type: string
+      stageLabel:
         type: string
       startDate:
         type: string
       status:
         type: integer
+      warrantyEndAt:
+        type: string
+      warrantyMonths:
+        type: integer
     type: object
   inv.FinanceRow:
     properties:
+      contractId:
+        description: Source=plan 时有值
+        type: integer
+      contractNo:
+        type: string
       dueDate:
         description: 选填：未填时为 null，不参与逾期判定
         type: string
       orderDate:
         type: string
       orderId:
+        description: Source=order 时有值
         type: integer
       orderNo:
         type: string
@@ -314,10 +492,22 @@ definitions:
         type: integer
       partyName:
         type: string
+      planId:
+        type: integer
+      planName:
+        type: string
+      planSeq:
+        type: integer
       settleStatus:
         type: string
       settledAmount:
         type: number
+      source:
+        description: |-
+          Source 决定这行怎么来的：order（已审核单据）或 plan（合同付款期次）。
+          两类钱都进应收应付，靠这个字段分别筛选 —— 混在一起而不标来源，
+          对账时分不清「这笔是发货开的单」还是「合同约定的第三期」。
+        type: string
       totalAmount:
         type: number
     type: object
@@ -382,10 +572,24 @@ definitions:
     type: object
   inv.OrderDetail:
     properties:
+      auditHistory:
+        items:
+          $ref: '#/definitions/model.InvOrderAudit'
+        type: array
+      auditedAt:
+        type: string
+      auditorId:
+        type: integer
+      auditorName:
+        type: string
       bizType:
         type: string
       createdAt:
         type: string
+      createdBy:
+        type: integer
+      downstream:
+        $ref: '#/definitions/inv.OrderDownstream'
       dueDate:
         description: 选填：未填时为 null
         type: string
@@ -408,10 +612,20 @@ definitions:
         type: integer
       partyName:
         type: string
+      pendingSince:
+        type: string
       remark:
+        type: string
+      reversedAt:
+        type: string
+      reversedBy:
+        type: integer
+      reversedByName:
         type: string
       salesman:
         type: string
+      selfAudit:
+        type: boolean
       settleStatus:
         type: string
       settledAmount:
@@ -420,6 +634,15 @@ definitions:
         type: integer
       totalAmount:
         type: number
+    type: object
+  inv.OrderDownstream:
+    properties:
+      stockOrders:
+        items:
+          $ref: '#/definitions/inv.OrderStockLink'
+        type: array
+      visibility:
+        type: string
     type: object
   inv.OrderItemReq:
     properties:
@@ -505,10 +728,18 @@ definitions:
     type: object
   inv.OrderRow:
     properties:
+      auditedAt:
+        type: string
+      auditorId:
+        type: integer
+      auditorName:
+        type: string
       bizType:
         type: string
       createdAt:
         type: string
+      createdBy:
+        type: integer
       dueDate:
         description: 选填：未填时为 null
         type: string
@@ -527,10 +758,20 @@ definitions:
         type: integer
       partyName:
         type: string
+      pendingSince:
+        type: string
       remark:
+        type: string
+      reversedAt:
+        type: string
+      reversedBy:
+        type: integer
+      reversedByName:
         type: string
       salesman:
         type: string
+      selfAudit:
+        type: boolean
       settleStatus:
         type: string
       settledAmount:
@@ -539,6 +780,15 @@ definitions:
         type: integer
       totalAmount:
         type: number
+    type: object
+  inv.OrderStockLink:
+    properties:
+      id:
+        type: integer
+      orderNo:
+        type: string
+      status:
+        type: integer
     type: object
   inv.OverviewVO:
     properties:
@@ -649,6 +899,24 @@ definitions:
         type: number
       unit:
         type: string
+    type: object
+  inv.PlanSettleReq:
+    properties:
+      amount:
+        type: number
+      method:
+        maxLength: 32
+        type: string
+      planId:
+        type: integer
+      remark:
+        maxLength: 255
+        type: string
+      settledAt:
+        type: string
+    required:
+    - amount
+    - planId
     type: object
   inv.PrintTemplateReq:
     properties:
@@ -910,6 +1178,91 @@ definitions:
       ratio:
         type: number
     type: object
+  inv.ReportContractLedgerRow:
+    properties:
+      amount:
+        type: number
+      bizType:
+        type: string
+      contractNo:
+        type: string
+      method:
+        type: string
+      name:
+        type: string
+      partyName:
+        type: string
+      planName:
+        type: string
+      planSeq:
+        type: integer
+      remark:
+        type: string
+      settleId:
+        type: integer
+      settledAt:
+        type: string
+    type: object
+  inv.ReportContractResult:
+    properties:
+      amount:
+        type: number
+      count:
+        type: integer
+      outstanding:
+        type: number
+      planAmount:
+        type: number
+      retentionAmount:
+        type: number
+      retentionOutstanding:
+        type: number
+      rows:
+        items:
+          $ref: '#/definitions/inv.ReportContractRow'
+        type: array
+      settledAmount:
+        type: number
+      truncated:
+        type: boolean
+    type: object
+  inv.ReportContractRow:
+    properties:
+      acceptedAt:
+        type: string
+      amount:
+        type: number
+      bizType:
+        type: string
+      contractId:
+        type: integer
+      contractNo:
+        type: string
+      name:
+        type: string
+      outstanding:
+        type: number
+      partyName:
+        type: string
+      planAmount:
+        type: number
+      planCount:
+        type: integer
+      retentionAmount:
+        type: number
+      retentionOutstanding:
+        type: number
+      settledAmount:
+        type: number
+      signDate:
+        type: string
+      stage:
+        type: string
+      stageLabel:
+        type: string
+      warrantyEndAt:
+        type: string
+    type: object
   inv.ReportDetailResult:
     properties:
       amount:
@@ -1067,6 +1420,19 @@ definitions:
         type: string
     required:
     - orderIds
+    type: object
+  inv.SettleRecord:
+    properties:
+      amount:
+        type: number
+      id:
+        type: integer
+      method:
+        type: string
+      remark:
+        type: string
+      settledAt:
+        type: string
     type: object
   inv.SettleReq:
     properties:
@@ -1406,6 +1772,25 @@ definitions:
     - name
     - title
     - type
+    type: object
+  model.InvOrderAudit:
+    properties:
+      action:
+        type: string
+      actorId:
+        type: integer
+      actorName:
+        type: string
+      id:
+        type: integer
+      occurredAt:
+        type: string
+      orderId:
+        type: integer
+      orderNo:
+        type: string
+      stockOrderId:
+        type: integer
     type: object
   model.LoginLog:
     properties:
@@ -2518,6 +2903,33 @@ paths:
       summary: 商品分类下拉项（仅启用）
       tags:
       - 进销存-商品分类
+  /inv/contract-plans/{id}/settles:
+    get:
+      parameters:
+      - description: 期次 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/inv.SettleRecord'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 期次收付款流水
+      tags:
+      - 进销存-合同
   /inv/contracts:
     get:
       description: 按类型 / 状态 / 关键字 / 签订日期筛选，受数据范围约束。
@@ -2667,6 +3079,135 @@ paths:
       security:
       - BearerAuth: []
       summary: 修改合同
+      tags:
+      - 进销存-合同
+  /inv/contracts/{id}/accept:
+    post:
+      consumes:
+      - application/json
+      description: 登记验收日期与结论，并按质保月数计算质保到期日。
+      parameters:
+      - description: 合同 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 验收信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.ContractAcceptReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 合同验收
+      tags:
+      - 进销存-合同
+  /inv/contracts/{id}/audit:
+    post:
+      description: 待审核 → 执行中。审核后付款计划才进入应收 / 应付，才能验收与登记收付款。
+      parameters:
+      - description: 合同 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 审核合同
+      tags:
+      - 进销存-合同
+  /inv/contracts/{id}/logs:
+    get:
+      description: 该合同的新增 / 修改 / 审核 / 验收 / 删除记录（来自系统操作日志）。
+      parameters:
+      - description: 合同 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 条数上限（默认 50）
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/inv.ContractLogRow'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 合同操作记录
+      tags:
+      - 进销存-合同
+  /inv/contracts/{id}/unaudit:
+    post:
+      description: 退回待审核；已发生收付款时拒绝，并同时撤销验收与质保到期日。
+      parameters:
+      - description: 合同 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 反审核合同
+      tags:
+      - 进销存-合同
+  /inv/contracts/plans/settle:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        给一期付款计划登记收款（销售合同）或付款（采购合同），
+        金额不得超过该期未收付余额；全部期次结清且质保了结后合同自动完成。
+      parameters:
+      - description: 收付款信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.PlanSettleReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 合同期次收付款
       tags:
       - 进销存-合同
   /inv/customers:
@@ -2845,6 +3386,11 @@ paths:
       - 进销存-通用
   /inv/finance/payables:
     get:
+      parameters:
+      - description: order | plan（空=全部）
+        in: query
+        name: source
+        type: string
       produces:
       - application/json
       responses:
@@ -2875,6 +3421,10 @@ paths:
       - description: unpaid | partial | paid | overdue
         in: query
         name: settle
+        type: string
+      - description: order | plan（空=全部）
+        in: query
+        name: source
         type: string
       produces:
       - application/json
@@ -3001,6 +3551,10 @@ paths:
         in: query
         name: status
         type: integer
+      - description: auditable 我可审核 / created 我发起的 / reversed 反审核后待处理
+        in: query
+        name: handoff
+        type: string
       produces:
       - application/json
       responses:
@@ -3531,6 +4085,98 @@ paths:
       security:
       - BearerAuth: []
       summary: 品类销售占比
+      tags:
+      - 进销存-报表
+  /inv/report/contract:
+    get:
+      description: 合同金额 / 付款计划 / 已收付 / 未收付 / 质保金余额 / 履约阶段。
+      parameters:
+      - description: purchase / sales
+        in: query
+        name: bizType
+        type: string
+      - description: 1 执行中 / 2 已完成 / 3 已终止
+        in: query
+        name: status
+        type: integer
+      - description: pending / accepted / warranty / warranty_due
+        in: query
+        name: stage
+        type: string
+      - description: 往来单位
+        in: query
+        name: partyId
+        type: integer
+      - description: 编号 / 名称 / 往来单位 / 业务员
+        in: query
+        name: keyword
+        type: string
+      - description: 签订日期起 yyyy-MM-dd
+        in: query
+        name: startDate
+        type: string
+      - description: 签订日期止 yyyy-MM-dd
+        in: query
+        name: endDate
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.ReportContractResult'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 合同执行报表
+      tags:
+      - 进销存-报表
+  /inv/report/contract-ledger:
+    get:
+      description: 按实际收付日期倒序，一行一笔；只含合同期次的收付款。
+      parameters:
+      - description: purchase / sales
+        in: query
+        name: bizType
+        type: string
+      - description: 合同号 / 合同名称 / 往来单位
+        in: query
+        name: keyword
+        type: string
+      - description: 收付日期起 yyyy-MM-dd
+        in: query
+        name: from
+        type: string
+      - description: 收付日期止 yyyy-MM-dd
+        in: query
+        name: to
+        type: string
+      - description: 行数上限（默认 1000）
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/inv.ReportContractLedgerRow'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 合同收付款台账
       tags:
       - 进销存-报表
   /inv/report/detail:

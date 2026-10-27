@@ -52,7 +52,7 @@ onActivated(load)
           待处理数量加载失败，仍可进入采购工作台。
         </p>
         <p v-else-if="pending">
-          有 {{ pending }} 张采购单待核对。确认收到货物后，再审核并入库。
+          有 {{ pending }} 张采购单待核对。取得收货确认依据后，再审核并入库。
         </p>
         <p v-else>先记录采购，再核对到货；付款可单独登记。</p>
       </div>
@@ -78,7 +78,7 @@ onActivated(load)
       <li><strong>录入采购</strong><span>保存单据，尚未增加库存</span></li>
       <li>
         <strong>核对并入库</strong
-        ><span>确认收货后审核，增加库存并形成应付</span>
+        ><span>核实收货依据后审核，增加库存并形成应付</span>
       </li>
       <li><strong>登记付款</strong><span>按实际付款情况结算</span></li>
     </ol>
