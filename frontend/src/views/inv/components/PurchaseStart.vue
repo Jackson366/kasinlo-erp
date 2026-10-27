@@ -3,6 +3,7 @@ import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { invApi } from '@/api'
 import { useUserStore } from '@/store'
+import PurchaseGuide from './PurchaseGuide.vue'
 
 const router = useRouter()
 const user = useUserStore()
@@ -44,9 +45,12 @@ onActivated(load)
   >
     <div class="purchase-start__task">
       <div>
-        <h2 id="purchase-start-title">
-          {{ pending && !failed ? '继续处理采购' : '从一张采购单开始' }}
-        </h2>
+        <div class="purchase-start__heading">
+          <h2 id="purchase-start-title">
+            {{ pending && !failed ? '继续处理采购' : '从一张采购单开始' }}
+          </h2>
+          <PurchaseGuide />
+        </div>
         <p v-if="loading" role="status">正在查看待处理采购单…</p>
         <p v-else-if="failed" role="alert">
           待处理数量加载失败，仍可进入采购工作台。
@@ -74,19 +78,17 @@ onActivated(load)
         >
       </div>
     </div>
-    <ol class="purchase-start__path" aria-label="采购办理顺序">
-      <li><strong>录入采购</strong><span>保存单据，尚未增加库存</span></li>
-      <li>
-        <strong>核对并入库</strong
-        ><span>确认收货后审核，增加库存并形成应付</span>
-      </li>
-      <li><strong>登记付款</strong><span>按实际付款情况结算</span></li>
-    </ol>
   </section>
 </template>
 
 <style scoped lang="scss">
 .purchase-start {
+  &__heading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
   &__task {
     display: flex;
     align-items: center;
@@ -114,39 +116,12 @@ onActivated(load)
   &__actions :deep(.el-button + .el-button) {
     margin-left: 0;
   }
-  &__path {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 24px;
-    margin: 20px 0 0;
-    padding: 16px 0 0;
-    list-style-position: inside;
-    border-top: 1px solid var(--app-border-light);
-  }
-  li {
-    font-size: 13px;
-    color: var(--app-text-secondary);
-    line-height: 1.6;
-  }
-  strong {
-    color: var(--app-text);
-    font-weight: 500;
-  }
-  li span {
-    display: block;
-    margin-top: 4px;
-    font-size: 12px;
-  }
 }
 @media (max-width: 800px) {
   .purchase-start__task {
     align-items: flex-start;
     flex-direction: column;
     gap: 16px;
-  }
-  .purchase-start__path {
-    grid-template-columns: 1fr;
-    gap: 12px;
   }
 }
 </style>
