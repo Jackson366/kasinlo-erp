@@ -1,6 +1,10 @@
 package inv
 
-import "time"
+import (
+	"time"
+
+	"nova-erp/internal/model"
+)
 
 // ============================================================
 // 基础资料：客户 / 供应商（共用一套请求结构）
@@ -288,6 +292,7 @@ type OrderItemVO struct {
 // 已经是四组条件，平铺成参数列表后调用处只剩一串「nil、""、nil」，
 // 谁都不愿意读。新增一种筛选只改这里和 service 里的一段 SQL。
 type OrderFilter struct {
+	Handoff string
 	BizType string
 	Status  *int16
 	// Settle 结算状态："" 全部 / unpaid 未结清 / partial 部分结算 / paid 已结清。
@@ -303,20 +308,29 @@ type OrderFilter struct {
 
 // OrderRow 单据列表行。
 type OrderRow struct {
-	ID            int64      `json:"id"`
-	OrderNo       string     `json:"orderNo"`
-	BizType       string     `json:"bizType"`
-	PartyID       int64      `json:"partyId"`
-	PartyName     string     `json:"partyName"`
-	OrderDate     time.Time  `json:"orderDate"`
-	DueDate       *time.Time `json:"dueDate"` // 选填：未填时为 null
-	Status        int16      `json:"status"`
-	TotalAmount   float64    `json:"totalAmount"`
-	SettledAmount float64    `json:"settledAmount"`
-	SettleStatus  string     `json:"settleStatus"`
-	ItemCount     int64      `json:"itemCount"`
-	Remark        string     `json:"remark"`
-	Salesman      string     `json:"salesman"`
+	CreatedBy      int64      `json:"createdBy"`
+	AuditorID      *int64     `json:"auditorId"`
+	AuditedAt      *time.Time `json:"auditedAt"`
+	AuditorName    string     `json:"auditorName"`
+	ReversedBy     *int64     `json:"reversedBy"`
+	ReversedAt     *time.Time `json:"reversedAt"`
+	ReversedByName string     `json:"reversedByName"`
+	PendingSince   *time.Time `json:"pendingSince"`
+	SelfAudit      bool       `json:"selfAudit"`
+	ID             int64      `json:"id"`
+	OrderNo        string     `json:"orderNo"`
+	BizType        string     `json:"bizType"`
+	PartyID        int64      `json:"partyId"`
+	PartyName      string     `json:"partyName"`
+	OrderDate      time.Time  `json:"orderDate"`
+	DueDate        *time.Time `json:"dueDate"` // 选填：未填时为 null
+	Status         int16      `json:"status"`
+	TotalAmount    float64    `json:"totalAmount"`
+	SettledAmount  float64    `json:"settledAmount"`
+	SettleStatus   string     `json:"settleStatus"`
+	ItemCount      int64      `json:"itemCount"`
+	Remark         string     `json:"remark"`
+	Salesman       string     `json:"salesman"`
 	// Operator 制单人显示名（昵称优先，回落用户名）。列表直接用，省得前端再查一次人。
 	Operator  string    `json:"operator"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -325,7 +339,18 @@ type OrderRow struct {
 // OrderDetail 单据详情（主表 + 明细）。制单人显示名在 OrderRow.Operator 里。
 type OrderDetail struct {
 	OrderRow
-	Items []OrderItemVO `json:"items"`
+	Items        []OrderItemVO         `json:"items"`
+	AuditHistory []model.InvOrderAudit `json:"auditHistory"`
+	Downstream   OrderDownstream       `json:"downstream"`
+}
+type OrderStockLink struct {
+	ID      int64  `json:"id"`
+	OrderNo string `json:"orderNo"`
+	Status  int16  `json:"status"`
+}
+type OrderDownstream struct {
+	Visibility  string           `json:"visibility"`
+	StockOrders []OrderStockLink `json:"stockOrders"`
 }
 
 // StatusReq 单据状态流转请求。status 仅允许 1（恢复待处理）/ 2（审核通过）/ 3（取消）。

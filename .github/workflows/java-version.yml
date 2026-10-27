@@ -1,9 +1,9 @@
 name: Java migration verification
 on:
   push:
-    branches: [java-version]
+    branches: [main, java-version, feat/purchase-audit-trace]
   pull_request:
-    branches: [java-version]
+    branches: [main, java-version, feat/purchase-audit-trace]
 permissions:
   contents: read
 jobs:

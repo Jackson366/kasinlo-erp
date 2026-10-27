@@ -5,14 +5,16 @@ on:
       [
         'frontend/**',
         'scripts/purchase-workbench-verify.mjs',
+        'scripts/purchase-audit-verify.mjs',
         '.github/workflows/purchase-ui.yml',
       ]
   push:
-    branches: [main, java-version, 'feat/purchase-workbench']
+    branches: [main, java-version, 'feat/purchase-workbench', 'feat/purchase-audit-trace']
     paths:
       [
         'frontend/**',
         'scripts/purchase-workbench-verify.mjs',
+        'scripts/purchase-audit-verify.mjs',
         '.github/workflows/purchase-ui.yml',
       ]
 permissions:
@@ -33,10 +35,12 @@ jobs:
         working-directory: frontend
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
-      - run: npm run test:purchase
+      - run: npm run test:purchase && npm run test:purchase-audit
         working-directory: frontend
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: purchase-ui-evidence
-          path: /tmp/kasinlo-purchase-qa
+          path: |
+            /tmp/kasinlo-purchase-qa
+            /tmp/kasinlo-purchase-audit-qa

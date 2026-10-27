@@ -591,8 +591,32 @@ export interface InvOrderItem {
   amount: number
 }
 
+export interface InvOrderAudit {
+  id: number
+  orderId: number
+  orderNo: string
+  action: 'audit' | 'reverse'
+  actorId: number
+  actorName: string
+  occurredAt: string
+  stockOrderId: number | null
+}
+export interface InvOrderDownstream {
+  visibility: 'visible' | 'restricted'
+  stockOrders: { id: number; orderNo: string; status: number }[]
+}
+
 /** 单据列表行 */
 export interface InvOrderRow {
+  createdBy?: number
+  auditorId?: number | null
+  auditedAt?: string | null
+  auditorName?: string
+  reversedBy?: number | null
+  reversedAt?: string | null
+  reversedByName?: string
+  pendingSince?: string | null
+  selfAudit?: boolean
   id: number
   orderNo: string
   bizType: InvBizType
@@ -616,6 +640,8 @@ export interface InvOrderRow {
 
 /** 单据详情 */
 export interface InvOrderDetail extends InvOrderRow {
+  auditHistory?: InvOrderAudit[]
+  downstream?: InvOrderDownstream
   items: InvOrderItem[]
 }
 

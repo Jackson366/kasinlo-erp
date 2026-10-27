@@ -74,7 +74,9 @@ public class OperationsService {
             require("kasinlo-java-backup-v1".equals(s(data, "format")), "备份格式不兼容");
             require(data.get("tables") instanceof Map<?, ?>, "备份内容不完整");
             Map<?, ?> tables =(Map<?, ?>) data.get("tables");
-            require(tables.keySet().containsAll(db.schema().keySet()), "备份缺少必需数据表");
+            var requiredTables = new HashSet<>(db.schema().keySet());
+            requiredTables.remove("inv_order_audits"); // V1/V2 backups contain no audit events.
+            require(tables.keySet().containsAll(requiredTables), "备份缺少必需数据表");
             for (String t : db.schema().keySet()) {
                 db.purge(t);
                 for (var row : rows(tables.get(t))) db.restoreRow(t, row);
@@ -90,7 +92,7 @@ public class OperationsService {
             for (String t : db.schema().keySet()) stats.add(map("name", t, "rows", db.all(t).size(), "softDeleted",
                 0, "sizeBytes", 0));
             return map("database", "kasinlo-erp", "serverVersion", "Java 17+ / Spring Boot", "sizeBytes",
-                0, "tables", db.schema().size(), "schemaVersionDb", 2, "schemaVersionBinary", 2, "schemaVersionKnown",
+                0, "tables", db.schema().size(), "schemaVersionDb", 3, "schemaVersionBinary", 3, "schemaVersionKnown",
                 true, "opLogRows", db.all("sys_operation_logs").size(), "opLogOldest", "", "loginLogRows",
                 db.all("sys_login_logs").size(), "idempotencyRows", db.requestCount(), "idempotencyExpired",
                 0, "latestBackup", "", "latestBackupAt", "", "checkedAt", now(), "keyTables", stats);
@@ -101,7 +103,7 @@ public class OperationsService {
                 new BusinessException(400, "清理范围非法"));
             boolean apply = bool(b.get("apply")) || !s(b, "confirm").isBlank();
             if (apply) require(s(scope, "confirm").equals(s(b, "confirm")), "确认口令不匹配");
-            List<String> tables = new ArrayList<>(List.of("inv_order_items", "inv_stock_items", "inv_settlements",
+            List<String> tables = new ArrayList<>(List.of("inv_order_audits", "inv_order_items", "inv_stock_items", "inv_settlements",
                 "inv_orders", "inv_stock_orders"));
             if (!s(b, "scope").equals("inv_documents")) {
                 tables.addAll(List.of("inv_contract_plans", "inv_contracts", "inv_attachments", "inv_product_units",

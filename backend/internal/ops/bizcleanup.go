@@ -84,7 +84,7 @@ func BizCleanupScopes() []BizCleanupScope {
 			Confirm:        "确认清理单据",
 			ResetStockable: true,
 			Tables: []string{
-				"inv_order_items", "inv_orders",
+				"inv_order_audits", "inv_order_items", "inv_orders",
 				"inv_stock_items", "inv_stock_orders",
 				"inv_settlements",
 			},
@@ -96,7 +96,7 @@ func BizCleanupScopes() []BizCleanupScope {
 			Keep:    "系统框架（账号、角色、菜单、权限、部门、结构版本、升级记录）",
 			Confirm: "确认清空进销存",
 			Tables: []string{
-				"inv_order_items", "inv_orders",
+				"inv_order_audits", "inv_order_items", "inv_orders",
 				"inv_stock_items", "inv_stock_orders",
 				"inv_settlements",
 				"inv_product_units", "inv_product_specs",
@@ -112,7 +112,7 @@ func BizCleanupScopes() []BizCleanupScope {
 			Keep:    "系统框架（账号、角色、菜单、权限、部门、结构版本、升级记录）",
 			Confirm: "确认重置数据库",
 			Tables: []string{
-				"inv_order_items", "inv_orders",
+				"inv_order_audits", "inv_order_items", "inv_orders",
 				"inv_stock_items", "inv_stock_orders",
 				"inv_settlements",
 				"inv_product_units", "inv_product_specs",

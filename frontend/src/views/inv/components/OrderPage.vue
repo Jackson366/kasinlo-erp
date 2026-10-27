@@ -10,6 +10,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { invApi } from '@/api'
 import type {
   InvOrderItem,
+  InvOrderDetail,
   InvOrderPayload,
   InvOrderRow,
   InvOrderStatus,
@@ -29,13 +30,19 @@ import OrderPrintDialog from './OrderPrintDialog.vue'
 import AttachmentDrawer from './AttachmentDrawer.vue'
 import PurchaseWorkbench from './PurchaseWorkbench.vue'
 import OrderDetailContent from './OrderDetailContent.vue'
+import BatchResultDialog from '@/components/BatchResultDialog.vue'
+import { statusMeta, settleMeta, pendingAge } from './orderPresentation'
+import {
+  formatDay,
+  formatMoney,
+  formatQty,
+  formatDateTime,
+} from '@/utils/format'
 import PurchaseGuide from './PurchaseGuide.vue'
 import type { GuideOrder } from './purchaseGuidePresentation'
-import { statusMeta, settleMeta } from './orderPresentation'
-import { formatDay, formatMoney, formatQty } from '@/utils/format'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useUserStore } from '@/store'
-import { useListTools } from '@/composables/useListTools'
+import { useListTools, type BatchOutcome } from '@/composables/useListTools'
 import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 const props = defineProps<{
@@ -81,6 +88,7 @@ interface OrderQuery {
   pageSize?: number
   keyword?: string
   status?: number
+  handoff?: string
   settleStatus?: InvSettleStatus
   /** 单据日期区间 [开始, 结束]，空数组表示不限 */
   dateRange?: string[]
@@ -95,6 +103,11 @@ const {
   load: loadList,
 } = useTableQuery<OrderQuery, InvOrderRow>(
   {
+    handoff:
+      isPurchase.value &&
+      ['auditable', 'created', 'reversed'].includes(String(route.query.handoff))
+        ? String(route.query.handoff)
+        : '',
     keyword:
       isPurchase.value && typeof route.query.q === 'string'
         ? route.query.q
@@ -124,6 +137,7 @@ const {
   (params) =>
     invApi.orders({
       bizType: props.bizType,
+      handoff: params.handoff || undefined,
       page: params.page,
       pageSize: params.pageSize,
       keyword: params.keyword || undefined,
@@ -135,10 +149,11 @@ const {
 )
 const hasFilters = computed(() =>
   Boolean(
-    query.keyword ||
-    query.dateRange?.length ||
-    query.settleStatus ||
-    (!isWorkbench.value && query.status),
+    query.handoff ||
+      query.keyword ||
+      query.dateRange?.length ||
+      query.settleStatus ||
+      (!isWorkbench.value && query.status),
   ),
 )
 
@@ -147,6 +162,8 @@ function persistQuery(): void {
   void router.replace({
     path: pagePath,
     query: {
+      order: route.query.order,
+      handoff: query.handoff || undefined,
       view: workspaceView.value,
       q: query.keyword || undefined,
       status:
@@ -186,6 +203,7 @@ function reset(): void {
   cancelSearch()
   Object.assign(query, {
     keyword: '',
+    handoff: '',
     dateRange: [],
     status: isWorkbench.value ? 1 : undefined,
     settleStatus: undefined,
@@ -428,7 +446,7 @@ const formBaseline = ref('')
 const editingId = ref<number | null>(null)
 const editingOrder = ref<GuideOrder | null>(null)
 const detailVisible = ref(false)
-const detail = ref<{ row: InvOrderRow; items: InvOrderItem[] } | null>(null)
+const detail = ref<{ row: InvOrderDetail; items: InvOrderItem[] } | null>(null)
 
 const printRef = ref<InstanceType<typeof OrderPrintDialog> | null>(null)
 
@@ -662,7 +680,7 @@ async function submitForm(): Promise<void> {
       // 新单即使不属于当前筛选页，也在核对区保留明确的保存结果。
       keepReviewResult.value = true
       reviewResult.value =
-        '采购单已保存，尚未增加库存。确认收到货物并核对后，再审核并入库。'
+        '采购单已保存，尚未增加库存。取得收货确认依据并核对后，再审核并入库。'
       mobileDetail.value = true
       await openDetail({ id: createdId })
     } else if (
@@ -686,8 +704,11 @@ const approveVisible = ref(false)
 const approveRow = ref<InvOrderRow | null>(null)
 const approveSettleNow = ref(false)
 const approveRunning = ref(false)
+const approveError = ref('')
 
 function openApprove(row: InvOrderRow): void {
+  if (approveRunning.value || reverseRunning.value || batchRunning.value) return
+  approveError.value = ''
   approveRow.value = row
   approveSettleNow.value = false
   approveVisible.value = true
@@ -697,6 +718,7 @@ async function confirmApprove(): Promise<void> {
   if (!approveRow.value || approveRunning.value) return
   const target = approveRow.value
   approveRunning.value = true
+  approveError.value = ''
   try {
     await invApi.changeOrderStatus(target.id, 2, approveSettleNow.value)
     ElMessage.success(
@@ -718,8 +740,9 @@ async function confirmApprove(): Promise<void> {
       await openDetail(target)
     }
     await load()
-  } catch {
-    // 请求层显示服务端错误；保留确认与当前单据，允许核实后重试。
+  } catch (error) {
+    approveError.value =
+      error instanceof Error ? error.message : '审核失败，请刷新核实状态后重试'
   } finally {
     approveRunning.value = false
   }
@@ -742,28 +765,42 @@ async function changeStatus(
  * 反审核：撤销审核 —— 作废审核时生成的出入库单并回滚库存，单据退回待处理。
  * 副作用不在这一层，前端只负责说清后果再确认。
  */
-async function reverseOrder(row: InvOrderRow): Promise<void> {
-  try {
-    await ElMessageBox.confirm(
-      `确认反审核单据「${row.orderNo}」？将作废生成的出入库单并回滚库存，单据退回「待处理」。`,
-      '反审核确认',
-      { type: 'warning', confirmButtonText: '反审核' },
-    )
-  } catch {
+const reverseVisible = ref(false)
+const reverseRow = ref<InvOrderRow | null>(null)
+const reverseRunning = ref(false)
+const reverseError = ref('')
+function reverseOrder(row: InvOrderRow): void {
+  if (reverseRunning.value || approveRunning.value || batchRunning.value) return
+  if (row.settledAmount > 0) {
+    ElMessage.warning('已登记付款，请先联系财务撤销付款记录')
     return
   }
+  reverseRow.value = row
+  reverseError.value = ''
+  reverseVisible.value = true
+}
+async function confirmReverse(): Promise<void> {
+  if (!reverseRow.value || reverseRunning.value) return
+  const target = reverseRow.value
+  reverseRunning.value = true
+  reverseError.value = ''
   try {
-    await invApi.reverseOrder(row.id)
-    ElMessage.success('已反审核')
+    await invApi.reverseOrder(target.id)
+    reverseVisible.value = false
+    ElMessage.success('已反审核，单据退回待处理')
+    if (isWorkbench.value) {
+      keepReviewResult.value = true
+      reviewResult.value = '已作废关联入库单、回滚库存并退回待处理。'
+    }
+    if (detailTarget.value?.id === target.id) await openDetail(target)
     await load()
-    if (
-      isPurchase.value &&
-      detailVisible.value &&
-      detailTarget.value?.id === row.id
-    )
-      await openDetail(row)
-  } catch {
-    // 失败提示（如「已登记收付款，不能反审核」）由响应拦截器统一处理
+  } catch (error) {
+    reverseError.value =
+      error instanceof Error
+        ? error.message
+        : '反审核失败，请刷新核实状态后重试'
+  } finally {
+    reverseRunning.value = false
   }
 }
 
@@ -774,7 +811,8 @@ async function openDetail(row: Pick<InvOrderRow, 'id'>): Promise<void> {
   detailTarget.value = row
   detailLoading.value = true
   detailError.value = false
-  if (inline) detail.value = null
+  detail.value = null
+  if (!inline) detailVisible.value = true
   try {
     const data = await invApi.orderDetail(row.id)
     if (seq !== detailViewSeq.value) return
@@ -860,6 +898,7 @@ const {
   exportParams: () => ({
     entity: 'order',
     bizType: props.bizType,
+    handoff: query.handoff || undefined,
     keyword: query.keyword || undefined,
     status: query.status ?? undefined,
     settleStatus: query.settleStatus || undefined,
@@ -912,6 +951,21 @@ const printSubtitle = computed(() => {
   return parts.join(' · ') || '全部单据'
 })
 
+const batchResult = ref<BatchOutcome<InvOrderRow> | null>(null)
+const batchResultVisible = ref(false)
+const batchLabel = ref('')
+const batchSkipped = ref(0)
+function showBatchResult(
+  label: string,
+  skipped: number,
+  result: BatchOutcome<InvOrderRow>,
+): void {
+  batchLabel.value = label
+  batchSkipped.value = skipped
+  batchResult.value = result
+  batchResultVisible.value = true
+}
+
 /** 批量审核 / 反审核：跳过状态不符的行，避免把只读的已审核单重复提交 */
 async function batchAudit(): Promise<void> {
   const target = selection.value.filter((r) => r.status === 1)
@@ -919,11 +973,17 @@ async function batchAudit(): Promise<void> {
     ElMessage.warning('请先勾选待处理的单据')
     return
   }
+  const skipped = selection.value.length - target.length
   const done = await runBatch(
     '批量审核',
     target,
-    (r) => invApi.changeOrderStatus(r.id, 2),
+    (r) => invApi.changeOrderStatus(r.id, 2, false, true),
     (r) => r.orderNo,
+    {
+      consequences:
+        '每张单据将生成入库单、增加库存并形成应付；批量不结清。请确认已取得收货确认依据。各单独立提交，失败不影响成功项。',
+      onResult: (result) => showBatchResult('批量审核', skipped, result),
+    },
   )
   if (done) {
     clearSelection(tableRef.value)
@@ -937,11 +997,17 @@ async function batchReverse(): Promise<void> {
     ElMessage.warning('请先勾选已审核的单据')
     return
   }
+  const skipped = selection.value.length - target.length
   const done = await runBatch(
     '批量反审核',
     target,
-    (r) => invApi.reverseOrder(r.id),
+    (r) => invApi.reverseOrder(r.id, true),
     (r) => r.orderNo,
+    {
+      consequences:
+        '每张单据将作废关联入库单、回滚库存并退回待处理；已付款或库存不足将失败。各单独立提交，失败不影响成功项。',
+      onResult: (result) => showBatchResult('批量反审核', skipped, result),
+    },
   )
   if (done) {
     clearSelection(tableRef.value)
@@ -957,7 +1023,30 @@ function consumeCreateAction(): void {
   void router.replace({ path: pagePath, query: rest })
 }
 watch(() => route.query.action, consumeCreateAction)
+async function consumeLinkedOrder(): Promise<void> {
+  const id = Number(route.query.order)
+  if (route.path !== pagePath || !Number.isSafeInteger(id) || id <= 0) return
+  // A cached purchase page may still be showing the pending queue when a stock
+  // source link explicitly requests history. Apply that view before opening it.
+  if (isWorkbench.value) {
+    workspaceView.value = 'all'
+    query.status = undefined
+    query.settleStatus = undefined
+    query.page = 1
+    keepReviewResult.value = false
+    await load()
+  }
+  if (route.path === pagePath && Number(route.query.order) === id) await openDetail({ id })
+}
+
+watch(
+  () => route.query.order,
+  () => {
+    void consumeLinkedOrder()
+  },
+)
 onMounted(() => {
+  void consumeLinkedOrder()
   consumeCreateAction()
   window.addEventListener('beforeunload', beforeUnload)
   void load()
@@ -1026,6 +1115,22 @@ function onKeywordInput(): void {
           novalidate
           @submit.prevent
         >
+          <el-form-item v-if="isPurchase" label="交接视图">
+            <el-select
+              v-model="query.handoff"
+              clearable
+              placeholder="数据范围内全部"
+              @change="search"
+            >
+              <el-option
+                v-if="userStore.hasAnyPerm(['inv:purchase:finish'])"
+                label="我可审核"
+                value="auditable"
+              />
+              <el-option label="我发起的" value="created" />
+              <el-option label="反审核后待处理" value="reversed" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="关键字">
             <el-input
               v-model="query.keyword"
@@ -1178,6 +1283,18 @@ function onKeywordInput(): void {
                 }}</el-button
               >
               <el-button @click="printRef?.open(detail.row)">打印</el-button>
+              <el-button
+                v-if="detail.row.status === 2"
+                v-perm="'inv:purchase:finish'"
+                :disabled="detail.row.settledAmount > 0 || reverseRunning"
+                @click="reverseOrder(detail.row)"
+                >反审核</el-button
+              >
+              <span
+                v-if="detail.row.status === 2 && detail.row.settledAmount > 0"
+                class="text-muted"
+                >已登记付款，请先联系财务撤销付款记录</span
+              >
             </div>
             <div class="purchase-review-actions__primary">
               <template v-if="detail.row.status === 1">
@@ -1253,6 +1370,36 @@ function onKeywordInput(): void {
           align="center"
         >
           <template #default="{ row }">{{ row.itemCount }} 行</template>
+        </el-table-column>
+        <el-table-column
+          v-if="isPurchase"
+          label="审核记录 / 等待"
+          min-width="220"
+        >
+          <template #default="{ row }">
+            <template v-if="row.status === 1"
+              ><span
+                :class="{
+                  'text-warning': pendingAge(row.pendingSince).warning,
+                }"
+                >{{ pendingAge(row.pendingSince).text }}</span
+              >
+              <div v-if="row.reversedAt" class="text-muted">
+                反审核后待处理 · 上次审核
+                {{ row.auditorName || `账号 #${row.auditorId}` }}
+                {{ formatDateTime(row.auditedAt) }}
+              </div></template
+            >
+            <template v-else-if="row.auditedAt"
+              >{{ row.auditorName || `账号 #${row.auditorId}` }}
+              <div class="text-muted">
+                {{ formatDateTime(row.auditedAt) }}
+              </div></template
+            >
+            <span v-else>{{
+              row.status === 2 ? '历史数据未记录' : '尚未审核'
+            }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="金额" width="112" align="right">
           <template #default="{ row }">
@@ -1693,6 +1840,12 @@ function onKeywordInput(): void {
       width="1280px"
       top="6vh"
     >
+      <div
+        v-if="detailLoading"
+        v-loading="true"
+        class="detail-pending"
+        aria-label="正在加载采购单"
+      />
       <template v-if="isPurchase" #header="{ titleId, titleClass }">
         <div class="purchase-dialog-heading">
           <span :id="titleId" :class="titleClass">{{ title }}详情</span>
@@ -1709,8 +1862,26 @@ function onKeywordInput(): void {
         />
       </template>
 
+      <el-alert
+        v-if="detailError"
+        title="详情加载失败，请重新加载后操作"
+        type="error"
+        :closable="false"
+      />
+      <el-button v-if="detailError" @click="retryDetail">重新加载</el-button>
       <template #footer>
         <el-button @click="detailVisible = false">关闭</el-button>
+        <template v-if="isPurchase && detail?.row.status === 2">
+          <span v-if="detail.row.settledAmount > 0" class="text-muted"
+            >已登记付款，请先联系财务撤销付款记录</span
+          >
+          <el-button
+            v-perm="'inv:purchase:finish'"
+            :disabled="detail.row.settledAmount > 0 || reverseRunning"
+            @click="reverseOrder(detail.row)"
+            >反审核</el-button
+          >
+        </template>
         <el-button v-if="isPurchase && detail" @click="openAttach(detail.row)"
           >附件</el-button
         >
@@ -1760,6 +1931,45 @@ function onKeywordInput(): void {
       :rows="printRows"
     />
 
+    <BatchResultDialog
+      v-model="batchResultVisible"
+      :title="batchLabel"
+      :succeeded="batchResult?.succeeded || 0"
+      :skipped="batchSkipped"
+      :failures="batchResult?.failures || []"
+    />
+    <el-dialog
+      v-model="reverseVisible"
+      title="反审核确认"
+      width="640px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!reverseRunning"
+      :show-close="!reverseRunning"
+    >
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="`将反审核「${reverseRow?.orderNo}」：作废关联入库单、回滚库存并退回待处理。已登记付款或库存不足时无法执行。`"
+      />
+      <p>本次操作人：{{ userStore.displayName }}</p>
+      <el-alert
+        v-if="reverseError"
+        :title="reverseError"
+        type="error"
+        :closable="false"
+      />
+      <template #footer
+        ><el-button :disabled="reverseRunning" @click="reverseVisible = false"
+          >取消</el-button
+        ><el-button
+          type="warning"
+          :loading="reverseRunning"
+          @click="confirmReverse"
+          >确认反审核</el-button
+        ></template
+      >
+    </el-dialog>
     <!-- 审核确认：可勾选同时结清全额款项 -->
     <el-dialog
       v-model="approveVisible"
@@ -1777,11 +1987,19 @@ function onKeywordInput(): void {
         class="approve-alert"
         :title="
           isPurchase
-            ? `将为「${approveRow?.orderNo}」生成入库单、增加库存，并形成应付。请确认已收到货物。`
+            ? `将为「${approveRow?.orderNo}」生成入库单、增加库存，并形成应付。请确认已取得收货确认依据。`
             : `审核通过后将为「${approveRow?.orderNo}」生成出入库单并调整库存。`
         "
       />
-      <el-checkbox v-model="approveSettleNow">
+      <p>本次审核人：{{ userStore.displayName }}</p>
+      <el-alert
+        v-if="approveError"
+        :title="approveError"
+        type="error"
+        :closable="false"
+        class="approve-alert"
+      />
+      <el-checkbox v-model="approveSettleNow" :disabled="approveRunning">
         同时结清全额款项
         <span class="text-muted"
           >（{{
@@ -1805,6 +2023,12 @@ function onKeywordInput(): void {
 </template>
 
 <style scoped lang="scss">
+.detail-pending {
+  min-height: 240px;
+}
+.text-warning {
+  color: var(--tone-amber);
+}
 .purchase-dialog-heading {
   display: flex;
   align-items: center;

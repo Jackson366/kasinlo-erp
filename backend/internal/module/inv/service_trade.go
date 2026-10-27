@@ -50,6 +50,23 @@ func (s *Service) itemCounts(orderIDs []int64) (map[int64]int64, error) {
 func (s *Service) OrderList(f OrderFilter, q page.Query, actor *authz.Identity) ([]OrderRow, int64, error) {
 	tx := s.db.Model(&model.InvOrder{}).Where("biz_type = ?", f.BizType)
 	tx = s.applyCreator(tx, actor)
+	switch f.Handoff {
+	case "", "created", "reversed", "auditable":
+	default:
+		return nil, 0, errcode.New(errcode.ErrBadRequest, "交接筛选非法")
+	}
+	if f.Handoff == "created" {
+		tx = tx.Where("created_by = ?", actorUID(actor))
+	}
+	if f.Handoff == "reversed" {
+		tx = tx.Where("status = 1 AND reversed_at IS NOT NULL")
+	}
+	if f.Handoff == "auditable" {
+		tx = tx.Where("status = 1")
+		if !actor.HasAnyPerm("inv:" + f.BizType + ":finish") {
+			tx = tx.Where("1 = 0")
+		}
+	}
 	if q.Keyword != "" {
 		// 业务员也能搜：现场常见的问法是「张伟那几张单」，
 		// 而业务员既不是单号也不是往来单位，漏了他这条搜索就得翻页找。
@@ -94,6 +111,12 @@ func (s *Service) OrderList(f OrderFilter, q page.Query, actor *authz.Identity) 
 	creators := make([]int64, 0, len(list))
 	for _, o := range list {
 		creators = append(creators, o.CreatedBy)
+		if o.AuditorID != nil {
+			creators = append(creators, *o.AuditorID)
+		}
+		if o.ReversedBy != nil {
+			creators = append(creators, *o.ReversedBy)
+		}
 	}
 	operators, err := s.operatorNames(creators)
 	if err != nil {
@@ -101,14 +124,24 @@ func (s *Service) OrderList(f OrderFilter, q page.Query, actor *authz.Identity) 
 	}
 	rows := make([]OrderRow, 0, len(list))
 	for _, o := range list {
-		rows = append(rows, toOrderRow(o, counts[o.ID], operators[o.CreatedBy]))
+		row := toOrderRow(o, counts[o.ID], operators[o.CreatedBy])
+		if o.AuditorID != nil {
+			row.AuditorName = operators[*o.AuditorID]
+		}
+		if o.ReversedBy != nil {
+			row.ReversedByName = operators[*o.ReversedBy]
+		}
+		rows = append(rows, row)
 	}
 	return rows, total, nil
 }
 
 func toOrderRow(o model.InvOrder, itemCount int64, operator string) OrderRow {
 	return OrderRow{
-		ID: o.ID, OrderNo: o.OrderNo, BizType: o.BizType, PartyID: o.PartyID, PartyName: o.PartyName,
+		CreatedBy: o.CreatedBy, AuditorID: o.AuditorID, AuditedAt: o.AuditedAt,
+		ReversedBy: o.ReversedBy, ReversedAt: o.ReversedAt, PendingSince: o.PendingSince,
+		SelfAudit: o.AuditorID != nil && *o.AuditorID == o.CreatedBy,
+		ID:        o.ID, OrderNo: o.OrderNo, BizType: o.BizType, PartyID: o.PartyID, PartyName: o.PartyName,
 		OrderDate: o.OrderDate, DueDate: o.DueDate, Status: o.Status,
 		TotalAmount: o.TotalAmount, SettledAmount: o.SettledAmount,
 		SettleStatus: settleStatus(o.TotalAmount, o.SettledAmount),
@@ -130,10 +163,27 @@ func (s *Service) OrderDetail(id int64, actor *authz.Identity) (*OrderDetail, er
 	if err != nil {
 		return nil, err
 	}
-	return &OrderDetail{
-		OrderRow: toOrderRow(o, int64(len(items)), s.operatorName(o.CreatedBy)),
-		Items:    items,
-	}, nil
+	row := toOrderRow(o, int64(len(items)), s.operatorName(o.CreatedBy))
+	if o.AuditorID != nil {
+		row.AuditorName = s.operatorName(*o.AuditorID)
+	}
+	if o.ReversedBy != nil {
+		row.ReversedByName = s.operatorName(*o.ReversedBy)
+	}
+	history := make([]model.InvOrderAudit, 0)
+	if err := s.db.Where("order_id = ?", id).Order("id ASC").Find(&history).Error; err != nil {
+		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	downstream := OrderDownstream{Visibility: "restricted", StockOrders: make([]OrderStockLink, 0)}
+	if actor.HasAnyPerm("inv:stock:list") {
+		downstream.Visibility = "visible"
+		if err := s.applyCreator(s.db.Model(&model.InvStockOrder{}), actor).
+			Select("id, order_no, status").Where("source_type = ? AND source_id = ?", o.BizType, id).
+			Order("id DESC").Scan(&downstream.StockOrders).Error; err != nil {
+			return nil, errcode.Wrap(errcode.ErrDatabase, err)
+		}
+	}
+	return &OrderDetail{OrderRow: row, Items: items, AuditHistory: history, Downstream: downstream}, nil
 }
 
 func (s *Service) orderItems(orderID int64) ([]OrderItemVO, error) {
@@ -229,9 +279,10 @@ func (s *Service) OrderCreate(req OrderReq, actor *authz.Identity) (int64, error
 			return 0, err
 		}
 	}
+	now := time.Now().In(database.Location())
 	order := model.InvOrder{
 		OrderNo: no, BizType: req.BizType, PartyID: req.PartyID, PartyName: partyName,
-		OrderDate: orderDate, DueDate: dueDate, Status: model.InvStatusPending,
+		OrderDate: orderDate, DueDate: dueDate, Status: model.InvStatusPending, PendingSince: &now,
 		TotalAmount: total, Remark: req.Remark, Salesman: req.Salesman, CreatedBy: actorUID(actor),
 	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
@@ -325,7 +376,7 @@ func (s *Service) OrderDelete(id int64, actor *authz.Identity) error {
 		return err
 	}
 	if o.Status == model.InvStatusDone {
-		return errcode.New(errcode.ErrConflict, "已审核单据不可删除，请先作废对应的出入库单")
+		return errcode.New(errcode.ErrConflict, "已审核单据不可删除，请先反审核原单据")
 	}
 	return saveErr(s.db.Transaction(func(tx *gorm.DB) error {
 		// 删除同样要带状态条件：上面那句状态检查在事务外，审核可能已经把它
@@ -385,7 +436,7 @@ func (s *Service) OrderChangeStatus(id int64, status int16, settleNow bool, acto
 		}
 		res := s.db.Model(&model.InvOrder{}).
 			Where("id = ? AND status = ?", id, from).
-			Update("status", status)
+			Updates(map[string]any{"status": status, "pending_since": pendingTime(status)})
 		if res.Error != nil {
 			return saveErr(res.Error)
 		}
@@ -463,9 +514,10 @@ func (s *Service) OrderChangeStatus(id int64, status int16, settleNow bool, acto
 		}
 		// 兜底：条件里明确「从待处理出发」。行锁之下这一条不会失败，
 		// 但把状态机写死在 SQL 里，后续若有人去掉锁也不会静默走错。
+		auditAt := time.Now().In(database.Location())
 		res := tx.Model(&model.InvOrder{}).
 			Where("id = ? AND status = ?", locked.ID, model.InvStatusPending).
-			Update("status", model.InvStatusDone)
+			Updates(map[string]any{"status": model.InvStatusDone, "auditor_id": actorUID(actor), "audited_at": auditAt, "pending_since": nil})
 		if res.Error != nil {
 			return res.Error
 		}
@@ -497,7 +549,7 @@ func (s *Service) OrderChangeStatus(id int64, status int16, settleNow bool, acto
 				return errcode.New(errcode.ErrConflict, "结算金额超出未结余额，审核已一并回滚")
 			}
 		}
-		return nil
+		return recordOrderAudit(tx, locked, "audit", &so.ID, actor, auditAt)
 	}))
 }
 
@@ -578,17 +630,22 @@ func (s *Service) OrderReverse(id int64, actor *authz.Identity) error {
 		// 同时带上 settled_amount <= 0：并发「登记收付款」可能在事务外的
 		// 金额检查之后、本事务提交之前把结算写进去。没有这个条件，
 		// 单据会被退回待处理，而它名下已经挂着一笔收付款。
+		reversedAt := time.Now().In(database.Location())
 		res := tx.Model(&model.InvOrder{}).
 			Where("id = ? AND status = ? AND settled_amount <= ?",
 				o.ID, model.InvStatusDone, settleEpsilon).
-			Update("status", model.InvStatusPending)
+			Updates(map[string]any{"status": model.InvStatusPending, "reversed_by": actorUID(actor), "reversed_at": reversedAt, "pending_since": reversedAt})
 		if res.Error != nil {
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
 			return errcode.New(errcode.ErrConflict, "单据状态已变化，请刷新后重试")
 		}
-		return nil
+		var stockID *int64
+		if so.ID > 0 {
+			stockID = &so.ID
+		}
+		return recordOrderAudit(tx, o, "reverse", stockID, actor, reversedAt)
 	}))
 }
 
@@ -650,4 +707,23 @@ func (s *Service) applyStock(tx *gorm.DB, direction string, items []model.InvSto
 		}
 	}
 	return nil
+}
+
+func pendingTime(status int16) *time.Time {
+	if status != model.InvStatusPending {
+		return nil
+	}
+	now := time.Now().In(database.Location())
+	return &now
+}
+func recordOrderAudit(tx *gorm.DB, order model.InvOrder, action string, stockID *int64, actor *authz.Identity, at time.Time) error {
+	name := ""
+	if actor != nil {
+		name = actor.Nickname
+		if name == "" {
+			name = actor.Username
+		}
+	}
+	return tx.Create(&model.InvOrderAudit{OrderID: order.ID, OrderNo: order.OrderNo, Action: action,
+		ActorID: actorUID(actor), ActorName: name, OccurredAt: at, StockOrderID: stockID}).Error
 }

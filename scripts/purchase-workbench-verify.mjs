@@ -565,7 +565,7 @@ try {
       .getByRole('button', { name: '审核并入库', exact: true })
       .click()
     const dialog = page.getByRole('dialog', { name: '审核并入库', exact: true })
-    await expect(dialog).toContainText('请确认已收到货物')
+    await expect(dialog).toContainText('请确认已取得收货确认依据')
     state.failAudit = true
     await dialog.getByRole('button', { name: '确认审核并入库' }).click()
     await expect(dialog).toBeVisible()
@@ -596,7 +596,18 @@ try {
     await expect(queue).toHaveCount(1)
     expect(state.listCalls - before).toBe(1)
     await expect(page).toHaveURL(/page=2/)
+    // A document reload finishes before Vue's lazy route and initial query do.
+    // Assert the restored query response first, then the rendered queue.
+    const restoredPage = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return url.pathname.endsWith('/inv/orders') &&
+        url.searchParams.get('page') === '2' &&
+        response.request().method() === 'GET'
+    })
     await page.reload()
+    const restored = await restoredPage
+    expect(restored.ok()).toBe(true)
+    expect((await restored.json()).data.list).toHaveLength(1)
     // Full reload re-enters the async auth/router bootstrap before mounting the workspace.
     await expect(page.locator('.purchase-header')).toBeVisible({ timeout: 15000 })
     await expect(queue).toHaveCount(1)
@@ -897,21 +908,41 @@ try {
     expect(await inventory.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(await secondaryItem.evaluate(el => getComputedStyle(el).backgroundColor))
     // Measure during the actual width transition, not just the endpoint.
     const sampleTransition = async (trigger, width, {icon=20,font=14,resize=false} = {}) => {
-      const sampling = inventory.evaluate(async el => {
-        const samples = []
-        const until = performance.now() + 350
-        while (performance.now() < until) {
-          await new Promise(requestAnimationFrame)
-          const icon = el.querySelector('.el-icon'), label = el.querySelector('span')
-          const box = icon.getBoundingClientRect()
-          samples.push({width:box.width,height:box.height,x:box.x,font:getComputedStyle(label).fontSize,transform:getComputedStyle(icon).transform})
-        }
-        return samples
+      // Await registration separately from sampling so an immediate keyboard
+      // event cannot arrive before the listener is installed.
+      await inventory.evaluate(el => {
+        window.__sidebarTransitionSample = new Promise(resolve => {
+          const cleanup = () => {
+            document.removeEventListener('click', start, true)
+            document.removeEventListener('keydown', start, true)
+          }
+          const deadline = setTimeout(() => { cleanup(); resolve([]) }, 5000)
+          const start = async () => {
+            cleanup()
+            clearTimeout(deadline)
+            const samples = []
+            const until = performance.now() + 350
+            while (performance.now() < until) {
+              await new Promise(requestAnimationFrame)
+              const icon = el.querySelector('.el-icon'), label = el.querySelector('span')
+              const box = icon.getBoundingClientRect()
+              samples.push({width:box.width,height:box.height,x:box.x,font:getComputedStyle(label).fontSize,transform:getComputedStyle(icon).transform})
+            }
+            resolve(samples)
+          }
+          document.addEventListener('click', start, true)
+          document.addEventListener('keydown', start, true)
+        })
       })
       if (typeof trigger === 'function') await trigger()
       else await trigger.click()
       await expect(page.locator('.layout__aside')).toHaveCSS('width',width)
-      const samples = await sampling
+      const samples = await page.evaluate(async () => {
+        const result = await window.__sidebarTransitionSample
+        delete window.__sidebarTransitionSample
+        return result
+      })
+      expect(samples.length).toBeGreaterThan(0)
       for (const sample of samples) {
         expect(sample.width).toBeGreaterThanOrEqual(17.99)
         expect(sample.width).toBeLessThanOrEqual(20.01)

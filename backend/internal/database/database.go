@@ -132,6 +132,7 @@ func AutoMigrate() error {
 		&model.InvProductSpec{},
 		&model.InvProductUnit{},
 		&model.InvOrder{},
+		&model.InvOrderAudit{},
 		&model.InvOrderItem{},
 		&model.InvSettlement{},
 		&model.InvStockOrder{},

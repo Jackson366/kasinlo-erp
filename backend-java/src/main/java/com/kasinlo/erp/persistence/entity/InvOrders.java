@@ -2,6 +2,7 @@ package com.kasinlo.erp.persistence.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -44,6 +45,61 @@ public class InvOrders extends SoftDeleteEntity {
 
     @TableField("\"created_by\"")
     private Long createdBy;
+
+    @TableField("\"auditor_id\"")
+    private Long auditorId;
+
+    public Long getAuditorId() {
+        return auditorId;
+    }
+
+    public void setAuditorId(Long value) {
+        this.auditorId = value;
+    }
+
+    @TableField("\"audited_at\"")
+    private OffsetDateTime auditedAt;
+
+    public OffsetDateTime getAuditedAt() {
+        return auditedAt;
+    }
+
+    public void setAuditedAt(OffsetDateTime value) {
+        this.auditedAt = value;
+    }
+
+    @TableField("\"reversed_by\"")
+    private Long reversedBy;
+
+    public Long getReversedBy() {
+        return reversedBy;
+    }
+
+    public void setReversedBy(Long value) {
+        this.reversedBy = value;
+    }
+
+    @TableField("\"reversed_at\"")
+    private OffsetDateTime reversedAt;
+
+    public OffsetDateTime getReversedAt() {
+        return reversedAt;
+    }
+
+    public void setReversedAt(OffsetDateTime value) {
+        this.reversedAt = value;
+    }
+
+    @TableField("\"pending_since\"")
+    private OffsetDateTime pendingSince;
+
+    public OffsetDateTime getPendingSince() {
+        return pendingSince;
+    }
+
+    public void setPendingSince(OffsetDateTime value) {
+        this.pendingSince = value;
+    }
 
     public String getOrderNo() {
         return orderNo;

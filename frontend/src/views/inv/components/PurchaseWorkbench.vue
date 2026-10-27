@@ -2,6 +2,7 @@
 import { nextTick, ref, watch } from 'vue'
 import type { InvOrderRow } from '@/types/api'
 import { formatDay, formatMoney } from '@/utils/format'
+import { pendingAge } from './orderPresentation'
 import AppIcon from '@/components/AppIcon.vue'
 
 const props = defineProps<{
@@ -70,6 +71,12 @@ defineEmits<{
             >
             <strong>{{ formatMoney(row.totalAmount) }}</strong>
           </span>
+          <span
+            class="purchase-queue__age"
+            :class="{ 'is-waiting': pendingAge(row.pendingSince).warning }"
+            >{{ pendingAge(row.pendingSince).text
+            }}<template v-if="row.reversedAt"> · 反审核后待处理</template></span
+          >
         </button>
         <el-empty
           v-if="!loading && !rows.length"
@@ -193,6 +200,15 @@ defineEmits<{
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
+  }
+  &__age {
+    display: block;
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+    &.is-waiting {
+      color: var(--tone-amber);
+    }
   }
   &__status {
     flex: none;

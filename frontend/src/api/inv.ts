@@ -72,7 +72,10 @@ export const invApi = {
   },
   /** 库存排行（按库存金额降序，全量） */
   reportStockRanking(params?: Params) {
-    return http.get<InvReportStockRankRow[]>('/inv/report/stock-ranking', params)
+    return http.get<InvReportStockRankRow[]>(
+      '/inv/report/stock-ranking',
+      params,
+    )
   },
   /** 销售 / 采购明细（单据明细粒度） */
   reportDetail(params?: Params) {
@@ -84,10 +87,17 @@ export const invApi = {
   },
   /** 合同收付款台账（实际发生的流水） */
   reportContractLedger(params?: Params) {
-    return http.get<InvReportContractLedgerRow[]>('/inv/report/contract-ledger', params)
+    return http.get<InvReportContractLedgerRow[]>(
+      '/inv/report/contract-ledger',
+      params,
+    )
   },
   reportExport(params?: Params, fallbackName = '报表.xlsx') {
-    return downloadFile('/inv/report/export', params as Record<string, unknown>, fallbackName)
+    return downloadFile(
+      '/inv/report/export',
+      params as Record<string, unknown>,
+      fallbackName,
+    )
   },
 
   /**
@@ -95,7 +105,11 @@ export const invApi = {
    * 参数与对应列表接口一致；传 ids 表示只导出勾选的记录。
    */
   exportList(params?: Params, fallbackName = '导出.xlsx') {
-    return downloadFile('/inv/export', params as Record<string, unknown>, fallbackName)
+    return downloadFile(
+      '/inv/export',
+      params as Record<string, unknown>,
+      fallbackName,
+    )
   },
 
   // ---------------- 客户 ----------------
@@ -190,11 +204,20 @@ export const invApi = {
     return http.delete<string>(`/inv/orders/${id}`)
   },
   /** 审核并可选直接结清（settleNow 仅在 status=2 时生效） */
-  changeOrderStatus(id: number, status: InvOrderStatus, settleNow = false) {
-    return http.put<string>(`/inv/orders/${id}/status`, { status, settleNow })
+  changeOrderStatus(
+    id: number,
+    status: InvOrderStatus,
+    settleNow = false,
+    silent = false,
+  ) {
+    return http.put<string>(
+      `/inv/orders/${id}/status`,
+      { status, settleNow },
+      { silent },
+    )
   },
-  reverseOrder(id: number) {
-    return http.put<string>(`/inv/orders/${id}/reverse`)
+  reverseOrder(id: number, silent = false) {
+    return http.put<string>(`/inv/orders/${id}/reverse`, undefined, { silent })
   },
 
   // ---------------- 出入库 ----------------
@@ -226,12 +249,18 @@ export const invApi = {
    * 服务端整批原子，任一张不满足条件就整批回滚。
    */
   settleBatch(data: InvSettleBatchPayload) {
-    return http.post<{ count: number; amount: number }>('/inv/finance/settlements/batch', data)
+    return http.post<{ count: number; amount: number }>(
+      '/inv/finance/settlements/batch',
+      data,
+    )
   },
 
   // ---------------- 打印模板 ----------------
   printTemplates(params?: Params) {
-    return http.get<PageResult<InvPrintTemplateRow>>('/inv/print-templates', params)
+    return http.get<PageResult<InvPrintTemplateRow>>(
+      '/inv/print-templates',
+      params,
+    )
   },
   createPrintTemplate(data: InvPrintTemplatePayload) {
     return http.post<{ id: number }>('/inv/print-templates', data)
@@ -281,7 +310,9 @@ export const invApi = {
   },
   /** 某一期的收付款流水 */
   contractPlanSettles(planId: number) {
-    return http.get<InvPlanSettleRecord[]>(`/inv/contract-plans/${planId}/settles`)
+    return http.get<InvPlanSettleRecord[]>(
+      `/inv/contract-plans/${planId}/settles`,
+    )
   },
 
   // ---------------- 业务附件 ----------------
@@ -310,6 +341,10 @@ export const invApi = {
   },
   /** 触发浏览器下载（后端会带 Content-Disposition: attachment） */
   downloadAttachment(id: number, fileName: string) {
-    return downloadFile(`/inv/attachments/${id}/file`, { download: 1 }, fileName)
+    return downloadFile(
+      `/inv/attachments/${id}/file`,
+      { download: 1 },
+      fileName,
+    )
   },
 }
