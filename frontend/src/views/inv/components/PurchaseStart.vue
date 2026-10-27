@@ -45,9 +45,12 @@ onActivated(load)
   >
     <div class="purchase-start__task">
       <div>
-        <h2 id="purchase-start-title">
-          {{ pending && !failed ? '继续处理采购' : '从一张采购单开始' }}
-        </h2>
+        <div class="purchase-start__heading">
+          <h2 id="purchase-start-title">
+            {{ pending && !failed ? '继续处理采购' : '从一张采购单开始' }}
+          </h2>
+          <PurchaseGuide />
+        </div>
         <p v-if="loading" role="status">正在查看待处理采购单…</p>
         <p v-else-if="failed" role="alert">
           待处理数量加载失败，仍可进入采购工作台。
@@ -58,7 +61,6 @@ onActivated(load)
         <p v-else>先记录采购，再核对到货；付款可单独登记。</p>
       </div>
       <div class="purchase-start__actions">
-        <PurchaseGuide />
         <el-button v-if="failed" @click="load">重新加载</el-button>
         <el-button
           v-if="pending || failed"
@@ -81,6 +83,12 @@ onActivated(load)
 
 <style scoped lang="scss">
 .purchase-start {
+  &__heading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
   &__task {
     display: flex;
     align-items: center;

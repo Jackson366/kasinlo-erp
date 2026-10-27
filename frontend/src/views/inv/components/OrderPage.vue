@@ -981,7 +981,15 @@ function onKeywordInput(): void {
 <template>
   <div class="order-page" :class="{ 'purchase-page': isPurchase }">
     <header v-if="isPurchase" class="purchase-header">
-      <h1>采购工作台</h1>
+      <div class="purchase-title">
+        <h1>采购工作台</h1>
+        <PurchaseGuide
+          v-if="!dialogVisible && !detailVisible"
+          :order="isWorkbench ? detail?.row : null"
+          :busy="isWorkbench && (detailLoading || loading)"
+          :failed="isWorkbench && (detailError || listError)"
+        />
+      </div>
       <el-tabs
         :model-value="workspaceView"
         class="purchase-tabs"
@@ -990,12 +998,6 @@ function onKeywordInput(): void {
         <el-tab-pane label="待处理" name="pending" />
         <el-tab-pane label="全部单据" name="all" />
       </el-tabs>
-      <PurchaseGuide
-        v-if="isPurchase && !dialogVisible && !detailVisible"
-        :order="isWorkbench ? detail?.row : null"
-        :busy="isWorkbench && (detailLoading || loading)"
-        :failed="isWorkbench && (detailError || listError)"
-      />
       <el-button
         data-purchase-tour="create"
         v-perm="'inv:purchase:create'"
@@ -1806,10 +1808,19 @@ function onKeywordInput(): void {
 .purchase-dialog-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 8px 16px;
+  gap: 8px 12px;
   padding-right: 16px;
+}
+.purchase-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+  flex-shrink: 0;
+  max-width: 100%;
 }
 
 .purchase-entry-help {
