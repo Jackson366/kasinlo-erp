@@ -81,6 +81,7 @@ try {
   debugPage = page
   page.on('pageerror', (e) => pageErrors.push(e.message))
   page.on('console', message => { if (message.type() === 'error') browserDiagnostics.push(message.text()) })
+  page.on('response', response => { if (response.status() >= 400) browserDiagnostics.push(`${response.status()} ${response.url()}`) })
   page.on('requestfailed', request => browserDiagnostics.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText}`))
   const item = {
     id: 1,
@@ -596,6 +597,8 @@ try {
     expect(state.listCalls - before).toBe(1)
     await expect(page).toHaveURL(/page=2/)
     await page.reload()
+    // Full reload re-enters the async auth/router bootstrap before mounting the workspace.
+    await expect(page.locator('.purchase-header')).toBeVisible({ timeout: 15000 })
     await expect(queue).toHaveCount(1)
   })
   await check('列表失败独立于空队列并可恢复', async () => {
@@ -1035,6 +1038,7 @@ try {
   console.error('serverLog', serverLog.slice(-6000))
   if (debugPage) {
     console.error('URL', debugPage.url())
+    console.error('bootstrap', await debugPage.evaluate(() => ({readyState:document.readyState,html:document.querySelector('#app')?.outerHTML,title:document.title})))
     console.error((await debugPage.locator('body').innerText()).slice(-3500))
     await debugPage.screenshot({ path: out + '/failure.png', fullPage: true })
   }
