@@ -37,7 +37,7 @@ export function purchaseGuidePresentation(order?: GuideOrder | null, entering = 
     completed: 2, measurable: true,
     label: order.settleStatus === 'partial' ? '部分付款' : '待登记付款',
     title: '已审核入库，按实际付款情况登记结算',
-    instruction: `剩余未付 ${formatMoney(Math.max(0, order.totalAmount - order.settledAmount))}。请在应付管理中核查并登记实际付款。`,
+    instruction: `剩余未付 ${formatMoney(Math.max(0, order.totalAmount - order.settledAmount))}。请打开「应收应付 → 应付明细」，核查并登记实际付款。`,
     consequence: '可以稍后付款；审核入库不等于已付款，登记付款后才会减少未付金额。',
   }
 }
