@@ -186,6 +186,21 @@ describe('独立 Mock 模式', () => {
       request('GET', '/inv/orders', undefined, { handoff: 'wrong' }),
     ).toThrow('筛选非法')
   })
+  it('普通出入库列表只显示有效单，关联历史查询可回查反审核后的作废入库单', () => {
+    const { request } = setup()
+    const { id } = request('POST', '/inv/orders', orderPayload) as { id: number }
+    request('PUT', `/inv/orders/${id}/status`, { status: 2 })
+    const stock = (request('GET', `/inv/orders/${id}`) as InvOrderDetail).downstream!.stockOrders[0]
+    request('PUT', `/inv/orders/${id}/reverse`)
+    expect(request('GET', '/inv/stock-orders', undefined, { keyword: stock.orderNo })).toMatchObject({ total: 0 })
+    expect(request('GET', '/inv/stock-orders', undefined, {
+      keyword: stock.orderNo, direction: 'in', includeVoided: true,
+    })).toMatchObject({ total: 1, list: [expect.objectContaining({ id: stock.id, status: 2 })] })
+    expect(request('GET', '/inv/stock-orders', undefined, {
+      keyword: stock.orderNo, includeVoided: 'true',
+    })).toMatchObject({ total: 1 })
+    expect(() => request('GET', '/inv/stock-orders', undefined, { includeVoided: 'wrong' })).toThrow('includeVoided')
+  })
   it('分页、查询、审核、反审核、结算和删除形成闭环', () => {
     const { request } = setup()
     expect(

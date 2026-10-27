@@ -269,6 +269,26 @@ try {
       fullPage: true,
     })
   })
+  await check('反审核后的已作废入库单仍能从关联入口查看，普通列表继续排除作废单', async () => {
+    await detail.getByRole('button', { name: '反审核', exact: true }).click()
+    const reverse = page.getByRole('dialog', { name: '反审核确认', exact: true })
+    await reverse.getByRole('button', { name: '确认反审核', exact: true }).click()
+    await expect(detail.locator('.order-downstream')).toContainText('已作废')
+    const link = detail.getByRole('link', { name: /^查看入库单 / })
+    const receipt = (await link.innerText()).trim()
+    await link.click()
+    await expect(page.locator('.stock-page .el-table:visible .el-table__body tr')).toHaveCount(1)
+    await expect(page.locator('.stock-page .el-table:visible')).toContainText('已作废')
+    await page.reload()
+    await expect(page.locator('.stock-page .el-table:visible')).toContainText(receipt)
+    await page.getByRole('link', { name: '返回采购单', exact: true }).click()
+    await expect(detail).toContainText(other.orderNo)
+    const total = await page.evaluate(async (keyword) => {
+      const { invApi } = await import('/src/api/inv.ts')
+      return (await invApi.stockOrders({ keyword })).total
+    }, receipt)
+    expect(total).toBe(0)
+  })
   expect(errors).toEqual([])
   console.log('RESULT', checks.length, 'passed')
   await fs.writeFile(

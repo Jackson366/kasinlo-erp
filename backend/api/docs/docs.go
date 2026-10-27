@@ -1444,6 +1444,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "boolean",
+                        "description": "包含已作废出入库单据",
+                        "name": "includeVoided",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "出入库方向：in / out",
                         "name": "direction",
@@ -3292,6 +3298,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "单号",
                         "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "包含已作废单据（关联历史追溯）",
+                        "name": "includeVoided",
                         "in": "query"
                     }
                 ],

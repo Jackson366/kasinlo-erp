@@ -27,13 +27,14 @@ const (
 // ExportQuery 导出参数。字段与列表页一一对应（导出 = 把当前筛选结果落成文件），
 // 少一个参数就会出现「看到的 20 条」和「导出的 20 条」不是同一批。
 type ExportQuery struct {
-	Entity     string
-	Keyword    string
-	Status     *int16
-	CategoryID int64
-	Direction  string
-	Order      OrderFilter
-	Contract   ContractFilter
+	Entity        string
+	Keyword       string
+	Status        *int16
+	CategoryID    int64
+	IncludeVoided bool
+	Direction     string
+	Order         OrderFilter
+	Contract      ContractFilter
 	// IDs 非空时只导出这些记录（列表勾选后「导出选中」）。
 	// 用 id 过滤而不是新开一套查询：勾选导出与整表导出必须走同一条取数路径，
 	// 否则两边的口径会慢慢漂开。
@@ -342,7 +343,7 @@ func (s *Service) exportOrderDetailRows(list []OrderRow) ([][]string, error) {
 }
 
 func (s *Service) exportStockRows(q page.Query, f ExportQuery, actor *authz.Identity) ([][]string, error) {
-	list, _, err := s.StockOrderList(q, f.Direction, actor)
+	list, _, err := s.StockOrderList(q, f.Direction, f.IncludeVoided, actor)
 	if err != nil {
 		return nil, err
 	}

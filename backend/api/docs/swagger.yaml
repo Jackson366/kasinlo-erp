@@ -3352,6 +3352,10 @@ paths:
         in: query
         name: categoryId
         type: integer
+      - description: 包含已作废出入库单据
+        in: query
+        name: includeVoided
+        type: boolean
       - description: 出入库方向：in / out
         in: query
         name: direction
@@ -4426,6 +4430,10 @@ paths:
         in: query
         name: keyword
         type: string
+      - description: 包含已作废单据（关联历史追溯）
+        in: query
+        name: includeVoided
+        type: boolean
       produces:
       - application/json
       responses:

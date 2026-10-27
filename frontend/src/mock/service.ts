@@ -958,10 +958,17 @@ export function createMockService(
       }
       if (resource === '/inv/stock-orders') {
         const rows = db.collections[resource]
+        if (
+          method === 'GET' && !id && q.includeVoided !== undefined &&
+          ![true, false, '', 'true', 'false'].includes(q.includeVoided as boolean | string)
+        ) fail('参数 includeVoided 非法：只接受 true 或 false')
         if (method === 'GET')
           return id
             ? rowById(rows as (Row & { id: number })[], id)
-            : page(rows, q)
+            : page(
+                rows.filter((r) => r.status === 1 || q.includeVoided === true || q.includeVoided === 'true'),
+                q,
+              )
         if (method === 'DELETE') {
           const s = rowById(rows as (Row & { id: number })[], id)
           if (s.sourceType !== 'manual') fail('关联业务单据请通过反审核撤销')

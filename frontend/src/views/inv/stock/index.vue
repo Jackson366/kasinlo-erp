@@ -79,6 +79,7 @@ const { query, loading, error: listError, rows, total, load, search, reset } = u
     pageSize: params.pageSize,
     keyword: params.keyword || undefined,
     direction: params.direction ?? undefined,
+    includeVoided: returnTo.value ? true : undefined,
   }),
 )
 
@@ -380,6 +381,7 @@ const {
     entity: 'stock',
     keyword: query.keyword || undefined,
     direction: query.direction || undefined,
+    includeVoided: returnTo.value ? true : undefined,
   }),
   fallbackName: '出入库单据.xlsx',
 })

@@ -39,8 +39,11 @@ func (s *Service) stockStats(ids []int64) (map[int64][2]float64, error) {
 }
 
 // StockOrderList 出入库单据列表。direction 为空表示全部。
-func (s *Service) StockOrderList(q page.Query, direction string, actor *authz.Identity) ([]StockOrderRow, int64, error) {
-	tx := s.db.Model(&model.InvStockOrder{}).Where("status = 1")
+func (s *Service) StockOrderList(q page.Query, direction string, includeVoided bool, actor *authz.Identity) ([]StockOrderRow, int64, error) {
+	tx := s.db.Model(&model.InvStockOrder{})
+	if !includeVoided {
+		tx = tx.Where("status = 1")
+	}
 	tx = s.applyCreator(tx, actor)
 	if direction == model.InvStockIn || direction == model.InvStockOut {
 		tx = tx.Where("direction = ?", direction)

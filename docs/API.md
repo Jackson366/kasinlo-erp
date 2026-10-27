@@ -668,9 +668,11 @@
 | 方法 | 路径 | 权限码 | 说明 |
 | --- | --- | --- | --- |
 | GET | `/api/v1/inv/inventory` | `inv:stock:list` | 库存查询（**按规格出账**，含 `warn` 预警标记；只看启用商品与启用规格） |
-| GET | `/api/v1/inv/stock-orders` | `inv:stock:list` | 出入库单据（仅 `status = 1` 的有效单） |
+| GET | `/api/v1/inv/stock-orders` | `inv:stock:list` | 出入库单据（默认仅 `status = 1`；`includeVoided=true` 包含已作废单，权限和数据范围不变） |
 | POST | `/api/v1/inv/stock-orders` | `inv:stock:create` | 手工出入库，**即时过账**（明细需选规格与单位，按 `qtyBase` 折算） |
 | DELETE | `/api/v1/inv/stock-orders/{id}` | `inv:stock:delete` | 作废并按反方向回滚库存 |
+
+关联入库历史追溯：`GET /api/v1/inv/stock-orders?keyword=<入库单号>&direction=in&includeVoided=true` 可回查反审核后的已作废记录。`GET /api/v1/inv/export?entity=stock` 支持相同的 `includeVoided` 筛选；只接受 `true` / `false`，默认 `false`。这不允许再次过账、打印作废单或绕过数据范围。
 
 库存查询的粒度是**规格**：一行 = 一个商品的一个规格，数量以该规格的
 **基本单位**呈现（`unit` 列即基本单位名），另带 `purchasePrice` 供库存成本参考。

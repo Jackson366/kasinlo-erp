@@ -35,6 +35,7 @@ import (
 // @Param        keyword      query     string  false  "关键字"
 // @Param        status       query     int     false  "状态"
 // @Param        categoryId   query     int     false  "商品分类"
+// @Param        includeVoided query bool false "包含已作废出入库单据"
 // @Param        direction    query     string  false  "出入库方向：in / out"
 // @Param        settleStatus query     string  false  "结算状态：unpaid / partial / paid"
 // @Param        startDate    query     string  false  "开始日期 yyyy-MM-dd"
@@ -74,6 +75,13 @@ func exportQuery(c *gin.Context, entity string, q page.Query) (ExportQuery, erro
 		Keyword:    q.Keyword,
 		CategoryID: int64(atoiOrZero(c.Query("categoryId"))),
 		Direction:  strings.TrimSpace(c.Query("direction")),
+	}
+	if entity == exportStock {
+		includeVoided, err := stockHistoryQuery(c)
+		if err != nil {
+			return f, err
+		}
+		f.IncludeVoided = includeVoided
 	}
 	ids, err := parseIDList(c.Query("ids"))
 	if err != nil {

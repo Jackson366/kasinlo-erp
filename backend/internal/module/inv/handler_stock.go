@@ -18,6 +18,7 @@ import (
 // @Security     BearerAuth
 // @Param        direction  query  string  false  "in 入库 / out 出库"
 // @Param        keyword    query  string  false  "单号"
+// @Param        includeVoided query bool false "包含已作废单据（关联历史追溯）"
 // @Success      200  {object}  response.Body{data=response.PageData{list=[]inv.StockOrderRow}}
 // @Router       /inv/stock-orders [get]
 func (h *Handler) StockOrderList(c *gin.Context) {
@@ -27,7 +28,12 @@ func (h *Handler) StockOrderList(c *gin.Context) {
 		response.Fail(c, errcode.Newf(errcode.ErrBadRequest, "参数 direction 非法：%s", direction))
 		return
 	}
-	list, total, err := h.svc.StockOrderList(q, direction, middleware.CurrentIdentity(c))
+	includeVoided, err := stockHistoryQuery(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	list, total, err := h.svc.StockOrderList(q, direction, includeVoided, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -121,4 +127,16 @@ func (h *Handler) StockOrderDetail(c *gin.Context) {
 		return
 	}
 	response.OK(c, detail)
+}
+
+// 历史查询显式开启，普通列表继续只显示有效单，数据范围仍由服务层收窄。
+func stockHistoryQuery(c *gin.Context) (bool, error) {
+	switch c.Query("includeVoided") {
+	case "", "false":
+		return false, nil
+	case "true":
+		return true, nil
+	default:
+		return false, errcode.New(errcode.ErrBadRequest, "参数 includeVoided 非法：只接受 true 或 false")
+	}
 }
