@@ -58,6 +58,8 @@ declare module 'vue' {
     ElTabs: typeof import('element-plus/es/components/tabs/index')['ElTabs']
     ElTag: typeof import('element-plus/es/components/tag/index')['ElTag']
     ElTooltip: typeof import('element-plus/es/components/tooltip/index')['ElTooltip']
+    ElTour: typeof import('element-plus/es/components/tour/index')['ElTour']
+    ElTourStep: typeof import('element-plus/es/components/tour/index')['ElTourStep']
     ElTree: typeof import('element-plus/es/components/tree/index')['ElTree']
     ElTreeSelect: typeof import('element-plus/es/components/tree-select/index')['ElTreeSelect']
     ElUpload: typeof import('element-plus/es/components/upload/index')['ElUpload']

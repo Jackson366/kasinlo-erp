@@ -9,7 +9,7 @@ on:
         '.github/workflows/purchase-ui.yml',
       ]
   push:
-    branches: [main, java-version, 'feat/purchase-workbench']
+    branches: [main, java-version, 'feat/purchase-workbench', 'feat/purchase-audit-trace']
     paths:
       [
         'frontend/**',

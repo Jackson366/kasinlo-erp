@@ -43,6 +43,7 @@ let browser
 let debugPage
 const checks = []
 const pageErrors = []
+const browserDiagnostics = []
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 try {
   let ready = false
@@ -79,6 +80,9 @@ try {
   const page = await context.newPage()
   debugPage = page
   page.on('pageerror', (e) => pageErrors.push(e.message))
+  page.on('console', message => { if (message.type() === 'error') browserDiagnostics.push(message.text()) })
+  page.on('response', response => { if (response.status() >= 400) browserDiagnostics.push(`${response.status()} ${response.url()}`) })
+  page.on('requestfailed', request => browserDiagnostics.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText}`))
   const item = {
     id: 1,
     productId: 1,
@@ -408,11 +412,86 @@ try {
     await expect(review).not.toContainText('未结清')
     await expect(page).toHaveURL(/view=pending/)
   })
+  await check('ElTour 按需打开且不占工作区，退出与重开保留输入', async () => {
+    await page.goto(app + '/#/inv/purchase')
+    await page.reload()
+    const guide = page.locator('.purchase-header .purchase-guide')
+    const tour = page.getByRole('dialog', {name:'采购操作引导',exact:true})
+    await expect(page.locator('.el-tour__content')).toHaveCount(0)
+    expect((await guide.boundingBox()).height).toBeLessThanOrEqual(32)
+    const top = await page.locator('.order-page > .page-card').evaluate(el => el.offsetTop)
+    await guide.getByRole('button').click()
+    // ElTour root is a zero-size teleport owner; its positioned content is the visible surface.
+    await expect(tour.locator('.el-tour__content')).toBeVisible()
+    await expect(tour).toContainText('引导 1 /')
+    expect(await page.locator('.order-page > .page-card').evaluate(el => el.offsetTop)).toBe(top)
+    await tour.getByRole('button',{name:'退出引导',exact:true}).click()
+    await expect(tour).toHaveCount(0)
+    await expect(guide.getByRole('button',{name:'采购操作指南',exact:true})).toBeFocused()
+    await page.reload()
+    await expect(tour).toHaveCount(0)
+    await page.getByRole('button', {name:'新增采购单',exact:true}).click()
+    const dialog = page.getByRole('dialog', {name:'新增采购单',exact:true})
+    await dialog.getByPlaceholder('选填').last().fill('Tour 退出后仍保留')
+    const audits = state.auditCalls
+    await dialog.locator('.purchase-guide').getByRole('button').click()
+    await expect(tour).toContainText('选择供应商')
+    await tour.getByRole('button',{name:'下一步',exact:true}).click()
+    await expect(tour).toContainText('缺少资料时从这里补齐')
+    await tour.getByRole('button',{name:'下一步',exact:true}).click()
+    await expect(tour).toContainText('核对商品与采购数量')
+    await tour.getByRole('button',{name:'下一步',exact:true}).click()
+    await expect(tour).toContainText('保存只记录单据，不会增加库存或登记付款')
+    await page.keyboard.press('Escape')
+    await expect(tour).toHaveCount(0)
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByPlaceholder('选填').last()).toHaveValue('Tour 退出后仍保留')
+    await expect(dialog.locator('.purchase-guide').getByRole('button')).toBeFocused()
+    await expect(dialog.getByRole('button', {name:'刷新可选资料'})).toBeVisible()
+    await dialog.locator('.purchase-guide').getByRole('button').click()
+    await page.setViewportSize({width:600,height:900})
+    const popup = page.locator('.purchase-tour .el-tour__content')
+    await expect(popup).toBeVisible()
+    const box = await popup.boundingBox()
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(600)
+    await page.screenshot({path:out+'/purchase-tour-narrow.png',fullPage:true})
+    await tour.getByRole('button',{name:'退出引导',exact:true}).click()
+    expect(state.auditCalls).toBe(audits)
+    await page.setViewportSize({width:1600,height:1100})
+    await page.reload()
+    await expect(page.locator('.purchase-impact')).toContainText('请确认货物已实际到达')
+  })
+  await check('Tour 使用当前单据，部分付款与取消不伪装完成', async () => {
+    const saved = state.orders
+    const current = {...seed(909), orderNo:'CG-TOUR-909', status:2, settleStatus:'partial', settledAmount:300}
+    state.orders = [current]
+    await page.goto(app + '/#/inv/purchase?view=all')
+    await page.reload()
+    await page.getByRole('button',{name:'CG-TOUR-909',exact:true}).click()
+    const dialog = page.getByRole('dialog', {name:'采购单据详情',exact:true})
+    const tour = page.getByRole('dialog', {name:'采购操作引导',exact:true})
+    await dialog.locator('.purchase-guide').getByRole('button').click()
+    await expect(tour).toContainText('900.00')
+    await expect(page.getByRole('progressbar')).toHaveCount(0)
+    await page.screenshot({path:out+'/purchase-tour-partial.png',fullPage:true})
+    await tour.getByRole('button',{name:'退出引导',exact:true}).click()
+    current.status = 3
+    await page.reload()
+    await page.getByRole('button',{name:'CG-TOUR-909',exact:true}).click()
+    await dialog.locator('.purchase-guide').getByRole('button').click()
+    await expect(tour).toContainText('这张采购单已取消')
+    await tour.getByRole('button',{name:'退出引导',exact:true}).click()
+    state.orders = saved
+    await page.goto(app + '/#/inv/purchase')
+    await page.reload()
+  })
   await check('紧凑标题与单条待办卡片不拉伸', async () => {
     const header = page.locator('.purchase-header')
     expect((await header.boundingBox()).height).toBeLessThanOrEqual(48)
     await expect(header.locator('p')).toHaveCount(0)
     expect((await page.locator('.order-page > .page-card').boundingBox()).y).toBeLessThan(190)
+    await expect(page.locator('.order-page > .purchase-guide')).toHaveCount(0)
     const input = page.getByPlaceholder('单号 / 往来单位 / 业务员')
     await input.fill(state.orders[0].orderNo)
     await expect(queue).toHaveCount(1)
@@ -439,6 +518,10 @@ try {
     state.failDetail = 2
     await queue.nth(1).click()
     await expect(review).toContainText('采购单加载失败')
+    await page.locator('.purchase-header .purchase-guide').getByRole('button').click()
+    const tour = page.getByRole('dialog', {name:'采购操作引导',exact:true})
+    await expect(tour).toContainText('请先重新加载单据')
+    await tour.getByRole('button',{name:'退出引导',exact:true}).click()
     state.failDetail = null
     await review.getByRole('button', { name: '重新加载', exact: true }).click()
     await expect(review.locator('.detail-head__no')).toHaveText(
@@ -525,6 +608,8 @@ try {
     const restored = await restoredPage
     expect(restored.ok()).toBe(true)
     expect((await restored.json()).data.list).toHaveLength(1)
+    // Full reload re-enters the async auth/router bootstrap before mounting the workspace.
+    await expect(page.locator('.purchase-header')).toBeVisible({ timeout: 15000 })
     await expect(queue).toHaveCount(1)
   })
   await check('列表失败独立于空队列并可恢复', async () => {
@@ -971,8 +1056,11 @@ try {
 } catch (e) {
   console.error(e)
   console.error('pageErrors', pageErrors)
+  console.error('browserDiagnostics', browserDiagnostics)
+  console.error('serverLog', serverLog.slice(-6000))
   if (debugPage) {
     console.error('URL', debugPage.url())
+    console.error('bootstrap', await debugPage.evaluate(() => ({readyState:document.readyState,html:document.querySelector('#app')?.outerHTML,title:document.title})))
     console.error((await debugPage.locator('body').innerText()).slice(-3500))
     await debugPage.screenshot({ path: out + '/failure.png', fullPage: true })
   }

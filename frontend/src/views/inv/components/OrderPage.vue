@@ -38,6 +38,8 @@ import {
   formatQty,
   formatDateTime,
 } from '@/utils/format'
+import PurchaseGuide from './PurchaseGuide.vue'
+import type { GuideOrder } from './purchaseGuidePresentation'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useUserStore } from '@/store'
 import { useListTools, type BatchOutcome } from '@/composables/useListTools'
@@ -442,6 +444,7 @@ const validating = ref(false)
 const saveError = ref(false)
 const formBaseline = ref('')
 const editingId = ref<number | null>(null)
+const editingOrder = ref<GuideOrder | null>(null)
 const detailVisible = ref(false)
 const detail = ref<{ row: InvOrderDetail; items: InvOrderItem[] } | null>(null)
 
@@ -553,6 +556,7 @@ function onUnitChange(item: FormItem): void {
 }
 
 function openCreate(): void {
+  editingOrder.value = null
   Object.assign(form, {
     orderNo: '',
     partyId: undefined,
@@ -588,6 +592,7 @@ async function openEdit(row: InvOrderRow): Promise<void> {
     return
   }
   if (seq !== editSeq.value) return
+  editingOrder.value = data
   // 到期日走 formatDay 归一：历史数据里的 0001-01-01 要当成「未填」，
   // 否则日期选择器会显示一个荒唐的年份，用户一保存就把脏值又写回去
   const due = formatDay(data.dueDate)
@@ -1065,7 +1070,15 @@ function onKeywordInput(): void {
 <template>
   <div class="order-page" :class="{ 'purchase-page': isPurchase }">
     <header v-if="isPurchase" class="purchase-header">
-      <h1>采购工作台</h1>
+      <div class="purchase-title">
+        <h1>采购工作台</h1>
+        <PurchaseGuide
+          v-if="!dialogVisible && !detailVisible"
+          :order="isWorkbench ? detail?.row : null"
+          :busy="isWorkbench && (detailLoading || loading)"
+          :failed="isWorkbench && (detailError || listError)"
+        />
+      </div>
       <el-tabs
         :model-value="workspaceView"
         class="purchase-tabs"
@@ -1075,6 +1088,7 @@ function onKeywordInput(): void {
         <el-tab-pane label="全部单据" name="all" />
       </el-tabs>
       <el-button
+        data-purchase-tour="create"
         v-perm="'inv:purchase:create'"
         type="primary"
         @click="openCreate"
@@ -1255,6 +1269,10 @@ function onKeywordInput(): void {
             :is-purchase="true"
             :picks="picks"
           />
+          <el-alert v-if="detail.row.status === 1" class="purchase-impact"
+            type="warning" show-icon :closable="false"
+            title="审核后增加库存并形成应付，请确认货物已实际到达。"
+          />
           <div class="purchase-review-actions">
             <div class="purchase-review-actions__secondary">
               <el-button @click="openAttach(detail.row)"
@@ -1290,6 +1308,7 @@ function onKeywordInput(): void {
                   v-perm="'inv:purchase:finish'"
                   type="primary"
                   :disabled="loading"
+                  data-purchase-tour="approve"
                   @click="openApprove(detail.row)"
                   >审核并入库</el-button
                 >
@@ -1555,6 +1574,12 @@ function onKeywordInput(): void {
       :before-close="beforeFormClose"
       destroy-on-close
     >
+      <template v-if="isPurchase" #header="{ titleId, titleClass }">
+        <div class="purchase-dialog-heading">
+          <span :id="titleId" :class="titleClass">{{ dialogMode === 'create' ? createText : '编辑单据' }}</span>
+          <PurchaseGuide :entering="dialogMode === 'create'" :editing="dialogMode === 'edit'" :order="editingOrder" />
+        </div>
+      </template>
       <el-alert
         v-if="saveError"
         title="保存失败，本次输入已保留。请检查提示后重新保存。"
@@ -1568,14 +1593,9 @@ function onKeywordInput(): void {
         class="purchase-entry-help"
         aria-label="采购录入说明"
       >
-        <div>
-          <strong>{{
-            dialogMode === 'create' ? '先录单，再核对入库' : '修改采购信息'
-          }}</strong>
-          <p>
-            选择供应商和商品，填写数量与单价。保存只记录单据，不会增加库存或登记付款。
-          </p>
-        </div>
+        <el-alert type="info" show-icon :closable="false"
+          title="保存只记录单据，不会增加库存或登记付款。"
+        />
         <div class="purchase-entry-help__tools">
           <router-link
             v-if="
@@ -1636,7 +1656,7 @@ function onKeywordInput(): void {
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12" :lg="6">
-            <el-form-item :label="partyLabel" prop="partyId">
+            <el-form-item :label="partyLabel" prop="partyId" data-purchase-tour="party">
               <el-select
                 v-model="form.partyId"
                 filterable
@@ -1805,7 +1825,7 @@ function onKeywordInput(): void {
         <el-button :disabled="submitting" @click="requestCloseForm"
           >取消</el-button
         >
-        <el-button type="primary" :loading="submitting" @click="submitForm">{{
+        <el-button data-purchase-tour="save" type="primary" :loading="submitting" @click="submitForm">{{
           isPurchase ? '保存采购单' : '保存销售单'
         }}</el-button>
       </template>
@@ -1826,6 +1846,12 @@ function onKeywordInput(): void {
         class="detail-pending"
         aria-label="正在加载采购单"
       />
+      <template v-if="isPurchase" #header="{ titleId, titleClass }">
+        <div class="purchase-dialog-heading">
+          <span :id="titleId" :class="titleClass">{{ title }}详情</span>
+          <PurchaseGuide :order="detail?.row" :busy="detailLoading" :failed="detailError" />
+        </div>
+      </template>
       <template v-if="detail">
         <OrderDetailContent
           :order="detail.row"
@@ -1873,6 +1899,7 @@ function onKeywordInput(): void {
           <el-button
             v-perm="'inv:purchase:finish'"
             type="primary"
+            data-purchase-tour="approve"
             @click="detail && openApprove(detail.row)"
             >审核并入库</el-button
           >
@@ -2002,11 +2029,26 @@ function onKeywordInput(): void {
 .text-warning {
   color: var(--tone-amber);
 }
+.purchase-dialog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding-right: 16px;
+}
+.purchase-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+  flex-shrink: 0;
+  max-width: 100%;
+}
+
 .purchase-entry-help {
   margin-bottom: 24px;
-  padding: 16px;
-  background: var(--app-surface-subtle);
-  border-radius: var(--radius-md);
   strong {
     font-size: 14px;
     font-weight: 600;
@@ -2140,6 +2182,11 @@ function onKeywordInput(): void {
   :deep(.el-button + .el-button) {
     margin-left: 0;
   }
+}
+.purchase-impact {
+  color: var(--app-text-secondary);
+  line-height: 1.6;
+  margin: 16px 0;
 }
 .purchase-result {
   margin-bottom: 20px;
