@@ -74,20 +74,14 @@ onBeforeUnmount(() => { open.value = false })
       @close="close"
     >
       <template #indicators="{ current: index, total }">
-        <span class="purchase-tour__count" aria-live="polite">引导 {{ index + 1 }} / {{ total }}</span>
+        <span class="purchase-tour__count" aria-live="polite" :aria-label="`引导第 ${index + 1} 步，共 ${total} 步`">{{ index + 1 }}/{{ total }}</span>
       </template>
       <el-tour-step
         v-for="(step, index) in steps" :key="step.anchor || 'fallback'"
         :target="step.target" :title="step.title"
-        :prev-button-props="{ children: '上一步' }"
+        :prev-button-props="{ children: '上一步', text: true }"
         :next-button-props="{ children: index === steps.length - 1 ? '结束引导' : '下一步' }"
       >
-        <template #header>
-          <div class="purchase-tour__header">
-            <strong>{{ step.title }}</strong>
-            <el-button text size="small" @click="close">退出引导</el-button>
-          </div>
-        </template>
         <p>{{ step.description }}</p>
         <p v-if="step.note" class="purchase-tour__note">{{ step.note }}</p>
       </el-tour-step>
@@ -112,10 +106,7 @@ onBeforeUnmount(() => { open.value = false })
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-popup);
 }
-:global(.purchase-tour .purchase-tour__header) {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-}
-:global(.purchase-tour .purchase-tour__header strong) { font-size: 14px; font-weight: 600; }
+:global(.purchase-tour .el-tour__title) { font-size: 14px; font-weight: 600; }
 :global(.purchase-tour p) { margin: 0; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 :global(.purchase-tour .purchase-tour__note) { margin-top: 8px; color: var(--app-text-secondary); }
 :global(.purchase-tour .purchase-tour__count) { color: var(--app-text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
