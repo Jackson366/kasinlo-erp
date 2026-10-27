@@ -49,6 +49,8 @@ declare module 'vue' {
     ElRow: typeof import('element-plus/es/components/row/index')['ElRow']
     ElScrollbar: typeof import('element-plus/es/components/scrollbar/index')['ElScrollbar']
     ElSelect: typeof import('element-plus/es/components/select/index')['ElSelect']
+    ElStep: typeof import('element-plus/es/components/steps/index')['ElStep']
+    ElSteps: typeof import('element-plus/es/components/steps/index')['ElSteps']
     ElSubMenu: typeof import('element-plus/es/components/menu/index')['ElSubMenu']
     ElSwitch: typeof import('element-plus/es/components/switch/index')['ElSwitch']
     ElTable: typeof import('element-plus/es/components/table/index')['ElTable']

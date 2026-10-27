@@ -994,7 +994,12 @@ function onKeywordInput(): void {
         <AppIcon name="Plus" />新增采购单
       </el-button>
     </header>
-    <PurchaseGuide v-if="isPurchase && !dialogVisible" />
+    <PurchaseGuide
+      v-if="isPurchase && !dialogVisible && !detailVisible"
+      :order="isWorkbench ? detail?.row : null"
+      :busy="isWorkbench && (detailLoading || loading)"
+      :failed="isWorkbench && (detailError || listError)"
+    />
     <div class="page-card">
       <!-- 搜索与操作合并一行：左侧列表名，中间筛选（自动折行），右侧查询/重置/新建/刷新 -->
       <div class="list-head">
@@ -1152,7 +1157,10 @@ function onKeywordInput(): void {
             :is-purchase="true"
             :picks="picks"
           />
-          <p v-if="detail.row.status === 1" class="purchase-impact">审核后增加库存并形成应付，请确认货物已实际到达。</p>
+          <el-alert v-if="detail.row.status === 1" class="purchase-impact"
+            type="warning" show-icon :closable="false"
+            title="审核后增加库存并形成应付，请确认货物已实际到达。"
+          />
           <div class="purchase-review-actions">
             <div class="purchase-review-actions__secondary">
               <el-button @click="openAttach(detail.row)"
@@ -1424,8 +1432,10 @@ function onKeywordInput(): void {
         class="purchase-entry-help"
         aria-label="采购录入说明"
       >
-        <PurchaseGuide />
-        <p>保存只记录单据，不会增加库存或登记付款。</p>
+        <PurchaseGuide entering />
+        <el-alert type="info" show-icon :closable="false"
+          title="保存只记录单据，不会增加库存或登记付款。"
+        />
         <div class="purchase-entry-help__tools">
           <router-link
             v-if="
@@ -1671,6 +1681,7 @@ function onKeywordInput(): void {
       top="6vh"
     >
       <template v-if="detail">
+        <PurchaseGuide v-if="isPurchase" :order="detail.row" :busy="detailLoading" :failed="detailError" />
         <OrderDetailContent
           :order="detail.row"
           :items="detail.items"
@@ -1777,9 +1788,6 @@ function onKeywordInput(): void {
 <style scoped lang="scss">
 .purchase-entry-help {
   margin-bottom: 24px;
-  padding: 16px;
-  background: var(--app-surface-subtle);
-  border-radius: var(--radius-md);
   strong {
     font-size: 14px;
     font-weight: 600;
