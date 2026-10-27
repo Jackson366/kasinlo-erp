@@ -29,6 +29,7 @@ import OrderPrintDialog from './OrderPrintDialog.vue'
 import AttachmentDrawer from './AttachmentDrawer.vue'
 import PurchaseWorkbench from './PurchaseWorkbench.vue'
 import OrderDetailContent from './OrderDetailContent.vue'
+import PurchaseGuide from './PurchaseGuide.vue'
 import { statusMeta, settleMeta } from './orderPresentation'
 import { formatDay, formatMoney, formatQty } from '@/utils/format'
 import { useTableQuery } from '@/composables/useTableQuery'
@@ -993,6 +994,7 @@ function onKeywordInput(): void {
         <AppIcon name="Plus" />新增采购单
       </el-button>
     </header>
+    <PurchaseGuide v-if="isPurchase && !dialogVisible" />
     <div class="page-card">
       <!-- 搜索与操作合并一行：左侧列表名，中间筛选（自动折行），右侧查询/重置/新建/刷新 -->
       <div class="list-head">
@@ -1150,6 +1152,7 @@ function onKeywordInput(): void {
             :is-purchase="true"
             :picks="picks"
           />
+          <p v-if="detail.row.status === 1" class="purchase-impact">审核后增加库存并形成应付，请确认货物已实际到达。</p>
           <div class="purchase-review-actions">
             <div class="purchase-review-actions__secondary">
               <el-button @click="openAttach(detail.row)"
@@ -1421,14 +1424,8 @@ function onKeywordInput(): void {
         class="purchase-entry-help"
         aria-label="采购录入说明"
       >
-        <div>
-          <strong>{{
-            dialogMode === 'create' ? '先录单，再核对入库' : '修改采购信息'
-          }}</strong>
-          <p>
-            选择供应商和商品，填写数量与单价。保存只记录单据，不会增加库存或登记付款。
-          </p>
-        </div>
+        <PurchaseGuide />
+        <p>保存只记录单据，不会增加库存或登记付款。</p>
         <div class="purchase-entry-help__tools">
           <router-link
             v-if="
@@ -1916,6 +1913,11 @@ function onKeywordInput(): void {
   :deep(.el-button + .el-button) {
     margin-left: 0;
   }
+}
+.purchase-impact {
+  color: var(--app-text-secondary);
+  line-height: 1.6;
+  margin: 16px 0;
 }
 .purchase-result {
   margin-bottom: 20px;
