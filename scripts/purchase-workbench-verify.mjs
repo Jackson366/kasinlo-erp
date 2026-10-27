@@ -420,7 +420,8 @@ try {
     expect((await guide.boundingBox()).height).toBeLessThanOrEqual(32)
     const top = await page.locator('.order-page > .page-card').evaluate(el => el.offsetTop)
     await guide.getByRole('button').click()
-    await expect(tour).toBeVisible()
+    // ElTour root is a zero-size teleport owner; its positioned content is the visible surface.
+    await expect(tour.locator('.el-tour__content')).toBeVisible()
     await expect(tour).toContainText('引导 1 /')
     expect(await page.locator('.order-page > .page-card').evaluate(el => el.offsetTop)).toBe(top)
     await tour.getByRole('button',{name:'退出引导',exact:true}).click()

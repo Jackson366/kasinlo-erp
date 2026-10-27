@@ -1425,9 +1425,9 @@ function onKeywordInput(): void {
       :before-close="beforeFormClose"
       destroy-on-close
     >
-      <template v-if="isPurchase" #header>
+      <template v-if="isPurchase" #header="{ titleId, titleClass }">
         <div class="purchase-dialog-heading">
-          <span class="el-dialog__title">{{ dialogMode === 'create' ? createText : '编辑单据' }}</span>
+          <span :id="titleId" :class="titleClass">{{ dialogMode === 'create' ? createText : '编辑单据' }}</span>
           <PurchaseGuide :entering="dialogMode === 'create'" :editing="dialogMode === 'edit'" :order="editingOrder" />
         </div>
       </template>
@@ -1691,9 +1691,9 @@ function onKeywordInput(): void {
       width="1280px"
       top="6vh"
     >
-      <template v-if="isPurchase" #header>
+      <template v-if="isPurchase" #header="{ titleId, titleClass }">
         <div class="purchase-dialog-heading">
-          <span class="el-dialog__title">{{ title }}详情</span>
+          <span :id="titleId" :class="titleClass">{{ title }}详情</span>
           <PurchaseGuide :order="detail?.row" :busy="detailLoading" :failed="detailError" />
         </div>
       </template>
