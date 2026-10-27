@@ -5,7 +5,7 @@ export type GuideOrder = Pick<InvOrderRow,
   'orderNo' | 'status' | 'settleStatus' | 'totalAmount' | 'settledAmount'>
 
 /** Derive milestones from the current server snapshot, never from reading help. */
-export function purchaseGuidePresentation(order?: GuideOrder | null, entering = false) {
+export function purchaseGuidePresentation(order?: GuideOrder | null, entering = false, editing = false) {
   if (entering) return {
     completed: 0, measurable: true, label: '正在录入', title: '先把实际采购情况记录完整',
     instruction: '在下方选择供应商、商品规格和单位，核对数量与单价后保存采购单。',
@@ -23,7 +23,9 @@ export function purchaseGuidePresentation(order?: GuideOrder | null, entering = 
   }
   if (order.status === 1) return {
     completed: 1, measurable: true, label: '待核对入库', title: '已保存，下一步核对实际到货',
-    instruction: '在核对区检查供应商、商品规格、数量、单位和金额；填错时先编辑采购单。',
+    instruction: editing
+      ? '在下方修正供应商、商品规格、数量、单位和金额，保存修改后再回到核对区。'
+      : '在核对区检查供应商、商品规格、数量、单位和金额；填错时先编辑采购单。',
     consequence: '确认货物已实际到达后，再审核并入库；尚未到货时可保留待处理。',
   }
   if (order.settleStatus === 'paid') return {

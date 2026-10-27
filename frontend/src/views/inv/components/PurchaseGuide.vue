@@ -5,11 +5,11 @@ import AppIcon from '@/components/AppIcon.vue'
 import { usePurchaseGuideStore } from '@/store/purchaseGuide'
 import { purchaseGuidePresentation, type GuideOrder } from './purchaseGuidePresentation'
 
-const props = defineProps<{ order?: GuideOrder | null; entering?: boolean; busy?: boolean; failed?: boolean }>()
+const props = defineProps<{ order?: GuideOrder | null; entering?: boolean; editing?: boolean; busy?: boolean; failed?: boolean }>()
 const guide = usePurchaseGuideStore()
 const contentId = useId()
 const toggle = ref<{ $el: HTMLButtonElement }>()
-const current = computed(() => purchaseGuidePresentation(props.order, props.entering))
+const current = computed(() => purchaseGuidePresentation(props.order, props.entering, props.editing))
 const steps = [
   { title: '录入采购', description: '保存单据，尚未入库' },
   { title: '核对并入库', description: '确认收货后审核，形成应付' },
@@ -126,6 +126,7 @@ async function change(active: boolean): Promise<void> {
   :deep(.el-step__description) { padding-right: 16px; font-size: 12px; line-height: 1.6; }
   :deep(.el-step__head.is-wait), :deep(.el-step__title.is-wait), :deep(.el-step__description.is-wait) { color: var(--app-text-secondary); border-color: var(--app-border); }
   :deep(.el-step__head.is-process), :deep(.el-step__title.is-process) { color: var(--brand-primary); border-color: var(--brand-primary); }
+  :deep(.el-step__head.is-success), :deep(.el-step__title.is-success), :deep(.el-step__description.is-success) { color: var(--tone-green); border-color: var(--tone-green); }
   &__instruction { margin-top: 20px; padding: 12px 16px; background: var(--app-surface-subtle); border-radius: var(--radius-sm); }
   &__instruction strong { color: var(--app-text); font-size: 14px; font-weight: 600; }
   &__consequence { display: flex; gap: 6px; align-items: baseline; }

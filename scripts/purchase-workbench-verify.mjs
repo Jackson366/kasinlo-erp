@@ -43,6 +43,7 @@ let browser
 let debugPage
 const checks = []
 const pageErrors = []
+const browserDiagnostics = []
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 try {
   let ready = false
@@ -79,6 +80,8 @@ try {
   const page = await context.newPage()
   debugPage = page
   page.on('pageerror', (e) => pageErrors.push(e.message))
+  page.on('console', message => { if (message.type() === 'error') browserDiagnostics.push(message.text()) })
+  page.on('requestfailed', request => browserDiagnostics.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText}`))
   const item = {
     id: 1,
     productId: 1,
@@ -407,6 +410,79 @@ try {
     await expect(review).toContainText('未设付款期限')
     await expect(review).not.toContainText('未结清')
     await expect(page).toHaveURL(/view=pending/)
+  })
+  await check('引导可跳过、退出和重开，保持输入与业务边界', async () => {
+    await page.goto(app + '/#/inv/purchase')
+    await page.reload()
+    const guide = page.locator('.order-page > .purchase-guide')
+    await guide.getByRole('button', {name:'直接办理',exact:true}).click()
+    await expect(guide.getByRole('button', {name:'采购操作指南',exact:true})).toBeFocused()
+    await page.reload()
+    await expect(guide.getByRole('button', {name:'开始引导'})).toHaveCount(0)
+    await guide.getByRole('button', {name:'采购操作指南',exact:true}).click()
+    await expect(guide.getByRole('list', {name:'采购办理顺序'})).toBeVisible()
+    await page.getByRole('button', {name:'新增采购单',exact:true}).click()
+    const dialog = page.getByRole('dialog', {name:'新增采购单',exact:true})
+    await dialog.getByPlaceholder('选填').last().fill('退出与重开后仍保留')
+    const audits = state.auditCalls
+    await dialog.getByRole('button', {name:'退出引导',exact:true}).click()
+    await expect(dialog.getByRole('button', {name:'采购操作指南',exact:true})).toBeFocused()
+    await expect(dialog.locator('.purchase-guide__content')).toHaveCount(0)
+    await expect(dialog.getByPlaceholder('选填').last()).toHaveValue('退出与重开后仍保留')
+    await expect(dialog.getByRole('button', {name:'刷新可选资料'})).toBeVisible()
+    await expect(dialog).toContainText('不会增加库存或登记付款')
+    await dialog.getByRole('button', {name:'采购操作指南',exact:true}).click()
+    await expect(dialog.getByPlaceholder('选填').last()).toHaveValue('退出与重开后仍保留')
+    await expect(dialog.getByRole('list', {name:'采购办理顺序'})).toBeVisible()
+    expect(state.auditCalls).toBe(audits)
+    await page.setViewportSize({width:600,height:900})
+    expect(await dialog.locator('.purchase-guide').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+    await page.screenshot({path:out+'/purchase-guide-narrow.png',fullPage:true})
+    await page.setViewportSize({width:1600,height:1100})
+    await page.reload()
+    await expect(page.locator('.purchase-impact')).toContainText('请确认货物已实际到达')
+  })
+  await check('办理进度按当前单据变化，不把部分付款或取消计为完成', async () => {
+    const saved = state.orders
+    const previousNavigation = state.fullNavigation
+    state.fullNavigation = true
+    const current = {...seed(909), orderNo:'CG-GUIDE-909'}
+    state.orders = [current]
+    await page.goto(app + '/#/inv/purchase')
+    await page.reload()
+    const guide = page.locator('.order-page > .purchase-guide')
+    await expect(guide).toContainText('已完成 1 / 3 个环节')
+    await expect(guide.getByRole('progressbar')).toHaveAttribute('aria-valuenow','33')
+    await expect(guide).toContainText('尚未到货时可保留待处理')
+    current.status = 2
+    current.settleStatus = 'partial'
+    current.settledAmount = 300
+    await page.getByRole('tab',{name:'全部单据',exact:true}).click()
+    await page.getByRole('button',{name:'CG-GUIDE-909',exact:true}).click()
+    const dialog = page.getByRole('dialog', {name:'采购单据详情',exact:true})
+    const detailGuide = dialog.locator('.purchase-guide')
+    await expect(detailGuide).toContainText('已完成 2 / 3 个环节')
+    await expect(detailGuide).toContainText('900.00')
+    await page.screenshot({path:out+'/purchase-guide-partial.png',fullPage:true})
+    current.settleStatus = 'paid'
+    current.settledAmount = 1200
+    await page.reload()
+    await page.getByRole('button',{name:'CG-GUIDE-909',exact:true}).click()
+    await expect(detailGuide).toContainText('已完成 3 / 3 个环节')
+    await expect(detailGuide.getByRole('progressbar')).toHaveAttribute('aria-valuenow','100')
+    current.status = 3
+    await page.reload()
+    await page.getByRole('button',{name:'CG-GUIDE-909',exact:true}).click()
+    await expect(detailGuide).toContainText('这张采购单已取消')
+    await expect(detailGuide.getByRole('progressbar')).toHaveCount(0)
+    state.orders = saved
+    await page.goto(app + '/#/inv/overview')
+    await page.reload()
+    await expect(page.locator('.purchase-start .purchase-guide').getByRole('progressbar')).toHaveCount(0)
+    state.fullNavigation = previousNavigation
+    await page.evaluate(() => localStorage.removeItem('nova_purchase_guide_v1:1'))
+    await page.goto(app + '/#/inv/purchase')
+    await page.reload()
   })
   await check('紧凑标题与单条待办卡片不拉伸', async () => {
     const header = page.locator('.purchase-header')
@@ -884,73 +960,6 @@ try {
     await expect(assertSidebarContrast).toPass({timeout:2000})
     await page.screenshot({path:out+'/sidebar-horizontal-dark.png',clip:{x:0,y:0,width:294,height:580}})
   })
-  await check('引导可跳过、退出和重开，保持输入与业务边界', async () => {
-    await page.goto(app + '/#/inv/purchase')
-    await page.reload()
-    const guide = page.locator('.order-page > .purchase-guide')
-    await guide.getByRole('button', {name:'直接办理',exact:true}).click()
-    await expect(guide.getByRole('button', {name:'采购操作指南',exact:true})).toBeFocused()
-    await page.reload()
-    await expect(guide.getByRole('button', {name:'开始引导'})).toHaveCount(0)
-    await guide.getByRole('button', {name:'采购操作指南',exact:true}).click()
-    await expect(guide.getByRole('list', {name:'采购办理顺序'})).toBeVisible()
-    await page.getByRole('button', {name:'新增采购单',exact:true}).click()
-    const dialog = page.getByRole('dialog', {name:'新增采购单',exact:true})
-    await dialog.getByPlaceholder('选填').last().fill('退出与重开后仍保留')
-    const audits = state.auditCalls
-    await dialog.getByRole('button', {name:'退出引导',exact:true}).click()
-    await expect(dialog.getByRole('button', {name:'采购操作指南',exact:true})).toBeFocused()
-    await expect(dialog.locator('.purchase-guide__content')).toHaveCount(0)
-    await expect(dialog.getByPlaceholder('选填').last()).toHaveValue('退出与重开后仍保留')
-    await expect(dialog.getByRole('button', {name:'刷新可选资料'})).toBeVisible()
-    await expect(dialog).toContainText('不会增加库存或登记付款')
-    await dialog.getByRole('button', {name:'采购操作指南',exact:true}).click()
-    await expect(dialog.getByPlaceholder('选填').last()).toHaveValue('退出与重开后仍保留')
-    await expect(dialog.getByRole('list', {name:'采购办理顺序'})).toBeVisible()
-    expect(state.auditCalls).toBe(audits)
-    await page.setViewportSize({width:600,height:900})
-    expect(await dialog.locator('.purchase-guide').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
-    await page.screenshot({path:out+'/purchase-guide-narrow.png',fullPage:true})
-    await page.setViewportSize({width:1600,height:1100})
-    await page.reload()
-    await expect(page.locator('.purchase-impact')).toContainText('请确认货物已实际到达')
-  })
-  await check('办理进度按当前单据变化，不把部分付款或取消计为完成', async () => {
-    const saved = state.orders
-    const current = {...seed(909), orderNo:'CG-GUIDE-909'}
-    state.orders = [current]
-    await page.goto(app + '/#/inv/purchase')
-    await page.reload()
-    const guide = page.locator('.order-page > .purchase-guide')
-    await expect(guide).toContainText('已完成 1 / 3 个环节')
-    await expect(guide.getByRole('progressbar')).toHaveAttribute('aria-valuenow','33')
-    await expect(guide).toContainText('尚未到货时可保留待处理')
-    current.status = 2
-    current.settleStatus = 'partial'
-    current.settledAmount = 300
-    await page.getByRole('tab',{name:'全部单据',exact:true}).click()
-    await page.getByRole('button',{name:'CG-GUIDE-909',exact:true}).click()
-    const dialog = page.getByRole('dialog', {name:'采购单据详情',exact:true})
-    const detailGuide = dialog.locator('.purchase-guide')
-    await expect(detailGuide).toContainText('已完成 2 / 3 个环节')
-    await expect(detailGuide).toContainText('900.00')
-    await page.screenshot({path:out+'/purchase-guide-partial.png',fullPage:true})
-    current.settleStatus = 'paid'
-    current.settledAmount = 1200
-    await page.reload()
-    await page.getByRole('button',{name:'CG-GUIDE-909',exact:true}).click()
-    await expect(detailGuide).toContainText('已完成 3 / 3 个环节')
-    await expect(detailGuide.getByRole('progressbar')).toHaveAttribute('aria-valuenow','100')
-    current.status = 3
-    await page.reload()
-    await page.getByRole('button',{name:'CG-GUIDE-909',exact:true}).click()
-    await expect(detailGuide).toContainText('这张采购单已取消')
-    await expect(detailGuide.getByRole('progressbar')).toHaveCount(0)
-    state.orders = saved
-    await page.goto(app + '/#/inv/overview')
-    await page.reload()
-    await expect(page.locator('.purchase-start .purchase-guide').getByRole('progressbar')).toHaveCount(0)
-  })
   await check('首页真实采购待办、快捷新建与刷新保留输入', async () => {
     state.fullNavigation = true
     state.readOnly = false
@@ -1020,6 +1029,8 @@ try {
 } catch (e) {
   console.error(e)
   console.error('pageErrors', pageErrors)
+  console.error('browserDiagnostics', browserDiagnostics)
+  console.error('serverLog', serverLog.slice(-6000))
   if (debugPage) {
     console.error('URL', debugPage.url())
     console.error((await debugPage.locator('body').innerText()).slice(-3500))

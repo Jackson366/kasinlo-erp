@@ -20,6 +20,11 @@ describe('current purchase milestones', () => {
     expect(view.completed).toBe(1)
     expect(view.consequence).toContain('尚未到货时可保留待处理')
   })
+  it('keeps an existing draft at one while editing and directs back to saving changes', () => {
+    const view = purchaseGuidePresentation(order, false, true)
+    expect(view.completed).toBe(1)
+    expect(view.instruction).toContain('保存修改后再回到核对区')
+  })
   it('leaves both unpaid and partially paid orders at two, using the actual balance', () => {
     expect(purchaseGuidePresentation({ ...order, status: 2 }).completed).toBe(2)
     const view = purchaseGuidePresentation({ ...order, status: 2, settleStatus: 'partial', settledAmount: 300 })

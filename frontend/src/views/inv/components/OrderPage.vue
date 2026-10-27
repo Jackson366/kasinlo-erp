@@ -30,6 +30,7 @@ import AttachmentDrawer from './AttachmentDrawer.vue'
 import PurchaseWorkbench from './PurchaseWorkbench.vue'
 import OrderDetailContent from './OrderDetailContent.vue'
 import PurchaseGuide from './PurchaseGuide.vue'
+import type { GuideOrder } from './purchaseGuidePresentation'
 import { statusMeta, settleMeta } from './orderPresentation'
 import { formatDay, formatMoney, formatQty } from '@/utils/format'
 import { useTableQuery } from '@/composables/useTableQuery'
@@ -425,6 +426,7 @@ const validating = ref(false)
 const saveError = ref(false)
 const formBaseline = ref('')
 const editingId = ref<number | null>(null)
+const editingOrder = ref<GuideOrder | null>(null)
 const detailVisible = ref(false)
 const detail = ref<{ row: InvOrderRow; items: InvOrderItem[] } | null>(null)
 
@@ -536,6 +538,7 @@ function onUnitChange(item: FormItem): void {
 }
 
 function openCreate(): void {
+  editingOrder.value = null
   Object.assign(form, {
     orderNo: '',
     partyId: undefined,
@@ -571,6 +574,7 @@ async function openEdit(row: InvOrderRow): Promise<void> {
     return
   }
   if (seq !== editSeq.value) return
+  editingOrder.value = data
   // 到期日走 formatDay 归一：历史数据里的 0001-01-01 要当成「未填」，
   // 否则日期选择器会显示一个荒唐的年份，用户一保存就把脏值又写回去
   const due = formatDay(data.dueDate)
@@ -1432,7 +1436,7 @@ function onKeywordInput(): void {
         class="purchase-entry-help"
         aria-label="采购录入说明"
       >
-        <PurchaseGuide entering />
+        <PurchaseGuide :entering="dialogMode === 'create'" :editing="dialogMode === 'edit'" :order="editingOrder" />
         <el-alert type="info" show-icon :closable="false"
           title="保存只记录单据，不会增加库存或登记付款。"
         />
