@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { purchaseGuidePresentation, type GuideOrder } from './purchaseGuidePresentation'
+import { purchaseGuidePresentation, purchaseTourSteps, type GuideOrder } from './purchaseGuidePresentation'
 
 const order: GuideOrder = {
   orderNo: 'CG001', status: 1, settleStatus: 'unpaid',
@@ -40,5 +40,10 @@ describe('current purchase milestones', () => {
     const view = purchaseGuidePresentation({ ...order, status: 3 })
     expect(view.measurable).toBe(false)
     expect(view.label).toBe('已取消')
+  })
+  it('does not offer an approval target for already approved or cancelled records', () => {
+    for (const status of [2, 3] as const) {
+      expect(purchaseTourSteps({ ...order, status }).some(step => step.anchor.includes('approve'))).toBe(false)
+    }
   })
 })

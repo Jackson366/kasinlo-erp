@@ -58,6 +58,7 @@ onActivated(load)
         <p v-else>先记录采购，再核对到货；付款可单独登记。</p>
       </div>
       <div class="purchase-start__actions">
+        <PurchaseGuide />
         <el-button v-if="failed" @click="load">重新加载</el-button>
         <el-button
           v-if="pending || failed"
@@ -75,7 +76,6 @@ onActivated(load)
         >
       </div>
     </div>
-    <PurchaseGuide class="purchase-start__guide" />
   </section>
 </template>
 
@@ -108,7 +108,6 @@ onActivated(load)
   &__actions :deep(.el-button + .el-button) {
     margin-left: 0;
   }
-  &__guide { margin-top: 16px; margin-bottom: 0; }
 }
 @media (max-width: 800px) {
   .purchase-start__task {

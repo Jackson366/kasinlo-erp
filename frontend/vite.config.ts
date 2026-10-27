@@ -34,6 +34,7 @@ const EP_PARENT: Record<string, string> = {
   'collapse-item': 'collapse',
   'timeline-item': 'timeline',
   step: 'steps',
+  'tour-step': 'tour',
 }
 
 function epKebab(s: string): string {

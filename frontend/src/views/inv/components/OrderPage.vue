@@ -990,7 +990,14 @@ function onKeywordInput(): void {
         <el-tab-pane label="待处理" name="pending" />
         <el-tab-pane label="全部单据" name="all" />
       </el-tabs>
+      <PurchaseGuide
+        v-if="isPurchase && !dialogVisible && !detailVisible"
+        :order="isWorkbench ? detail?.row : null"
+        :busy="isWorkbench && (detailLoading || loading)"
+        :failed="isWorkbench && (detailError || listError)"
+      />
       <el-button
+        data-purchase-tour="create"
         v-perm="'inv:purchase:create'"
         type="primary"
         @click="openCreate"
@@ -998,12 +1005,6 @@ function onKeywordInput(): void {
         <AppIcon name="Plus" />新增采购单
       </el-button>
     </header>
-    <PurchaseGuide
-      v-if="isPurchase && !dialogVisible && !detailVisible"
-      :order="isWorkbench ? detail?.row : null"
-      :busy="isWorkbench && (detailLoading || loading)"
-      :failed="isWorkbench && (detailError || listError)"
-    />
     <div class="page-card">
       <!-- 搜索与操作合并一行：左侧列表名，中间筛选（自动折行），右侧查询/重置/新建/刷新 -->
       <div class="list-head">
@@ -1188,6 +1189,7 @@ function onKeywordInput(): void {
                   v-perm="'inv:purchase:finish'"
                   type="primary"
                   :disabled="loading"
+                  data-purchase-tour="approve"
                   @click="openApprove(detail.row)"
                   >审核并入库</el-button
                 >
@@ -1423,6 +1425,12 @@ function onKeywordInput(): void {
       :before-close="beforeFormClose"
       destroy-on-close
     >
+      <template v-if="isPurchase" #header>
+        <div class="purchase-dialog-heading">
+          <span class="el-dialog__title">{{ dialogMode === 'create' ? createText : '编辑单据' }}</span>
+          <PurchaseGuide :entering="dialogMode === 'create'" :editing="dialogMode === 'edit'" :order="editingOrder" />
+        </div>
+      </template>
       <el-alert
         v-if="saveError"
         title="保存失败，本次输入已保留。请检查提示后重新保存。"
@@ -1436,7 +1444,6 @@ function onKeywordInput(): void {
         class="purchase-entry-help"
         aria-label="采购录入说明"
       >
-        <PurchaseGuide :entering="dialogMode === 'create'" :editing="dialogMode === 'edit'" :order="editingOrder" />
         <el-alert type="info" show-icon :closable="false"
           title="保存只记录单据，不会增加库存或登记付款。"
         />
@@ -1500,7 +1507,7 @@ function onKeywordInput(): void {
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12" :lg="6">
-            <el-form-item :label="partyLabel" prop="partyId">
+            <el-form-item :label="partyLabel" prop="partyId" data-purchase-tour="party">
               <el-select
                 v-model="form.partyId"
                 filterable
@@ -1669,7 +1676,7 @@ function onKeywordInput(): void {
         <el-button :disabled="submitting" @click="requestCloseForm"
           >取消</el-button
         >
-        <el-button type="primary" :loading="submitting" @click="submitForm">{{
+        <el-button data-purchase-tour="save" type="primary" :loading="submitting" @click="submitForm">{{
           isPurchase ? '保存采购单' : '保存销售单'
         }}</el-button>
       </template>
@@ -1684,8 +1691,13 @@ function onKeywordInput(): void {
       width="1280px"
       top="6vh"
     >
+      <template v-if="isPurchase" #header>
+        <div class="purchase-dialog-heading">
+          <span class="el-dialog__title">{{ title }}详情</span>
+          <PurchaseGuide :order="detail?.row" :busy="detailLoading" :failed="detailError" />
+        </div>
+      </template>
       <template v-if="detail">
-        <PurchaseGuide v-if="isPurchase" :order="detail.row" :busy="detailLoading" :failed="detailError" />
         <OrderDetailContent
           :order="detail.row"
           :items="detail.items"
@@ -1714,6 +1726,7 @@ function onKeywordInput(): void {
           <el-button
             v-perm="'inv:purchase:finish'"
             type="primary"
+            data-purchase-tour="approve"
             @click="detail && openApprove(detail.row)"
             >审核并入库</el-button
           >
@@ -1790,6 +1803,15 @@ function onKeywordInput(): void {
 </template>
 
 <style scoped lang="scss">
+.purchase-dialog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-right: 16px;
+}
+
 .purchase-entry-help {
   margin-bottom: 24px;
   strong {
