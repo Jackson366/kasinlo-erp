@@ -13,7 +13,9 @@ import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { FormInstance, FormRules } from 'element-plus'
 import { invApi } from '@/api'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { usePurchaseHandoff } from '@/composables/usePurchaseHandoff'
+import PurchaseReturnLink from '../components/PurchaseReturnLink.vue'
 import { useUserStore } from '@/store'
 import type {
   InvInventoryRow,
@@ -41,6 +43,8 @@ defineOptions({ name: 'InvStock' })
 // 默认落在「库存查询」：菜单叫库存管理，进页面先看库存现状，
 // 单据是这个页面的历史记录，需要时再切过去。
 const router = useRouter()
+const route = useRoute()
+const { returnTo, follow } = usePurchaseHandoff()
 const userStore = useUserStore()
 function openSource(row: InvStockOrderRow): void {
   const biz = row.sourceType
@@ -66,7 +70,7 @@ interface StockQuery {
   direction?: InvStockDirection
 }
 
-const { query, loading, rows, total, load, search, reset } = useTableQuery<
+const { query, loading, error: listError, rows, total, load, search, reset } = useTableQuery<
   StockQuery,
   InvStockOrderRow
 >({ keyword: '', direction: undefined }, (params) =>
@@ -429,17 +433,30 @@ async function batchVoid(): Promise<void> {
 }
 
 onMounted(() => {
-  load()
+  if (!returnTo.value) load()
   loadInventory()
   loadPicks()
 })
 // 关键字录入即查询（防抖）：单据 tab 用 search，库存 tab 用 loadInventory
-const { searchSoon } = useDebouncedSearch(search)
+const { searchSoon, cancel: cancelSearch } = useDebouncedSearch(search)
+follow('/inv/stock', () => {
+  cancelSearch()
+  activeTab.value = 'orders'
+  Object.assign(query, {
+    page: 1, pageSize: 10,
+    keyword: typeof route.query.q === 'string' ? route.query.q : '',
+    direction: 'in',
+  })
+  clearSelection(tableRef.value)
+  rows.value = []
+  void load()
+})
 const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
 </script>
 
 <template>
   <div class="stock-page">
+    <PurchaseReturnLink />
     <div class="page-card">
       <el-tabs v-model="activeTab" @tab-change="onTabChange">
         <!-- 库存查询 -->
@@ -609,7 +626,12 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
             </div>
           </div>
 
+          <el-alert v-if="listError" type="error" :closable="false" show-icon title="出入库单加载失败，请重新加载后查看。">
+            <el-button text @click="load">重新加载</el-button>
+          </el-alert>
           <el-table
+            v-else
+            :empty-text="returnTo ? '当前可见范围内未找到入库单，请核查单号或联系仓储负责人' : '暂无数据'"
             ref="tableRef"
             v-loading="loading"
             :data="rows"

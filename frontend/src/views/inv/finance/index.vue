@@ -3,10 +3,13 @@
  * 应收应付页：应收（销售）与应付（采购）两个视图，结构一致。
  * 汇总数据随列表接口一并返回，避免多打一次请求。
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import type { FormInstance, FormRules } from 'element-plus'
 import { invApi } from '@/api'
+import { useRoute } from 'vue-router'
+import { usePurchaseHandoff } from '@/composables/usePurchaseHandoff'
+import PurchaseReturnLink from '../components/PurchaseReturnLink.vue'
 import type { InvFinanceRow, InvFinanceSummary, InvSettlePayload } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
@@ -18,6 +21,10 @@ import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 defineOptions({ name: 'InvFinance' })
 
+const route = useRoute()
+const { returnTo, follow } = usePurchaseHandoff()
+const loadError = ref(false)
+let applyingHandoff = false
 const activeTab = ref<'receivable' | 'payable'>('receivable')
 const loading = ref(false)
 const rows = ref<InvFinanceRow[]>([])
@@ -59,7 +66,7 @@ const settleMeta: Record<string, { text: string; type: 'danger' | 'warning' | 's
 }
 
 const summaryCards = computed(() => [
-  { label: '应收总额', value: summary.value.total, tone: 'blue' },
+  { label: activeTab.value === 'payable' ? '应付总额' : '应收总额', value: summary.value.total, tone: 'blue' },
   { label: '已结算', value: summary.value.settled, tone: 'green' },
   { label: '未结余额', value: summary.value.outstanding, tone: 'amber' },
   { label: '逾期金额', value: summary.value.overdue, tone: 'red' },
@@ -75,6 +82,9 @@ const guard = useLatestGuard()
 async function load(): Promise<void> {
   const ticket = guard.start()
   loading.value = true
+  loadError.value = false
+  selection.value = []
+  tableRef.value?.clearSelection()
   try {
     const params = {
       page: query.page,
@@ -96,7 +106,12 @@ async function load(): Promise<void> {
     selection.value = []
     tableRef.value?.clearSelection()
   } catch {
-    // 失败提示由响应拦截器统一处理
+    if (guard.isCurrent(ticket)) {
+      loadError.value = true
+      rows.value = []
+      total.value = 0
+      summary.value = { total: 0, settled: 0, outstanding: 0, overdue: 0, orderTotal: 0, planTotal: 0 }
+    }
   } finally {
     if (guard.isCurrent(ticket)) loading.value = false
   }
@@ -116,6 +131,7 @@ function reset(): void {
 }
 
 function onTabChange(): void {
+  if (applyingHandoff) return
   query.page = 1
   load()
 }
@@ -274,13 +290,27 @@ async function handleExport(): Promise<void> {
   }
 }
 
-onMounted(load)
+onMounted(() => { if (!returnTo.value) void load() })
 // 关键字录入即查询（防抖），不必再按回车
-const { searchSoon } = useDebouncedSearch(search)
+const { searchSoon, cancel: cancelSearch } = useDebouncedSearch(search)
+follow('/inv/finance', () => {
+  applyingHandoff = true
+  void nextTick(() => { applyingHandoff = false })
+  cancelSearch()
+  activeTab.value = route.query.view === 'payable' ? 'payable' : 'receivable'
+  Object.assign(query, {
+    page: 1, pageSize: 10,
+    keyword: typeof route.query.q === 'string' ? route.query.q : '',
+    settle: '', source: route.query.source === 'order' ? 'order' : '',
+  })
+  rows.value = []
+  void load()
+})
 </script>
 
 <template>
   <div class="finance-page">
+    <PurchaseReturnLink />
     <div class="summary-row">
       <div v-for="card in summaryCards" :key="card.label" class="summary-card" :class="`tone-${card.tone}`">
         <span class="summary-card__label">{{ card.label }}</span>
@@ -346,7 +376,12 @@ const { searchSoon } = useDebouncedSearch(search)
         </div>
       </div>
 
+      <el-alert v-if="loadError" type="error" :closable="false" show-icon title="应收应付加载失败，请重新加载后办理。">
+        <el-button text @click="load">重新加载</el-button>
+      </el-alert>
       <el-table
+        v-else
+        :empty-text="returnTo ? '当前可见范围内未找到记录，请核查单号或联系财务负责人' : '暂无数据'"
         ref="tableRef"
         v-loading="loading"
         :data="rows"

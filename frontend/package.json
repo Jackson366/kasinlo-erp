@@ -14,7 +14,8 @@
     "test:purchase": "node ../scripts/purchase-workbench-verify.mjs",
     "dev:mock": "vite --mode mock",
     "build:mock": "vue-tsc --noEmit && vite build --mode mock",
-    "test:purchase-audit": "node ../scripts/purchase-audit-verify.mjs"
+    "test:purchase-audit": "node ../scripts/purchase-audit-verify.mjs",
+    "test:purchase-handoff": "node ../scripts/purchase-handoff-verify.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",

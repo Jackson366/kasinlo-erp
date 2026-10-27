@@ -67,9 +67,6 @@ function detailSummary(param: { columns: unknown[] }): string[] {
       </div>
     </div>
 
-    <p v-if="isPurchase && order.status === 1" class="detail-stage-note">
-      待核对 · 审核后将生成入库单、增加库存，并形成应付。
-    </p>
     <p v-if="isPurchase" class="audit-summary">
       {{ order.status === 2 ? '审核' : '上次审核' }}：
       <template v-if="order.auditedAt"
@@ -269,15 +266,6 @@ function detailSummary(param: { columns: unknown[] }): string[] {
   }
 }
 
-.detail-stage-note {
-  color: var(--tone-amber);
-  background: var(--tone-amber-soft);
-  padding: 12px 16px;
-  border-radius: var(--radius-sm);
-  margin: 0 0 20px;
-  line-height: 1.6;
-  font-size: 13px;
-}
 @media (max-width: 1200px) {
   .detail-head {
     align-items: flex-start;

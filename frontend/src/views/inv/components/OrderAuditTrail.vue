@@ -1,9 +1,49 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useUserStore } from '@/store'
 import type { InvOrderDetail } from '@/types/api'
 import { formatDateTime, formatMoney } from '@/utils/format'
 import Pagination from '@/components/Pagination.vue'
 const props = defineProps<{ order: InvOrderDetail }>()
+const route = useRoute()
+const router = useRouter()
+const user = useUserStore()
+const canViewStock = computed(
+  () =>
+    props.order.downstream?.visibility === 'visible' &&
+    user.hasAnyPerm(['inv:stock:list']) &&
+    router.hasRoute('InvStock'),
+)
+const canViewFinance = computed(
+  () => user.hasAnyPerm(['inv:finance:list']) && router.hasRoute('InvFinance'),
+)
+const returnTo = computed(
+  () =>
+    router.resolve({
+      path: '/inv/purchase',
+      query: {
+        ...route.query,
+        view: String(route.query.view || 'pending'),
+        order: String(props.order.id),
+      },
+    }).fullPath,
+)
+function stockLocation(orderNo: string) {
+  return {
+    path: '/inv/stock',
+    query: { view: 'orders', q: orderNo, returnTo: returnTo.value },
+  }
+}
+const financeLocation = computed(() => ({
+  path: '/inv/finance',
+  query: {
+    view: 'payable',
+    q: props.order.orderNo,
+    source: 'order',
+    returnTo: returnTo.value,
+  },
+}))
 const page = ref(1)
 const pageSize = ref(5)
 const expanded = ref<string[]>([])
@@ -38,7 +78,14 @@ const visibleHistory = computed(() =>
         class="order-downstream__stocks"
       >
         <div v-for="stock in order.downstream.stockOrders" :key="stock.id">
-          <strong>{{ stock.orderNo }}</strong>
+          <router-link
+            v-if="canViewStock"
+            :to="stockLocation(stock.orderNo)"
+            class="order-downstream__link"
+            :aria-label="`查看入库单 ${stock.orderNo}`"
+            >{{ stock.orderNo }}</router-link
+          >
+          <strong v-else>{{ stock.orderNo }}</strong>
           <el-tag
             size="small"
             :type="stock.status === 1 ? 'success' : 'info'"
@@ -63,6 +110,18 @@ const visibleHistory = computed(() =>
         应付 {{ formatMoney(order.totalAmount) }} · 已付款
         {{ formatMoney(order.settledAmount) }} · 未付款
         {{ formatMoney(order.totalAmount - order.settledAmount) }}
+        <router-link
+          v-if="canViewFinance"
+          :to="financeLocation"
+          class="order-downstream__link"
+          >查看本单应付</router-link
+        >
+        <span
+          v-else-if="order.totalAmount > order.settledAmount"
+          class="text-muted"
+        >
+          · 请由财务核查并登记实际付款</span
+        >
       </div>
       <div v-else>尚未形成应付</div>
     </div>
@@ -114,6 +173,24 @@ const visibleHistory = computed(() =>
 
 <style scoped lang="scss">
 .order-downstream {
+  &__link {
+    display: inline-flex;
+    margin-inline: 4px;
+    color: var(--brand-primary);
+    cursor: pointer;
+    overflow-wrap: anywhere;
+    &:hover {
+      color: var(--brand-primary-hover);
+      text-decoration: underline;
+    }
+    &:active {
+      color: var(--brand-primary-active);
+    }
+    &:focus-visible {
+      outline: 2px solid var(--brand-primary);
+      outline-offset: 2px;
+    }
+  }
   &__row {
     display: grid;
     grid-template-columns: 64px minmax(0, 1fr);

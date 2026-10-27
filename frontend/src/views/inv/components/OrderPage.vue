@@ -680,7 +680,7 @@ async function submitForm(): Promise<void> {
       // 新单即使不属于当前筛选页，也在核对区保留明确的保存结果。
       keepReviewResult.value = true
       reviewResult.value =
-        '采购单已保存，尚未增加库存。取得收货确认依据并核对后，再审核并入库。'
+        '采购单已保存，尚未增加库存。'
       mobileDetail.value = true
       await openDetail({ id: createdId })
     } else if (
@@ -873,7 +873,12 @@ async function beforeFormClose(done: () => void): Promise<void> {
 }
 onBeforeRouteLeave(async () => {
   const allowed = await canCloseForm()
-  if (allowed) dialogVisible.value = false
+  if (allowed) {
+    dialogVisible.value = false
+    detailVisible.value = false
+    ++detailViewSeq.value
+    detailLoading.value = false
+  }
   return allowed
 })
 function beforeUnload(event: BeforeUnloadEvent): void {
@@ -1026,16 +1031,33 @@ watch(() => route.query.action, consumeCreateAction)
 async function consumeLinkedOrder(): Promise<void> {
   const id = Number(route.query.order)
   if (route.path !== pagePath || !Number.isSafeInteger(id) || id <= 0) return
-  // A cached purchase page may still be showing the pending queue when a stock
-  // source link explicitly requests history. Apply that view before opening it.
-  if (isWorkbench.value) {
-    workspaceView.value = 'all'
-    query.status = undefined
-    query.settleStatus = undefined
-    query.page = 1
-    keepReviewResult.value = false
-    await load()
-  }
+  // Restore the source filters as well as the record on a cached page.
+  workspaceView.value = route.query.view === 'pending' ? 'pending' : 'all'
+  Object.assign(query, {
+    keyword: typeof route.query.q === 'string' ? route.query.q : '',
+    handoff: ['auditable', 'created', 'reversed'].includes(String(route.query.handoff))
+      ? String(route.query.handoff)
+      : '',
+    page: urlNumber(route.query.page, 1, 100000),
+    pageSize: urlNumber(route.query.size, 10, 200),
+    dateRange:
+      typeof route.query.start === 'string' && typeof route.query.end === 'string'
+        ? [route.query.start, route.query.end]
+        : [],
+    status: isWorkbench.value
+      ? 1
+      : [1, 2, 3].includes(Number(route.query.status))
+        ? Number(route.query.status)
+        : undefined,
+    settleStatus:
+      !isWorkbench.value && ['unpaid', 'partial', 'paid'].includes(String(route.query.settle))
+        ? (route.query.settle as InvSettleStatus)
+        : undefined,
+  })
+  keepReviewResult.value = isWorkbench.value
+  reviewResult.value = ''
+  if (isWorkbench.value) mobileDetail.value = true
+  await load()
   if (route.path === pagePath && Number(route.query.order) === id) await openDetail({ id })
 }
 
@@ -1046,10 +1068,11 @@ watch(
   },
 )
 onMounted(() => {
-  void consumeLinkedOrder()
+  const linkedId = Number(route.query.order)
+  if (Number.isSafeInteger(linkedId) && linkedId > 0) void consumeLinkedOrder()
+  else void load()
   consumeCreateAction()
   window.addEventListener('beforeunload', beforeUnload)
-  void load()
   void loadOptions().catch(() => {})
 })
 // 关键字录入即查询（防抖），不必再按回车
@@ -1269,10 +1292,9 @@ function onKeywordInput(): void {
             :is-purchase="true"
             :picks="picks"
           />
-          <el-alert v-if="detail.row.status === 1" class="purchase-impact"
-            type="warning" show-icon :closable="false"
-            title="审核后增加库存并形成应付，请确认货物已实际到达。"
-          />
+          <p v-if="detail.row.status === 1" class="purchase-impact">
+            审核后增加库存并形成应付，请确认货物已实际到达。
+          </p>
           <div class="purchase-review-actions">
             <div class="purchase-review-actions__secondary">
               <el-button @click="openAttach(detail.row)"
@@ -1891,6 +1913,7 @@ function onKeywordInput(): void {
           >打印单据</el-button
         >
         <template v-if="isPurchase && detail?.row.status === 1">
+          <span class="purchase-impact purchase-impact--inline">审核后增加库存并形成应付，请确认货物已实际到达。</span>
           <el-button
             v-perm="'inv:purchase:update'"
             @click="detail && openEdit(detail.row)"
@@ -2184,9 +2207,11 @@ function onKeywordInput(): void {
   }
 }
 .purchase-impact {
-  color: var(--app-text-secondary);
+  margin: 12px 0;
+  font-size: 12px;
   line-height: 1.6;
-  margin: 16px 0;
+  color: var(--app-text-secondary);
+  &--inline { display: inline-block; margin: 0 12px 8px 0; }
 }
 .purchase-result {
   margin-bottom: 20px;
