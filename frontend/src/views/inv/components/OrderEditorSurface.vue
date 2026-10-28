@@ -82,20 +82,21 @@ watch(
     line-height: 1.6;
   }
   &__body {
-    padding: 24px;
+    padding: 20px;
     background: var(--app-surface);
     border: 1px solid var(--app-border);
     border-radius: var(--radius-md);
   }
   &__footer {
     position: sticky;
-    bottom: -20px;
+    bottom: 0;
     z-index: 5;
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
     align-items: center;
     gap: 12px;
-    padding: 16px 24px;
+    padding: 12px 20px;
     background: var(--app-surface);
     border-top: 1px solid var(--app-border);
   }

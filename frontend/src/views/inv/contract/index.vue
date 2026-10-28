@@ -492,6 +492,7 @@ async function removeRow(row: InvContractRow): Promise<void> {
 // ---------------- 详情抽屉 ----------------
 const detailVisible = ref(false)
 const detail = ref<InvContractRow | null>(null)
+const contractInfoOpen = ref<string[]>([])
 const detailLoading = ref(false)
 const detailError = ref(false)
 let detailSeq = 0
@@ -548,6 +549,7 @@ async function openDetail(row: Pick<InvContractRow, 'id'>): Promise<void> {
   detailId.value = row.id
   resetInspection()
   detail.value = null
+  contractInfoOpen.value = []
   detailVisible.value = true
   detailLoading.value = true
   detailError.value = false
@@ -1330,7 +1332,6 @@ const attachType: InvAttachBizType = 'contract'
             </div>
             <div class="detail-head__actions">
               <template v-if="detailIsPending">
-                <el-tag type="danger" effect="light" size="small">待审核</el-tag>
                 <el-button
                   v-perm="'inv:contract:audit'"
                   type="primary"
@@ -1345,6 +1346,7 @@ const attachType: InvAttachBizType = 'contract'
                 <el-select
                   v-perm="'inv:contract:update'"
                   v-model="detail.status"
+                  aria-label="合同状态"
                   size="small"
                   style="width: 104px"
                   :loading="statusSaving"
@@ -1357,6 +1359,8 @@ const attachType: InvAttachBizType = 'contract'
                   size="small"
                   :loading="auditing"
                   :disabled="detailHasSettled"
+                  :title="detailHasSettled ? '已有收付款，不能反审核' : '退回待审核'"
+                  text
                   @click="doUnaudit"
                 >
                   反审核
@@ -1370,61 +1374,57 @@ const attachType: InvAttachBizType = 'contract'
               >
                 {{ detail.acceptedAt ? '重新验收' : '登记验收' }}
               </el-button>
-              <el-button v-perm="'inv:contract:update'" size="small" @click="openEdit(detail)">
+              <el-button v-perm="'inv:contract:update'" text size="small" @click="openEdit(detail)">
                 编辑
               </el-button>
-              <el-button size="small" @click="openAttach(detail)">
+              <el-button text size="small" @click="openAttach(detail)">
                 附件{{ detail.attachmentCount ? `(${detail.attachmentCount})` : '' }}
               </el-button>
-              <el-button size="small" @click="openLogs">记录</el-button>
+              <el-button text size="small" @click="openLogs">记录</el-button>
             </div>
           </div>
 
-          <el-descriptions :column="3" border size="small" class="detail-desc">
-            <el-descriptions-item label="签订日期">{{ formatDay(detail.signDate) }}</el-descriptions-item>
-            <el-descriptions-item label="履约期">{{ periodText(detail) }}</el-descriptions-item>
-            <el-descriptions-item label="业务员">{{ detail.salesman || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="合同金额">{{ formatMoney(detail.amount) }}</el-descriptions-item>
-            <el-descriptions-item label="计划合计">{{ formatMoney(detail.planAmount) }}</el-descriptions-item>
-            <el-descriptions-item label="已收付">{{ formatMoney(detail.settledAmount) }}</el-descriptions-item>
-            <el-descriptions-item label="未收付">{{ formatMoney(detail.outstanding) }}</el-descriptions-item>
-            <el-descriptions-item label="质保金">
-              {{ detail.retentionAmount ? formatMoney(detail.retentionAmount) : '—' }}
-              <span v-if="detail.retentionRate" class="text-muted">（{{ detail.retentionRate }}%）</span>
-            </el-descriptions-item>
-            <el-descriptions-item label="质保金未收">{{ formatMoney(detail.retentionOutstanding) }}</el-descriptions-item>
-            <el-descriptions-item label="验收日期">
-              {{ detail.acceptedAt ? formatDay(detail.acceptedAt) : '未验收' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="验收结论">{{ detail.acceptResult || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="质保到期">
-              {{ detail.warrantyEndAt ? formatDay(detail.warrantyEndAt) : '—' }}
-              <span v-if="detail.warrantyMonths" class="text-muted">（{{ detail.warrantyMonths }} 个月）</span>
-            </el-descriptions-item>
-            <el-descriptions-item label="审核">
-              <template v-if="detail.auditedAt">
-                {{ detail.auditor || '—' }} · {{ formatDay(detail.auditedAt) }}
-              </template>
-              <span v-else class="text-muted">未审核（不计入应收 / 应付）</span>
-            </el-descriptions-item>
-            <el-descriptions-item label="备注" :span="3">{{ detail.remark || '—' }}</el-descriptions-item>
-          </el-descriptions>
+          <div class="contract-context"><span>签订 {{ formatDay(detail.signDate) }}</span><span v-if="detail.salesman">业务员 {{ detail.salesman }}</span></div>
+          <dl class="contract-money-summary" aria-label="合同收付概览">
+            <div><dt>合同金额</dt><dd>{{ formatMoney(detail.amount) }}</dd></div>
+            <div><dt>已收付</dt><dd>{{ formatMoney(detail.settledAmount) }}</dd></div>
+            <div class="contract-money-summary__balance"><dt>未收付</dt><dd>{{ formatMoney(detail.outstanding) }}</dd></div>
+          </dl>
+          <p v-if="detailIsPending" class="contract-pending-note">待审核，付款计划暂不计入应收 / 应付。</p>
+          <el-collapse v-model="contractInfoOpen" class="contract-info">
+            <el-collapse-item name="details" title="履约、验收与质保信息">
+              <el-descriptions :column="2" size="small" class="detail-desc">
+                <el-descriptions-item label="履约期">{{ periodText(detail) }}</el-descriptions-item>
+                <el-descriptions-item label="审核">
+                  <template v-if="detail.auditedAt">{{ detail.auditor || '—' }} · {{ formatDay(detail.auditedAt) }}</template>
+                  <span v-else>未审核</span>
+                </el-descriptions-item>
+                <el-descriptions-item label="验收日期">{{ detail.acceptedAt ? formatDay(detail.acceptedAt) : '未验收' }}</el-descriptions-item>
+                <el-descriptions-item label="验收结论">{{ detail.acceptResult || '—' }}</el-descriptions-item>
+                <el-descriptions-item label="质保到期">{{ detail.warrantyEndAt ? formatDay(detail.warrantyEndAt) : '—' }}<span v-if="detail.warrantyMonths" class="text-muted">（{{ detail.warrantyMonths }} 个月）</span></el-descriptions-item>
+                <el-descriptions-item label="质保金">{{ formatMoney(detail.retentionAmount || 0) }}<span v-if="detail.retentionRate" class="text-muted">（{{ detail.retentionRate }}%）</span></el-descriptions-item>
+                <el-descriptions-item label="质保金未收">{{ formatMoney(detail.retentionOutstanding) }}</el-descriptions-item>
+                <el-descriptions-item label="备注" :span="2">{{ detail.remark || '—' }}</el-descriptions-item>
+              </el-descriptions>
+            </el-collapse-item>
+          </el-collapse>
 
-          <el-divider content-position="left">付款计划与收付</el-divider>
-          <el-table :data="detailPlans" size="small" border stripe empty-text="未设置付款计划">
-            <el-table-column label="期次" width="60" align="center">
-              <template #default="{ row }">第 {{ row.seq }} 期</template>
+          <div class="contract-section-heading"><h4>付款计划与收付</h4><span>{{ detailPlans.length }} 期 · 计划合计 {{ formatMoney(detail.planAmount) }}</span></div>
+          <el-table class="contract-plans" :data="detailPlans" size="small" row-key="id" empty-text="未设置付款计划">
+            <el-table-column type="expand" width="32">
+              <template #default="{ row }">
+                <dl class="record-details">
+                  <div><dt>触发节点</dt><dd>{{ row.triggerNode === 'sign' ? '签订即收付' : row.triggerNode === 'accept' ? '验收后' : row.triggerNode === 'warranty_end' ? '质保到期' : '按约定日期' }}</dd></div>
+                  <div><dt>备注</dt><dd>{{ row.remark || '—' }}</dd></div>
+                </dl>
+              </template>
             </el-table-column>
-            <el-table-column prop="name" label="名称" width="110" show-overflow-tooltip />
-            <el-table-column prop="kindLabel" label="类型" width="90" />
-            <el-table-column label="比例" width="72" align="right">
-              <template #default="{ row }">{{ row.rate ? `${row.rate}%` : '—' }}</template>
+            <el-table-column label="期次 / 名称" min-width="160">
+              <template #default="{ row }"><div class="contract-plan-name">{{ row.name }}</div><div class="contract-plan-meta">第 {{ row.seq }} 期 · {{ row.kindLabel }}<span v-if="row.rate"> · {{ row.rate }}%</span></div></template>
             </el-table-column>
+            <el-table-column label="约定日期" width="104"><template #default="{ row }">{{ row.dueDate ? formatDay(row.dueDate) : '—' }}</template></el-table-column>
             <el-table-column label="金额" width="112" align="right">
               <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
-            </el-table-column>
-            <el-table-column label="约定日期" width="104">
-              <template #default="{ row }">{{ row.dueDate ? formatDay(row.dueDate) : '—' }}</template>
             </el-table-column>
             <el-table-column label="已收付" width="112" align="right">
               <template #default="{ row }">{{ formatMoney(row.settledAmount) }}</template>
@@ -1434,7 +1434,7 @@ const attachType: InvAttachBizType = 'contract'
                 <span :class="{ 'text-warning': row.outstanding > 0 }">{{ formatMoney(row.outstanding) }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="状态" width="92">
+            <el-table-column label="状态" width="80">
               <template #default="{ row }">
                 <el-tag
                   size="small"
@@ -1462,13 +1462,6 @@ const attachType: InvAttachBizType = 'contract'
               </template>
             </el-table-column>
           </el-table>
-
-          <div class="plan-sum detail-plan-sum">
-            计划 <strong>{{ formatMoney(detail.planAmount) }}</strong>
-            ｜ 已收付 <strong>{{ formatMoney(detail.settledAmount) }}</strong>
-            ｜ 未收付 <strong class="text-warning">{{ formatMoney(detail.outstanding) }}</strong>
-            ｜ 质保金未收 <strong>{{ formatMoney(detail.retentionOutstanding) }}</strong>
-          </div>
 
           <section
             v-if="inspection"
@@ -1529,7 +1522,6 @@ const attachType: InvAttachBizType = 'contract'
                   v-loading="historyLoading"
                   :data="historyRows"
                   size="small"
-                  border
                   empty-text="暂无流水"
                 >
                   <el-table-column label="日期" width="112">
@@ -1567,9 +1559,9 @@ const attachType: InvAttachBizType = 'contract'
                   v-loading="logLoading"
                   :data="logRows"
                   size="small"
-                  border
                   empty-text="暂无操作记录"
                 >
+                  <el-table-column type="expand" width="32"><template #default="{ row }"><dl class="record-details"><div><dt>IP 地址</dt><dd>{{ row.ip || '—' }}</dd></div></dl></template></el-table-column>
                   <el-table-column label="时间" width="150">
                     <template #default="{ row }">{{
                       formatDateTime(row.createdAt)
@@ -1578,16 +1570,9 @@ const attachType: InvAttachBizType = 'contract'
                   <el-table-column
                     prop="action"
                     label="操作"
-                    min-width="120"
-                    show-overflow-tooltip
+                    min-width="160"
                   />
                   <el-table-column prop="username" label="操作人" width="110" />
-                  <el-table-column
-                    prop="ip"
-                    label="IP"
-                    width="130"
-                    show-overflow-tooltip
-                  />
                   <el-table-column label="结果" width="70" align="center">
                     <template #default="{ row }">
                       <el-tag
@@ -1708,6 +1693,123 @@ const attachType: InvAttachBizType = 'contract'
 </template>
 
 <style scoped lang="scss">
+.contract-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  margin: 12px 0;
+}
+.contract-money-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 16px 0 20px;
+  margin: 0;
+  border-bottom: 1px solid var(--app-border-light);
+  dt {
+    font-size: 12px;
+    color: var(--app-text-secondary);
+    margin-bottom: 6px;
+  }
+  dd {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  &__balance dd {
+    font-weight: 600;
+    color: var(--app-text);
+  }
+}
+.contract-pending-note {
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+.contract-info {
+  margin-bottom: 24px;
+  border-top: 0;
+  --el-collapse-header-font-size: 13px;
+  --el-collapse-header-height: 40px;
+  :deep(.el-collapse-item__content) {
+    padding-bottom: 12px;
+  }
+}
+.contract-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  h4 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  span {
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+}
+.contract-plan-name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.contract-plan-meta {
+  margin-top: 2px;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+}
+.contract-plans :deep(.el-table__cell) {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.record-details {
+  margin: 0;
+  padding: 12px 24px;
+  font-size: 13px;
+  div {
+    display: flex;
+    gap: 16px;
+    margin: 4px 0;
+  }
+  dt {
+    min-width: 64px;
+    color: var(--app-text-secondary);
+  }
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}
+@media (max-width: 640px) {
+  .contract-money-summary {
+    gap: 8px;
+    dd {
+      font-size: 16px;
+    }
+  }
+  .detail-desc :deep(.el-descriptions__table),
+  .detail-desc :deep(tbody),
+  .detail-desc :deep(tr),
+  .detail-desc :deep(.el-descriptions__cell) {
+    display: block;
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .contract-inspection :deep(.el-tabs__active-bar),
+  .contract-info :deep(.el-collapse-transition) {
+    transition: none;
+  }
+}
 .contract-detail-drawer { max-width: 100vw; }
 :global(.contract-detail-drawer .el-drawer__body) { overflow-x: hidden; }
 
@@ -1829,6 +1931,7 @@ const attachType: InvAttachBizType = 'contract'
     gap: 8px;
     flex-shrink: 0;
     flex-wrap: wrap;
+    :deep(.el-button + .el-button) { margin-left: 0; }
   }
 }
 
@@ -1836,9 +1939,4 @@ const attachType: InvAttachBizType = 'contract'
   margin-bottom: 8px;
 }
 
-.detail-plan-sum {
-  flex-wrap: wrap;
-  margin-top: 12px;
-  justify-content: flex-end;
-}
 </style>

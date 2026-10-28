@@ -20,7 +20,7 @@ export function purchaseTourSteps(order?: GuideOrder | null, entering = false, e
   }]
   if (entering || editing) return [
     { anchor: '[data-purchase-tour="party"]', title: '选择供应商', description: '先确认这张采购单属于哪家供应商，再核对单据日期。' },
-    { anchor: '.purchase-entry-help__tools', title: '缺少资料时从这里补齐', description: '维护资料后回到原单据，刷新可选资料。刷新失败可以重试，当前输入会保留。' },
+    { anchor: '.purchase-resource-tools', title: '缺少资料时从这里补齐', description: '维护资料后回到原单据，刷新可选资料。刷新失败可以重试，当前输入会保留。' },
     { anchor: '.item-editor', title: '核对商品与采购数量', description: '选择商品、规格与单位，核对数量和单价；留意换算后的基本数量。' },
     { anchor: '[data-purchase-tour="save"]', title: editing ? '保存本次修改' : '保存采购单', description: '结束引导后，点击「保存」。保存不会增加库存或登记付款。' },
   ]

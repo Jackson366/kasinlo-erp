@@ -117,6 +117,12 @@ try {
         path: out + '/purchase-editor-desktop.png',
         fullPage: true,
       })
+      await expect(editor.locator('.purchase-entry-help')).toHaveCount(0)
+      await expect(editor.locator('.editor-save-note')).toContainText('不会增加库存或登记付款')
+      await expect(editor.locator('.item-editor__total')).toHaveCount(0)
+      await editor.getByRole('button', { name: '自定义编号', exact: true }).click()
+      await expect(editor.getByRole('textbox', { name: '自定义单据编号' })).toBeFocused()
+      await editor.getByRole('textbox', { name: '自定义单据编号' }).fill('CG-CUSTOM-001')
       await field(editor, '备注').fill('采购未保存')
       await page.locator('.navbar__right > button').first().click()
       await keepEditing()
@@ -266,8 +272,11 @@ try {
     const original = invApi.contractDetail
     invApi.contractDetail = async (id) => {
       const data = await original(id)
+      if (id !== 2) return data
       return {
         ...data,
+        settledAmount: 1000,
+        outstanding: 19000,
         plans: data.plans.map((plan) => ({
           ...plan,
           settledAmount: 1000,
@@ -311,6 +320,18 @@ try {
         .getByRole('button', { name: '详情', exact: true })
         .click()
       const drawer = page.getByRole('dialog', { name: /合同 HT/ })
+      await expect(drawer.locator('.contract-money-summary')).toContainText('¥19,000.00')
+      await expect(drawer.locator('.detail-desc')).toBeHidden()
+      await drawer.locator('.contract-info .el-collapse-item__header').click()
+      await expect(drawer.locator('.detail-desc')).toBeVisible()
+      await expect(drawer.locator('.detail-desc')).toContainText('质保到期')
+      await drawer.locator('.contract-info .el-collapse-item__header').click()
+      await expect(drawer.locator('.detail-desc')).toBeHidden()
+      await expect(drawer.locator('.contract-plans thead')).toContainText('期次 / 名称')
+      await expect(drawer.locator('.contract-plans thead')).not.toContainText('比例')
+      await drawer.locator('.contract-plans .el-table__expand-icon').first().click()
+      await expect(drawer.locator('.contract-plans .record-details')).toContainText('签订即收付')
+      await drawer.locator('.contract-plans .el-table__expand-icon').first().click()
       await drawer.getByRole('button', { name: '流水', exact: true }).click()
       const panel = drawer.getByRole('region', { name: '合同核对记录' })
       await expect(panel).toContainText('流水加载失败')
@@ -326,6 +347,9 @@ try {
       await panel.getByRole('tab', { name: '操作记录' }).click()
       await expect(panel).toContainText('核对员')
       await expect(panel).toContainText('最近 50 条')
+      await expect(panel.locator('thead')).not.toContainText('IP')
+      await panel.locator('.el-table__expand-icon').first().click()
+      await expect(panel.locator('.record-details')).toContainText('127.0.0.1')
       await panel.getByRole('tab', { name: '期次流水' }).click()
       await expect(panel).toContainText('核对流水')
       await page.screenshot({
@@ -370,6 +394,12 @@ try {
       path: out + '/contract-records-narrow.png',
       fullPage: true,
     })
+    await drawer.locator('.contract-info .el-collapse-item__header').click()
+    await expect(drawer.locator('.detail-desc')).toBeVisible()
+    const detailWidth = (await drawer.boundingBox()).width
+    const widths = await drawer.locator('.detail-desc .el-descriptions__cell').evaluateAll(nodes => nodes.map(n => n.getBoundingClientRect().width))
+    expect(widths.every(width => width <= detailWidth)).toBe(true)
+    await page.screenshot({ path: out + '/contract-details-narrow.png', fullPage: true })
   })
   expect(errors).toEqual([])
   await fs.writeFile(

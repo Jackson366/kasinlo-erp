@@ -445,6 +445,13 @@ const dialogMode = ref<'create' | 'edit'>('create')
 const submitting = ref(false)
 const validating = ref(false)
 const saveError = ref(false)
+const showCustomNumber = ref(false)
+const customNumberInput = ref<{ focus: () => void }>()
+async function revealCustomNumber(): Promise<void> {
+  showCustomNumber.value = true
+  await nextTick()
+  customNumberInput.value?.focus()
+}
 const editorLoading = ref(false)
 const editorError = ref('')
 const purchaseEditing = computed(
@@ -567,6 +574,7 @@ function onUnitChange(item: FormItem): void {
 }
 
 function initializeCreate(): void {
+  showCustomNumber.value = false
   editorError.value = ''
   editorLoading.value = false
   editingOrder.value = null
@@ -676,6 +684,7 @@ async function syncPurchaseEditor(): Promise<void> {
   detailVisible.value = false
   dialogVisible.value = true
   editingOrder.value = null
+  showCustomNumber.value = false
   const action = route.query.action === 'edit' ? 'edit' : 'create'
   dialogMode.value = action
   document.title = `${action === 'edit' ? '编辑采购单' : '新增采购单'} · ${import.meta.env.VITE_APP_TITLE || 'Kasinlo ERP'}`
@@ -1694,6 +1703,11 @@ function onKeywordInput(): void {
             {{ dialogMode === 'create' ? createText : '编辑采购单' }}
           </h1>
           <PurchaseGuide :entering="dialogMode === 'create'" :editing="dialogMode === 'edit'" :order="editingOrder" />
+          <template v-if="!editorLoading && !editorError">
+            <span v-if="!showCustomNumber" class="purchase-number-meta">{{ form.orderNo || '单号保存后生成' }}</span>
+            <el-button v-if="dialogMode === 'create' && !showCustomNumber" text size="small" @click="revealCustomNumber">自定义编号</el-button>
+            <el-input v-if="dialogMode === 'create' && showCustomNumber" ref="customNumberInput" v-model="form.orderNo" class="purchase-custom-number" aria-label="自定义单据编号" placeholder="留空自动生成" maxlength="32" clearable />
+          </template>
         </div>
       </template>
       <div
@@ -1720,63 +1734,23 @@ function onKeywordInput(): void {
         show-icon
         class="purchase-result"
       />
-      <section
-        v-if="isPurchase"
-        class="purchase-entry-help"
-        aria-label="采购录入说明"
-      >
-        <el-alert type="info" show-icon :closable="false"
-          title="保存只记录单据，不会增加库存或登记付款。"
-        />
-        <div class="purchase-entry-help__tools">
-          <router-link
-            v-if="
-              userStore.hasAnyPerm(['inv:supplier:create']) &&
-              router.hasRoute('InvSupplier')
-            "
-            to="/inv/supplier"
-            target="_blank"
-            rel="noopener"
-            >维护供应商（新标签页）</router-link
-          >
-          <router-link
-            v-if="
-              userStore.hasAnyPerm(['inv:product:create']) &&
-              router.hasRoute('InvProduct')
-            "
-            to="/inv/product"
-            target="_blank"
-            rel="noopener"
-            >维护商品（新标签页）</router-link
-          >
-          <el-button :loading="optionsLoading" @click="refreshOptions"
-            >刷新可选资料</el-button
-          >
-        </div>
-        <p class="purchase-entry-help__hint">
-          新增资料后回到这里刷新，当前填写的单据会保留。
-        </p>
-        <p v-if="optionsError" role="alert">
-          资料加载失败，请刷新后再选择供应商和商品。
-        </p>
-        <p
-          v-else-if="!optionsLoading && (!parties.length || !picks.length)"
-          role="status"
-        >
-          {{ !parties.length ? '暂无可选供应商。' : ''
-          }}{{ !picks.length ? '暂无可选商品规格与单位。' : '' }}
-          请先维护缺少的资料；没有维护权限时，请联系管理员。
-        </p>
+      <section v-if="isPurchase && (optionsError || (!optionsLoading && (!parties.length || !picks.length)))" class="purchase-entry-status" aria-label="采购资料状态">
+        <el-alert v-if="optionsError" type="error" :closable="false" show-icon title="资料加载失败，请刷新后再选择供应商和商品。" />
+        <el-alert v-else type="info" :closable="false" show-icon>
+          <template #title>{{ !parties.length ? '暂无可选供应商。' : '' }}{{ !picks.length ? '暂无可选商品规格与单位。' : '' }}请先维护缺少的资料；没有维护权限时，请联系管理员。</template>
+        </el-alert>
       </section>
       <el-form
         ref="formRef"
         :model="form"
         :rules="rules"
-        :label-width="isPurchase ? '106px' : '88px'"
+        :label-width="isPurchase ? 'auto' : '88px'"
+        :label-position="isPurchase ? 'top' : 'right'"
+        :class="{ 'purchase-entry-form': isPurchase }"
         novalidate
       >
-        <el-row :gutter="16">
-          <el-col :xs="24" :sm="12" :lg="6">
+        <el-row :gutter="16" :class="{ 'purchase-basics': isPurchase }">
+          <el-col v-if="!isPurchase" :xs="24" :sm="12" :lg="6" class="order-number-field">
             <el-form-item label="单据编号">
               <el-input
                 v-model="form.orderNo"
@@ -1787,7 +1761,7 @@ function onKeywordInput(): void {
               />
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="12" :lg="6">
+          <el-col :xs="24" :sm="12" :lg="isPurchase ? 8 : 6" class="order-party-field">
             <el-form-item :label="partyLabel" prop="partyId" data-purchase-tour="party">
               <el-select
                 v-model="form.partyId"
@@ -1802,12 +1776,15 @@ function onKeywordInput(): void {
                   :value="p.id"
                 />
               </el-select>
+              <div v-if="isPurchase && userStore.hasAnyPerm(['inv:supplier:create']) && router.hasRoute('InvSupplier')" class="purchase-field-tools">
+                <router-link to="/inv/supplier" target="_blank" rel="noopener" aria-label="维护供应商（新标签页）" title="在新标签页维护供应商">维护供应商</router-link>
+              </div>
               <div v-if="partyTruncated" class="pick-hint">
                 仅显示前 {{ partyLimit }} 个{{ partyLabel }}，请用关键字搜索其余
               </div>
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="12" :lg="6">
+          <el-col :xs="24" :sm="12" :lg="6" class="order-date-field">
             <el-form-item label="单据日期" prop="orderDate">
               <el-date-picker
                 v-model="form.orderDate"
@@ -1818,7 +1795,7 @@ function onKeywordInput(): void {
               />
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="12" :lg="6">
+          <el-col :xs="24" :sm="12" :lg="6" class="order-due-field">
             <el-form-item :label="dueDateLabel">
               <el-date-picker
                 v-model="form.dueDate"
@@ -1829,7 +1806,7 @@ function onKeywordInput(): void {
               />
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="12" :lg="6">
+          <el-col :xs="24" :sm="12" :lg="isPurchase ? 4 : 6" class="order-salesman-field">
             <!-- 业务员是自由文本而不是人员下拉：跑业务的常常没有后台账号
                  （门店、外包、已离职但历史单据还要能查），挂账号后这些人就录不进单 -->
             <el-form-item label="业务员">
@@ -1842,7 +1819,14 @@ function onKeywordInput(): void {
           </el-col>
         </el-row>
 
-        <el-form-item label="明细">
+        <el-form-item :label="isPurchase ? '' : '明细'" :class="{ 'purchase-lines': isPurchase }">
+          <div v-if="isPurchase" class="purchase-lines-toolbar">
+            <div class="purchase-lines-title">采购明细 <span>{{ form.items.length }} 行</span></div>
+            <div class="purchase-resource-tools">
+              <router-link v-if="userStore.hasAnyPerm(['inv:product:create']) && router.hasRoute('InvProduct')" to="/inv/product" target="_blank" rel="noopener" aria-label="维护商品（新标签页）" title="在新标签页维护商品">维护商品</router-link>
+              <el-button text size="small" :loading="optionsLoading" @click="refreshOptions">刷新可选资料</el-button>
+            </div>
+          </div>
           <div v-if="picksTruncated" class="pick-hint">
             商品超过 {{ pickLimit }} 个，下拉只加载了一部分 ——
             可以先在「商品档案」里按关键字找到它
@@ -1853,7 +1837,7 @@ function onKeywordInput(): void {
               <span class="col-spec">规格</span>
               <span class="col-unit">单位</span>
               <span class="col-num">数量</span>
-              <span class="col-base">折算</span>
+              <span v-if="!isPurchase" class="col-base">折算</span>
               <span class="col-num">单价</span>
               <span class="col-num">金额</span>
               <span class="col-act" />
@@ -1907,14 +1891,18 @@ function onKeywordInput(): void {
                   :value="u.id"
                 />
               </el-select>
-              <el-input-number
-                v-model="item.qty"
-                class="col-num"
-                :min="0.01"
-                :precision="3"
-                :controls="false"
-              />
-              <span class="col-base">
+              <div class="col-num quantity-cell">
+                <el-input-number
+                  v-model="item.qty"
+                  :aria-label="`第 ${index + 1} 行数量`"
+                  :min="0.01"
+                  :precision="3"
+                  :controls="false"
+                  style="width: 100%"
+                />
+                <span v-if="isPurchase" class="quantity-base">{{ item.unitId ? `折算 ${formatQty(qtyBase(item))} ${unitOptions(item).find((u) => u.isBase)?.unit || ''}` : '—' }}</span>
+              </div>
+              <span v-if="!isPurchase" class="col-base">
                 {{ formatQty(qtyBase(item)) }}
                 {{ unitOptions(item).find((u) => u.isBase)?.unit || '' }}
               </span>
@@ -1941,7 +1929,7 @@ function onKeywordInput(): void {
                 <AppIcon name="Plus" />
                 <span>添加明细</span>
               </el-button>
-              <span class="item-editor__total">
+              <span v-if="!isPurchase" class="item-editor__total">
                 合计：<strong>{{ formatMoney(formTotal) }}</strong>
               </span>
             </div>
@@ -1954,11 +1942,10 @@ function onKeywordInput(): void {
       </el-form>
       </template>
       <template #footer>
-        <span
-          v-if="isPurchase && !editorLoading && !editorError"
-          class="editor-total"
-          >合计 <strong>{{ formatMoney(formTotal) }}</strong></span
-        >
+        <div v-if="isPurchase && !editorLoading && !editorError" class="editor-footer-summary">
+          <span class="editor-total">合计 <strong>{{ formatMoney(formTotal) }}</strong></span>
+          <span class="editor-save-note">保存只记录单据，不会增加库存或登记付款。</span>
+        </div>
         <el-button
           :disabled="submitting || validating"
           @click="requestCloseForm"
@@ -2199,44 +2186,144 @@ function onKeywordInput(): void {
   max-width: 100%;
 }
 
-.purchase-entry-help {
-  margin-bottom: 24px;
-  strong {
-    font-size: 14px;
-    font-weight: 600;
+.purchase-custom-number {
+  width: 200px;
+  max-width: 100%;
+}
+.purchase-number-meta {
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.purchase-entry-status {
+  margin-bottom: 16px;
+}
+.purchase-basics {
+  .order-party-field {
+    order: 1;
   }
-  p {
-    margin: 8px 0 0;
-    line-height: 1.6;
-    color: var(--app-text-secondary);
+  .order-date-field {
+    order: 2;
   }
-  &__tools {
-    display: flex;
-    gap: 16px;
-    align-items: center;
-    flex-wrap: wrap;
-    margin-top: 12px;
+  .order-due-field {
+    order: 3;
   }
-  a {
+  .order-salesman-field {
+    order: 4;
+  }
+  .order-number-field {
+    order: 5;
+  }
+}
+.purchase-field-tools {
+  margin-top: 4px;
+  font-size: 12px;
+}
+.purchase-field-tools a,
+.purchase-resource-tools a {
+  color: var(--app-text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  &:hover {
     color: var(--brand-primary);
-    text-decoration: underline;
-    text-underline-offset: 3px;
   }
-  a:hover {
-    color: var(--app-text);
-  }
-  a:focus-visible {
+  &:focus-visible {
     outline: 2px solid var(--brand-primary);
     outline-offset: 3px;
   }
-  a:active {
-    opacity: 0.8;
+}
+.purchase-entry-form {
+  :deep(.el-form-item__label) {
+    height: auto;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: var(--app-text-secondary);
   }
-  &__hint {
-    font-size: 12px;
+  :deep(.el-form-item__content) {
+    display: block;
+    min-width: 0;
+  }
+  .purchase-lines {
+    margin-top: 8px;
+  }
+  .item-editor {
+    padding: 12px 0 0;
+    border-width: 1px 0 0;
+    border-radius: 0;
+  }
+  .item-editor__head,
+  .item-editor__row {
+    min-width: 920px;
+  }
+  .item-editor__row {
+    align-items: flex-start;
+  }
+  .quantity-base {
+    display: block;
+    min-height: 18px;
+    margin-top: 2px;
+    color: var(--app-text-secondary);
+    font-size: 11px;
+    line-height: 18px;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  .el-form-item {
+    margin-bottom: 16px;
+  }
+  .col-num :deep(input) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
   }
 }
-
+.purchase-lines-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 8px;
+}
+.purchase-lines-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text);
+  span {
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--app-text-secondary);
+  }
+}
+.purchase-resource-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  :deep(.el-button) {
+    color: var(--app-text-secondary);
+  }
+}
+.editor-footer-summary {
+  margin-right: auto;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+}
+.editor-save-note {
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 800px) {
+  .editor-footer-summary {
+    flex-basis: 100%;
+  }
+  .purchase-number-meta {
+    flex-basis: 100%;
+  }
+}
 .purchase-header {
   display: flex;
   align-items: center;
