@@ -15,7 +15,7 @@ const current = ref(0)
 const steps = ref<(PurchaseTourStep & { target?: HTMLElement })[]>([])
 
 async function start(): Promise<void> {
-  const scope = root.value?.closest('.el-dialog, .order-page, .purchase-start')
+  const scope = root.value?.closest('.el-dialog, .purchase-editor, .order-page, .purchase-start')
   const visibleTarget = (selector: string) => {
     const element = scope?.querySelector<HTMLElement>(selector)
     return element?.getClientRects().length ? element : undefined

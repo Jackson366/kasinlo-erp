@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, provide, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { pageLeaveGuardsKey } from '@/composables/useUnsavedChanges'
 import { useAppStore, usePermissionStore } from '@/store'
 import Sidebar from './components/Sidebar.vue'
 import Navbar from './components/Navbar.vue'
@@ -17,7 +18,12 @@ const permissionStore = usePermissionStore()
 // 也不会被回收，反复刷新页面就会持续泄漏组件实例（连带它们的定时器、监听、DOM 引用）。
 const sidebarHasSecondary = ref(false)
 const refreshing = ref(false)
-provide('pageRefresh', () => {
+const pageLeaveGuards = new Set<() => Promise<boolean>>()
+provide(pageLeaveGuardsKey, pageLeaveGuards)
+provide('pageRefresh', async () => {
+  for (const canLeave of pageLeaveGuards) {
+    if (!(await canLeave())) return
+  }
   refreshing.value = true
   nextTick(() => {
     refreshing.value = false

@@ -2,10 +2,9 @@
 /**
  * 共享单据查询、录入与过账逻辑。采购另提供连续核对工作区，销售保留列表路径。
  */
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
-import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { FormInstance, FormRules } from 'element-plus'
 import { invApi } from '@/api'
 import type {
@@ -27,6 +26,8 @@ import ListPrintDialog, {
   type ListPrintColumn,
 } from '@/components/ListPrintDialog.vue'
 import OrderPrintDialog from './OrderPrintDialog.vue'
+import OrderEditorSurface from './OrderEditorSurface.vue'
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import AttachmentDrawer from './AttachmentDrawer.vue'
 import PurchaseWorkbench from './PurchaseWorkbench.vue'
 import OrderDetailContent from './OrderDetailContent.vue'
@@ -163,6 +164,8 @@ function persistQuery(): void {
     path: pagePath,
     query: {
       order: route.query.order,
+      action: route.query.action,
+      editId: route.query.editId,
       handoff: query.handoff || undefined,
       view: workspaceView.value,
       q: query.keyword || undefined,
@@ -442,7 +445,15 @@ const dialogMode = ref<'create' | 'edit'>('create')
 const submitting = ref(false)
 const validating = ref(false)
 const saveError = ref(false)
-const formBaseline = ref('')
+const editorLoading = ref(false)
+const editorError = ref('')
+const purchaseEditing = computed(
+  () =>
+    isPurchase.value && ['create', 'edit'].includes(String(route.query.action)),
+)
+let originDetail = false
+let editorScroll = 0
+let editorTrigger: HTMLElement | null = null
 const editingId = ref<number | null>(null)
 const editingOrder = ref<GuideOrder | null>(null)
 const detailVisible = ref(false)
@@ -555,7 +566,9 @@ function onUnitChange(item: FormItem): void {
   applyPrice(item)
 }
 
-function openCreate(): void {
+function initializeCreate(): void {
+  editorError.value = ''
+  editorLoading.value = false
   editingOrder.value = null
   Object.assign(form, {
     orderNo: '',
@@ -569,7 +582,7 @@ function openCreate(): void {
   addItem()
   dialogMode.value = 'create'
   editingId.value = null
-  formBaseline.value = JSON.stringify(form)
+  markFormClean()
   saveError.value = false
   dialogVisible.value = true
   // 重拉档案下拉：客户 / 供应商 / 商品可能在其它页面刚新增过，
@@ -582,16 +595,22 @@ function openCreate(): void {
 const editSeq = ref(0)
 const detailViewSeq = ref(0)
 
-async function openEdit(row: InvOrderRow): Promise<void> {
+async function initializeEdit(row: Pick<InvOrderRow, 'id'>): Promise<void> {
   const seq = ++editSeq.value
   let data: Awaited<ReturnType<typeof invApi.orderDetail>>
   try {
     data = await invApi.orderDetail(row.id)
   } catch {
-    // 失败提示由响应拦截器统一处理；不接住会变成未捕获 rejection
+    if (isPurchase.value && seq === editSeq.value)
+      editorError.value = '采购单加载失败，请重新加载。'
     return
   }
-  if (seq !== editSeq.value) return
+  if (seq !== editSeq.value || (isPurchase.value && !purchaseEditing.value))
+    return
+  if (isPurchase.value && (data.bizType !== 'purchase' || data.status !== 1)) {
+    editorError.value = '此单据当前不可编辑，请返回工作台核实状态。'
+    return
+  }
   editingOrder.value = data
   // 到期日走 formatDay 归一：历史数据里的 0001-01-01 要当成「未填」，
   // 否则日期选择器会显示一个荒唐的年份，用户一保存就把脏值又写回去
@@ -613,11 +632,82 @@ async function openEdit(row: InvOrderRow): Promise<void> {
   })
   dialogMode.value = 'edit'
   editingId.value = row.id
-  formBaseline.value = JSON.stringify(form)
+  markFormClean()
   saveError.value = false
   dialogVisible.value = true
   // 同 openCreate：编辑时换商品也要能看到刚新增的档案
   loadOptions().catch(() => {})
+}
+
+function enterPurchaseEditor(action: 'create' | 'edit', id?: number): void {
+  originDetail = detailVisible.value
+  editorTrigger =
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+  editorScroll = document.querySelector('.layout__content')?.scrollTop ?? 0
+  void router.push({
+    path: pagePath,
+    query: { ...route.query, action, editId: id ? String(id) : undefined },
+  })
+}
+function openCreate(): void {
+  if (isPurchase.value) enterPurchaseEditor('create')
+  else initializeCreate()
+}
+async function openEdit(row: InvOrderRow): Promise<void> {
+  if (isPurchase.value) enterPurchaseEditor('edit', row.id)
+  else await initializeEdit(row)
+}
+async function syncPurchaseEditor(): Promise<void> {
+  if (!isPurchase.value || route.path !== pagePath) return
+  ++editSeq.value
+  editorLoading.value = false
+  editorError.value = ''
+  if (!purchaseEditing.value) {
+    dialogVisible.value = false
+    document.title = `采购管理 · ${import.meta.env.VITE_APP_TITLE || 'Kasinlo ERP'}`
+    await nextTick()
+    const scroller = document.querySelector('.layout__content')
+    if (scroller) scroller.scrollTop = editorScroll
+    if (editorTrigger?.isConnected) editorTrigger.focus({ preventScroll: true })
+    return
+  }
+  detailVisible.value = false
+  dialogVisible.value = true
+  editingOrder.value = null
+  const action = route.query.action === 'edit' ? 'edit' : 'create'
+  dialogMode.value = action
+  document.title = `${action === 'edit' ? '编辑采购单' : '新增采购单'} · ${import.meta.env.VITE_APP_TITLE || 'Kasinlo ERP'}`
+  const permission = action === 'edit' ? 'update' : 'create'
+  if (!userStore.hasAnyPerm([`inv:purchase:${permission}`])) {
+    editorError.value = '当前账号没有办理此操作的权限。'
+    markFormClean()
+    return
+  }
+  if (action === 'create') initializeCreate()
+  else {
+    const id = Number(route.query.editId)
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      editorError.value = '采购单编号无效，请返回工作台重新选择。'
+      markFormClean()
+      return
+    }
+    editorLoading.value = true
+    const requestSeq = editSeq.value + 1
+    await initializeEdit({ id })
+    if (requestSeq === editSeq.value) {
+      editorLoading.value = false
+      markFormClean()
+    }
+  }
+  await nextTick()
+  const scroller = document.querySelector('.layout__content')
+  if (scroller) scroller.scrollTop = 0
+}
+async function returnFromEditor(): Promise<void> {
+  const { action: _action, editId: _editId, ...rest } = route.query
+  await router.replace({ path: pagePath, query: rest })
 }
 
 async function submitForm(): Promise<void> {
@@ -675,7 +765,8 @@ async function submitForm(): Promise<void> {
       ElMessage.success('修改成功')
     }
     dialogVisible.value = false
-    formBaseline.value = JSON.stringify(form)
+    markFormClean()
+    if (isPurchase.value) await returnFromEditor()
     if (isWorkbench.value && createdId) {
       // 新单即使不属于当前筛选页，也在核对区保留明确的保存结果。
       keepReviewResult.value = true
@@ -686,7 +777,7 @@ async function submitForm(): Promise<void> {
     } else if (
       isPurchase.value &&
       detailTarget.value &&
-      (detailVisible.value || keepReviewResult.value)
+      (detailVisible.value || keepReviewResult.value || originDetail)
     ) {
       await openDetail(detailTarget.value)
     }
@@ -840,53 +931,39 @@ watch(rows, (list) => {
   }
 })
 
-const hasUnsavedChanges = computed(
-  () =>
-    isPurchase.value &&
+const {
+  markClean: markFormClean,
+  canLeave: canCloseForm,
+  beforeClose: beforeFormClose,
+} = useUnsavedChanges({
+  active: () =>
+    route.path === pagePath &&
     dialogVisible.value &&
-    JSON.stringify(form) !== formBaseline.value,
-)
-async function canCloseForm(): Promise<boolean> {
-  if (submitting.value || validating.value) return false
-  if (!hasUnsavedChanges.value) return true
-  try {
-    await ElMessageBox.confirm(
-      '采购单尚未保存，离开后本次修改将丢失。',
-      '放弃本次修改？',
-      {
-        confirmButtonText: '放弃修改',
-        cancelButtonText: '继续编辑',
-        type: 'warning',
-        autofocus: false,
-      },
-    )
-    return true
-  } catch {
-    return false
-  }
-}
-async function requestCloseForm(): Promise<void> {
-  if (await canCloseForm()) dialogVisible.value = false
-}
-async function beforeFormClose(done: () => void): Promise<void> {
-  if (await canCloseForm()) done()
-}
-onBeforeRouteLeave(async () => {
-  const allowed = await canCloseForm()
-  if (allowed) {
+    !editorLoading.value &&
+    !editorError.value,
+  value: () => form,
+  busy: () => submitting.value || validating.value,
+  label: isPurchase.value ? '采购单' : '销售单',
+  guardUpdate: (to, from) =>
+    isPurchase.value &&
+    (to.query.action !== from.query.action ||
+      to.query.editId !== from.query.editId),
+  onNavigate: () => {
     dialogVisible.value = false
     detailVisible.value = false
+    ++editSeq.value
     ++detailViewSeq.value
     detailLoading.value = false
-  }
-  return allowed
+  },
 })
-function beforeUnload(event: BeforeUnloadEvent): void {
-  if (!hasUnsavedChanges.value) return
-  event.preventDefault()
-  event.returnValue = ''
+async function requestCloseForm(): Promise<void> {
+  if (isPurchase.value) {
+    // The route-update guard owns confirmation, including browser Back.
+    await returnFromEditor()
+    if (!purchaseEditing.value && originDetail && detailTarget.value)
+      await openDetail(detailTarget.value)
+  } else if (await canCloseForm()) dialogVisible.value = false
 }
-onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 
 // ---------------- 导出 / 打印 / 批量 ----------------
 const tableRef = ref()
@@ -1023,14 +1100,25 @@ async function batchReverse(): Promise<void> {
 function consumeCreateAction(): void {
   if (route.path !== pagePath || route.query.action !== 'create') return
   if (!userStore.hasAnyPerm([`inv:${props.bizType}:create`])) return
+  if (isPurchase.value) return
   openCreate()
   const { action: _action, ...rest } = route.query
   void router.replace({ path: pagePath, query: rest })
 }
-watch(() => route.query.action, consumeCreateAction)
+watch(
+  [() => route.path, () => route.query.action, () => route.query.editId],
+  () => {
+    if (isPurchase.value) void syncPurchaseEditor()
+    else consumeCreateAction()
+  },
+)
 async function consumeLinkedOrder(): Promise<void> {
   const id = Number(route.query.order)
-  if (route.path !== pagePath || !Number.isSafeInteger(id) || id <= 0) return
+  if (
+    route.path !== pagePath ||
+    purchaseEditing.value || !Number.isSafeInteger(id) || id <= 0
+  )
+    return
   // Restore the source filters as well as the record on a cached page.
   workspaceView.value = route.query.view === 'pending' ? 'pending' : 'all'
   Object.assign(query, {
@@ -1069,10 +1157,10 @@ watch(
 )
 onMounted(() => {
   const linkedId = Number(route.query.order)
-  if (Number.isSafeInteger(linkedId) && linkedId > 0) void consumeLinkedOrder()
+  if (!purchaseEditing.value && Number.isSafeInteger(linkedId) && linkedId > 0) void consumeLinkedOrder()
   else void load()
-  consumeCreateAction()
-  window.addEventListener('beforeunload', beforeUnload)
+  if (isPurchase.value) void syncPurchaseEditor()
+  else consumeCreateAction()
   void loadOptions().catch(() => {})
 })
 // 关键字录入即查询（防抖），不必再按回车
@@ -1092,7 +1180,8 @@ function onKeywordInput(): void {
 
 <template>
   <div class="order-page" :class="{ 'purchase-page': isPurchase }">
-    <header v-if="isPurchase" class="purchase-header">
+    <div v-show="!purchaseEditing">
+      <header v-if="isPurchase" class="purchase-header">
       <div class="purchase-title">
         <h1>采购工作台</h1>
         <PurchaseGuide
@@ -1585,24 +1674,45 @@ function onKeywordInput(): void {
         />
       </div>
     </div>
-
-    <!-- 新增 / 编辑 -->
-    <el-dialog
+    </div>
+    <!-- 采购为独立编辑视图；销售沿用弹窗，共享同一份表单与提交逻辑。 -->
+    <OrderEditorSurface
       v-model="dialogVisible"
-      :title="dialogMode === 'create' ? createText : '编辑单据'"
-      width="1280px"
-      top="6vh"
-      :close-on-click-modal="false"
+      :page="isPurchase"
+      :title="
+        dialogMode === 'create' ? createText : isPurchase
+            ? '编辑采购单'
+            : '编辑单据'
+      "
+      :busy="submitting || validating"
       :before-close="beforeFormClose"
-      destroy-on-close
+      @back="requestCloseForm"
     >
       <template v-if="isPurchase" #header="{ titleId, titleClass }">
         <div class="purchase-dialog-heading">
-          <span :id="titleId" :class="titleClass">{{ dialogMode === 'create' ? createText : '编辑单据' }}</span>
+          <h1 :id="titleId" :class="titleClass">
+            {{ dialogMode === 'create' ? createText : '编辑采购单' }}
+          </h1>
           <PurchaseGuide :entering="dialogMode === 'create'" :editing="dialogMode === 'edit'" :order="editingOrder" />
         </div>
       </template>
+      <div
+        v-if="editorLoading"
+        v-loading="true"
+        class="detail-pending"
+        aria-label="正在读取采购单"
+      />
       <el-alert
+        v-else-if="editorError"
+        :title="editorError"
+        type="error"
+        :closable="false"
+        show-icon
+      >
+        <el-button text @click="syncPurchaseEditor">重新加载</el-button>
+      </el-alert>
+      <template v-else>
+        <el-alert
         v-if="saveError"
         title="保存失败，本次输入已保留。请检查提示后重新保存。"
         type="error"
@@ -1842,16 +1952,26 @@ function onKeywordInput(): void {
           <el-input v-model="form.remark" placeholder="选填" />
         </el-form-item>
       </el-form>
-
+      </template>
       <template #footer>
-        <el-button :disabled="submitting" @click="requestCloseForm"
+        <span
+          v-if="isPurchase && !editorLoading && !editorError"
+          class="editor-total"
+          >合计 <strong>{{ formatMoney(formTotal) }}</strong></span
+        >
+        <el-button
+          :disabled="submitting || validating"
+          @click="requestCloseForm"
           >取消</el-button
         >
-        <el-button data-purchase-tour="save" type="primary" :loading="submitting" @click="submitForm">{{
-          isPurchase ? '保存采购单' : '保存销售单'
-        }}</el-button>
+        <el-button data-purchase-tour="save" type="primary"
+          :disabled="editorLoading || !!editorError"
+          :loading="submitting"
+          @click="submitForm"
+          >{{ isPurchase ? '保存采购单' : '保存销售单' }}</el-button
+        >
       </template>
-    </el-dialog>
+    </OrderEditorSurface>
 
     <!-- 详情：与新增 / 编辑同宽同档（同一份数据的三种看法，宽度不该跳）。
          版式与「新增商品」等弹窗共用 form-section / form-grid，
@@ -2051,6 +2171,15 @@ function onKeywordInput(): void {
 }
 .text-warning {
   color: var(--tone-amber);
+}
+.editor-total {
+  margin-right: auto;
+  color: var(--app-text-secondary);
+  strong {
+    margin-left: 8px;
+    color: var(--app-text);
+    font-variant-numeric: tabular-nums;
+  }
 }
 .purchase-dialog-heading {
   display: flex;
