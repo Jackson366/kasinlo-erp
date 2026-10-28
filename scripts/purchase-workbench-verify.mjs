@@ -419,20 +419,20 @@ try {
     const tour = page.getByRole('dialog', {name:'采购操作引导',exact:true})
     await expect(page.locator('.el-tour__content')).toHaveCount(0)
     expect((await guide.boundingBox()).height).toBeLessThanOrEqual(32)
-    const top = await page.locator('.order-page > .page-card').evaluate(el => el.offsetTop)
+    const top = await page.locator('.order-page .page-card').evaluate(el => el.offsetTop)
     await guide.getByRole('button').click()
     // ElTour root is a zero-size teleport owner; its positioned content is the visible surface.
     await expect(tour.locator('.el-tour__content')).toBeVisible()
     await expect(tour.locator('.purchase-tour__count')).toHaveText(/^1\/\d+$/)
     await expect(tour.getByRole('button', {name:'退出引导',exact:true})).toHaveCount(0)
-    expect(await page.locator('.order-page > .page-card').evaluate(el => el.offsetTop)).toBe(top)
+    expect(await page.locator('.order-page .page-card').evaluate(el => el.offsetTop)).toBe(top)
     await tour.getByRole('button',{name:'关闭此对话框',exact:true}).click()
     await expect(tour).toHaveCount(0)
     await expect(guide.getByRole('button',{name:'采购操作指南',exact:true})).toBeFocused()
     await page.reload()
     await expect(tour).toHaveCount(0)
     await page.getByRole('button', {name:'新增采购单',exact:true}).click()
-    const dialog = page.getByRole('dialog', {name:'新增采购单',exact:true})
+    const dialog = page.getByRole('region', {name:'新增采购单',exact:true})
     await dialog.getByPlaceholder('选填').last().fill('Tour 退出后仍保留')
     const audits = state.auditCalls
     const updates = state.updateCalls
@@ -470,14 +470,17 @@ try {
     await page.setViewportSize({width:600,height:900})
     const popup = page.locator('.purchase-tour .el-tour__content')
     await expect(popup).toBeVisible()
-    const box = await popup.boundingBox()
-    expect(box.x).toBeGreaterThanOrEqual(0)
-    expect(box.x + box.width).toBeLessThanOrEqual(600)
+    await expect(async () => {
+      const box = await popup.boundingBox()
+      expect(box.x).toBeGreaterThanOrEqual(0)
+      expect(box.x + box.width).toBeLessThanOrEqual(600)
+    }).toPass({timeout:3000})
     await page.screenshot({path:out+'/purchase-tour-narrow.png',fullPage:true})
     await tour.getByRole('button',{name:'关闭此对话框',exact:true}).click()
     expect(state.auditCalls).toBe(audits)
     await page.setViewportSize({width:1600,height:1100})
     await page.reload()
+    await dialog.getByRole('button', { name: '返回采购工作台' }).click()
     await expect(page.locator('.purchase-impact')).toContainText('请确认货物已实际到达')
   })
   await check('Tour 使用当前单据，部分付款与取消不伪装完成', async () => {
@@ -508,7 +511,7 @@ try {
     const header = page.locator('.purchase-header')
     expect((await header.boundingBox()).height).toBeLessThanOrEqual(48)
     await expect(header.locator('p')).toHaveCount(0)
-    expect((await page.locator('.order-page > .page-card').boundingBox()).y).toBeLessThan(190)
+    expect((await page.locator('.order-page .page-card').boundingBox()).y).toBeLessThan(190)
     await expect(page.locator('.order-page > .purchase-guide')).toHaveCount(0)
     const input = page.getByPlaceholder('单号 / 往来单位 / 业务员')
     await input.fill(state.orders[0].orderNo)
@@ -548,7 +551,7 @@ try {
   })
   await check('供应商下拉与中文日历打开', async () => {
     await review.getByRole('button', { name: '编辑采购单' }).click()
-    const dialog = page.getByRole('dialog', { name: '编辑单据', exact: true })
+    const dialog = page.getByRole('region', { name: '编辑采购单', exact: true })
     await dialog.locator('.el-select').first().click()
     await page
       .getByRole('option', { name: '杭州恒信金属材料有限公司', exact: true })
@@ -562,7 +565,7 @@ try {
   })
   await check('编辑失败保留输入与未保存关闭保护', async () => {
     await review.getByRole('button', { name: '编辑采购单' }).click()
-    const dialog = page.getByRole('dialog', { name: '编辑单据', exact: true })
+    const dialog = page.getByRole('region', { name: '编辑采购单', exact: true })
     const remark = dialog.getByPlaceholder('选填', { exact: true }).last()
     await remark.fill('保留这条修改')
     state.failSave = true
@@ -732,7 +735,7 @@ try {
     state.readOnly = false
     await page.reload()
     await page.getByRole('button', { name: '新增采购单', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: '新增采购单', exact: true })
+    const dialog = page.getByRole('region', { name: '新增采购单', exact: true })
     await dialog.locator('.el-select').nth(0).click()
     await page
       .getByRole('option', { name: '杭州恒信金属材料有限公司', exact: true })
@@ -1024,9 +1027,9 @@ try {
     await expect(start).toContainText('张采购单待核对')
     await start.getByRole('button', {name:'新增采购单',exact:true}).focus()
     await page.keyboard.press('Enter')
-    const dialog = page.getByRole('dialog', {name:'新增采购单',exact:true})
+    const dialog = page.getByRole('region', {name:'新增采购单',exact:true})
     await expect(dialog).toBeVisible()
-    await expect(page).not.toHaveURL(/action=create/)
+    await expect(page).toHaveURL(/action=create/)
     await expect(dialog).toContainText('不会增加库存或登记付款')
     await expect(dialog.getByRole('link', {name:'维护商品（新标签页）'})).toHaveAttribute('target','_blank')
     await dialog.getByPlaceholder('选填').last().fill('刷新仍保留的采购备注')
@@ -1040,7 +1043,9 @@ try {
     await expect(dialog.getByPlaceholder('选填').last()).toHaveValue('刷新仍保留的采购备注')
     await page.screenshot({path:out+'/purchase-entry.png',fullPage:true})
     await page.reload()
-    await expect(dialog).not.toBeVisible()
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByPlaceholder('选填').last()).toHaveValue('')
+    await dialog.getByRole('button', { name: '返回采购工作台' }).click()
   })
   await check('首页待办加载失败、重试与零待办方向', async () => {
     state.failList = true

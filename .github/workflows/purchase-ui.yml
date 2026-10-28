@@ -7,6 +7,7 @@ on:
         'scripts/purchase-workbench-verify.mjs',
         'scripts/purchase-audit-verify.mjs',
         'scripts/purchase-handoff-verify.mjs',
+        'scripts/task-context-verify.mjs',
         '.github/workflows/purchase-ui.yml',
       ]
   push:
@@ -17,6 +18,7 @@ on:
         'scripts/purchase-workbench-verify.mjs',
         'scripts/purchase-audit-verify.mjs',
         'scripts/purchase-handoff-verify.mjs',
+        'scripts/task-context-verify.mjs',
         '.github/workflows/purchase-ui.yml',
       ]
 permissions:
@@ -37,7 +39,7 @@ jobs:
         working-directory: frontend
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
-      - run: npm run test:purchase && npm run test:purchase-audit && npm run test:purchase-handoff
+      - run: npm run test:purchase && npm run test:purchase-audit && npm run test:purchase-handoff && npm run test:task-context
         working-directory: frontend
       - uses: actions/upload-artifact@v4
         if: always()
@@ -47,3 +49,4 @@ jobs:
             /tmp/kasinlo-purchase-qa
             /tmp/kasinlo-purchase-audit-qa
             /tmp/kasinlo-purchase-handoff-qa
+            /tmp/kasinlo-task-context-qa

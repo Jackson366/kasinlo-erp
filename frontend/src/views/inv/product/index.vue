@@ -40,6 +40,8 @@ import Pagination from '@/components/Pagination.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { formatDate, formatMoney, formatQty } from '@/utils/format'
+import { useRoute } from 'vue-router'
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { useCrudDialog } from '@/composables/useCrudDialog'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useListTools } from '@/composables/useListTools'
@@ -99,7 +101,7 @@ const dialog = useCrudDialog<InvProductPayload>({
   update: (id, payload) => invApi.updateProduct(id, payload),
   messages: { create: '新增成功', update: '修改成功' },
 })
-const { visible: dialogVisible, mode: dialogMode, submitting, editingId } = dialog
+const { visible: dialogVisible, mode: dialogMode, submitting, validating, editingId } = dialog
 
 /**
  * 新建一个空规格：默认带一条基本单位。
@@ -324,6 +326,19 @@ const rules: FormRules<InvProductPayload> = {
  * 「点进钢材 → 新增商品」本就是「往钢材里加货」的意思，
  * 让人再选一次分类是多余的一步，还容易忘。
  */
+const route = useRoute()
+const productPath = route.path
+const { markClean, canLeave, beforeClose } = useUnsavedChanges({
+  active: () => route.path === productPath && dialogVisible.value,
+  value: () => form,
+  busy: () => submitting.value || validating.value,
+  label: '商品档案',
+  onNavigate: () => { dialogVisible.value = false },
+})
+async function closeProduct(): Promise<void> {
+  if (await canLeave()) dialogVisible.value = false
+}
+
 function openCreate(): void {
   // 用 activeCat 而不是 query.categoryId：两者平时一致，但 query 会因为
   // 「重置」被清空而树上的选中态还在，以树的选中为准更符合直觉
@@ -346,6 +361,7 @@ function openCreate(): void {
   editingCategory.value = cat
     ? { id: cat.id, parentId: cat.parentId, name: cat.name }
     : undefined
+  markClean()
   dialog.openCreate()
 }
 
@@ -379,6 +395,7 @@ function openEdit(row: InvProductRow): void {
   editingCategory.value = row.categoryId
     ? { id: row.categoryId, parentId: 0, name: row.categoryName || '' }
     : undefined
+  markClean()
   dialog.openEdit(row.id)
 }
 
@@ -1016,11 +1033,12 @@ const { searchSoon } = useDebouncedSearch(search)
       :title="dialogMode === 'create' ? '新增商品' : '编辑商品'"
       width="1100px"
       top="6vh"
+      :before-close="beforeClose"
       :close-on-click-modal="false"
       destroy-on-close
       @open="onDialogOpen"
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
+      <el-form novalidate ref="formRef" :model="form" :rules="rules" label-width="88px">
         <!-- 基本信息：两行排完（编码 / 名称 / 条码 · 分类 / 状态 / 备注） -->
         <section class="form-section">
           <div class="form-section__head">
@@ -1320,8 +1338,8 @@ const { searchSoon } = useDebouncedSearch(search)
       </el-form>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
+        <el-button :disabled="submitting || validating" @click="closeProduct">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitForm">保存商品</el-button>
       </template>
     </el-dialog>
 

@@ -14,7 +14,9 @@
  */
 defineOptions({ name: 'InvContract' })
 
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -166,6 +168,8 @@ const dialogVisible = ref(false)
 const dialogMode = ref<'create' | 'edit'>('create')
 const editingId = ref<number | null>(null)
 const submitting = ref(false)
+const validating = ref(false)
+const saveError = ref(false)
 const formRef = ref<FormInstance>()
 
 const form = reactive<InvContractPayload>({
@@ -191,8 +195,12 @@ const rules: FormRules<InvContractPayload> = {
   signDate: [{ required: true, message: '请选择签订日期', trigger: 'change' }],
 }
 
-const partyOptions = computed(() => (form.bizType === 'purchase' ? suppliers.value : customers.value))
-const partyLabel = computed(() => (form.bizType === 'purchase' ? '供应商' : '客户'))
+const partyOptions = computed(() =>
+  form.bizType === 'purchase' ? suppliers.value : customers.value,
+)
+const partyLabel = computed(() =>
+  form.bizType === 'purchase' ? '供应商' : '客户',
+)
 
 const planTotal = computed(() => plans.value.reduce((s, p) => s + (Number(p.amount) || 0), 0))
 const planOver = computed(() => planTotal.value - (Number(form.amount) || 0) > 0.005)
@@ -221,6 +229,23 @@ function emptyPlan(seq: number): PlanDraft {
   }
 }
 
+const route = useRoute()
+const contractPath = route.path
+const { markClean, canLeave, beforeClose } = useUnsavedChanges({
+  active: () => route.path === contractPath && dialogVisible.value,
+  value: () => ({ form, plans: plans.value }),
+  busy: () => submitting.value || validating.value,
+  label: '合同',
+  onNavigate: () => {
+    dialogVisible.value = false
+    detailVisible.value = false
+    ++detailSeq
+  },
+})
+async function closeContract(): Promise<void> {
+  if (await canLeave()) dialogVisible.value = false
+}
+
 function openCreate(): void {
   Object.assign(form, {
     contractNo: '',
@@ -240,6 +265,8 @@ function openCreate(): void {
   plans.value = []
   dialogMode.value = 'create'
   editingId.value = null
+  markClean()
+  saveError.value = false
   dialogVisible.value = true
   // 档案可能刚被别人新增：开弹窗时重拉一次，避免下拉里没有新客户
   loadParties()
@@ -278,6 +305,8 @@ async function openEdit(row: InvContractRow): Promise<void> {
     }))
     dialogMode.value = 'edit'
     editingId.value = d.id
+    markClean()
+    saveError.value = false
     dialogVisible.value = true
     loadParties()
   } catch {
@@ -358,8 +387,10 @@ function onRetentionRate(): void {
 }
 
 async function submitForm(): Promise<void> {
-  if (!formRef.value) return
+  if (!formRef.value || submitting.value || validating.value) return
+  validating.value = true
   const valid = await formRef.value.validate().catch(() => false)
+  validating.value = false
   if (!valid) return
   if (planOver.value) {
     ElMessage.warning(`付款计划合计 ${formatMoney(planTotal.value)} 超过合同金额，请调整`)
@@ -370,6 +401,7 @@ async function submitForm(): Promise<void> {
     return
   }
   submitting.value = true
+  saveError.value = false
   try {
     const planPayload: InvContractPlanPayload[] = plans.value.map((p) => ({
       id: p.id,
@@ -405,10 +437,12 @@ async function submitForm(): Promise<void> {
       await invApi.updateContract(editingId.value, payload)
       ElMessage.success('修改成功')
     }
+    markClean()
     dialogVisible.value = false
     load()
     if (detailVisible.value) await refreshDetail()
   } catch {
+    saveError.value = true
     // 失败提示由响应拦截器统一处理（编号重复、计划超额、期次已有收付款等）
   } finally {
     submitting.value = false
@@ -459,28 +493,92 @@ async function removeRow(row: InvContractRow): Promise<void> {
 const detailVisible = ref(false)
 const detail = ref<InvContractRow | null>(null)
 const detailLoading = ref(false)
+const detailError = ref(false)
+let detailSeq = 0
+const detailId = ref<number | null>(null)
+const inspection = ref<'' | 'history' | 'logs'>('')
+const inspectionHeading = ref<HTMLElement>()
+let inspectionTrigger: HTMLElement | null = null
+function rememberInspectionTrigger(): void {
+  const current = document.activeElement
+  if (
+    current instanceof HTMLElement &&
+    !current.closest('.contract-inspection')
+  )
+    inspectionTrigger = current
+}
+async function closeInspection(): Promise<void> {
+  resetInspection()
+  await nextTick()
+  if (inspectionTrigger?.isConnected) inspectionTrigger.focus()
+}
+let historySeq = 0
+let logSeq = 0
+function resetInspection(): void {
+  inspection.value = ''
+  ++historySeq
+  ++logSeq
+  historyRows.value = []
+  logRows.value = []
+  historyPlan.value = null
+}
+watch(detailVisible, (visible) => {
+  if (!visible) {
+    ++detailSeq
+    resetInspection()
+  }
+})
+async function focusInspection(): Promise<void> {
+  await nextTick()
+  inspectionHeading.value?.focus({ preventScroll: true })
+  inspectionHeading.value?.scrollIntoView({ block: 'nearest' })
+}
+function changeInspection(value: string | number): void {
+  if (value === 'logs') void openLogs()
+  else if (historyPlan.value) void openHistory(historyPlan.value)
+  else {
+    inspection.value = 'history'
+    const plan = detailPlans.value.find((p) => p.settledAmount > 0)
+    if (plan) void openHistory(plan)
+  }
+}
 
-async function openDetail(row: InvContractRow): Promise<void> {
+async function openDetail(row: Pick<InvContractRow, 'id'>): Promise<void> {
+  const seq = ++detailSeq
+  detailId.value = row.id
+  resetInspection()
+  detail.value = null
   detailVisible.value = true
   detailLoading.value = true
+  detailError.value = false
   try {
-    detail.value = await invApi.contractDetail(row.id)
-    statusBaseline.value = detail.value.status
+    const data = await invApi.contractDetail(row.id)
+    if (seq !== detailSeq) return
+    detail.value = data
+    statusBaseline.value = data.status
   } catch {
-    detail.value = null
+    if (seq === detailSeq) detailError.value = true
   } finally {
-    detailLoading.value = false
+    if (seq === detailSeq) detailLoading.value = false
   }
 }
 
 async function refreshDetail(): Promise<void> {
   if (!detail.value) return
+  const id = detail.value.id
+  const seq = ++detailSeq
   try {
-    detail.value = await invApi.contractDetail(detail.value.id)
-    statusBaseline.value = detail.value.status
+    const data = await invApi.contractDetail(id)
+    if (seq !== detailSeq || !detailVisible.value) return
+    detail.value = data
+    statusBaseline.value = data.status
     load()
+    if (inspection.value === 'history' && historyPlan.value) {
+      const plan = data.plans?.find((p) => p.id === historyPlan.value?.id)
+      if (plan) await openHistory(plan)
+    }
   } catch {
-    // 忽略
+    if (seq === detailSeq) detailError.value = true
   }
 }
 
@@ -541,21 +639,27 @@ async function doUnaudit(): Promise<void> {
 }
 
 // ---------------- 操作记录 ----------------
-const logVisible = ref(false)
+const logError = ref(false)
 const logLoading = ref(false)
 const logRows = ref<InvContractLogRow[]>([])
 
 async function openLogs(): Promise<void> {
   if (!detail.value) return
-  logVisible.value = true
+  const id = detail.value.id
+  const seq = ++logSeq
+  rememberInspectionTrigger()
+  inspection.value = 'logs'
   logLoading.value = true
+  logError.value = false
   logRows.value = []
+  void focusInspection()
   try {
-    logRows.value = await invApi.contractLogs(detail.value.id, 50)
+    const data = await invApi.contractLogs(id, 50)
+    if (seq === logSeq && detail.value?.id === id) logRows.value = data
   } catch {
-    // 失败提示由响应拦截器统一处理
+    if (seq === logSeq) logError.value = true
   } finally {
-    logLoading.value = false
+    if (seq === logSeq) logLoading.value = false
   }
 }
 
@@ -665,8 +769,11 @@ async function submitAccept(): Promise<void> {
 // ---------------- 期次收付款 ----------------
 const settleVisible = ref(false)
 const settleSubmitting = ref(false)
-const settleCtx = ref<{ plan: InvContractPlanItem; bizType: InvContractBizType; contractNo: string } | null>(null)
-const settleForm = reactive({ amount: 0, method: '银行转账', settledAt: '', remark: '' })
+const settleCtx = ref<{ plan: InvContractPlanItem
+  bizType: InvContractBizType
+  contractNo: string } | null>(null)
+const settleForm = reactive({ amount: 0, method: '银行转账', settledAt: '', remark: '',
+})
 
 function openSettle(plan: InvContractPlanItem, c: InvContractRow): void {
   if (plan.outstanding <= 0) {
@@ -682,7 +789,7 @@ function openSettle(plan: InvContractPlanItem, c: InvContractRow): void {
 }
 
 async function submitSettle(): Promise<void> {
-  if (!settleCtx.value || !detail.value) return
+  if (!settleCtx.value || !detail.value || settleSubmitting.value) return
   const amount = Number(settleForm.amount) || 0
   if (amount <= 0) {
     ElMessage.warning('金额必须大于 0')
@@ -715,23 +822,28 @@ async function submitSettle(): Promise<void> {
 //
 // 期次上只显示「已收付 / 未收付」两个数，但真要对账时需要知道
 // 「哪天、收了多少、什么方式、谁记的」。流水是只读的，改不了历史，
-// 所以单独开一个小弹窗，不打断详情里的操作。
-const historyVisible = ref(false)
+// 所以在计划表下方查看，可直接对照当前期次与余额。
+const historyError = ref(false)
 const historyLoading = ref(false)
 const historyPlan = ref<InvContractPlanItem | null>(null)
 const historyRows = ref<InvPlanSettleRecord[]>([])
 
 async function openHistory(plan: InvContractPlanItem): Promise<void> {
+  const seq = ++historySeq
+  rememberInspectionTrigger()
   historyPlan.value = plan
   historyRows.value = []
-  historyVisible.value = true
+  inspection.value = 'history'
   historyLoading.value = true
+  historyError.value = false
+  void focusInspection()
   try {
-    historyRows.value = await invApi.contractPlanSettles(plan.id)
+    const data = await invApi.contractPlanSettles(plan.id)
+    if (seq === historySeq) historyRows.value = data
   } catch {
-    // 失败提示由响应拦截器统一处理
+    if (seq === historySeq) historyError.value = true
   } finally {
-    historyLoading.value = false
+    if (seq === historySeq) historyLoading.value = false
   }
 }
 
@@ -947,10 +1059,22 @@ const attachType: InvAttachBizType = 'contract'
       v-model="dialogVisible"
       :title="dialogMode === 'create' ? '新增合同' : '编辑合同'"
       width="980px"
+      :close-on-click-modal="false"
+      :before-close="beforeClose"
       top="6vh"
       destroy-on-close
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
+      <el-alert
+        v-if="saveError"
+        title="保存失败，本次输入已保留，请检查提示后重试。"
+        type="error"
+        :closable="false"
+        show-icon
+        class="mb-16"
+      />
+      <el-form
+        novalidate
+        ref="formRef" :model="form" :rules="rules" label-width="88px">
         <el-row :gutter="16">
           <el-col :span="8">
             <el-form-item label="合同编号">
@@ -1173,15 +1297,26 @@ const attachType: InvAttachBizType = 'contract'
         </div>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
+        <el-button :disabled="submitting || validating" @click="closeContract">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitForm">保存合同</el-button>
       </template>
     </el-dialog>
 
     <!-- 详情抽屉 -->
-    <el-drawer v-model="detailVisible" size="920px" :title="detail ? `合同 ${detail.contractNo}` : '合同详情'">
+    <el-drawer class="contract-detail-drawer" v-model="detailVisible" size="min(920px, 100vw)" :title="detail ? `合同 ${detail.contractNo}` : '合同详情'">
       <div v-loading="detailLoading" class="detail-body">
-        <template v-if="detail">
+        <el-alert
+          v-if="detailError"
+          title="合同详情加载失败，请重新加载。"
+          type="error"
+          :closable="false"
+          show-icon
+        >
+          <el-button text @click="detailId && openDetail({ id: detailId })"
+            >重新加载</el-button
+          >
+        </el-alert>
+        <template v-if="detail && !detailError">
           <div class="detail-head">
             <div class="detail-head__main">
               <h3>{{ detail.name }}</h3>
@@ -1334,6 +1469,141 @@ const attachType: InvAttachBizType = 'contract'
             ｜ 未收付 <strong class="text-warning">{{ formatMoney(detail.outstanding) }}</strong>
             ｜ 质保金未收 <strong>{{ formatMoney(detail.retentionOutstanding) }}</strong>
           </div>
+
+          <section
+            v-if="inspection"
+            class="contract-inspection"
+            aria-label="合同核对记录"
+          >
+            <div
+              ref="inspectionHeading"
+              tabindex="-1"
+              class="contract-inspection__head"
+            >
+              <el-tabs :model-value="inspection" @tab-change="changeInspection">
+                <el-tab-pane label="期次流水" name="history" />
+                <el-tab-pane label="操作记录" name="logs" />
+              </el-tabs>
+              <el-button text size="small" @click="closeInspection"
+                >收起记录</el-button
+              >
+            </div>
+            <template v-if="inspection === 'history'">
+              <div class="contract-inspection__filter">
+                <span>核对期次</span>
+                <el-select
+                  :model-value="historyPlan?.id"
+                  aria-label="核对期次"
+                  @change="
+                    (id) => {
+                      const plan = detailPlans.find((p) => p.id === id)
+                      if (plan) openHistory(plan)
+                    }
+                  "
+                >
+                  <el-option
+                    v-for="plan in detailPlans"
+                    :key="plan.id"
+                    :value="plan.id"
+                    :label="`第 ${plan.seq} 期 · ${plan.name}`"
+                  />
+                </el-select>
+                <span v-if="historyPlan" class="text-muted"
+                  >已收付 {{ formatMoney(historyPlan.settledAmount) }} · 未收付
+                  {{ formatMoney(historyPlan.outstanding) }}</span
+                >
+              </div>
+              <el-alert
+                v-if="historyError"
+                title="流水加载失败，请重新加载。"
+                type="error"
+                :closable="false"
+                show-icon
+              >
+                <el-button text @click="historyPlan && openHistory(historyPlan)"
+                  >重新加载</el-button
+                >
+              </el-alert>
+              <template v-else>
+                <el-table
+                  v-loading="historyLoading"
+                  :data="historyRows"
+                  size="small"
+                  border
+                  empty-text="暂无流水"
+                >
+                  <el-table-column label="日期" width="112">
+                    <template #default="{ row }">{{
+                      formatDay(row.settledAt)
+                    }}</template>
+                  </el-table-column>
+                  <el-table-column label="金额" width="132" align="right">
+                    <template #default="{ row }">
+                      <strong>{{ formatMoney(row.amount) }}</strong>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="method" label="方式" width="112" />
+                  <el-table-column
+                    prop="remark"
+                    label="备注"
+                    min-width="140"
+                    show-overflow-tooltip
+                  />
+                </el-table>
+              </template>
+            </template>
+            <template v-else>
+              <el-alert
+                v-if="logError"
+                title="操作记录加载失败，请重新加载。"
+                type="error"
+                :closable="false"
+                show-icon
+              >
+                <el-button text @click="openLogs">重新加载</el-button>
+              </el-alert>
+              <template v-else>
+                <el-table
+                  v-loading="logLoading"
+                  :data="logRows"
+                  size="small"
+                  border
+                  empty-text="暂无操作记录"
+                >
+                  <el-table-column label="时间" width="150">
+                    <template #default="{ row }">{{
+                      formatDateTime(row.createdAt)
+                    }}</template>
+                  </el-table-column>
+                  <el-table-column
+                    prop="action"
+                    label="操作"
+                    min-width="120"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column prop="username" label="操作人" width="110" />
+                  <el-table-column
+                    prop="ip"
+                    label="IP"
+                    width="130"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column label="结果" width="70" align="center">
+                    <template #default="{ row }">
+                      <el-tag
+                        size="small"
+                        :type="row.status < 400 ? 'success' : 'danger'"
+                        effect="plain"
+                      >
+                        {{ row.status < 400 ? '成功' : '失败' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </template>
+              <p class="text-muted">显示最近 50 条操作记录</p>
+            </template>
+          </section>
         </template>
       </div>
     </el-drawer>
@@ -1419,52 +1689,6 @@ const attachType: InvAttachBizType = 'contract'
       </template>
     </el-dialog>
 
-    <!-- 期次收付款流水 -->
-    <el-dialog
-      v-model="historyVisible"
-      :title="historyPlan ? `第${historyPlan.seq}期 ${historyPlan.name} · 收付款流水` : '收付款流水'"
-      width="580px"
-      destroy-on-close
-    >
-      <el-table v-loading="historyLoading" :data="historyRows" size="small" border empty-text="暂无流水">
-        <el-table-column label="日期" width="112">
-          <template #default="{ row }">{{ formatDay(row.settledAt) }}</template>
-        </el-table-column>
-        <el-table-column label="金额" width="132" align="right">
-          <template #default="{ row }">
-            <strong>{{ formatMoney(row.amount) }}</strong>
-          </template>
-        </el-table-column>
-        <el-table-column prop="method" label="方式" width="112" />
-        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
-      </el-table>
-      <template #footer>
-        <el-button @click="historyVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 合同操作记录 -->
-    <el-dialog v-model="logVisible" title="合同操作记录" width="680px" destroy-on-close>
-      <el-table v-loading="logLoading" :data="logRows" size="small" border empty-text="暂无操作记录">
-        <el-table-column label="时间" width="150">
-          <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
-        </el-table-column>
-        <el-table-column prop="action" label="操作" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="username" label="操作人" width="110" />
-        <el-table-column prop="ip" label="IP" width="130" show-overflow-tooltip />
-        <el-table-column label="结果" width="70" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.status < 400 ? 'success' : 'danger'" effect="plain">
-              {{ row.status < 400 ? '成功' : '失败' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-      </el-table>
-      <template #footer>
-        <el-button @click="logVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
-
     <AttachmentDrawer
       v-model="attachVisible"
       :biz-type="attachType"
@@ -1484,6 +1708,43 @@ const attachType: InvAttachBizType = 'contract'
 </template>
 
 <style scoped lang="scss">
+.contract-detail-drawer { max-width: 100vw; }
+:global(.contract-detail-drawer .el-drawer__body) { overflow-x: hidden; }
+
+.contract-inspection {
+  margin-top: 24px;
+  padding-top: 8px;
+  border-top: 1px solid var(--app-border);
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  &__head :deep(.el-tabs__header) {
+    margin-bottom: 12px;
+  }
+  &__head:focus-visible {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 2px;
+  }
+  &__filter {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 4px 0 16px;
+    font-size: 13px;
+  }
+  &__filter .el-select {
+    width: 240px;
+    max-width: 100%;
+  }
+  :deep(.el-table) {
+    width: 100%;
+  }
+}
+
 .table-pager {
   display: flex;
   justify-content: flex-end;
@@ -1541,6 +1802,7 @@ const attachType: InvAttachBizType = 'contract'
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  flex-wrap: wrap;
   gap: 16px;
   margin-bottom: 12px;
 
@@ -1553,6 +1815,7 @@ const attachType: InvAttachBizType = 'contract'
   &__tags {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
   }
 
@@ -1565,6 +1828,7 @@ const attachType: InvAttachBizType = 'contract'
     display: flex;
     gap: 8px;
     flex-shrink: 0;
+    flex-wrap: wrap;
   }
 }
 
@@ -1573,6 +1837,7 @@ const attachType: InvAttachBizType = 'contract'
 }
 
 .detail-plan-sum {
+  flex-wrap: wrap;
   margin-top: 12px;
   justify-content: flex-end;
 }

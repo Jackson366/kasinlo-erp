@@ -43,6 +43,7 @@ export function useCrudDialog<P>(options: {
   const visible = ref(false)
   const mode = ref<CrudMode>('create')
   const submitting = ref(false)
+  const validating = ref(false)
   const editingId = ref<number | null>(null)
 
   /** 进入「新增」：清空编辑目标；表单重置紧跟其后由调用方灌值 */
@@ -64,14 +65,19 @@ export function useCrudDialog<P>(options: {
    * buildPayload 在接口调用前一刻构建载荷，页面可依模式裁剪字段
    * （如编辑时不带 username / code）。
    */
-  async function submit(reload: () => void, buildPayload: (mode: CrudMode) => P): Promise<void> {
+  async function submit(
+    reload: () => void, buildPayload: (mode: CrudMode) => P,
+  ): Promise<void> {
+    if (submitting.value || validating.value || !visible.value) return
+    validating.value = true
     // 不能写成 formRef.value?.validate().catch(...)：表单未挂载时 ?. 短路出
     // undefined，再 .catch 就是 TypeError，整个提交静默崩溃。
     // 表单没就绪按校验不通过处理，直接返回。
     const valid = options.formRef.value
       ? await options.formRef.value.validate().catch(() => false)
       : false
-    if (!valid) return
+    validating.value = false
+    if (!valid || !visible.value) return
 
     submitting.value = true
     try {
@@ -94,6 +100,7 @@ export function useCrudDialog<P>(options: {
     visible,
     mode,
     submitting,
+    validating,
     editingId,
     isEdit: computed(() => mode.value === 'edit'),
     openCreate,

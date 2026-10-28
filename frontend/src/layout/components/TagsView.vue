@@ -31,14 +31,14 @@ function isActive(tag: TagView): boolean {
 }
 
 async function closeTag(tag: TagView): Promise<void> {
-  const isCurrent = tag.path === route.path
-  const next = appStore.removeTag(tag.path, route.path)
-  // 只有关掉的是当前标签才需要跳转。removeTag 此时返回「下一个」标签，
-  // 为 null 说明标签栏已空：必须回首页，否则路由停在一个不在标签栏的
-  // 页面上，watch（path 未变化）也不会把它重新登记回来。
-  if (isCurrent) {
-    await router.push(next ?? homePath.value)
+  if (tag.path === route.path) {
+    const index = appStore.tags.findIndex((item) => item.path === tag.path)
+    const next = appStore.tags[index + 1] ?? appStore.tags[index - 1]
+    // Keep the tag until form/navigation guards have accepted leaving.
+    const failure = await router.push(next?.path ?? homePath.value)
+    if (failure) return
   }
+  appStore.removeTag(tag.path, route.path)
 }
 
 async function handleCommand(command: string): Promise<void> {
@@ -54,8 +54,12 @@ async function handleCommand(command: string): Promise<void> {
     return
   }
   if (command === 'home') {
-    appStore.clearTags()
-    await router.push(homePath.value)
+    const failure =
+      route.path === homePath.value
+        ? undefined
+        : await router.push(homePath.value)
+    if (failure) return
+    appStore.removeOtherTags(homePath.value)
   }
 }
 </script>
