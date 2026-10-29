@@ -447,10 +447,22 @@ const validating = ref(false)
 const saveError = ref(false)
 const showCustomNumber = ref(false)
 const customNumberInput = ref<{ focus: () => void }>()
+const customNumberTrigger = ref<{ $el?: HTMLElement }>()
 async function revealCustomNumber(): Promise<void> {
   showCustomNumber.value = true
   await nextTick()
   customNumberInput.value?.focus()
+}
+/**
+ * 收起手填编号：丢弃尚未保存的输入，回到「保存后生成」，焦点还给入口按钮。
+ * 手填编号在保存前只是草稿，取消（或 Esc）就该回到自动生成 ——
+ * 否则展开后没有任何出口，只能清空输入框再一路保存。
+ */
+async function cancelCustomNumber(): Promise<void> {
+  form.orderNo = ''
+  showCustomNumber.value = false
+  await nextTick()
+  customNumberTrigger.value?.$el?.focus()
 }
 const editorLoading = ref(false)
 const editorError = ref('')
@@ -1693,23 +1705,80 @@ function onKeywordInput(): void {
             ? '编辑采购单'
             : '编辑单据'
       "
-      :busy="submitting || validating"
       :before-close="beforeFormClose"
-      @back="requestCloseForm"
     >
       <template v-if="isPurchase" #header="{ titleId, titleClass }">
         <div class="purchase-dialog-heading">
           <h1 :id="titleId" :class="titleClass">
             {{ dialogMode === 'create' ? createText : '编辑采购单' }}
           </h1>
-          <PurchaseGuide :entering="dialogMode === 'create'" :editing="dialogMode === 'edit'" :order="editingOrder" />
-          <template v-if="!editorLoading && !editorError">
-            <span v-if="!showCustomNumber" class="purchase-number-meta">{{ form.orderNo || '单号保存后生成' }}</span>
-            <el-button v-if="dialogMode === 'create' && !showCustomNumber" text size="small" @click="revealCustomNumber">自定义编号</el-button>
-            <el-input v-if="dialogMode === 'create' && showCustomNumber" ref="customNumberInput" v-model="form.orderNo" class="purchase-custom-number" aria-label="自定义单据编号" placeholder="留空自动生成" maxlength="32" clearable />
-          </template>
+          <PurchaseGuide
+            class="purchase-heading-guide"
+            :entering="dialogMode === 'create'"
+            :editing="dialogMode === 'edit'"
+            :order="editingOrder"
+          />
+          <!-- 单号是单据数据，不是页面标题：放在标题下的次级摘要里，不再和标题抢同一行。
+               标签与值贴成一组（6px），组和「自定义编号」之间留 16px —— 用间距分组，
+               不再依赖一个圆点分隔符。 -->
+          <div class="purchase-heading-meta">
+            <template v-if="!editorLoading && !editorError">
+              <template v-if="!showCustomNumber">
+                <span class="purchase-number-pair">
+                  <span class="purchase-number-meta__label">单号</span>
+                  <span
+                    class="purchase-number-meta"
+                    :class="{ 'is-placeholder': !form.orderNo }"
+                    >{{ form.orderNo || '保存后生成' }}</span
+                  >
+                </span>
+                <el-button
+                  v-if="dialogMode === 'create'"
+                  ref="customNumberTrigger"
+                  class="purchase-number-action"
+                  text
+                  size="small"
+                  @click="revealCustomNumber"
+                  >自定义编号</el-button
+                >
+              </template>
+              <template v-else>
+                <span class="purchase-number-pair">
+                  <span class="purchase-number-meta__label">单号</span>
+                  <el-input
+                    ref="customNumberInput"
+                    v-model="form.orderNo"
+                    class="purchase-custom-number"
+                    size="small"
+                    aria-label="自定义单据编号"
+                    placeholder="留空自动生成"
+                    maxlength="32"
+                    clearable
+                    @keyup.esc="cancelCustomNumber"
+                  />
+                </span>
+                <el-button
+                  class="purchase-number-cancel"
+                  text
+                  size="small"
+                  @click="cancelCustomNumber"
+                  >取消</el-button
+                >
+              </template>
+            </template>
+          </div>
         </div>
       </template>
+      <!-- 返回动作放进表单卡片：和字段共用同一条左基线，页头只留标题与指南。 -->
+      <div v-if="isPurchase" class="purchase-body-back">
+        <el-button
+          :disabled="submitting || validating"
+          @click="requestCloseForm"
+        >
+          <AppIcon name="ArrowLeft" />
+          <span>返回采购工作台</span>
+        </el-button>
+      </div>
       <div
         v-if="editorLoading"
         v-loading="true"
@@ -2169,12 +2238,41 @@ function onKeywordInput(): void {
   }
 }
 .purchase-dialog-heading {
+  display: grid;
+  grid-template-areas:
+    'title guide'
+    'meta meta';
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 4px;
+  width: 100%;
+  padding-right: 16px;
+
+  h1 {
+    grid-area: title;
+    min-width: 0;
+  }
+}
+.purchase-heading-guide {
+  grid-area: guide;
+  justify-self: end;
+}
+.purchase-heading-meta {
+  grid-area: meta;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 8px 12px;
-  padding-right: 16px;
+  // 行内：组与组之间 16px；窄屏换行时行距 8px。
+  gap: 8px 16px;
+  min-height: 24px;
+}
+// 标签和值是一组：6px 贴住，远小于它和「自定义编号」之间的 16px。
+.purchase-number-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 .purchase-title {
   display: flex;
@@ -2189,11 +2287,62 @@ function onKeywordInput(): void {
 .purchase-custom-number {
   width: 200px;
   max-width: 100%;
+  flex: none;
 }
+// 有编号时它是页头唯一的业务数据：比标签深一档、重一档，
+// 但不放大字号（放大只会让 12px 的摘要行高跳动）。
 .purchase-number-meta {
+  color: var(--app-text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  // 单号是要被复制到聊天、对账单里的：双击整段选中
+  user-select: all;
+  &.is-placeholder {
+    color: var(--app-text-secondary);
+    font-weight: 400;
+    user-select: auto;
+  }
+}
+.purchase-number-meta__label {
+  flex: none;
   color: var(--app-text-secondary);
   font-size: 12px;
   font-weight: 400;
+  line-height: 20px;
+}
+.purchase-number-action {
+  --el-button-text-color: var(--app-text-secondary);
+  --el-button-hover-text-color: var(--brand-primary);
+  --el-button-hover-bg-color: transparent;
+  --el-button-active-text-color: var(--brand-primary);
+  flex: none;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  &:hover {
+    color: var(--brand-primary);
+  }
+}
+// 取消是出口而不是并列动作：不上色、不下划线，hover 才提一档对比度。
+.purchase-number-cancel {
+  --el-button-text-color: var(--app-text-secondary);
+  --el-button-hover-text-color: var(--app-text);
+  --el-button-hover-bg-color: transparent;
+  --el-button-active-text-color: var(--app-text);
+  flex: none;
+  padding: 0 4px;
+  font-size: 12px;
+}
+.purchase-body-back {
+  margin-bottom: 16px;
+  :deep(.app-icon) {
+    margin-right: 6px;
+    font-size: 14px;
+  }
 }
 .purchase-entry-status {
   margin-bottom: 16px;
@@ -2318,9 +2467,6 @@ function onKeywordInput(): void {
 }
 @media (max-width: 800px) {
   .editor-footer-summary {
-    flex-basis: 100%;
-  }
-  .purchase-number-meta {
     flex-basis: 100%;
   }
 }

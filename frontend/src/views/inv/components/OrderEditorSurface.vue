@@ -5,10 +5,9 @@ const props = defineProps<{
   modelValue: boolean
   page: boolean
   title: string
-  busy: boolean
   beforeClose: (done: () => void) => void
 }>()
-const emit = defineEmits<{ 'update:modelValue': [value: boolean]; back: [] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 const heading = ref<HTMLElement>()
 watch(
   () => props.modelValue,
@@ -30,9 +29,6 @@ watch(
     :aria-label="title"
   >
     <header class="purchase-editor__header">
-      <el-button text :disabled="busy" @click="emit('back')"
-        >返回采购工作台</el-button
-      >
       <div ref="heading" tabindex="-1" class="purchase-editor__heading">
         <slot
           name="header"
@@ -66,20 +62,21 @@ watch(
   margin: 0 auto;
   color: var(--app-text);
   &__header {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 12px 24px;
+    padding: 0 20px;
     margin-bottom: 16px;
   }
+  // 标题块横向占满，指南入口靠右；标题与编号上下两行。
+  // 返回动作不在这里 —— 它作为表单卡片顶部的次级按钮，和表单内容共用左基线。
   &__heading {
     min-width: 0;
   }
+  // 单行大标题不需要正文的 1.6 行高：字形下方会空出半个字，
+  // 把标题和下面的单号摘要撑散。1.4 让两行读成一个块。
   :deep(.purchase-editor__title) {
     margin: 0;
     font-size: 18px;
     font-weight: 600;
-    line-height: 1.6;
+    line-height: 1.4;
   }
   &__body {
     padding: 20px;
@@ -105,6 +102,9 @@ watch(
   }
 }
 @media (max-width: 800px) {
+  .purchase-editor__header {
+    padding: 0 16px;
+  }
   .purchase-editor__body {
     padding: 16px;
   }
