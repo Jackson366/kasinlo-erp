@@ -78,7 +78,7 @@ try {
   await page.goto(
     `http://127.0.0.1:16083/#/inv/purchase?view=all&order=${order.id}`,
   )
-  const detail = page.getByRole('dialog', { name: '采购单据详情', exact: true })
+  const detail = page.getByRole('region', { name: '采购单据详情', exact: true })
   const approve = page.getByRole('dialog', { name: '审核并入库', exact: true })
   await check('详情审核后保留本单、显示下游及自审', async () => {
     await expect(detail).toBeVisible()
@@ -132,7 +132,7 @@ try {
     })
   })
   await check('已付款时详情禁用反审核并解释原因', async () => {
-    await detail.getByRole('button', { name: '关闭', exact: true }).click()
+    await detail.getByRole('button', { name: '返回单据列表', exact: true }).click()
     await page.evaluate(async (id) => {
       const { invApi } = await import('/src/api/inv.ts')
       await invApi.settle({
@@ -148,7 +148,7 @@ try {
     ).toBeDisabled()
     await expect(detail).toContainText('请先联系财务撤销付款记录')
   })
-  await detail.getByRole('button', { name: '关闭', exact: true }).click()
+  await detail.getByRole('button', { name: '返回单据列表', exact: true }).click()
   await check('关联入库没有直接作废，来源链接能打开缓存的待处理页面', async () => {
     const stockNo = await page.evaluate(async (id) => {
       const { invApi } = await import('/src/api/inv.ts')
@@ -166,7 +166,7 @@ try {
     await row.getByRole('button', { name: '原单反审核', exact: true }).click()
     await expect(detail).toBeVisible()
     await expect(detail).toContainText(order.orderNo)
-    await detail.getByRole('button', { name: '关闭', exact: true }).click()
+    await detail.getByRole('button', { name: '返回单据列表', exact: true }).click()
   })
   await check('批量十条失败完整可定位、可复制且不结清', async () => {
     await page.evaluate(async () => {

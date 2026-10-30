@@ -87,7 +87,7 @@ try {
     query: { view: 'pending', q: order.orderNo, order: String(order.id) },
   })
   const review = page.locator('.purchase-review')
-  const detail = page.getByRole('dialog', {
+  const detail = page.getByRole('region', {
     name: '采购单据详情',
     exact: true,
   })
@@ -177,7 +177,7 @@ try {
     query: { view: 'all', q: other.orderNo, order: String(other.id) },
   })
   await check(
-    '详情弹窗与工作台共用入口，缓存的应付页不会沿用上一张单据',
+    '详情与工作台共用入口，缓存的应付页不会沿用上一张单据',
     async () => {
       await expect(detail).toContainText(other.orderNo)
       await detail

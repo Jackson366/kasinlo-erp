@@ -490,7 +490,7 @@ try {
     await page.goto(app + '/#/inv/purchase?view=all')
     await page.reload()
     await page.getByRole('button',{name:'CG-TOUR-909',exact:true}).click()
-    const dialog = page.getByRole('dialog', {name:'采购单据详情',exact:true})
+    const dialog = page.getByRole('region', {name:'采购单据详情',exact:true})
     const tour = page.getByRole('dialog', {name:'采购操作引导',exact:true})
     await dialog.locator('.purchase-guide').getByRole('button').click()
     await expect(tour).toContainText('900.00')
@@ -673,11 +673,11 @@ try {
       .first()
       .click()
     await expect(
-      page.getByRole('dialog', { name: '采购单据详情' }),
+      page.getByRole('region', { name: '采购单据详情' }),
     ).toContainText(item.productName)
     await page
-      .getByRole('dialog', { name: '采购单据详情' })
-      .getByRole('button', { name: '关闭', exact: true })
+      .getByRole('region', { name: '采购单据详情' })
+      .getByRole('button', { name: '返回单据列表', exact: true })
       .click()
   })
   await check('窄屏队列/详情往返及键盘焦点', async () => {

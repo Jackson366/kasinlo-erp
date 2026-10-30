@@ -222,6 +222,8 @@ function changeView(value: string | number): void {
   selectedId.value = null
   detail.value = null
   detailViewSeq.value++
+  detailVisible.value = false
+  detailLoading.value = false
   mobileDetail.value = false
   keepReviewResult.value = false
   reviewResult.value = ''
@@ -476,6 +478,13 @@ let editorTrigger: HTMLElement | null = null
 const editingId = ref<number | null>(null)
 const editingOrder = ref<GuideOrder | null>(null)
 const detailVisible = ref(false)
+// 「全部单据」的详情在列表页内展开；待处理有自己的队列 + 核对区，不用这个开关。
+const listDetailOpen = computed(
+  () => isPurchase.value && !isWorkbench.value && detailVisible.value,
+)
+const listDetailPanel = ref<HTMLElement>()
+const listDetailTrigger = ref<HTMLElement | null>(null)
+const listDetailScroll = ref(0)
 const detail = ref<{ row: InvOrderDetail; items: InvOrderItem[] } | null>(null)
 
 const printRef = ref<InstanceType<typeof OrderPrintDialog> | null>(null)
@@ -919,12 +928,26 @@ async function confirmReverse(): Promise<void> {
 async function openDetail(row: Pick<InvOrderRow, 'id'>): Promise<void> {
   const seq = ++detailViewSeq.value
   const inline = isWorkbench.value
+  const listPanel = isPurchase.value && !inline
+  if (listPanel && !detailVisible.value) {
+    // 记住是谁打开了详情，关闭时把焦点和滚动位置还回去，不把用户丢在页首。
+    listDetailTrigger.value =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null
+    listDetailScroll.value =
+      document.querySelector<HTMLElement>('.layout__content')?.scrollTop ?? 0
+  }
   selectedId.value = row.id
   detailTarget.value = row
   detailLoading.value = true
   detailError.value = false
   detail.value = null
-  if (!inline) detailVisible.value = true
+  if (!inline) {
+    detailVisible.value = true
+    await nextTick()
+    if (listPanel) listDetailPanel.value?.focus({ preventScroll: true })
+  }
   try {
     const data = await invApi.orderDetail(row.id)
     if (seq !== detailViewSeq.value) return
@@ -938,6 +961,27 @@ async function openDetail(row: Pick<InvOrderRow, 'id'>): Promise<void> {
 }
 function retryDetail(): void {
   if (detailTarget.value) void openDetail(detailTarget.value)
+}
+/** 关闭「全部单据」的页内详情，交还列表的筛选、页码、焦点与滚动位置。 */
+function closeListDetail(): void {
+  detailVisible.value = false
+  detailLoading.value = false
+  detailError.value = false
+  const trigger = listDetailTrigger.value
+  const scroll = listDetailScroll.value
+  void nextTick(() => {
+    // 列表刚由 v-show 恢复显示，表格需要重新量一次列宽（固定列尤其明显）。
+    tableRef.value?.doLayout?.()
+    const scroller = document.querySelector<HTMLElement>('.layout__content')
+    if (scroller) scroller.scrollTop = scroll
+    if (trigger?.isConnected) trigger.focus({ preventScroll: true })
+    else {
+      const firstRowButton = tableRef.value?.$el?.querySelector(
+        '.el-table__body button',
+      ) as HTMLElement | undefined
+      firstRowButton?.focus({ preventScroll: true })
+    }
+  })
 }
 watch(rows, (list) => {
   if (!isWorkbench.value || keepReviewResult.value) return
@@ -1142,6 +1186,7 @@ async function consumeLinkedOrder(): Promise<void> {
     return
   // Restore the source filters as well as the record on a cached page.
   workspaceView.value = route.query.view === 'pending' ? 'pending' : 'all'
+  if (isWorkbench.value) detailVisible.value = false
   Object.assign(query, {
     keyword: typeof route.query.q === 'string' ? route.query.q : '',
     handoff: ['auditable', 'created', 'reversed'].includes(String(route.query.handoff))
@@ -1229,7 +1274,111 @@ function onKeywordInput(): void {
         <AppIcon name="Plus" />新增采购单
       </el-button>
     </header>
-    <div class="page-card">
+    <div class="page-card" :class="{ 'is-detail-open': listDetailOpen }">
+      <!-- 「全部单据」的详情就在列表原位展开，不再盖一层 1280px 弹窗。
+           列表 DOM 保持挂载（只换显示状态），返回时筛选、页码、焦点和滚动位置都还在。 -->
+      <section
+        v-if="listDetailOpen"
+        ref="listDetailPanel"
+        class="order-detail-panel"
+        tabindex="-1"
+        aria-label="采购单据详情"
+        :aria-busy="detailLoading"
+        @keydown.esc.stop.prevent="closeListDetail"
+      >
+        <header class="order-detail-panel__head">
+          <el-button class="order-detail-panel__back" text @click="closeListDetail">
+            <AppIcon name="ArrowLeft" />返回单据列表
+          </el-button>
+          <div class="order-detail-panel__titles">
+            <h2>采购单据详情</h2>
+            <p>核对完可直接办理审核或编辑；返回列表不会丢失筛选和页码。</p>
+          </div>
+          <PurchaseGuide
+            :order="detail?.row"
+            :busy="detailLoading"
+            :failed="detailError"
+          />
+        </header>
+        <div
+          v-if="detailLoading"
+          v-loading="true"
+          class="detail-pending"
+          aria-label="正在加载采购单"
+        />
+        <div
+          v-else-if="detailError"
+          class="order-detail-panel__error"
+          role="alert"
+        >
+          <strong>采购单加载失败</strong>
+          <p>当前数据可能已变化，请重新加载后再核对。</p>
+          <el-button @click="retryDetail">重新加载</el-button>
+        </div>
+        <template v-else-if="detail">
+          <el-alert
+            v-if="reviewResult"
+            :title="reviewResult"
+            type="success"
+            show-icon
+            :closable="false"
+            class="purchase-result"
+          />
+          <OrderDetailContent
+            :order="detail.row"
+            :items="detail.items"
+            :party-label="partyLabel"
+            :is-purchase="true"
+            :picks="picks"
+          />
+          <p v-if="detail.row.status === 1" class="purchase-impact">
+            审核后增加库存并形成应付，请确认货物已实际到达。
+          </p>
+          <div class="purchase-review-actions">
+            <div class="purchase-review-actions__secondary">
+              <el-button @click="openAttach(detail.row)"
+                >附件{{
+                  attachCounts[String(detail.row.id)]
+                    ? ` (${attachCounts[String(detail.row.id)]})`
+                    : ''
+                }}</el-button
+              >
+              <el-button @click="printRef?.open(detail.row)">打印</el-button>
+              <el-button
+                v-if="detail.row.status === 2"
+                v-perm="'inv:purchase:finish'"
+                :disabled="detail.row.settledAmount > 0 || reverseRunning"
+                @click="reverseOrder(detail.row)"
+                >反审核</el-button
+              >
+              <span
+                v-if="detail.row.status === 2 && detail.row.settledAmount > 0"
+                class="text-muted"
+                >已登记付款，请先联系财务撤销付款记录</span
+              >
+            </div>
+            <div
+              v-if="detail.row.status === 1"
+              class="purchase-review-actions__primary"
+            >
+              <el-button
+                v-perm="'inv:purchase:update'"
+                :disabled="loading"
+                @click="openEdit(detail.row)"
+                >编辑采购单</el-button
+              >
+              <el-button
+                v-perm="'inv:purchase:finish'"
+                type="primary"
+                :disabled="loading"
+                data-purchase-tour="approve"
+                @click="openApprove(detail.row)"
+                >审核并入库</el-button
+              >
+            </div>
+          </div>
+        </template>
+      </section>
       <!-- 搜索与操作合并一行：左侧列表名，中间筛选（自动折行），右侧查询/重置/新建/刷新 -->
       <div class="list-head">
         <span class="list-head__title">
@@ -2029,10 +2178,9 @@ function onKeywordInput(): void {
       </template>
     </OrderEditorSurface>
 
-    <!-- 详情：与新增 / 编辑同宽同档（同一份数据的三种看法，宽度不该跳）。
-         版式与「新增商品」等弹窗共用 form-section / form-grid，
-         全站的弹窗因此是同一套视觉语言。 -->
+    <!-- 销售沿用弹窗；采购详情已在列表页内展开，不再维护第二套详情界面。 -->
     <el-dialog
+      v-if="!isPurchase"
       v-model="detailVisible"
       :title="`${title}详情`"
       width="1280px"
@@ -2042,20 +2190,14 @@ function onKeywordInput(): void {
         v-if="detailLoading"
         v-loading="true"
         class="detail-pending"
-        aria-label="正在加载采购单"
+        aria-label="正在加载单据"
       />
-      <template v-if="isPurchase" #header="{ titleId, titleClass }">
-        <div class="purchase-dialog-heading">
-          <span :id="titleId" :class="titleClass">{{ title }}详情</span>
-          <PurchaseGuide :order="detail?.row" :busy="detailLoading" :failed="detailError" />
-        </div>
-      </template>
       <template v-if="detail">
         <OrderDetailContent
           :order="detail.row"
           :items="detail.items"
           :party-label="partyLabel"
-          :is-purchase="isPurchase"
+          :is-purchase="false"
           :picks="picks"
         />
       </template>
@@ -2069,40 +2211,11 @@ function onKeywordInput(): void {
       <el-button v-if="detailError" @click="retryDetail">重新加载</el-button>
       <template #footer>
         <el-button @click="detailVisible = false">关闭</el-button>
-        <template v-if="isPurchase && detail?.row.status === 2">
-          <span v-if="detail.row.settledAmount > 0" class="text-muted"
-            >已登记付款，请先联系财务撤销付款记录</span
-          >
-          <el-button
-            v-perm="'inv:purchase:finish'"
-            :disabled="detail.row.settledAmount > 0 || reverseRunning"
-            @click="reverseOrder(detail.row)"
-            >反审核</el-button
-          >
-        </template>
-        <el-button v-if="isPurchase && detail" @click="openAttach(detail.row)"
-          >附件</el-button
-        >
         <el-button
-          :type="isPurchase ? 'default' : 'primary'"
+          type="primary"
           @click="detail && printRef?.open(detail.row)"
           >打印单据</el-button
         >
-        <template v-if="isPurchase && detail?.row.status === 1">
-          <span class="purchase-impact purchase-impact--inline">审核后增加库存并形成应付，请确认货物已实际到达。</span>
-          <el-button
-            v-perm="'inv:purchase:update'"
-            @click="detail && openEdit(detail.row)"
-            >编辑采购单</el-button
-          >
-          <el-button
-            v-perm="'inv:purchase:finish'"
-            type="primary"
-            data-purchase-tour="approve"
-            @click="detail && openApprove(detail.row)"
-            >审核并入库</el-button
-          >
-        </template>
       </template>
     </el-dialog>
 
@@ -2573,10 +2686,57 @@ function onKeywordInput(): void {
   font-size: 12px;
   line-height: 1.6;
   color: var(--app-text-secondary);
-  &--inline { display: inline-block; margin: 0 12px 8px 0; }
 }
 .purchase-result {
   margin-bottom: 20px;
+}
+/* 列表页内详情：标题、正文、动作三层，动作区沿用核对区的同一套骨架。 */
+.page-card.is-detail-open > :not(.order-detail-panel) {
+  display: none;
+}
+.order-detail-panel {
+  &:focus-visible {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 4px;
+  }
+}
+.order-detail-panel__head {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--app-border-light);
+}
+.order-detail-panel__back {
+  flex: none;
+  margin-top: 2px;
+}
+.order-detail-panel__titles {
+  flex: 1;
+  min-width: 220px;
+  h2 {
+    margin: 0;
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 600;
+  }
+  p {
+    margin: 2px 0 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-secondary);
+  }
+}
+.order-detail-panel__error {
+  min-height: 240px;
+  padding: 40px 20px;
+  text-align: center;
+  p {
+    color: var(--app-text-secondary);
+    line-height: 1.6;
+  }
 }
 .purchase-list-error {
   min-height: 280px;
