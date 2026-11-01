@@ -70,12 +70,13 @@ const {
 
 function openCreateDialog(): void {
   openCreate()
-  Object.assign(form, { code: '', name: '', docType: '', paper: 'A4', status: 1, remark: '' })
+  Object.assign(form, { code: '', name: '', docType: '', paper: 'A4', status: 1, remark: '', content: '' })
 }
 
 function openEditDialog(row: InvPrintTemplateRow): void {
   openEdit(row.id)
   Object.assign(form, {
+    content: row.content,
     code: row.code,
     name: row.name,
     docType: row.docType,

@@ -924,7 +924,7 @@ definitions:
         maxLength: 32
         type: string
       content:
-        maxLength: 8000
+        maxLength: 512000
         type: string
       docType:
         maxLength: 32

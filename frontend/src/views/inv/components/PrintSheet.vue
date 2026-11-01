@@ -39,28 +39,88 @@ import {
   defaultSignItems,
   defaultSignLabel,
   MM_PX,
+  stampLayout,
+  stampImageSource,
   visibleCols,
   type PrintContentConfig,
   type PrintMetaField,
   type SheetMode,
 } from './printConfig'
 
-const props = defineProps<{
-  mode: SheetMode
-  detail: InvOrderDetail | InvStockOrderDetail
-  cfg: PrintContentConfig
-  /** 最终展示的标题（配置标题留空时由父级按业务线取「采购单 / 销售单 / 入库单 / 出库单」） */
-  title: string
-  paper: 'A4' | 'A5'
-  /** 往来单位标签：供应商 / 客户（仅 order 模式使用） */
-  partyLabel?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    mode: SheetMode
+    detail: InvOrderDetail | InvStockOrderDetail
+    cfg: PrintContentConfig
+    /** 最终展示的标题（配置标题留空时由父级按业务线取「采购单 / 销售单 / 入库单 / 出库单」） */
+    title: string
+    paper: 'A4' | 'A5'
+    /** 往来单位标签：供应商 / 客户（仅 order 模式使用） */
+    partyLabel?: string
+    showStamp?: boolean
+    designing?: boolean
+  }>(),
+  { showStamp: true, designing: false },
+)
 
 /** 预览宽度按 96dpi 近似：A4 210mm≈794px、A5 148mm≈560px，打印时由 @media print 接管 */
 const sheetWidth = computed(() => (props.paper === 'A5' ? '560px' : '794px'))
 
 /** 页边距（配置毫米 → 预览像素）。打印时该值注入 @page，纸面 padding 归零 */
-const framePad = computed(() => `${((props.cfg.page.marginMm || 10) * MM_PX).toFixed(1)}px`)
+const framePad = computed(
+  () => `${(props.cfg.page.marginMm * MM_PX).toFixed(1)}px`,
+)
+const stamp = computed(() =>
+  stampLayout(props.cfg.stamp, props.paper, props.cfg.page.marginMm),
+)
+const stampShown = computed(
+  () => props.cfg.stamp.enabled && props.showStamp !== false,
+)
+const stampSource = computed(() => stampImageSource(props.cfg.stamp.image))
+const stampStyle = computed(() => ({
+  left: `${stamp.value.xMm}mm`,
+  top: `${stamp.value.yMm}mm`,
+  width: `${stamp.value.widthMm}mm`,
+  height: `${stamp.value.heightMm}mm`,
+}))
+const emit = defineEmits<{
+  stampMove: [position: { xMm: number; yMm: number }]
+}>()
+let drag: { x: number; y: number; startX: number; startY: number } | null = null
+function startStampMove(event: PointerEvent): void {
+  if (!props.designing || event.button !== 0) return
+  drag = {
+    x: stamp.value.xMm,
+    y: stamp.value.yMm,
+    startX: event.clientX,
+    startY: event.clientY,
+  }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  event.preventDefault()
+}
+function moveStamp(event: PointerEvent): void {
+  if (!drag) return
+  const maxX =
+    (props.paper === 'A5' ? 148 : 210) -
+    2 * props.cfg.page.marginMm -
+    stamp.value.widthMm
+  emit('stampMove', {
+    xMm:
+      Math.round(
+        Math.max(
+          0,
+          Math.min(maxX, drag.x + (event.clientX - drag.startX) / MM_PX),
+        ) * 10,
+      ) / 10,
+    yMm:
+      Math.round(
+        Math.max(
+          0,
+          Math.min(60, drag.y + (event.clientY - drag.startY) / MM_PX),
+        ) * 10,
+      ) / 10,
+  })
+}
 
 /** 打印页设置跟随纸面：竖版 + 页边距。挂载与配置变化时同步注入 */
 onMounted(applyPage)
@@ -70,11 +130,17 @@ function applyPage(): void {
 }
 
 const bizType = computed(() => (props.detail as InvOrderDetail).bizType)
-const direction = computed(() => (props.detail as InvStockOrderDetail).direction)
+const direction = computed(
+  () => (props.detail as InvStockOrderDetail).direction,
+)
 
 const sourceLabel = computed(() => {
   const st = (props.detail as InvStockOrderDetail).sourceType
-  return st === 'purchase' ? '采购单号' : st === 'sales' ? '销售单号' : '来源单号'
+  return st === 'purchase'
+    ? '采购单号'
+    : st === 'sales'
+      ? '销售单号'
+      : '来源单号'
 })
 
 /** 信息条字段取值。value 为空且 skipIfEmpty 的字段（来源单号 / 业务员 / 制单人）不输出 */
@@ -89,7 +155,10 @@ const metaPool = computed<Record<string, MetaValue>>(() => {
   if (props.mode === 'order') {
     const o = d as InvOrderDetail
     const pool: Record<string, MetaValue> = {
-      party: { label: props.partyLabel || '往来单位', value: o.partyName || '-' },
+      party: {
+        label: props.partyLabel || '往来单位',
+        value: o.partyName || '-',
+      },
       orderDate: { label: '单据日期', value: formatDay(o.orderDate) },
       orderNo: { label: '单据编号', value: o.orderNo },
       salesman: { label: '业务员', value: o.salesman || '', skipIfEmpty: true },
@@ -101,7 +170,11 @@ const metaPool = computed<Record<string, MetaValue>>(() => {
   const pool: Record<string, MetaValue> = {
     orderDate: { label: '单据日期', value: formatDay(s.orderDate) },
     orderNo: { label: '单据编号', value: s.orderNo },
-    source: { label: sourceLabel.value, value: s.sourceOrderNo || '', skipIfEmpty: true },
+    source: {
+      label: sourceLabel.value,
+      value: s.sourceOrderNo || '',
+      skipIfEmpty: true,
+    },
     salesman: { label: '业务员', value: s.salesman || '', skipIfEmpty: true },
     operator: { label: '制单人', value: s.operator || '', skipIfEmpty: true },
   }
@@ -109,16 +182,24 @@ const metaPool = computed<Record<string, MetaValue>>(() => {
 })
 
 const metaItems = computed(() => {
-  const cfgMeta = props.cfg.meta?.length ? props.cfg.meta : defaultMetaFields(props.mode, props.partyLabel || '')
+  const cfgMeta = props.cfg.meta?.length
+    ? props.cfg.meta
+    : defaultMetaFields(props.mode, props.partyLabel || '')
   const pool = metaPool.value
   const items = cfgMeta
     .filter((f: PrintMetaField) => f.visible && pool[f.key])
-    .map((f: PrintMetaField) => ({ ...pool[f.key], label: f.label || pool[f.key].label }))
+    .map((f: PrintMetaField) => ({
+      ...pool[f.key],
+      label: f.label || pool[f.key].label,
+    }))
     .filter((m) => !(m.skipIfEmpty && !m.value))
   // 采购 / 销售单永远带往来单位：模板可能固化过出入库模式的信息条
   // （出入库默认池里没有「往来单位」字段），被销售/采购单复用就会丢客户/供应商。
   // 这里兜底强制补上 —— 往来单位是单据的主体，比「可配置」优先级更高。
-  if (props.mode === 'order' && !items.some((m) => m.label === (props.partyLabel || '往来单位'))) {
+  if (
+    props.mode === 'order' &&
+    !items.some((m) => m.label === (props.partyLabel || '往来单位'))
+  ) {
     const f = pool.party
     if (f) items.unshift({ ...f, label: props.partyLabel || f.label })
   }
@@ -129,15 +210,21 @@ const cols = computed(() => visibleCols(props.cfg, props.mode))
 /** 空明细时的占位列数 */
 const colCount = computed(() => Math.max(cols.value.length, 1))
 
-const amountCN = computed(() => (props.mode === 'order' ? amountToCN((props.detail as InvOrderDetail).totalAmount) : ''))
+const amountCN = computed(() =>
+  props.mode === 'order'
+    ? amountToCN((props.detail as InvOrderDetail).totalAmount)
+    : '',
+)
 
 /** 表尾合计：销售/采购打金额，出入库打数量 */
-const totalLabel = computed(() => (props.mode === 'order' ? '合计金额' : '合计数量'))
+const totalLabel = computed(() =>
+  props.mode === 'order' ? '合计金额' : '合计数量',
+)
 const totalValue = computed(() =>
   props.mode === 'order'
     ? (props.detail as InvOrderDetail).totalAmount.toFixed(2)
-    // 数量是 numeric(14,4)，直接打出来会是 1.0002 这种账本精度，纸面上要读成人话
-    : formatQty((props.detail as InvStockOrderDetail).totalQty),
+    : // 数量是 numeric(14,4)，直接打出来会是 1.0002 这种账本精度，纸面上要读成人话
+      formatQty((props.detail as InvStockOrderDetail).totalQty),
 )
 
 /** 表尾左侧的公司落款（配置了「公司信息位置 = 表尾」才显示） */
@@ -194,7 +281,9 @@ function cell(it: AnyItem, key: string): string {
 
 /** 签收栏项目：配置为 null（未自定义）时按单据类型取默认 */
 const signItems = computed(() =>
-  props.cfg.footer.signItems?.length ? props.cfg.footer.signItems : defaultSignItems(props.mode),
+  props.cfg.footer.signItems?.length
+    ? props.cfg.footer.signItems
+    : defaultSignItems(props.mode),
 )
 </script>
 
@@ -206,21 +295,40 @@ const signItems = computed(() =>
       width: sheetWidth,
       fontSize: `${cfg.page.fontSize}pt`,
       padding: framePad,
+      '--sheet-print-width': `${(paper === 'A5' ? 148 : 210) - 2 * cfg.page.marginMm}mm`,
       '--row-h': `${cfg.page.rowHeight}px`,
       '--th-bg': cfg.page.headerBg || 'transparent',
     }"
   >
-    <img v-if="cfg.header.logoUrl && !companyBottom" class="sheet__logo" :src="cfg.header.logoUrl" alt="logo" />
-    <h1 v-if="cfg.header.showTitle" class="sheet__title" :style="{ fontSize: `${cfg.page.titleFontSize}pt` }">
+    <img
+      v-if="cfg.header.logoUrl && !companyBottom"
+      class="sheet__logo"
+      :src="cfg.header.logoUrl"
+      alt="logo"
+    />
+    <h1
+      v-if="cfg.header.showTitle"
+      class="sheet__title"
+      :style="{ fontSize: `${cfg.page.titleFontSize}pt` }"
+    >
       {{ title }}
     </h1>
     <!-- 公司信息放在表头时（少数模板习惯）才在标题下重复一遍 -->
     <template v-if="!companyBottom">
-      <div v-if="cfg.header.companyName" class="sheet__company">{{ cfg.header.companyName }}</div>
-      <div v-if="cfg.header.address || cfg.header.phone" class="sheet__company-sub">
-        {{ cfg.header.address }}{{ cfg.header.address && cfg.header.phone ? ' · ' : '' }}{{ cfg.header.phone }}
+      <div v-if="cfg.header.companyName" class="sheet__company">
+        {{ cfg.header.companyName }}
       </div>
-      <div v-if="cfg.header.bank" class="sheet__company-sub">{{ cfg.header.bank }}</div>
+      <div
+        v-if="cfg.header.address || cfg.header.phone"
+        class="sheet__company-sub"
+      >
+        {{ cfg.header.address
+        }}{{ cfg.header.address && cfg.header.phone ? ' · ' : ''
+        }}{{ cfg.header.phone }}
+      </div>
+      <div v-if="cfg.header.bank" class="sheet__company-sub">
+        {{ cfg.header.bank }}
+      </div>
     </template>
 
     <div class="sheet__meta">
@@ -240,13 +348,21 @@ const signItems = computed(() =>
       </thead>
       <tbody>
         <tr v-for="(it, i) in (detail as any).items" :key="i">
-          <td v-for="c in cols" :key="c.key" :class="`col-${c.key}`" :style="{ textAlign: c.align }">
+          <td
+            v-for="c in cols"
+            :key="c.key"
+            :class="`col-${c.key}`"
+            :style="{ textAlign: c.align }"
+          >
             <template v-if="c.key === 'index'">{{ i + 1 }}</template>
             <template v-else-if="c.key === 'qty'">
               {{ formatQty(it.qty) }}
               <!-- 非基本单位时把折算关系写出来：纸面上的「2 箱」入账是 20 个基本单位，
                    不写清楚，对账时没人知道库存为什么不是整数 -->
-              <span v-if="Number(it.rate) !== 1" class="qty-sub">×{{ formatQty(it.rate) }} = {{ formatQty(it.qtyBase) }}{{ it.unitBase ? ` ${it.unitBase}` : '' }}</span>
+              <span v-if="Number(it.rate) !== 1" class="qty-sub"
+                >×{{ formatQty(it.rate) }} = {{ formatQty(it.qtyBase)
+                }}{{ it.unitBase ? ` ${it.unitBase}` : '' }}</span
+              >
             </template>
             <template v-else>{{ cell(it, c.key) }}</template>
           </td>
@@ -257,33 +373,68 @@ const signItems = computed(() =>
       </tbody>
     </table>
 
-    <div class="sheet__summary">
-      <div class="sheet__summary-left">
-        <span v-for="p in companyParts" :key="p">{{ p }}</span>
+    <div
+      class="sheet__closing"
+      :style="
+        stampShown ? { minHeight: `${stamp.yMm + stamp.heightMm}mm` } : {}
+      "
+    >
+      <div class="sheet__summary">
+        <div class="sheet__summary-left">
+          <span v-for="p in companyParts" :key="p">{{ p }}</span>
+        </div>
+        <div class="sheet__summary-right">
+          {{ totalLabel }}：<b>{{ totalValue }}</b>
+        </div>
       </div>
-      <div class="sheet__summary-right">
-        {{ totalLabel }}：<b>{{ totalValue }}</b>
+
+      <div v-if="cfg.footer.showAmountCn && amountCN" class="sheet__amount-cn">
+        {{ amountCN }}
+      </div>
+
+      <div v-if="declaration || signLabel" class="sheet__declare">
+        <span class="sheet__declare-text">{{ declaration }}</span>
+        <span class="sheet__declare-sign">{{ signLabel }}：<i /></span>
+      </div>
+
+      <div
+        v-if="cfg.footer.showRemark && (detail as any).remark"
+        class="sheet__remark"
+      >
+        <b>备注：</b>{{ (detail as any).remark }}
+      </div>
+      <div v-if="cfg.footer.customText" class="sheet__remark sheet__custom">
+        {{ cfg.footer.customText }}
+      </div>
+
+      <!-- 旧版三联签收栏：默认关闭，模板里打开才出现 -->
+      <div v-if="cfg.footer.showSign" class="sheet__sign">
+        <span v-for="s in signItems" :key="s">{{ s }}：____________</span>
+      </div>
+
+      <div class="sheet__footer">{{ cfg.footer.text }}</div>
+      <div
+        v-if="stampShown"
+        class="sheet__stamp"
+        :class="{ 'sheet__stamp--design': designing }"
+        :style="stampStyle"
+        @pointerdown="startStampMove"
+        @pointermove="moveStamp"
+        @pointerup="drag = null"
+        @pointercancel="drag = null"
+        @lostpointercapture="drag = null"
+      >
+        <img
+          v-if="stampSource"
+          :src="stampSource"
+          alt="印章"
+          draggable="false"
+        />
+        <span v-else-if="designing" class="sheet__stamp-placeholder"
+          >盖章区域</span
+        >
       </div>
     </div>
-
-    <div v-if="cfg.footer.showAmountCn && amountCN" class="sheet__amount-cn">{{ amountCN }}</div>
-
-    <div v-if="declaration || signLabel" class="sheet__declare">
-      <span class="sheet__declare-text">{{ declaration }}</span>
-      <span class="sheet__declare-sign">{{ signLabel }}：<i /></span>
-    </div>
-
-    <div v-if="cfg.footer.showRemark && (detail as any).remark" class="sheet__remark">
-      <b>备注：</b>{{ (detail as any).remark }}
-    </div>
-    <div v-if="cfg.footer.customText" class="sheet__remark sheet__custom">{{ cfg.footer.customText }}</div>
-
-    <!-- 旧版三联签收栏：默认关闭，模板里打开才出现 -->
-    <div v-if="cfg.footer.showSign" class="sheet__sign">
-      <span v-for="s in signItems" :key="s">{{ s }}：____________</span>
-    </div>
-
-    <div class="sheet__footer">{{ cfg.footer.text }}</div>
   </div>
 </template>
 
@@ -296,6 +447,42 @@ const signItems = computed(() =>
   line-height: 1.6;
   box-shadow: 0 2px 12px rgb(0 0 0 / 18%);
   box-sizing: border-box;
+
+  &__closing {
+    position: relative;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    display: flow-root;
+  }
+
+  &__stamp {
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+    box-sizing: border-box;
+    background: transparent;
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    &--design {
+      outline: 1px dashed var(--brand-primary);
+      pointer-events: auto;
+      cursor: move;
+      touch-action: none;
+      user-select: none;
+    }
+  }
+  &__stamp-placeholder {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    color: var(--brand-primary);
+    font-family: var(--el-font-family);
+    font-size: 12px;
+  }
 
   &__logo {
     display: block;
@@ -495,6 +682,46 @@ const signItems = computed(() =>
     &:empty {
       display: none;
     }
+  }
+}
+</style>
+
+<style lang="scss" scoped>
+@media print {
+  .sheet__stamp--design {
+    outline: none;
+  }
+  .sheet__stamp-placeholder {
+    display: none;
+  }
+}
+</style>
+
+<style lang="scss">
+.print-portal {
+  display: none;
+}
+@media print {
+  html:has(body.printing-sheet),
+  body.printing-sheet {
+    background: #fff !important;
+    margin: 0;
+    padding: 0;
+    height: auto;
+    min-height: 0;
+  }
+  body.printing-sheet > :not(.print-portal) {
+    display: none !important;
+  }
+  body.printing-sheet .print-portal {
+    display: block !important;
+  }
+  body.printing-sheet .print-portal .sheet {
+    position: static;
+    margin: 0;
+    width: var(--sheet-print-width) !important;
+    padding: 0 !important;
+    box-shadow: none;
   }
 }
 </style>

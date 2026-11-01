@@ -18,7 +18,8 @@
     "test:purchase-handoff": "node ../scripts/purchase-handoff-verify.mjs",
     "test:task-context": "node ../scripts/task-context-verify.mjs",
     "test:list-filters": "node ../scripts/list-filters-verify.mjs",
-    "test:layout": "node ../scripts/reference-layout-verify.mjs"
+    "test:layout": "node ../scripts/reference-layout-verify.mjs",
+    "test:print-stamp": "node ../scripts/print-stamp-verify.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
