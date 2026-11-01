@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import ListFilters from '@/components/ListFilters.vue'
+import { useAdvancedFilters } from '@/composables/useAdvancedFilters'
+
 /**
  * 商品管理页：商品档案的完整维护入口，粒度是「商品 → 规格 → 计量单位」三层。
  *
@@ -741,7 +744,20 @@ onMounted(() => {
   loadCatTree()
 })
 // 关键字录入即查询（防抖），不必再按回车
-const { searchSoon } = useDebouncedSearch(search)
+const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(search)
+const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = useAdvancedFilters(
+  query,
+  () => [
+    {
+      key: 'status',
+      label: '状态',
+      emptyValue: undefined,
+      valueLabel: () => (query.status === 0 ? '停用' : '启用'),
+    },
+  ],
+  searchNow,
+)
+
 </script>
 
 <template>
@@ -813,8 +829,8 @@ const { searchSoon } = useDebouncedSearch(search)
       <!-- 右栏：商品表格 -->
       <div class="product-main">
         <div class="page-card">
-          <!-- 搜索与操作合并一行 -->
-          <div class="list-head">
+          <!-- 常用条件保持可见，其余条件按需展开；业务动作独立排列。 -->
+          <div class="list-head list-head--filters">
             <span class="list-head__title">
               商品<em>共 {{ total }} 条</em>
               <em v-if="selection.length">
@@ -822,39 +838,7 @@ const { searchSoon } = useDebouncedSearch(search)
                 <a @click="clearSelection(tableRef)">清空</a>
               </em>
             </span>
-            <el-form class="filter-form" label-width="76px" @submit.prevent>
-              <el-form-item label="关键字">
-                <el-input
-                  v-model="query.keyword" @input="searchSoon"
-                  placeholder="编码 / 名称 / 条码 / 规格"
-                  clearable
-                  @keyup.enter="search"
-                />
-              </el-form-item>
-              <el-form-item label="分类">
-                <el-select
-                  v-model="query.categoryId"
-                  placeholder="全部"
-                  clearable
-                  @change="search"
-                >
-                  <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="状态">
-                <el-select v-model="query.status" placeholder="全部" clearable>
-                  <el-option label="启用" :value="1" />
-                  <el-option label="停用" :value="0" />
-                </el-select>
-              </el-form-item>
-            </el-form>
             <div class="list-head__actions">
-              <el-button type="primary" @click="search">
-                <AppIcon name="Search" />
-                <span>查询</span>
-              </el-button>
-              <el-button @click="reset">重置</el-button>
-              <span class="list-head__divider" />
               <el-button v-if="selection.length" v-perm="'inv:product:delete'" :loading="batchRunning" @click="batchDelete">
                 批量删除
               </el-button>
@@ -870,6 +854,37 @@ const { searchSoon } = useDebouncedSearch(search)
                 <AppIcon name="Refresh" />
               </el-button>
             </div>
+            <ListFilters :active-filters="advancedFilters" @clear="clearAdvancedFilter">
+              <el-form-item label="关键字">
+                <el-input
+                  v-model="query.keyword"
+                  @input="searchSoon"
+                  placeholder="编码 / 名称 / 条码 / 规格"
+                  clearable
+                  @keyup.enter="searchNow"
+                />
+              </el-form-item>
+              <el-form-item label="分类">
+                <el-select v-model="query.categoryId" placeholder="全部" clearable @change="searchNow">
+                  <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
+                </el-select>
+              </el-form-item>
+              <template #actions>
+                <el-button type="primary" @click="searchNow">
+                  <AppIcon name="Search" />
+                  <span>查询</span>
+                </el-button>
+                <el-button @click="cancelSearch(); reset()">重置</el-button>
+              </template>
+              <template #advanced>
+                <el-form-item label="状态">
+                  <el-select v-model="query.status" placeholder="全部" clearable>
+                    <el-option label="启用" :value="1" />
+                    <el-option label="停用" :value="0" />
+                  </el-select>
+                </el-form-item>
+              </template>
+            </ListFilters>
           </div>
 
       <el-table
