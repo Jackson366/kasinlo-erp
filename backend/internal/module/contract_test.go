@@ -170,7 +170,7 @@ func TestGroupComposesRoutesAndMenus(t *testing.T) {
 	var called []string
 
 	mod := Group(
-		MenuNode{Name: "System", Title: "系统管理", Icon: "Setting", Path: "/system", Sort: 2},
+		MenuNode{Name: "System", Title: "系统", Icon: "Setting", Path: "/system", Sort: 2},
 		Module{
 			Namespace: "system",
 			Register: func(rg *gin.RouterGroup) {

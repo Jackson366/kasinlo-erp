@@ -100,7 +100,7 @@ func Build(mods ...Module) error {
 
 // Group 把一个目录节点与若干模块合成一个模块。
 //
-// 用途：像「系统管理」这种把多个模块收在一个目录下的分组，属于
+// 用途：像「系统」这种把多个模块收在一个目录下的分组，属于
 // 「哪些模块放在一起展示」的组装决策 —— 是组装层的职责，不是 user 或 role
 // 模块自己的事。让模块声明自己挂在哪个目录下，等于把导航结构泄漏进模块内部。
 //
@@ -109,7 +109,7 @@ func Build(mods ...Module) error {
 //
 // 用法（组装层）：
 //
-//	module.Group(module.MenuNode{Name: "System", Title: "系统管理", Path: "/system", Sort: 2},
+//	module.Group(module.MenuNode{Name: "System", Title: "系统", Path: "/system", Sort: 2},
 //		user.Module(), role.Module(), ...)
 func Group(dir MenuNode, mods ...Module) Module {
 	dir.Type = TypeDir

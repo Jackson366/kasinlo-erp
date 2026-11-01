@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 数据概览（登录落地页）：核心经营指标 + 销售趋势 + 品类占比 + 客户排行。
+ * 首页（登录落地页）：核心经营指标 + 销售趋势 + 品类占比 + 客户排行。
  */
 import { computed, onMounted, ref } from 'vue'
 import type { EChartsCoreOption } from 'echarts/core'

@@ -44,7 +44,7 @@
 
 ## Sidebar navigation
 
-2026-11-01 参考图改版：Layout / Navbar / Sidebar / navigation.ts 为外壳 owner。品牌图片不变；顶部栏贯穿全宽。单侧栏折叠只使用 app store 的 primarySidebarCollapsed 与原 nova_sidebar_primary_collapsed 偏好，旧二级栏及 nova_sidebar_collapsed 不再读取。侧栏 ElMenu 使用服务端授权树，经 navigationMenus 对内置 Inv 叶子进行业务展示分组，不新增路由或授权；未知菜单、外链、隐藏过滤和自定义目录保持原行为。合同管理归入财务；打印模板归入既有系统管理目录，账号没有系统管理目录但有打印权限时，使用仅含已授权打印入口的系统设置展示分组，不扩大权限。分组仅用于展开，不自动导航；深链进入和退出图标模式自动展开当前祖先。图标栏使用 ElMenu 原有提示/弹出菜单与键盘行为。宽屏侧栏独立滚动，业务页仍由 layout__content 滚动，不裁掉长表单。
+2026-11-01 参考图改版：Layout / Navbar / Sidebar / navigation.ts 为外壳 owner。品牌图片不变；顶部栏贯穿全宽。单侧栏折叠只使用 app store 的 primarySidebarCollapsed 与原 nova_sidebar_primary_collapsed 偏好，旧二级栏及 nova_sidebar_collapsed 不再读取。侧栏 ElMenu 使用服务端授权树，经 navigationMenus 对内置 Inv 叶子进行业务展示分组，不新增路由或授权；未知菜单、外链、隐藏过滤和自定义目录保持原行为。合同管理归入财务；打印模板归入既有系统目录，账号没有系统目录但有打印权限时，使用仅含已授权打印入口的系统设置展示分组，不扩大权限。分组仅用于展开，不自动导航；深链进入和退出图标模式自动展开当前祖先。图标栏使用 ElMenu 原有提示/弹出菜单与键盘行为。宽屏侧栏独立滚动，业务页仍由 layout__content 滚动，不裁掉长表单。
 
 800px 及以下用 ElDrawer 展示导航，菜单固定文字展开；组件提供焦点陷阱、Esc、关闭按钮和焦点归还。成功变更路由后关闭，不改变桌面折叠偏好。顶栏现有刷新、全屏、主题及账户动作继续保留，不添加没有实际行为的搜索或通知。
 

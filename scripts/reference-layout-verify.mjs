@@ -101,11 +101,11 @@ try {
     async () => {
       await aside
         .locator('.el-sub-menu__title')
-        .filter({ hasText: /^系统管理$/ })
+        .filter({ hasText: /^系统$/ })
         .click()
       await aside.getByRole('menuitem', { name: '打印模板', exact: true }).click()
       await expect(page).toHaveURL(/inv\/print/)
-      await expect(page.locator('.breadcrumb')).toContainText('系统管理')
+      await expect(page.locator('.breadcrumb')).toContainText('系统')
       await expect(page.locator('.breadcrumb')).toContainText('打印模板')
       await aside
         .locator('.el-sub-menu__title')
@@ -235,7 +235,7 @@ try {
       await page.locator('.breadcrumb').click()
       await expect(tagMenu).toHaveCount(0)
       await visit('/inv/overview')
-      const home = nav.getByRole('link', { name: '数据概览', exact: true })
+      const home = nav.getByRole('link', { name: '首页', exact: true })
       await home.focus()
       await page.keyboard.press('Shift+F10')
       await expect(
@@ -288,7 +288,7 @@ try {
       await discard.getByRole('button', { name: '放弃修改', exact: true }).click()
       await expect(page).toHaveURL(/inv\/stock/)
       await expect(nav.getByRole('link', { name: '采购管理', exact: true })).toHaveCount(0)
-      await expect(nav.getByRole('link', { name: '数据概览', exact: true })).toBeVisible()
+      await expect(nav.getByRole('link', { name: '首页', exact: true })).toBeVisible()
     },
   )
   await check('closing an edited tag respects keep-editing and discard guards', async () => {

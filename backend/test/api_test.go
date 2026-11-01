@@ -134,7 +134,7 @@ func TestProfile(t *testing.T) {
 			t.Fatalf("顶级路由数量不足: %d", len(res.List))
 		}
 		flat := mustJSON(res.Raw)
-		if !contains(flat, "数据概览") || !contains(flat, "进销存") || !contains(flat, "系统管理") {
+		if !contains(flat, "首页") || !contains(flat, "进销存") || !contains(flat, "系统") {
 			t.Fatalf("路由缺少预期节点: %s", flat)
 		}
 		if contains(flat, "system:user:create") {
@@ -432,7 +432,7 @@ func TestMenuTree(t *testing.T) {
 
 	t.Run("不能把菜单挂到自己的子节点下", func(t *testing.T) {
 		res := call(t, http.MethodPut, "/api/v1/system/menus/"+itoa(menuIDByName(t, "System")), token, map[string]any{
-			"parentId": menuIDByName(t, "SystemUser"), "name": "System", "path": "/system", "title": "系统管理", "type": "dir",
+			"parentId": menuIDByName(t, "SystemUser"), "name": "System", "path": "/system", "title": "系统", "type": "dir",
 		})
 		assertCode(t, res, 40000, "环路校验")
 	})

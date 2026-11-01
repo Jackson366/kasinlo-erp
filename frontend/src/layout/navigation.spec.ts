@@ -23,7 +23,7 @@ describe('authorized navigation projection', () => {
       '合同管理',
     ])
     expect(navigationTrail(menus, '/inv/print').map((item) => item.meta.title)).toEqual([
-      '系统管理',
+      '系统',
       '打印模板',
     ])
     expect(menus.some((item) => ['InvContract', 'InvPrint'].includes(item.name))).toBe(false)

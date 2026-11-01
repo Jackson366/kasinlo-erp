@@ -224,7 +224,7 @@ try {
           name: 'InvOverview',
           path: '/inv/overview',
           component: 'inv/overview/index',
-          meta: { title: '数据概览', icon: 'Odometer' },
+          meta: { title: '首页', icon: 'Odometer' },
         },
         { ...inventory, children: [...menus, ...leaves] },
         {
@@ -232,7 +232,7 @@ try {
           name: 'System',
           path: '/system',
           component: '',
-          meta: { title: '系统管理', icon: 'Setting' },
+          meta: { title: '系统', icon: 'Setting' },
           children: [
             {
               id: 301,
@@ -835,8 +835,8 @@ try {
     await expect(
       page.locator('.sidebar__secondary .el-menu-item.is-active'),
     ).toHaveText('销售管理')
-    await primary.getByRole('button', { name: '系统管理', exact: true }).click()
-    await expect(page.locator('.sidebar__heading')).toHaveText('系统管理')
+    await primary.getByRole('button', { name: '系统', exact: true }).click()
+    await expect(page.locator('.sidebar__heading')).toHaveText('系统')
     await expect(page).toHaveURL(/\/inv\/sales/)
     await primary.getByRole('button', { name: '进销存', exact: true }).click()
     await page
@@ -895,7 +895,7 @@ try {
       .click()
     await page
       .locator('.sidebar__rail')
-      .getByRole('link', { name: '数据概览', exact: true })
+      .getByRole('link', { name: '首页', exact: true })
       .click()
     await expect(page.locator('.overview-page')).toBeVisible()
     await expect(page.locator('.sidebar__toggle')).toHaveCount(0)

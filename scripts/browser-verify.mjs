@@ -423,7 +423,7 @@ const PROBE_THEME = `JSON.stringify({
   attr: document.documentElement.dataset.theme || null,
   stored: localStorage.getItem('nova_theme'),
   bodyBg: getComputedStyle(document.body).backgroundColor,
-  // 数据概览页首张指标卡：亮暗两套主题下底色/渐变应不同（原仪表盘欢迎卡探针的下位替代）
+  // 首页首张指标卡：亮暗两套主题下底色/渐变应不同（原仪表盘欢迎卡探针的下位替代）
   cardBg: (() => { const e = document.querySelector('.overview-page .stat-card'); return e ? getComputedStyle(e).backgroundImage + '|' + getComputedStyle(e).backgroundColor : null })(),
   contentBg: (() => { const e = document.querySelector('.layout__content'); return e ? getComputedStyle(e).backgroundColor : null })(),
   appBg: getComputedStyle(document.documentElement).getPropertyValue('--app-bg').trim(),
@@ -487,11 +487,11 @@ async function main() {
   void coldCls
 
   const afterLogin = await formLogin(ADMIN.user, ADMIN.secret)
-  // 首页是「数据概览」而不是框架自带的仪表盘：进销存是这套后台的主线功能
-  check('登录后进入数据概览', afterLogin === '#/inv/overview', `hash=${afterLogin}`)
+  // 首页是经营概览而不是框架自带的仪表盘：进销存是这套后台的主线功能
+  check('登录后进入首页', afterLogin === '#/inv/overview', `hash=${afterLogin}`)
   const invOverview = await inspectPage('#/inv/overview')
   check(
-    '数据概览可见',
+    '首页可见',
     !!invOverview.visible && invOverview.settled,
     `opacity=${invOverview.opacity} h=${invOverview.h} settled=${invOverview.settled}`,
   )
@@ -546,7 +546,7 @@ async function main() {
   }
   const labels = await evaluate(`Array.from(document.querySelectorAll('.layout__aside .el-menu-item')).map(e => e.textContent.trim()).filter(Boolean)`)
   const expected = {
-    数据概览: { hash: '#/inv/overview', cls: 'overview-page' },
+    首页: { hash: '#/inv/overview', cls: 'overview-page' },
     采购管理: { hash: '#/inv/purchase', cls: 'order-page' },
     销售管理: { hash: '#/inv/sales', cls: 'order-page' },
     库存管理: { hash: '#/inv/stock', cls: 'stock-page' },
@@ -1002,7 +1002,7 @@ async function main() {
     return { total: cs.length, sized: cs.filter((c) => c.width > 0 && c.height > 0).length };
   })()`)
   check(
-    '数据概览页图表渲染正常',
+    '首页图表渲染正常',
     overviewCharts.total >= 1 && overviewCharts.sized === overviewCharts.total,
     `canvas=${overviewCharts.total} sized=${overviewCharts.sized}`,
   )

@@ -4,7 +4,7 @@ import "nova-erp/internal/module"
 
 // Module 返回进销存模块的自描述清单。
 //
-// 导航结构与画布设计一致，共 12 个页面。其中「数据概览」是**顶级菜单**而不是
+// 导航结构与画布设计一致，共 12 个页面。其中「首页」（经营概览）是**顶级菜单**而不是
 // 「进销存」目录的子项：登录后的落地页由前端按菜单树第一个叶子推导
 // （AGENTS.md §5.62），顶级叶子才能稳定当首页；放在目录下的话，
 // 落地页会变成目录的 Redirect，语义上「首页 = 一个跳转」也不对。
@@ -19,7 +19,7 @@ func Module() module.Module {
 		Register:  Register,
 		Menus: []module.MenuNode{
 			{
-				Name: "InvOverview", Title: "数据概览", Icon: "Odometer",
+				Name: "InvOverview", Title: "首页", Icon: "Odometer",
 				Path: "/inv/overview", Component: "inv/overview/index",
 				Permission: "inv:overview:view", Sort: 1, KeepAlive: true,
 			},

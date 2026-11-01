@@ -5,7 +5,7 @@
     "path": "/inv/overview",
     "component": "inv/overview/index",
     "meta": {
-      "title": "数据概览",
+      "title": "首页",
       "icon": "Odometer",
       "hidden": false,
       "keepAlive": true,

@@ -265,14 +265,14 @@ func retireModules(db *gorm.DB) error {
 	return nil
 }
 
-// ensureLandingOrder 校准顶层入口结构，保证「数据概览」是顶级菜单且排最前。
+// ensureLandingOrder 校准顶层入口结构，保证「首页」是顶级菜单且排最前。
 //
 // 前端用「菜单树里第一个可访问的叶子」当登录落地页（AGENTS.md §5.62）。
 // 全新库由模块清单直接建好，无需校准；这里兜的是**老库升级**：
 //   - v1.0 里「数据概览」是「进销存」目录的子项（parent_id ≠ 0），
 //     升级后要被提到顶级，否则落地页推导不出它；
 //   - 顶层 sort 平局按 id ASC 决胜，老库里先建的节点会赢，
-//     所以显式把数据概览压到最前，其余节点一律不动 ——
+//     所以显式把首页压到最前，其余节点一律不动 ——
 //     管理员在菜单管理里对其它顺序的调整仍然是权威。
 func ensureLandingOrder(db *gorm.DB) error {
 	var overview model.Menu
@@ -290,7 +290,7 @@ func ensureLandingOrder(db *gorm.DB) error {
 			Updates(map[string]any{"parent_id": 0, "sort": 1}).Error; err != nil {
 			return err
 		}
-		logger.Info("已将「数据概览」提升为顶级菜单（老库结构迁移）",
+		logger.Info("已将首页（InvOverview）提升为顶级菜单（老库结构迁移）",
 			zap.Int64("id", overview.ID))
 	}
 	// 「进销存」目录退到第二位：不覆盖管理员显式调大的值，只在小了的时候抬
@@ -342,6 +342,8 @@ var menuRenames = []struct {
 	To   string // 新内置标题
 }{
 	{Name: "InvStock", From: "出入库", To: "库存管理"},
+	{Name: "InvOverview", From: "数据概览", To: "首页"},
+	{Name: "System", From: "系统管理", To: "系统"},
 }
 
 // applyMenuRename 把仍是旧内置标题的节点改成新标题（管理员自定义过的跳过）。

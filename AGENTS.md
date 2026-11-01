@@ -283,7 +283,7 @@ db.Offset(q.Offset()).Limit(q.Limit()).Order(order)
 
 ### 列表页的三个公共抽象（新页面照抄，不要重写）
 
-系统管理四个页面（user/role/menu/dept）与日志页曾各自维护同一套状态与骨架，
+系统四个页面（user/role/menu/dept）与日志页曾各自维护同一套状态与骨架，
 差异只在「调哪个接口」。这些已经收敛成组合式函数，**新列表页直接用**：
 
 ```ts
@@ -1572,7 +1572,7 @@ DOM 上，表现为「改完之后所有字段都读不到」。收起浮层改�
 本地全新建库时完全复现不了。
 
 **现状（v1.1 起）**：框架仪表盘（`dashboard`）已整体下线，
-「数据概览」是 `inv` 注册的**顶级菜单**（`Sort: 1`），严格小于其它顶级节点，
+「首页」是 `inv` 注册的**顶级菜单**（`Sort: 1`），严格小于其它顶级节点，
 不存在平局。老库升级时 `ensureLandingOrder` 会把它从「进销存」目录下
 **提取为顶级菜单**（`parent_id = 0`）——`ensureNode` 对已存在的记录一律不覆盖字段，
 所以「挪位置」这种结构变更必须显式写迁移代码，改声明值对存量行无效。
@@ -1647,7 +1647,7 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs   # 验证生产�
 
 脚本零依赖（Node 原生 fetch + WebSocket 驱动系统 Chrome），共 74 项断言，覆盖：
 
-1. 冷启动落登录页、表单登录进**数据概览**（`#/inv/overview`，见 §5.62）
+1. 冷启动落登录页、表单登录进**首页**（`#/inv/overview`，见 §5.62）
 2. **F5 深链直接进业务页不应落 404**（§5.1 的回归锚点）
 3. 侧边栏逐个菜单点击（现为 16 个页面）：页面可见、无残留 `-enter-from`（白屏检测）
    —— 每个页面都要在 `expected` 表里登记 `hash + 页面根 class`，漏登记会报「匹配期望=false」
@@ -1769,7 +1769,7 @@ APP_URL=http://localhost:4173 node scripts/browser-verify.mjs   # 验证生产�
 ### 5.69 ECharts 按需注册漏了系列类型，图是「静默空白」
 
 **诱因**：`EChart.vue` 按需注册以减小打包体积，注册表里只有 `LineChart` / `BarChart`，
-但数据概览与报表中心都用 `type: 'pie'`。
+但首页与报表中心都用 `type: 'pie'`。
 
 **后果**：ECharts 对未注册的系列**不抛错**，只 `console.warn` 一句然后丢掉整个 series。
 页面不白屏、类型检查全绿、构建成功 —— 只有那块图是空的。
