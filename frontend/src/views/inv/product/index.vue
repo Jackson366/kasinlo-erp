@@ -1733,7 +1733,7 @@ const { searchSoon } = useDebouncedSearch(search)
   line-height: 1.5;
   color: var(--app-text-secondary);
   background: var(--app-surface-subtle);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
 }
 
 .unit-table__foot {

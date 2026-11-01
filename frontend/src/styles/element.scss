@@ -15,8 +15,9 @@
 :root,
 html.dark {
   --el-color-primary: var(--brand-primary);
-  --el-border-radius-base: 8px;
-  --el-border-radius-small: 6px;
+  --el-border-radius-base: var(--radius-sm);
+  --el-border-radius-small: var(--radius-sm);
+  --el-border-radius-round: var(--radius-sm);
 
   --el-font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -139,6 +140,31 @@ html.dark {
 // 默认按钮的配色已经通过 --el-fill-color-blank / --el-border-color 跟随主题，无需额外处理。
 .el-button {
   font-weight: 500;
+}
+
+// small 按钮默认用 base - 1px；直角令牌下不能生成负半径。
+.el-button--small:not(.is-circle) {
+  border-radius: var(--radius-sm);
+}
+
+// 这些组件在自身选择器里声明固定圆角，必须就近适配，不能只改 :root。
+// 保留圆形头像、单选框、开关与状态圆点，不使用全局 * 强制覆盖。
+:root .el-tag {
+  --el-tag-border-radius: var(--radius-sm);
+  --el-tag-border-radius-rounded: var(--radius-sm);
+}
+
+:root .el-message-box {
+  --el-messagebox-border-radius: var(--radius-lg);
+}
+
+:root .el-popper {
+  --el-popper-border-radius: var(--radius-sm);
+  --el-popover-border-radius: var(--radius-sm);
+}
+
+:root .el-tour {
+  --el-tour-border-radius: var(--radius-md);
 }
 
 .el-button--primary {

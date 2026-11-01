@@ -266,7 +266,7 @@ function openGroup(item: RouteRecord): void {
   flex: none;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   object-fit: contain;
 }
 
@@ -350,7 +350,7 @@ function openGroup(item: RouteRecord): void {
       top: 14px;
       bottom: 14px;
       width: 3px;
-      border-radius: 0 3px 3px 0;
+      border-radius: var(--radius-sm);
       background: var(--brand-primary);
     }
   }
@@ -430,7 +430,7 @@ function openGroup(item: RouteRecord): void {
   height: 36px;
   padding: 0;
   border: 1px solid var(--app-border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--app-text-secondary);
   background: var(--app-surface);
   box-shadow: var(--shadow-card);

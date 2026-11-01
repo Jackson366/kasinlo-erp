@@ -453,7 +453,7 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
   font-size: 11px;
   font-weight: 600;
   text-align: center;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 
   &--post {
     color: var(--tone-blue);

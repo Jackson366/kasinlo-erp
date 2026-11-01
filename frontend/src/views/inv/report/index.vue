@@ -1066,7 +1066,7 @@ onMounted(() => {
 .range-tab {
   padding: 6px 16px;
   border: none;
-  border-radius: calc(var(--radius-sm) - 2px);
+  border-radius: max(0px, calc(var(--radius-sm) - 2px));
   background: transparent;
   font-size: 13px;
   color: var(--app-text-secondary);
@@ -1098,7 +1098,7 @@ onMounted(() => {
 .report-tab {
   padding: 8px 20px;
   border: none;
-  border-radius: calc(var(--radius-md) - 4px);
+  border-radius: max(0px, calc(var(--radius-md) - 4px));
   background: transparent;
   font-size: 14px;
   color: var(--app-text-secondary);
@@ -1134,7 +1134,7 @@ onMounted(() => {
 .dim-btn {
   padding: 5px 14px;
   border: none;
-  border-radius: calc(var(--radius-sm) - 2px);
+  border-radius: max(0px, calc(var(--radius-sm) - 2px));
   background: transparent;
   font-size: 13px;
   color: var(--app-text-secondary);

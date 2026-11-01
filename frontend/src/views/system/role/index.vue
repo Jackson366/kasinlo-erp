@@ -528,7 +528,7 @@ const { searchSoon } = useDebouncedSearch(search)
   font-size: 12px;
   color: var(--tone-slate);
   background: var(--tone-slate-soft);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .perm-tree {

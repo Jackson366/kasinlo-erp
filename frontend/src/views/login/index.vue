@@ -261,7 +261,7 @@ function focusFirstInvalidField(): void {
     font-weight: 700;
     background: rgba(255, 255, 255, 0.18);
     border: 1px solid rgba(255, 255, 255, 0.32);
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
     backdrop-filter: blur(6px);
   }
 

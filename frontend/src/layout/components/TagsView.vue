@@ -134,7 +134,7 @@ async function handleCommand(command: string): Promise<void> {
     color: var(--app-text-secondary);
     background: var(--app-fill);
     border: 1px solid transparent;
-    border-radius: 999px;
+    border-radius: var(--radius-sm);
     white-space: nowrap;
     transition: var(--transition-base);
 
@@ -164,7 +164,7 @@ async function handleCommand(command: string): Promise<void> {
 
   &__close {
     font-size: 12px;
-    border-radius: 50%;
+    border-radius: var(--radius-sm);
 
     &:hover {
       color: #fff;
@@ -185,7 +185,7 @@ async function handleCommand(command: string): Promise<void> {
     color: var(--app-text-secondary);
     background: var(--app-fill);
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-sm);
     cursor: pointer;
 
     &:hover {

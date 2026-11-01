@@ -266,7 +266,7 @@ function formatSize(size: number): string {
   width: 42px;
   height: 42px;
   overflow: hidden;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   background: var(--app-surface-subtle);
   color: var(--app-text-secondary);
   cursor: pointer;
