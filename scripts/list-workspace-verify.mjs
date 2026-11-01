@@ -134,7 +134,7 @@ try {
   )
   await go('/inv/sales')
   await check(
-    'business actions follow More filters and reflow when expanded',
+    'business actions align right before and after wrapping on filter expansion',
     async () => {
       await page.setViewportSize({ width: 1600, height: 900 })
       const tools = page.locator('.list-filters__tools')
@@ -153,6 +153,8 @@ try {
         })
         .toBeLessThan(2)
       const closed = await tools.boundingBox()
+      const form = await page.locator('.list-filters').boundingBox()
+      expect(Math.abs(closed.x + closed.width - form.x - form.width)).toBeLessThan(2)
       const more = await toggle.boundingBox()
       expect(closed.x).toBeGreaterThanOrEqual(more.x + more.width)
       await toggle.click()
@@ -160,7 +162,7 @@ try {
         .poll(async () => (await tools.boundingBox()).y)
         .toBeGreaterThan(closed.y + 20)
       const open = await tools.boundingBox()
-      expect(open.x + open.width).toBeLessThanOrEqual(1600)
+      expect(Math.abs(open.x + open.width - form.x - form.width)).toBeLessThan(2)
       await page.screenshot({
         path: path.join(out, 'sales-actions-expanded.png'),
         fullPage: true,

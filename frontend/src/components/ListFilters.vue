@@ -94,6 +94,10 @@ function collapse(event: KeyboardEvent): void {
     max-width: 100%;
     flex: 0 0 auto;
   }
+  &__tools {
+    margin-left: auto;
+    justify-content: flex-end;
+  }
   :deep(.el-form-item) {
     margin: 0;
     min-width: 0;
