@@ -65,6 +65,10 @@ try {
     name: '已打开的页面',
     exact: true,
   })
+  // 首页整条导航卡隐藏（display:none），getByRole 解析不到；
+  // 需要读 DOM 状态（标签数据仍在）时用 CSS 定位。
+  const tags = page.locator('.tags-view')
+  const navigationCard = page.locator('.layout__navigation')
   async function go(route) {
     await page.goto(`http://127.0.0.1:6096/#${route}`)
     await expect(page.locator('.el-loading-mask:visible')).toHaveCount(0)
@@ -180,7 +184,7 @@ try {
       location.hash = value
     }, route)
     await expect(page).toHaveURL(`http://127.0.0.1:6096/#${route}`)
-    await expect(nav.locator('[aria-current="page"]')).toHaveAttribute(
+    await expect(tags.locator('[aria-current="page"]')).toHaveAttribute(
       'href',
       new RegExp(route.split('?')[0]),
     )
@@ -234,7 +238,11 @@ try {
       await contract.click({ button: 'right' })
       await page.locator('.breadcrumb').click()
       await expect(tagMenu).toHaveCount(0)
+      // 首页不显示面包屑/标签卡：导航区整块隐藏，但标签数据仍在（首页标签不可关闭）
       await visit('/inv/overview')
+      await expect(navigationCard).toBeHidden()
+      await visit('/inv/contract')
+      await expect(navigationCard).toBeVisible()
       const home = nav.getByRole('link', { name: '首页', exact: true })
       await home.focus()
       await page.keyboard.press('Shift+F10')
@@ -253,7 +261,9 @@ try {
       ).toBeFocused()
       await page.keyboard.press('Enter')
       await expect(page).toHaveURL(/inv\/overview/)
-      await expect(nav.getByRole('link')).toHaveCount(1)
+      await expect(navigationCard).toBeHidden()
+      await expect(tags.locator('.tags-view__link')).toHaveCount(1)
+      await expect(page.locator('#main-content')).toBeFocused()
     },
   )
   await check(
@@ -378,7 +388,9 @@ try {
       await page.screenshot({ path: path.join(out, 'tag-context-mobile.png'), fullPage: true })
       await tagMenu.getByRole('menuitem', { name: '关闭全部标签', exact: true }).tap()
       await expect(page).toHaveURL(/inv\/overview/)
-      await expect(nav.getByRole('link')).toHaveCount(1)
+      await expect(navigationCard).toBeHidden()
+      await expect(tags.locator('.tags-view__link')).toHaveCount(1)
+      await expect(page.locator('#main-content')).toBeFocused()
       await session.detach()
     },
   )

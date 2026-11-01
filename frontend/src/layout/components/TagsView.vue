@@ -88,10 +88,21 @@ async function closeTag(tag: TagView): Promise<void> {
     if (failure) return
   }
   appStore.removeTag(tag.path, route.path)
+  await focusActiveTag()
+}
+
+/**
+ * 焦点回到当前标签；首页把整条导航卡隐藏了，此时焦点交给内容区，
+ * 否则焦点会掉到 body，键盘用户得从头 Tab。
+ */
+async function focusActiveTag(): Promise<void> {
   await nextTick()
-  listRef.value
-    ?.querySelector<HTMLAnchorElement>('[aria-current="page"]')
-    ?.focus({ preventScroll: true })
+  const link = listRef.value?.querySelector<HTMLAnchorElement>('[aria-current="page"]')
+  if (link && link.offsetParent !== null) {
+    link.focus({ preventScroll: true })
+    return
+  }
+  document.querySelector<HTMLElement>('#main-content')?.focus({ preventScroll: true })
 }
 
 function openContextMenu(event: MouseEvent | KeyboardEvent, tag: TagView): void {
@@ -142,10 +153,7 @@ async function handleCommand(command: string): Promise<void> {
     if (failure) return
     appStore.removeOtherTags(homePath.value)
   }
-  await nextTick()
-  listRef.value
-    ?.querySelector<HTMLAnchorElement>('[aria-current="page"]')
-    ?.focus({ preventScroll: true })
+  await focusActiveTag()
 }
 </script>
 
