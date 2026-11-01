@@ -99,6 +99,23 @@ try {
       }
     })
   }
+  await go('/system/user')
+  await check('expanded user filters use bounded widths and fit one desktop row', async () => {
+    const filters = page.locator('.list-filters')
+    const toggle = page.getByRole('button', { name: '更多筛选', exact: true })
+    await toggle.click()
+    await expect(page.locator('.list-filters__advanced')).toBeVisible()
+    const fields = await filters.locator('.el-form-item:visible').evaluateAll(items => items.map(el => el.getBoundingClientRect().toJSON()))
+    expect(fields).toHaveLength(3)
+    expect(fields[0].width).toBeLessThanOrEqual(301)
+    expect(fields[1].width).toBeLessThanOrEqual(221)
+    expect(fields[2].width).toBeLessThanOrEqual(221)
+    expect(Math.abs(fields[0].top - fields[2].top)).toBeLessThan(2)
+    expect(await filters.evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(40)
+    await page.screenshot({ path: path.join(out, 'user-compact-filters.png'), fullPage: true })
+    await page.getByRole('button', { name: '收起筛选', exact: true }).press('Escape')
+    await expect(page.getByRole('button', { name: '更多筛选', exact: true })).toBeFocused()
+  })
   await go('/inv/sales')
   await check('56px top bar, 44px tags and breadcrumb in header', async () => {
     expect(

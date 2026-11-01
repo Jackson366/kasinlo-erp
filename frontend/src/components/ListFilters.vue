@@ -34,6 +34,16 @@ function collapse(event: KeyboardEvent): void {
     @keydown="collapse"
   >
     <div class="list-filters__common"><slot /></div>
+    <div
+      v-if="$slots.advanced"
+      v-show="expanded"
+      :id="advancedId"
+      class="list-filters__advanced"
+      role="group"
+      aria-label="更多筛选条件"
+    >
+      <slot name="advanced" />
+    </div>
     <div class="list-filters__actions">
       <slot name="actions" />
       <button
@@ -50,16 +60,6 @@ function collapse(event: KeyboardEvent): void {
         <AppIcon :name="expanded ? 'ArrowUp' : 'ArrowDown'" />
       </button>
     </div>
-    <div
-      v-if="$slots.advanced"
-      v-show="expanded"
-      :id="advancedId"
-      class="list-filters__advanced"
-      role="group"
-      aria-label="更多筛选条件"
-    >
-      <slot name="advanced" />
-    </div>
   </el-form>
 </template>
 
@@ -67,23 +67,18 @@ function collapse(event: KeyboardEvent): void {
 .list-filters {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 12px 16px;
+  align-items: center;
+  gap: 8px 12px;
   min-width: 0;
   &__common,
   &__advanced {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-    gap: 12px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 8px 12px;
     min-width: 0;
-  }
-  &__common {
-    flex: 1 1 500px;
-  }
-  &__advanced {
-    flex: 1 0 100%;
-    padding-top: 12px;
-    border-top: 1px solid var(--app-border-light);
+    max-width: 100%;
   }
   &__actions {
     display: flex;
@@ -91,11 +86,22 @@ function collapse(event: KeyboardEvent): void {
     flex-wrap: wrap;
     gap: 8px;
     min-height: 32px;
-    margin-left: auto;
   }
   :deep(.el-form-item) {
     margin: 0;
     min-width: 0;
+    flex: 0 1 220px;
+    width: 220px;
+    max-width: 100%;
+  }
+  &__common :deep(.el-form-item:first-child) {
+    flex-basis: 300px;
+    width: 300px;
+  }
+  // Date ranges need room for both dates; keep the exception in the shared owner.
+  :deep(.el-form-item:has(.el-date-editor--daterange)) {
+    flex-basis: 340px;
+    width: 340px;
   }
   :deep(.el-form-item__label) {
     flex: none;
@@ -141,8 +147,16 @@ function collapse(event: KeyboardEvent): void {
   }
 }
 @media (max-width: 600px) {
-  .list-filters__actions {
-    margin-left: 0;
+  .list-filters {
+    &__common,
+    &__advanced {
+      flex-basis: 100%;
+      width: 100%;
+    }
+    :deep(.el-form-item) {
+      flex-basis: 100%;
+      width: 100%;
+    }
   }
 }
 </style>
