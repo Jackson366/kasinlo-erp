@@ -1,542 +1,183 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore, usePermissionStore } from '@/store'
-import type { RouteRecord } from '@/types/api'
+import { navigationMenus, navigationTrail } from '../navigation'
 import AppIcon from '@/components/AppIcon.vue'
 import SidebarItem from './SidebarItem.vue'
 
-const emit = defineEmits<{ 'secondary-change': [visible: boolean] }>()
+const props = withDefaults(defineProps<{ expanded?: boolean }>(), {
+  expanded: false,
+})
 const route = useRoute()
 const appStore = useAppStore()
 const permissionStore = usePermissionStore()
-const menus = computed(() =>
-  permissionStore.menus.filter((item) => !item.meta?.hidden),
-)
-const activePath = computed<string>(
-  () => (route.meta?.activeMenu as string) || route.path,
-)
-const selectedGroup = ref<number | null>(null)
-const childrenOf = (item: RouteRecord) =>
-  (item.children ?? []).filter((child) => !child.meta?.hidden)
-function contains(item: RouteRecord, path: string): boolean {
-  return (
-    item.path === path ||
-    childrenOf(item).some((child) => contains(child, path))
-  )
-}
-const currentGroup = computed(() =>
-  menus.value.find((item) => item.id === selectedGroup.value),
-)
-const secondaryItems = computed(() =>
-  currentGroup.value ? childrenOf(currentGroup.value) : [],
-)
-const defaultOpenGroups = computed(() =>
-  secondaryItems.value
-    .filter((item) => childrenOf(item).length)
-    .map((item) => item.path || String(item.id)),
-)
+const collapsed = computed(() => !props.expanded && appStore.primarySidebarCollapsed)
+const menus = computed(() => navigationMenus(permissionStore.menus))
+const activePath = computed(() => (route.meta?.activeMenu as string) || route.path)
+const menuRef = ref<{ open: (index: string) => void }>()
+
+// Reveal active ancestors after deep links or leaving icon mode. Browsing never navigates.
 watch(
-  [menus, activePath],
-  () => {
-    selectedGroup.value =
-      menus.value.find((item) => contains(item, activePath.value))?.id ??
-      menus.value[0]?.id ??
-      null
+  [activePath, collapsed, menus],
+  async () => {
+    if (collapsed.value) return
+    await nextTick()
+    for (const item of navigationTrail(menus.value, activePath.value).slice(0, -1)) {
+      menuRef.value?.open(item.path)
+    }
   },
   { immediate: true },
 )
-watch(
-  () => secondaryItems.value.length > 0,
-  (value) => emit('secondary-change', value),
-  { immediate: true },
-)
-function openGroup(item: RouteRecord): void {
-  selectedGroup.value = item.id
-  if (appStore.sidebarCollapsed) appStore.toggleSidebar()
-}
 </script>
 
 <template>
-  <aside
-    class="sidebar"
-    :class="{ 'is-primary-collapsed': appStore.primarySidebarCollapsed }"
-    aria-label="主导航"
-  >
-    <button
-      v-if="secondaryItems.length"
-      type="button"
-      class="sidebar__toggle"
-      :aria-label="appStore.sidebarCollapsed ? '展开二级菜单' : '收起二级菜单'"
-      :title="appStore.sidebarCollapsed ? '展开二级菜单' : '收起二级菜单'"
-      :aria-expanded="!appStore.sidebarCollapsed"
-      aria-controls="sidebar-secondary"
-      @click="appStore.toggleSidebar()"
-    >
-      <AppIcon :name="appStore.sidebarCollapsed ? 'ArrowRight' : 'ArrowLeft'" />
-    </button>
-    <div class="sidebar__rail">
-      <div class="sidebar__brand" aria-label="Kasinlo ERP">
-        <img
-          class="sidebar__logo"
-          src="/brand/kasinlo-mark.png"
-          alt=""
-          width="30"
-          height="30"
-        />
-        <span
-          v-show="!appStore.primarySidebarCollapsed"
-          class="sidebar__wordmark"
-          >Kasinlo</span
-        >
-      </div>
-      <el-scrollbar class="sidebar__scroll">
-        <nav
-          id="sidebar-primary"
-          class="sidebar__primary"
-          aria-label="业务分组"
-        >
-          <el-tooltip
-            v-for="item in menus"
-            :key="item.id"
-            :disabled="!appStore.primarySidebarCollapsed"
-            :content="item.meta?.title"
-            :trigger="['hover', 'focus']"
-            :trigger-keys="[]"
-            placement="right"
-            :show-after="150"
-          >
-            <button
-              v-if="childrenOf(item).length"
-              type="button"
-              class="sidebar__primary-item"
-              :aria-label="item.meta?.title"
-              :class="{
-                'is-active': contains(item, activePath),
-                'is-browsing': selectedGroup === item.id && !contains(item, activePath),
-              }"
-              :aria-expanded="
-                selectedGroup === item.id && !appStore.sidebarCollapsed
-              "
-              :aria-controls="
-                selectedGroup === item.id && !appStore.sidebarCollapsed
-                  ? 'sidebar-secondary'
-                  : undefined
-              "
-              @click="openGroup(item)"
-            >
-              <AppIcon :name="item.meta?.icon" />
-              <span
-                class="sidebar__primary-label"
-                :aria-hidden="appStore.primarySidebarCollapsed"
-                >{{ item.meta?.title }}</span
-              >
-            </button>
-            <a
-              v-else-if="item.meta?.isExternal"
-              class="sidebar__primary-item"
-              :aria-label="item.meta?.title"
-              :href="item.path"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <AppIcon :name="item.meta?.icon" />
-              <span
-                class="sidebar__primary-label"
-                :aria-hidden="appStore.primarySidebarCollapsed"
-                >{{ item.meta?.title }}</span
-              >
-            </a>
-            <router-link
-              v-else
-              :to="item.path"
-              class="sidebar__primary-item"
-              :aria-label="item.meta?.title"
-              :class="{ 'is-active': contains(item, activePath) }"
-              :aria-current="contains(item, activePath) ? 'page' : undefined"
-            >
-              <AppIcon :name="item.meta?.icon" />
-              <span
-                class="sidebar__primary-label"
-                :aria-hidden="appStore.primarySidebarCollapsed"
-                >{{ item.meta?.title }}</span
-              >
-            </router-link>
-          </el-tooltip>
-        </nav>
-      </el-scrollbar>
-      <el-tooltip
-        :disabled="!appStore.primarySidebarCollapsed"
-        content="展开一级菜单"
-        :trigger="['hover', 'focus']"
-        :trigger-keys="[]"
-        placement="right"
+  <nav class="sidebar" :class="{ 'is-collapsed': collapsed }" aria-label="主导航">
+    <el-scrollbar class="sidebar__scroll">
+      <el-menu
+        :id="expanded ? 'sidebar-mobile' : 'sidebar-primary'"
+        ref="menuRef"
+        :default-active="activePath"
+        :collapse="collapsed"
+        :collapse-transition="false"
+        router
+        class="sidebar__menu"
+        popper-class="sidebar-menu-popup"
       >
-        <!--
-          为什么多包一层 span：el-tooltip 的 trigger 会接管 aria-expanded /
-          aria-controls（popper/trigger 里按 tooltip 语义主动 removeAttribute），
-          按钮自己写的这两个属性会被剥掉。把按钮放进 trigger 内部，属性才留得住。
-        -->
-        <span class="sidebar__primary-anchor">
-          <button
-            type="button"
-            class="sidebar__primary-item sidebar__primary-toggle"
-            :aria-label="
-              appStore.primarySidebarCollapsed ? '展开一级菜单' : '收起一级菜单'
-            "
-            :aria-expanded="!appStore.primarySidebarCollapsed"
-            aria-controls="sidebar-primary"
-            @click="appStore.togglePrimarySidebar()"
-          >
-            <AppIcon
-              :name="appStore.primarySidebarCollapsed ? 'Expand' : 'Fold'"
-            />
-            <span
-              class="sidebar__primary-label"
-              :aria-hidden="appStore.primarySidebarCollapsed"
-              >收起菜单</span
-            >
-          </button>
-        </span>
-      </el-tooltip>
-    </div>
-    <section
-      v-if="secondaryItems.length"
-      v-show="!appStore.sidebarCollapsed"
-      id="sidebar-secondary"
-      class="sidebar__secondary"
-      :aria-label="currentGroup?.meta?.title"
+        <SidebarItem
+          v-for="item in menus"
+          :key="item.path"
+          :item="item"
+          :active-path="activePath"
+        />
+      </el-menu>
+    </el-scrollbar>
+    <button
+      v-if="!expanded"
+      type="button"
+      class="sidebar__collapse"
+      :aria-label="appStore.primarySidebarCollapsed ? '展开菜单' : '收起菜单'"
+      :title="appStore.primarySidebarCollapsed ? '展开菜单' : '收起菜单'"
+      :aria-expanded="!appStore.primarySidebarCollapsed"
+      aria-controls="sidebar-primary"
+      @click="appStore.togglePrimarySidebar()"
     >
-      <h2 class="sidebar__heading">{{ currentGroup?.meta?.title }}</h2>
-      <el-scrollbar class="sidebar__scroll">
-        <el-menu
-          :key="currentGroup?.id"
-          :default-active="activePath"
-          :default-openeds="defaultOpenGroups"
-          router
-          class="sidebar__menu"
-        >
-          <SidebarItem
-            v-for="item in secondaryItems"
-            :key="item.id"
-            :item="item"
-          />
-        </el-menu>
-      </el-scrollbar>
-    </section>
-  </aside>
+      <AppIcon :name="appStore.primarySidebarCollapsed ? 'Expand' : 'Fold'" />
+      <span v-if="!appStore.primarySidebarCollapsed">收起菜单</span>
+    </button>
+  </nav>
 </template>
 
 <style scoped lang="scss">
 .sidebar {
-  --sidebar-header-height: var(--layout-navbar-height);
-  position: relative;
   display: flex;
+  flex-direction: column;
   height: 100%;
-  min-width: 0;
-  background: var(--app-surface-subtle);
-  border-right: 1px solid var(--app-border-light);
-}
-
-.sidebar__rail {
-  width: var(--sidebar-rail-width);
-  flex: none;
-  display: flex;
-  flex-direction: column;
   min-height: 0;
-  overflow: hidden;
-  background: var(--app-fill);
-  transition: width var(--transition-base);
-}
-
-.sidebar__brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: var(--sidebar-header-height);
-  padding: 0 17px;
-  flex: none;
-  color: var(--app-text);
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.sidebar__logo {
-  display: block;
-  flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-sm);
-  object-fit: contain;
-}
-
-.sidebar__wordmark {
-  flex: none;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 20px;
-  letter-spacing: 0.2px;
-}
-
-.sidebar__scroll {
-  flex: 1;
-  min-height: 0;
-}
-.sidebar__primary {
-  display: grid;
-  gap: 4px;
-  padding: 8px;
-}
-.sidebar__primary-item {
-  position: relative;
-  appearance: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 44px;
-  padding: 12px 14px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--app-text);
-  text-align: left;
-  text-decoration: none;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  cursor: pointer;
-  transition:
-    background-color var(--transition-base),
-    color var(--transition-base),
-    font-size var(--transition-base),
-    gap var(--transition-base);
-  :deep(.el-icon) {
-    flex: 0 0 20px;
-    width: 20px;
-    height: 20px;
-    font-size: 20px;
-    color: var(--app-text-secondary);
-    transition:
-      transform var(--transition-base),
-      color var(--transition-base);
+  padding: 8px 14px 16px;
+  &__scroll {
+    flex: 1;
+    min-height: 0;
   }
-  &:hover {
-    background: var(--app-fill-hover);
-    color: var(--app-text);
-  }
-  &:active {
-    background: var(--app-primary-soft);
-  }
-  &:focus-visible {
-    outline: 2px solid var(--brand-primary);
-    outline-offset: -2px;
-  }
-  &.is-active {
-    background: var(--app-surface);
-    color: var(--tone-blue);
-    font-weight: 600;
-    box-shadow: var(--shadow-card);
-
-    :deep(.el-icon) {
-      color: var(--tone-blue);
+  &__menu {
+    --el-menu-bg-color: transparent;
+    --el-menu-hover-bg-color: var(--app-fill-hover);
+    --el-menu-active-color: var(--brand-primary);
+    --el-menu-text-color: var(--app-text);
+    --el-menu-base-level-padding: 16px;
+    --el-menu-level-padding: 20px;
+    width: 100%;
+    border: 0;
+    :deep(.el-menu-item),
+    :deep(.el-sub-menu__title) {
+      height: 48px;
+      margin-bottom: 6px;
+      border-radius: var(--radius-md);
+      font-size: 15px;
+      line-height: 48px;
+      .el-icon {
+        width: 22px;
+        margin-right: 14px;
+        font-size: 21px;
+      }
+      .el-sub-menu__icon-arrow {
+        width: 12px;
+        margin-right: 0;
+        font-size: 12px;
+        color: var(--app-text-secondary);
+      }
     }
-
-    &::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 14px;
-      bottom: 14px;
-      width: 3px;
-      border-radius: var(--radius-sm);
-      background: var(--brand-primary);
+    :deep(.el-sub-menu.is-active > .el-sub-menu__title),
+    :deep(> .el-menu-item.is-active) {
+      background: var(--app-primary-soft);
+      color: var(--brand-primary);
+      font-weight: 600;
+    }
+    :deep(.el-sub-menu .el-menu-item),
+    :deep(.el-sub-menu .el-sub-menu__title) {
+      height: 40px;
+      margin-bottom: 2px;
+      font-size: 14px;
+      line-height: 40px;
+      color: var(--app-text-secondary);
+    }
+    :deep(.el-sub-menu .el-menu-item.is-active) {
+      color: var(--brand-primary);
+      background: transparent;
+      font-weight: 500;
+    }
+    :deep(.el-menu-item:focus-visible),
+    :deep(.el-sub-menu__title:focus-visible) {
+      outline: 2px solid var(--brand-primary);
+      outline-offset: -2px;
     }
   }
-  // 「正在浏览的分组」：只让图标变色，不抢白卡。
-  // 之前它和「当前页」共用 is-active，同时命中时轨道上会出现两张白卡，
-  // 读起来像有两个当前位置；而二级栏标题已经写明当前分组，图标足够表达。
-  &.is-browsing {
-    :deep(.el-icon) {
-      color: var(--tone-blue);
-    }
-  }
-}
-
-.sidebar__primary-label {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 68px;
-  overflow: hidden;
-  white-space: nowrap;
-  // 116px 的行内宽减去 28px 内边距、20px 图标、8px 间距，文字实际只有 60px：
-  // 五字以上的分组名会超出。没有省略号时是被直角切掉半个字，看不出「还有下文」。
-  text-overflow: ellipsis;
-  opacity: 1;
-  transition:
-    max-width var(--transition-base),
-    opacity var(--transition-base);
-}
-
-.is-primary-collapsed {
-  .sidebar__primary-item {
-    font-size: 12px;
-    gap: 0;
-  }
-  .sidebar__primary-label {
-    max-width: 0;
-    opacity: 0;
-  }
-  .sidebar__primary-item :deep(.el-icon) {
-    transform: scale(0.9);
-  }
-}
-
-.sidebar__primary-anchor {
-  display: block;
-  flex: none;
-}
-
-.sidebar__primary-toggle {
-  flex: none;
-  width: calc(100% - 16px);
-  margin: 8px;
-  min-height: 34px;
-  padding: 7px 14px;
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--app-text-secondary);
-  // 底部这个按钮是「控件」不是「目的地」。它复用了导航项类名，
-  // 默认 hover 会把文字变深，和菜单项一模一样，容易被读成第 4 个入口；
-  // 这里保持弱一级：只给底色，不参与导航项的悬停强调。
-  &:hover {
-    color: var(--app-text-secondary);
-    background: var(--app-fill-hover);
-  }
-  :deep(.el-icon) {
-    font-size: 16px;
-  }
-}
-
-.sidebar__toggle {
-  position: absolute;
-  top: 80px;
-  right: -12px;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 36px;
-  padding: 0;
-  border: 1px solid var(--app-border);
-  border-radius: var(--radius-sm);
-  color: var(--app-text-secondary);
-  background: var(--app-surface);
-  box-shadow: var(--shadow-card);
-  cursor: pointer;
-
-  :deep(.el-icon) {
-    font-size: 12px;
-  }
-  &:hover {
-    color: var(--brand-primary);
-    border-color: var(--brand-primary);
-    background: var(--app-fill-hover);
-  }
-  &:active {
-    background: var(--app-primary-soft);
-  }
-  &:focus-visible {
-    outline: 2px solid var(--brand-primary);
-    outline-offset: 2px;
-  }
-}
-
-.sidebar__secondary {
-  display: flex;
-  flex: none;
-  width: var(--layout-sidebar-secondary-width);
-  flex-direction: column;
-  min-width: 0;
-  background: var(--app-surface);
-  border-left: 1px solid var(--app-border-light);
-}
-
-.sidebar__heading {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  height: var(--sidebar-header-height);
-  flex: none;
-  padding: 0 20px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--app-text-secondary);
-}
-
-.sidebar__menu {
-  --el-menu-bg-color: transparent;
-  --el-menu-hover-bg-color: var(--app-fill);
-  --el-menu-active-color: var(--tone-blue);
-  --el-menu-text-color: var(--app-text-secondary);
-  --el-menu-base-level-padding: 12px;
-  --el-menu-level-padding: 12px;
-  border: 0;
-  padding: 8px;
-
-  :deep(.el-menu-item),
-  :deep(.el-sub-menu__title) {
-    position: relative;
-    height: auto;
-    min-height: 36px;
-    line-height: 20px;
-    padding-top: 8px;
-    padding-bottom: 8px;
-    margin-bottom: 3px;
+  &__collapse {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: none;
+    min-height: 40px;
+    width: 100%;
+    padding: 0 16px;
+    margin-top: 12px;
+    border: 0;
     border-radius: var(--radius-sm);
-    white-space: normal;
+    background: transparent;
+    color: var(--app-text-secondary);
+    font: inherit;
     font-size: 13px;
-
-    .el-icon {
-      flex: 0 0 16px;
-      width: 16px;
-      height: 16px;
-      margin-right: 8px;
-      font-size: 16px;
+    cursor: pointer;
+    &:hover {
+      background: var(--app-fill-hover);
+      color: var(--app-text);
     }
-    .el-sub-menu__icon-arrow {
-      width: 12px;
-      margin-right: 0;
-      font-size: 12px;
-    }
-    span {
-      min-width: 0;
-      overflow-wrap: anywhere;
+    &:active {
+      background: var(--app-primary-soft);
     }
     &:focus-visible {
       outline: 2px solid var(--brand-primary);
       outline-offset: -2px;
     }
+    :deep(.el-icon) {
+      font-size: 20px;
+    }
   }
-
-  :deep(.el-menu-item.is-active) {
-    color: var(--tone-blue);
-    background: var(--app-primary-soft);
-    font-weight: 500;
-  }
-  :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
-    color: var(--app-text);
-    font-weight: 500;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sidebar__rail,
-  .sidebar__primary-item,
-  .sidebar__primary-label,
-  .sidebar__primary-item :deep(.el-icon) {
-    transition: none;
+  &.is-collapsed {
+    padding-inline: 10px;
+    :deep(.el-menu--collapse .sidebar-item__label) {
+      display: none;
+    }
+    :deep(.el-menu--collapse) {
+      width: 56px;
+    }
+    :deep(.el-menu--collapse > .el-menu-item),
+    :deep(.el-menu--collapse > .el-sub-menu > .el-sub-menu__title) {
+      padding-inline: 17px;
+      .el-icon {
+        margin: 0;
+      }
+    }
   }
 }
 </style>

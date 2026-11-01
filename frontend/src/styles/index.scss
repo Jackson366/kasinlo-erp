@@ -22,7 +22,9 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   // 切换主题时底色平滑过渡；不给 * 加过渡，避免大面积重绘与动画串扰
-  transition: background-color var(--transition-base), color var(--transition-base);
+  transition:
+    background-color var(--transition-base),
+    color var(--transition-base);
 }
 
 a {
@@ -36,7 +38,9 @@ a {
   scrollbar-width: thin;
 }
 @media (forced-colors: active) {
-  * { scrollbar-color: auto; }
+  * {
+    scrollbar-color: auto;
+  }
 }
 ::-webkit-scrollbar {
   width: 8px;
@@ -123,10 +127,10 @@ a {
 
 // ---------- 页面卡片 ----------
 .page-card {
-  padding: 20px;
+  padding: 24px;
   background: var(--app-surface);
   border: 1px solid var(--app-border-light);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
 }
 
@@ -345,7 +349,6 @@ a {
   }
 }
 
-
 // ---------- 首屏骨架 ----------
 .app-loading {
   display: flex;
@@ -383,7 +386,9 @@ a {
 }
 
 #nprogress .peg {
-  box-shadow: 0 0 10px var(--brand-primary), 0 0 5px var(--brand-primary);
+  box-shadow:
+    0 0 10px var(--brand-primary),
+    0 0 5px var(--brand-primary);
 }
 
 // ---------- 列表页头部：搜索与操作合并成一行 ----------
@@ -478,8 +483,13 @@ a {
 // 独立变体不改变只有一两个条件的既有列表与长表单滚动方式。
 .list-head.list-head--filters {
   grid-template-columns: minmax(0, 1fr) auto;
-  > .list-head__title { white-space: normal; }
-  > .list-head__actions { flex-wrap: wrap; justify-content: flex-end; }
+  > .list-head__title {
+    white-space: normal;
+  }
+  > .list-head__actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 }
 
 // 窄屏（含侧边栏收起的中等宽度）改成纵向堆叠，避免三列互相挤压
@@ -496,6 +506,50 @@ a {
 @media (max-width: 800px) {
   .list-head.list-head--filters {
     grid-template-columns: minmax(0, 1fr);
-    > .list-head__actions { justify-content: flex-start; }
+    > .list-head__actions {
+      justify-content: flex-start;
+    }
+  }
+}
+
+@media (max-width: 800px) {
+  .page-card {
+    padding: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body {
+    transition: none;
+  }
+  .fade-slide-enter-active,
+  .fade-slide-leave-active,
+  .fade-enter-active,
+  .fade-leave-active {
+    transition: none;
+  }
+}
+
+// Reference layout: give list titles their own hierarchy above the filter row.
+.list-head__title {
+  white-space: normal;
+  min-width: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 36px;
+}
+.list-head:not(.list-head--filters) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 20px;
+  > .list-head__title {
+    grid-column: 1 / -1;
+  }
+}
+.toolbar__title h3 {
+  font-size: 18px;
+}
+@media (max-width: 1180px) {
+  .list-head:not(.list-head--filters) {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 12px;
   }
 }

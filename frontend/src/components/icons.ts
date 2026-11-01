@@ -22,6 +22,7 @@ import {
   GoodsFilled,
   Grid,
   HomeFilled,
+  House,
   InfoFilled,
   Key,
   List,
@@ -120,6 +121,7 @@ export const iconMap: Record<string, Component> = {
   Warning,
   SwitchButton,
   HomeFilled,
+  House,
   // 主题切换
   Sunny,
   Moon,

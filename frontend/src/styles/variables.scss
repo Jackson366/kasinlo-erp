@@ -13,19 +13,15 @@
 // ============================================================
 
 // 布局尺寸（与主题无关，只定义一次）
-$sidebar-width: 280px;
-$sidebar-primary-width: 132px;
-$sidebar-primary-collapsed: 64px;
-$sidebar-secondary-width: $sidebar-width - $sidebar-primary-width;
-$sidebar-width-collapsed: 132px;
-$navbar-height: 56px;
-$tags-height: 38px;
+$sidebar-width: 240px;
+$sidebar-width-collapsed: 76px;
+$navbar-height: 76px;
+$tags-height: 58px;
 
-// 业务界面采用直角；保留语义尺寸名，供组件与 Element Plus 共用。
-// 头像、单选框、状态圆点等形状不消费这组容器令牌。
-$radius-sm: 0px;
-$radius-md: 0px;
-$radius-lg: 0px;
+// Reference: soft controls, rounded navigation and spacious white content surfaces.
+$radius-sm: 10px;
+$radius-md: 16px;
+$radius-lg: 22px;
 
 /// 输出一套完整的主题令牌。两个分支的变量名必须完全一致。
 /// @param {string} $mode - light 或 dark
@@ -34,32 +30,32 @@ $radius-lg: 0px;
     color-scheme: light;
 
     // ---- 品牌色 ----
-    --brand-primary: #2563eb;
-    --brand-primary-hover: #1d4ed8;
-    --brand-primary-active: #1e40af;
-    --brand-gradient: linear-gradient(135deg, #3b82f6, #2563eb);
+    --brand-primary: #5146d9;
+    --brand-primary-hover: #4538c4;
+    --brand-primary-active: #392eaa;
+    --brand-gradient: linear-gradient(135deg, #807bff, #6258df);
 
     // ---- 表面与背景 ----
-    --app-bg: #f5f7fb;
+    --app-bg: #f7f8fc;
     --app-surface: #ffffff;
-    --app-surface-subtle: #fafbfd;
+    --app-surface-subtle: #f7f8fa;
     --app-surface-overlay: #ffffff;
     --app-input-bg: #ffffff;
-    --app-fill: #f5f7fb;
-    --app-fill-hover: #eef4ff;
-    --app-primary-soft: #eaf1fe;
-    --app-primary-soft-border: #c7dbfd;
+    --app-fill: #f5f6fa;
+    --app-fill-hover: #f0effa;
+    --app-primary-soft: #eeecff;
+    --app-primary-soft-border: #dedafa;
     --app-gradient-hello: linear-gradient(120deg, #ffffff 0%, #f2f7ff 100%);
     --app-gradient-text: linear-gradient(135deg, #2563eb, #93c5fd);
 
     // ---- 描边 ----
-    --app-border: #e5e7eb;
-    --app-border-light: #eef1f6;
+    --app-border: #e4e6ef;
+    --app-border-light: #f0f1f6;
 
     // ---- 文字 ----
-    --app-text: #1f2937;
-    --app-text-secondary: #6b7280;
-    --app-text-muted: #9ca3af;
+    --app-text: #171922;
+    --app-text-secondary: #6e7385;
+    --app-text-muted: #81879a;
 
     // ---- 滚动条 ----
     --app-scrollbar: #d5dae3;
@@ -86,7 +82,7 @@ $radius-lg: 0px;
     --tone-slate-soft: #f1f5f9;
 
     // ---- 阴影 ----
-    --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+    --shadow-card: 0 4px 24px rgba(47, 44, 91, 0.025);
     --shadow-popup: 0 12px 32px rgba(16, 24, 40, 0.12);
     --shadow-hover: 0 8px 20px rgba(16, 24, 40, 0.08);
 
@@ -99,10 +95,10 @@ $radius-lg: 0px;
     color-scheme: dark;
 
     // 暗色下主色提亮一档，保证在深底上的可读性与对比度
-    --brand-primary: #3b82f6;
-    --brand-primary-hover: #60a5fa;
-    --brand-primary-active: #2563eb;
-    --brand-gradient: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    --brand-primary: #aaa4ff;
+    --brand-primary-hover: #c2bdff;
+    --brand-primary-active: #9189f7;
+    --brand-gradient: linear-gradient(135deg, #8c83f3, #6458c9);
 
     --app-bg: #0f1420;
     --app-surface: #161b26;
@@ -111,8 +107,8 @@ $radius-lg: 0px;
     --app-input-bg: #1b212e;
     --app-fill: #1d2432;
     --app-fill-hover: #232c3d;
-    --app-primary-soft: #1a253b;
-    --app-primary-soft-border: #2b4776;
+    --app-primary-soft: #292541;
+    --app-primary-soft-border: #48416a;
     --app-gradient-hello: linear-gradient(120deg, #161b26 0%, #17223a 100%);
     --app-gradient-text: linear-gradient(135deg, #60a5fa, #bfdbfe);
 
@@ -163,9 +159,6 @@ $radius-lg: 0px;
 
   // ---- 布局尺寸 ----
   --layout-sidebar-width: #{$sidebar-width};
-  --layout-sidebar-primary-width: #{$sidebar-primary-width};
-  --layout-sidebar-primary-collapsed: #{$sidebar-primary-collapsed};
-  --layout-sidebar-secondary-width: #{$sidebar-secondary-width};
   --layout-sidebar-collapsed: #{$sidebar-width-collapsed};
   --layout-navbar-height: #{$navbar-height};
   --layout-tags-height: #{$tags-height};

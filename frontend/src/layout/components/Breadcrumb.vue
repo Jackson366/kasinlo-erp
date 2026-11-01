@@ -2,61 +2,87 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePermissionStore } from '@/store'
-import type { RouteRecord } from '@/types/api'
-
+import { navigationMenus, navigationTrail } from '../navigation'
+import AppIcon from '@/components/AppIcon.vue'
 const route = useRoute()
 const permissionStore = usePermissionStore()
-
-/** 在菜单树中查找当前路径的完整链路（含目录层级） */
-function findTrail(records: RouteRecord[], path: string): RouteRecord[] {
-  for (const record of records) {
-    if (record.path === path && !record.children?.length) {
-      return [record]
-    }
-    if (record.children?.length) {
-      const sub = findTrail(record.children, path)
-      if (sub.length) return [record, ...sub]
-    }
-  }
-  return []
-}
-
+const homePath = computed(() => permissionStore.homePath())
 const items = computed(() => {
-  const trail = findTrail(permissionStore.menus, route.path)
-  if (trail.length) {
-    return trail.map((record) => ({ title: record.meta?.title || record.name, path: record.path }))
-  }
-  // 未匹配到菜单时退化为当前路由标题（如个人中心）
-  const title = (route.meta?.title as string) || ''
-  return title ? [{ title, path: route.path }] : []
+  if (route.path === homePath.value) return []
+  const trail = navigationTrail(navigationMenus(permissionStore.menus), route.path)
+  return trail.length
+    ? trail
+    : [{ path: route.path, meta: { title: route.meta?.title || '当前页面' } }]
 })
 </script>
 
 <template>
-  <el-breadcrumb separator="/" class="breadcrumb">
-    <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
-    <el-breadcrumb-item v-for="(item, index) in items" :key="item.path">
-      <span :class="{ 'is-current': index === items.length - 1 }">{{ item.title }}</span>
-    </el-breadcrumb-item>
-  </el-breadcrumb>
+  <nav class="breadcrumb" aria-label="面包屑导航">
+    <ol>
+      <li>
+        <router-link v-if="items.length" :to="homePath" aria-label="首页"
+          ><AppIcon name="House"
+        /></router-link>
+        <span v-else aria-current="page"
+          ><AppIcon name="House" /><span class="breadcrumb__home">首页</span></span
+        >
+      </li>
+      <li v-for="(item, index) in items" :key="item.path">
+        <span class="breadcrumb__separator" aria-hidden="true">/</span>
+        <span :aria-current="index === items.length - 1 ? 'page' : undefined">{{
+          item.meta.title
+        }}</span>
+      </li>
+    </ol>
+  </nav>
 </template>
 
 <style scoped lang="scss">
 .breadcrumb {
-  font-size: 13px;
-
-  :deep(.el-breadcrumb__inner) {
-    color: var(--app-text-muted);
-    font-weight: 400;
+  color: var(--app-text-secondary);
+  font-size: 14px;
+  ol {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 24px;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+    flex-wrap: wrap;
   }
-
-  :deep(.el-breadcrumb__item:last-child .el-breadcrumb__inner) {
+  li,
+  li > span {
+    display: inline-flex;
+    align-items: center;
+  }
+  li {
+    gap: 14px;
+  }
+  a {
+    display: inline-flex;
+    color: var(--app-text-secondary);
+    border-radius: var(--radius-sm);
+  }
+  a:hover {
+    color: var(--brand-primary);
+  }
+  a:focus-visible {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 4px;
+  }
+  :deep(.el-icon) {
+    font-size: 20px;
+  }
+  [aria-current='page'] {
     color: var(--app-text);
-    font-weight: 600;
+    font-weight: 500;
   }
-}
-
-.is-current {
-  color: var(--app-text);
+  &__separator {
+    color: var(--app-text-muted);
+  }
+  &__home {
+    margin-left: 10px;
+  }
 }
 </style>
