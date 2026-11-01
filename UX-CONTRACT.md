@@ -40,7 +40,7 @@
 
 ## Verification boundary
 
-采购浏览器脚本使用确定性的模拟 API，验证实际 Vue 页面、路由、权限显隐、表单与请求状态。它不证明真实后端的事务、入库或付款正确；这些继续由后端业务测试负责。静态审计对 TagsView / Navbar 的 ElDropdown 触发按钮有误报：动作由父级组件处理，不能为让扫描通过而添加空点击处理。
+采购浏览器脚本使用确定性的模拟 API，验证实际 Vue 页面、路由、权限显隐、表单与请求状态。它不证明真实后端的事务、入库或付款正确；这些继续由后端业务测试负责。静态审计对 Navbar 的 ElDropdown 触发按钮有误报：动作由父级组件处理，不能为让扫描通过而添加空点击处理。
 
 ## 列表筛选折叠
 
@@ -60,6 +60,8 @@
 
 Breadcrumb 与 TagsView 共享白色导航表面。面包屑首页为链接，分组是非路由文本，当前页标记 aria-current=page；不向目录或展示分组执行无效导航。已打开页面使用带名称的 nav + router-link，当前页标记 aria-current，关闭为独立原生按钮，禁止嵌套交互控件。新增/切换标签将当前项滚入可见区；关闭后焦点移到当前链接。关闭当前页先等待路由及未保存保护通过，取消时保留标签。标签保存最近 fullPath，切换时恢复采购筛选、分页及编辑查询参数；不把标签当作表单草稿持久化。页面缓存仍以 route.path 为 key，不改刷新保护。
 
+标签右键、触屏长按或 Shift+F10 / 菜单键打开共享 ElDropdown，不先切换页面；不再显示右侧“更多”图标。“关闭当前标签”作用于所点标签，首页禁用；“关闭其它标签”保留所点标签及固定首页，若需要离开当前编辑页，先通过原路由守卫再移除标签。“关闭全部标签”先导航首页并通过守卫，再移除可关闭标签。无其它可关闭标签时禁用对应操作。Esc 关闭并还焦点，点击外部关闭，菜单由组件处理方向键及 Enter。
+
 验证：scripts/reference-layout-verify.mjs 覆盖真实 Vue + Mock 的桌面/图标/窄屏菜单、深链、子菜单、标签键盘关闭及未保存取消、查询恢复、主题、长表单滚动和无结果筛选。navigation.spec.ts 验证授权叶子不增不减、隐藏过滤及未知目录/外链保留。Mock 不验证真实后端事务。
 
 ## 采购首次使用
@@ -76,7 +78,7 @@ Breadcrumb 与 TagsView 共享白色导航表面。面包屑首页为链接，�
 
 批量继续使用 useListTools，业务后果由 options.consequences 注入；结果由 options.onResult 提供完整失败列表，BatchResultDialog 负责有界表格和全部复制，浏览器禁止复制时保留手工复制入口。数据集合变化清空选择，批量目标与跳过计数在执行前快照，避免等待期间筛选变动污染结果。
 
-验证：scripts/purchase-audit-verify.mjs、scripts/purchase-workbench-verify.mjs。后者动效采样从真实 click/keydown 开始，防止 Playwright 等待可操作元素期间提前耗尽采样窗口。静态 audit_project.py 对 TagsView 的既有误报仍按上文边界处理。
+验证：scripts/purchase-audit-verify.mjs、scripts/purchase-workbench-verify.mjs。后者动效采样从真实 click/keydown 开始，防止 Playwright 等待可操作元素期间提前耗尽采样窗口。静态 audit_project.py 对 Navbar 的既有误报仍按上文边界处理。
 
 ## 采购指南的退出与重开
 

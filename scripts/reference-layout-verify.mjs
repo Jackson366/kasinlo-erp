@@ -37,6 +37,7 @@ try {
     viewport: { width: 1440, height: 1000 },
     locale: 'zh-CN',
     colorScheme: 'light',
+    hasTouch: true,
     reducedMotion: 'reduce',
   })
   // Optional local QA font for hosts without Chinese fonts; never changes product assets.
@@ -174,6 +175,122 @@ try {
     await expect(nav.getByRole('link', { name: '采购管理', exact: true })).toHaveCount(0)
     await expect(nav.locator('[aria-current="page"]')).toBeFocused()
   })
+  async function visit(route) {
+    await page.evaluate((value) => {
+      location.hash = value
+    }, route)
+    await expect(page).toHaveURL(`http://127.0.0.1:6096/#${route}`)
+    await expect(nav.locator('[aria-current="page"]')).toHaveAttribute(
+      'href',
+      new RegExp(route.split('?')[0]),
+    )
+    await expect(page.locator('.el-loading-mask:visible')).toHaveCount(0)
+  }
+  const tagMenu = page.locator('.el-dropdown-menu:visible')
+  await check(
+    'right-click targets the clicked inactive tag without switching and replaces More',
+    async () => {
+      await visit('/inv/purchase?view=all&q=CG')
+      await visit('/inv/contract')
+      await visit('/inv/stock')
+      await expect(nav.getByRole('button', { name: '标签页操作', exact: true })).toHaveCount(0)
+      const purchase = nav.getByRole('link', { name: '采购管理', exact: true })
+      await purchase.click({ button: 'right' })
+      await expect(tagMenu).toBeVisible()
+      await expect(tagMenu).toBeFocused()
+      await expect(page).toHaveURL(/inv\/stock/)
+      await page.screenshot({
+        path: path.join(out, 'tag-context-menu.png'),
+        fullPage: true,
+      })
+      await tagMenu.getByRole('menuitem', { name: '关闭当前标签', exact: true }).click()
+      await expect(purchase).toHaveCount(0)
+      await expect(tagMenu).toHaveCount(0)
+      await expect(nav.getByRole('link', { name: '库存管理', exact: true })).toHaveAttribute(
+        'aria-current',
+        'page',
+      )
+      await nav.getByRole('link', { name: '合同管理', exact: true }).click({ button: 'right' })
+      await tagMenu.getByRole('menuitem', { name: '关闭其它标签', exact: true }).click()
+      await expect(page).toHaveURL(/inv\/contract/)
+      await expect(tagMenu).toHaveCount(0)
+      await expect(nav.getByRole('link', { name: '库存管理', exact: true })).toHaveCount(0)
+    },
+  )
+  await check(
+    'keyboard context menu, Escape, outside dismissal and fixed-home disabled actions',
+    async () => {
+      const contract = nav.getByRole('link', { name: '合同管理', exact: true })
+      await contract.focus()
+      await page.keyboard.press('Shift+F10')
+      await expect(tagMenu).toBeVisible()
+      await expect(tagMenu).toBeFocused()
+      await expect(
+        tagMenu.getByRole('menuitem', { name: '关闭其它标签', exact: true }),
+      ).toHaveAttribute('aria-disabled', 'true')
+      await page.keyboard.press('Escape')
+      await expect(tagMenu).toHaveCount(0)
+      await expect(contract).toBeFocused()
+      await contract.click({ button: 'right' })
+      await page.locator('.breadcrumb').click()
+      await expect(tagMenu).toHaveCount(0)
+      await visit('/inv/overview')
+      const home = nav.getByRole('link', { name: '数据概览', exact: true })
+      await home.focus()
+      await page.keyboard.press('Shift+F10')
+      await expect(
+        tagMenu.getByRole('menuitem', { name: '关闭当前标签', exact: true }),
+      ).toHaveAttribute('aria-disabled', 'true')
+      await page.keyboard.press('Escape')
+      await expect(tagMenu).toHaveCount(0)
+      await expect(home).toBeFocused()
+      await contract.focus()
+      await page.keyboard.press('Shift+F10')
+      await expect(tagMenu).toBeFocused()
+      await page.keyboard.press('ArrowDown')
+      await expect(
+        tagMenu.getByRole('menuitem', { name: '关闭全部标签', exact: true }),
+      ).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(page).toHaveURL(/inv\/overview/)
+      await expect(nav.getByRole('link')).toHaveCount(1)
+    },
+  )
+  await check(
+    'context-menu bulk closes preserve tags when an unsaved-editor guard is cancelled',
+    async () => {
+      await visit('/inv/stock')
+      await visit('/inv/purchase?action=create')
+      const editor = page.locator('.purchase-editor')
+      await editor
+        .locator('.el-form-item')
+        .filter({ has: page.getByText('备注', { exact: true }) })
+        .getByRole('textbox')
+        .fill('右键菜单保护')
+      const discard = page.getByRole('dialog', {
+        name: '放弃本次修改？',
+        exact: true,
+      })
+      const stock = nav.getByRole('link', { name: '库存管理', exact: true })
+      for (const command of ['关闭其它标签', '关闭全部标签']) {
+        await stock.click({ button: 'right' })
+        await tagMenu.getByRole('menuitem', { name: command, exact: true }).click()
+        await discard.getByRole('button', { name: '继续编辑', exact: true }).click()
+        await expect(editor).toBeVisible()
+        await expect(stock).toBeVisible()
+        await expect(nav.getByRole('link', { name: '采购管理', exact: true })).toHaveAttribute(
+          'aria-current',
+          'page',
+        )
+      }
+      await stock.click({ button: 'right' })
+      await tagMenu.getByRole('menuitem', { name: '关闭其它标签', exact: true }).click()
+      await discard.getByRole('button', { name: '放弃修改', exact: true }).click()
+      await expect(page).toHaveURL(/inv\/stock/)
+      await expect(nav.getByRole('link', { name: '采购管理', exact: true })).toHaveCount(0)
+      await expect(nav.getByRole('link', { name: '数据概览', exact: true })).toBeVisible()
+    },
+  )
   await check('closing an edited tag respects keep-editing and discard guards', async () => {
     await go('/inv/purchase?action=create')
     const editor = page.locator('.purchase-editor')
@@ -237,6 +354,32 @@ try {
       await drawer.getByRole('menuitem', { name: '采购管理', exact: true }).click()
       await expect(page).toHaveURL(/inv\/purchase/)
       await expect(drawer).toBeHidden()
+    },
+  )
+  await check(
+    'touch long-press opens an in-viewport menu without navigation and supports tap commands',
+    async () => {
+      await visit('/inv/stock')
+      await visit('/inv/purchase')
+      const link = nav.getByRole('link', { name: '采购管理', exact: true })
+      await link.scrollIntoViewIfNeeded()
+      const box = await link.boundingBox()
+      const session = await context.newCDPSession(page)
+      await session.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }],
+      })
+      await expect(tagMenu).toBeVisible()
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      await expect(page).toHaveURL(/inv\/purchase/)
+      const menuBox = await tagMenu.boundingBox()
+      expect(menuBox.x).toBeGreaterThanOrEqual(0)
+      expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(390)
+      await page.screenshot({ path: path.join(out, 'tag-context-mobile.png'), fullPage: true })
+      await tagMenu.getByRole('menuitem', { name: '关闭全部标签', exact: true }).tap()
+      await expect(page).toHaveURL(/inv\/overview/)
+      await expect(nav.getByRole('link')).toHaveCount(1)
+      await session.detach()
     },
   )
   await check('long form retains shell scrolling at a short viewport', async () => {
