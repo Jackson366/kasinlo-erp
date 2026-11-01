@@ -207,7 +207,7 @@ a {
       content: '';
       width: 3px;
       height: 13px;
-      border-radius: 2px;
+      border-radius: var(--radius-sm);
       background: var(--brand-primary);
     }
 
@@ -300,7 +300,7 @@ a {
   font-size: 12px;
   color: var(--brand-primary);
   background: var(--brand-primary-light, rgba(37, 99, 235, 0.08));
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
 
   a {
     color: var(--brand-primary);
@@ -474,6 +474,14 @@ a {
   }
 }
 
+// 折叠筛选的列表：标题/业务动作一行，常用筛选/查询一行。
+// 独立变体不改变只有一两个条件的既有列表与长表单滚动方式。
+.list-head.list-head--filters {
+  grid-template-columns: minmax(0, 1fr) auto;
+  > .list-head__title { white-space: normal; }
+  > .list-head__actions { flex-wrap: wrap; justify-content: flex-end; }
+}
+
 // 窄屏（含侧边栏收起的中等宽度）改成纵向堆叠，避免三列互相挤压
 @media (max-width: 1180px) {
   .list-head {
@@ -482,5 +490,12 @@ a {
     &__actions {
       flex-wrap: wrap;
     }
+  }
+}
+
+@media (max-width: 800px) {
+  .list-head.list-head--filters {
+    grid-template-columns: minmax(0, 1fr);
+    > .list-head__actions { justify-content: flex-start; }
   }
 }

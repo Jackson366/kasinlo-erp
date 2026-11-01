@@ -13,9 +13,9 @@ typography:
   mono:
     fontFamily: 'ui-monospace, monospace'
 rounded:
-  sm: '6px'
-  md: '10px'
-  lg: '14px'
+  sm: '0px'
+  md: '0px'
+  lg: '0px'
 omitted:
   - section: spacing
     reason: 'Existing application has no canonical spacing token scale; touched layouts document concrete grouping below.'
@@ -62,7 +62,15 @@ components:
 
 ## Shapes
 
-沿用 6/10/14px 圆角系统，控件保留 Element Plus 的 8px 基础圆角。新增样式不写死颜色值。
+业务界面采用直角：按钮、输入框、表格容器、卡片、导航标签、弹窗及下拉浮层的 sm/md/lg 圆角统一为 0px。此前 6/10/14px 及 Element Plus 8px 圆角来自既有实现，不作为产品设计偏好；本次按用户要求修正。保留头像、单选框、开关、状态圆点、加载图形等表达身份、状态或控件类型的圆形，以及滚动条的原有形状。
+
+唯一维护路径为 `variables.scss` 的 `$radius-sm/md/lg` → `--radius-*` → `element.scss` 的 `--el-border-radius-*` 与组件专用圆角变量 → 公共布局和业务组件。导航、登录标识容器、代码标签不再写死像素圆角或胶囊形状；报表内层圆角计算使用非负下限。禁止使用全局 `* { border-radius: 0 !important }`，以免破坏语义形状。新增样式不写死颜色值。
+
+## 列表筛选分层
+
+三个及以上条件的主要列表复用 `ListFilters`：标题与业务动作独立一行，筛选占下一行，默认只展示两个常用条件。采购待办为关键字/交接视图，采购全部单据及销售为关键字/单据状态；合同为关键字/阶段，商品为关键字/分类，应收应付为关键字/结算状态，用户为关键字/所属部门，操作日志为关键字/模块。此优先级为当前任务中的暂定选择，后续可按实际使用调整。
+
+其余条件置于“更多筛选”，按需在原位展开，不增加抽屉或遮罩。筛选控件沿用 Element Plus 与直角令牌；主筛选与查询/重置保持邻近，业务操作不挤占字段宽度。折叠按钮显示已选额外条件数；收起后用紧凑、可单独清除的条件标签保留名称和值，仅有已选条件时占用额外一行。展开面板用一条细分隔线与常用条件区分，不嵌套新卡片。只有一两个条件的页面保持直接展示。
 
 ## Components
 

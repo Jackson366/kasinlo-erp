@@ -365,7 +365,7 @@ onMounted(() => {
       font-size: 12px;
       color: var(--tone-blue);
       background: var(--tone-blue-soft);
-      border-radius: 5px;
+      border-radius: var(--radius-sm);
     }
   }
 }

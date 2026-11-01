@@ -188,7 +188,7 @@ function handleCommand(command: string): void {
     gap: 8px;
     height: 38px;
     padding: 0 10px 0 6px;
-    border-radius: 999px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     outline: none;
     transition: var(--transition-base);

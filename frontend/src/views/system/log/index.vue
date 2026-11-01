@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import ListFilters from '@/components/ListFilters.vue'
+import { useAdvancedFilters } from '@/composables/useAdvancedFilters'
+
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
@@ -212,8 +215,16 @@ onMounted(async () => {
   await Promise.all([ensureOperations(), loadModules()])
 })
 // 关键字录入即查询（防抖）：操作日志 / 登录日志各一套
-const { searchSoon: searchOpSoon } = useDebouncedSearch(searchOperations)
+const { searchSoon: searchOpSoon, searchNow: searchOpNow, cancel: cancelOpSearch } = useDebouncedSearch(searchOperations)
 const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
+const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = useAdvancedFilters(
+  opQuery,
+  () => [
+    { key: 'method', label: '方法', emptyValue: undefined, valueLabel: () => opQuery.method || '' },
+  ],
+  searchOpNow,
+)
+
 </script>
 
 <template>
@@ -224,36 +235,10 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
       <!-- 操作日志 -->
       <el-tab-pane label="操作日志" name="operation">
         <div class="page-card">
-          <!-- 搜索与操作合并一行 -->
-          <div class="list-head">
+          <!-- 常用条件保持可见，其余条件按需展开；业务动作独立排列。 -->
+          <div class="list-head list-head--filters">
             <span class="list-head__title">操作日志<em>共 {{ opTotal }} 条</em></span>
-            <el-form class="filter-form" label-width="76px" @submit.prevent>
-              <el-form-item label="关键字">
-                <el-input
-                  v-model="opQuery.keyword" @input="searchOpSoon"
-                  placeholder="账号 / 操作 / 路径"
-                  clearable
-                  @keyup.enter="searchOperations"
-                />
-              </el-form-item>
-              <el-form-item label="模块">
-                <el-select v-model="opQuery.module" placeholder="全部" clearable>
-                  <el-option v-for="item in opModules" :key="item" :label="item" :value="item" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="方法">
-                <el-select v-model="opQuery.method" placeholder="全部" clearable>
-                  <el-option v-for="item in methodOptions" :key="item" :label="item" :value="item" />
-                </el-select>
-              </el-form-item>
-            </el-form>
             <div class="list-head__actions">
-              <el-button type="primary" @click="searchOperations">
-                <AppIcon name="Search" />
-                <span>查询</span>
-              </el-button>
-              <el-button @click="resetOperations">重置</el-button>
-              <span class="list-head__divider" />
               <el-button v-perm="'system:log:export'" :loading="exportingOp" @click="exportOperations">
                 <AppIcon name="Download" />
                 <span>导出</span>
@@ -264,6 +249,36 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
                 <span>清空</span>
               </el-button>
             </div>
+            <ListFilters :active-filters="advancedFilters" @clear="clearAdvancedFilter">
+              <el-form-item label="关键字">
+                <el-input
+                  v-model="opQuery.keyword"
+                  @input="searchOpSoon"
+                  placeholder="账号 / 操作 / 路径"
+                  clearable
+                  @keyup.enter="searchOpNow"
+                />
+              </el-form-item>
+              <el-form-item label="模块">
+                <el-select v-model="opQuery.module" placeholder="全部" clearable>
+                  <el-option v-for="item in opModules" :key="item" :label="item" :value="item" />
+                </el-select>
+              </el-form-item>
+              <template #actions>
+                <el-button type="primary" @click="searchOpNow">
+                  <AppIcon name="Search" />
+                  <span>查询</span>
+                </el-button>
+                <el-button @click="cancelOpSearch(); resetOperations()">重置</el-button>
+              </template>
+              <template #advanced>
+                <el-form-item label="方法">
+                  <el-select v-model="opQuery.method" placeholder="全部" clearable>
+                    <el-option v-for="item in methodOptions" :key="item" :label="item" :value="item" />
+                  </el-select>
+                </el-form-item>
+              </template>
+            </ListFilters>
           </div>
         <el-table v-loading="opLoading" :data="opRows" stripe>
           <el-table-column type="expand">
@@ -453,7 +468,7 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
   font-size: 11px;
   font-weight: 600;
   text-align: center;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 
   &--post {
     color: var(--tone-blue);

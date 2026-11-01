@@ -21,10 +21,11 @@ $sidebar-width-collapsed: 132px;
 $navbar-height: 56px;
 $tags-height: 38px;
 
-// 圆角（与主题无关）
-$radius-sm: 6px;
-$radius-md: 10px;
-$radius-lg: 14px;
+// 业务界面采用直角；保留语义尺寸名，供组件与 Element Plus 共用。
+// 头像、单选框、状态圆点等形状不消费这组容器令牌。
+$radius-sm: 0px;
+$radius-md: 0px;
+$radius-lg: 0px;
 
 /// 输出一套完整的主题令牌。两个分支的变量名必须完全一致。
 /// @param {string} $mode - light 或 dark
