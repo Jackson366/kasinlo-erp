@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ListPanel from '@/components/ListPanel.vue'
+import ListFilters from '@/components/ListFilters.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
@@ -187,27 +189,29 @@ const { searchSoon } = useDebouncedSearch(loadTree)
 
 <template>
   <div class="dept-page">
-    <div class="page-card">
+    <ListPanel>
       <!-- 搜索与操作合并一行 -->
       <div class="list-head">
         <span class="list-head__title">组织架构<em>共 {{ totalCount }} 个部门</em></span>
-        <el-form class="filter-form" label-width="76px" @submit.prevent>
+        <ListFilters>
           <el-form-item label="关键字">
             <el-input
-              v-model="keyword" @input="searchSoon"
+              v-model="keyword"
+              @input="searchSoon"
               placeholder="部门名称 / 负责人"
               clearable
               @keyup.enter="loadTree"
             />
           </el-form-item>
-        </el-form>
+          <template #actions>
+            <el-button type="primary" @click="loadTree">
+              <AppIcon name="Search" />
+              <span>查询</span>
+            </el-button>
+            <el-button @click="resetQuery">重置</el-button>
+          </template>
+        </ListFilters>
         <div class="list-head__actions">
-          <el-button type="primary" @click="loadTree">
-            <AppIcon name="Search" />
-            <span>查询</span>
-          </el-button>
-          <el-button @click="resetQuery">重置</el-button>
-          <span class="list-head__divider" />
           <el-button :loading="exporting" @click="handleExport">导出</el-button>
           <el-button @click="printVisible = true">打印</el-button>
           <el-button v-perm="'system:dept:create'" type="primary" @click="openCreate(0)">
@@ -220,7 +224,7 @@ const { searchSoon } = useDebouncedSearch(loadTree)
         </div>
       </div>
 
-      <el-table
+      <el-table height="100%"
         v-loading="loading"
         :data="tree"
         row-key="id"
@@ -276,7 +280,7 @@ const { searchSoon } = useDebouncedSearch(loadTree)
           </template>
         </el-table-column>
       </el-table>
-    </div>
+    </ListPanel>
 
     <el-dialog
       v-model="dialogVisible"

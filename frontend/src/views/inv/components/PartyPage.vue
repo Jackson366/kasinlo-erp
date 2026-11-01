@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ListPanel from '@/components/ListPanel.vue'
 /**
  * 客户 / 供应商页面主体。两者字段、列、交互完全一致，差异只有
  * 「调哪个接口」「余额口径」「文案」——收敛成一个组件，由两个薄壳页面传入 bizType。
@@ -11,6 +12,7 @@ import { invApi } from '@/api'
 import type { InvPartyPayload, InvPartyRow, Status } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListFilters from '@/components/ListFilters.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { formatDate, formatMoney } from '@/utils/format'
@@ -219,7 +221,7 @@ const { searchSoon } = useDebouncedSearch(search)
 
 <template>
   <div class="party-page">
-    <div class="page-card">
+    <ListPanel>
       <!-- 搜索与操作合并一行 -->
       <div class="list-head">
         <span class="list-head__title">
@@ -229,10 +231,11 @@ const { searchSoon } = useDebouncedSearch(search)
             <a @click="clearSelection(tableRef)">清空</a>
           </em>
         </span>
-        <el-form class="filter-form" label-width="76px" @submit.prevent>
+        <ListFilters>
           <el-form-item label="关键字">
             <el-input
-              v-model="query.keyword" @input="searchSoon"
+              v-model="query.keyword"
+              @input="searchSoon"
               placeholder="编号 / 名称 / 联系人"
               clearable
               @keyup.enter="search"
@@ -244,14 +247,15 @@ const { searchSoon } = useDebouncedSearch(search)
               <el-option label="停用" :value="0" />
             </el-select>
           </el-form-item>
-        </el-form>
+          <template #actions>
+            <el-button type="primary" @click="search">
+              <AppIcon name="Search" />
+              <span>查询</span>
+            </el-button>
+            <el-button @click="reset">重置</el-button>
+          </template>
+        </ListFilters>
         <div class="list-head__actions">
-          <el-button type="primary" @click="search">
-            <AppIcon name="Search" />
-            <span>查询</span>
-          </el-button>
-          <el-button @click="reset">重置</el-button>
-          <span class="list-head__divider" />
           <el-button v-if="selection.length" v-perm="`inv:${partyPerm}:delete`" :loading="batchRunning" @click="batchDelete">
             批量删除
           </el-button>
@@ -269,7 +273,7 @@ const { searchSoon } = useDebouncedSearch(search)
         </div>
       </div>
 
-      <el-table
+      <el-table height="100%"
         ref="tableRef"
         v-loading="loading"
         :data="rows"
@@ -320,7 +324,7 @@ const { searchSoon } = useDebouncedSearch(search)
           @change="load"
         />
       </div>
-    </div>
+    </ListPanel>
 
     <ListPrintDialog
       v-model="printVisible"

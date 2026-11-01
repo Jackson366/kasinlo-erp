@@ -40,16 +40,17 @@ const items = computed(() => {
 <style scoped lang="scss">
 .breadcrumb {
   color: var(--app-text-secondary);
-  font-size: 14px;
+  font-size: 13px;
   ol {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 10px;
     min-height: 24px;
     padding: 0;
     margin: 0;
     list-style: none;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow: hidden;
   }
   li,
   li > span {
@@ -57,7 +58,10 @@ const items = computed(() => {
     align-items: center;
   }
   li {
-    gap: 14px;
+    gap: 10px;
+    min-width: 0;
+    white-space: nowrap;
+    > span:last-child { overflow: hidden; text-overflow: ellipsis; display: block; }
   }
   a {
     display: inline-flex;

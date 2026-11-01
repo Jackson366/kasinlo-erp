@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ListPanel from '@/components/ListPanel.vue'
 /**
  * 合同管理台账（含付款计划、验收、质保与期次收付款）。
  *
@@ -38,6 +39,7 @@ import type {
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListFilters from '@/components/ListFilters.vue'
 import { useTableQuery } from '@/composables/useTableQuery'
 import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 import { formatDateTime, formatDay, formatMoney } from '@/utils/format'
@@ -918,12 +920,12 @@ const attachType: InvAttachBizType = 'contract'
 
 <template>
   <div class="contract-page">
-    <div class="page-card">
+    <ListPanel>
       <div class="list-head">
         <span class="list-head__title">
           合同管理<em>共 {{ total }} 份</em>
         </span>
-        <el-form class="filter-form" label-width="76px" @submit.prevent>
+        <ListFilters :active-values="[query.stage, query.dateRange]">
           <el-form-item label="关键字">
             <el-input
               v-model="query.keyword"
@@ -939,30 +941,36 @@ const attachType: InvAttachBizType = 'contract'
               <el-option label="销售合同" value="sales" />
             </el-select>
           </el-form-item>
-          <el-form-item label="阶段">
-            <el-select v-model="query.stage" placeholder="全部" clearable>
-              <el-option v-for="s in stageOptions" :key="s.value" :label="s.label" :value="s.value" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="签订日期">
-            <el-date-picker
-              v-model="query.dateRange"
-              type="daterange"
-              value-format="YYYY-MM-DD"
-              range-separator="至"
-              start-placeholder="开始日期"
-              end-placeholder="结束日期"
-              unlink-panels
-            />
-          </el-form-item>
-        </el-form>
+          <template #advanced>
+            <el-form-item label="阶段">
+              <el-select v-model="query.stage" placeholder="全部" clearable>
+                <el-option v-for="s in stageOptions" :key="s.value" :label="s.label" :value="s.value" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="签订日期">
+              <el-date-picker
+                v-model="query.dateRange"
+                type="daterange"
+                value-format="YYYY-MM-DD"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                unlink-panels
+              />
+            </el-form-item>
+          </template>
+          <template #actions>
+            <el-button type="primary" @click="searchNow">
+              <AppIcon name="Search" />
+              <span>查询</span>
+            </el-button>
+            <el-button
+              @click="cancelSearch(); reset()"
+              >重置</el-button
+            >
+          </template>
+        </ListFilters>
         <div class="list-head__actions">
-          <el-button type="primary" @click="searchNow">
-            <AppIcon name="Search" />
-            <span>查询</span>
-          </el-button>
-          <el-button @click="cancelSearch(); reset()">重置</el-button>
-          <span class="list-head__divider" />
           <el-button :loading="exporting" @click="exportRows">导出</el-button>
           <el-button @click="printVisible = true">打印</el-button>
           <el-button v-perm="'inv:contract:create'" type="primary" @click="openCreate">
@@ -975,7 +983,7 @@ const attachType: InvAttachBizType = 'contract'
         </div>
       </div>
 
-      <el-table v-loading="loading" :data="rows" stripe>
+      <el-table height="100%" v-loading="loading" :data="rows" stripe>
         <el-table-column prop="contractNo" label="合同编号" width="140" show-overflow-tooltip />
         <el-table-column prop="name" label="合同名称" min-width="170" show-overflow-tooltip />
         <el-table-column label="类型" width="96">
@@ -1054,7 +1062,7 @@ const attachType: InvAttachBizType = 'contract'
           @change="load"
         />
       </div>
-    </div>
+    </ListPanel>
 
     <!-- 新增 / 编辑 -->
     <el-dialog

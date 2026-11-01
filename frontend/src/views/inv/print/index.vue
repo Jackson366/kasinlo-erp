@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ListFilters from '@/components/ListFilters.vue'
 /**
  * 打印模板页：以卡片网格展示各单据的打印版式。
  *
@@ -117,10 +118,11 @@ const { searchSoon } = useDebouncedSearch(search)
         <span class="list-head__title">
           打印模板<em>共 {{ total }} 个</em>
         </span>
-        <el-form class="filter-form" label-width="76px" @submit.prevent>
+        <ListFilters>
           <el-form-item label="关键字">
             <el-input
-              v-model="query.keyword" @input="searchSoon"
+              v-model="query.keyword"
+              @input="searchSoon"
               placeholder="编码 / 名称 / 单据类型"
               clearable
               @keyup.enter="search"
@@ -132,14 +134,15 @@ const { searchSoon } = useDebouncedSearch(search)
               <el-option label="停用" :value="0" />
             </el-select>
           </el-form-item>
-        </el-form>
+          <template #actions>
+            <el-button type="primary" @click="search">
+              <AppIcon name="Search" />
+              <span>查询</span>
+            </el-button>
+            <el-button @click="reset">重置</el-button>
+          </template>
+        </ListFilters>
         <div class="list-head__actions">
-          <el-button type="primary" @click="search">
-            <AppIcon name="Search" />
-            <span>查询</span>
-          </el-button>
-          <el-button @click="reset">重置</el-button>
-          <span class="list-head__divider" />
           <el-button v-perm="'inv:print:create'" type="primary" @click="openCreateDialog">
             <AppIcon name="Plus" />
             <span>新增模板</span>

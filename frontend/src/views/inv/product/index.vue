@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ListPanel from '@/components/ListPanel.vue'
 /**
  * 商品管理页：商品档案的完整维护入口，粒度是「商品 → 规格 → 计量单位」三层。
  *
@@ -37,6 +38,7 @@ import type {
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListFilters from '@/components/ListFilters.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { formatDate, formatMoney, formatQty } from '@/utils/format'
@@ -812,7 +814,7 @@ const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(searc
 
       <!-- 右栏：商品表格 -->
       <div class="product-main">
-        <div class="page-card">
+        <ListPanel>
           <!-- 搜索与操作合并一行 -->
           <div class="list-head">
             <span class="list-head__title">
@@ -822,7 +824,7 @@ const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(searc
                 <a @click="clearSelection(tableRef)">清空</a>
               </em>
             </span>
-            <el-form class="filter-form" label-width="76px" @submit.prevent>
+            <ListFilters :active-values="[query.status]">
               <el-form-item label="关键字">
                 <el-input
                   v-model="query.keyword"
@@ -837,20 +839,26 @@ const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(searc
                   <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="状态">
-                <el-select v-model="query.status" placeholder="全部" clearable>
-                  <el-option label="启用" :value="1" />
-                  <el-option label="停用" :value="0" />
-                </el-select>
-              </el-form-item>
-            </el-form>
+              <template #advanced>
+                <el-form-item label="状态">
+                  <el-select v-model="query.status" placeholder="全部" clearable>
+                    <el-option label="启用" :value="1" />
+                    <el-option label="停用" :value="0" />
+                  </el-select>
+                </el-form-item>
+              </template>
+              <template #actions>
+                <el-button type="primary" @click="searchNow">
+                  <AppIcon name="Search" />
+                  <span>查询</span>
+                </el-button>
+                <el-button
+                  @click="cancelSearch(); reset()"
+                  >重置</el-button
+                >
+              </template>
+            </ListFilters>
             <div class="list-head__actions">
-              <el-button type="primary" @click="searchNow">
-                <AppIcon name="Search" />
-                <span>查询</span>
-              </el-button>
-              <el-button @click="cancelSearch(); reset()">重置</el-button>
-              <span class="list-head__divider" />
               <el-button v-if="selection.length" v-perm="'inv:product:delete'" :loading="batchRunning" @click="batchDelete">
                 批量删除
               </el-button>
@@ -868,7 +876,7 @@ const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(searc
             </div>
           </div>
 
-      <el-table
+      <el-table height="100%"
         ref="tableRef"
         v-loading="loading"
         :data="rows"
@@ -981,7 +989,7 @@ const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(searc
           @change="load"
         />
       </div>
-      </div>
+      </ListPanel>
     </div>
     </div>
 
@@ -1397,17 +1405,6 @@ const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(searc
 // 避免 165px 固定宽度的字段溢出压住查询按钮。
 .product-main .page-card {
   container-type: inline-size;
-}
-
-@container (max-width: 900px) {
-  .list-head {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 12px;
-
-    > .list-head__actions {
-      justify-content: flex-start;
-    }
-  }
 }
 
 // 分类节点：名称占满剩余宽度，操作按钮**常显**。

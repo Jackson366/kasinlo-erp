@@ -1,5 +1,23 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+
+const container = ref<HTMLElement>()
+const width = ref(800)
+let observer: ResizeObserver | undefined
+onMounted(() => {
+  observer = new ResizeObserver(([entry]) => {
+    if (entry) width.value = entry.contentRect.width
+  })
+  if (container.value) observer.observe(container.value)
+})
+onBeforeUnmount(() => observer?.disconnect())
+const layout = computed(() =>
+  width.value < 480
+    ? 'total, prev, next, sizes'
+    : width.value < 660
+      ? 'total, sizes, prev, pager, next'
+      : 'total, sizes, prev, pager, next, jumper',
+)
 
 // 分页组件：与后端 PageData 结构保持一致（page 从 1 开始）
 const props = withDefaults(
@@ -63,13 +81,30 @@ const size = computed({
 </script>
 
 <template>
-  <el-pagination
-    v-model:current-page="currentPage"
-    v-model:page-size="size"
-    :total="total"
-    :page-sizes="pageSizes"
-    layout="total, sizes, prev, pager, next, jumper"
-    background
-    :hide-on-single-page="false"
-  />
+  <div ref="container" class="pagination">
+    <el-pagination
+      v-model:current-page="currentPage"
+      v-model:page-size="size"
+      :total="total"
+      :page-sizes="pageSizes"
+      :layout="layout"
+      :pager-count="5"
+      background
+      :hide-on-single-page="false"
+    />
+  </div>
 </template>
+
+<style scoped lang="scss">
+.pagination {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+  :deep(.el-pagination) {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}
+</style>

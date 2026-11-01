@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import Breadcrumb from './Breadcrumb.vue'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { inject, onBeforeUnmount, onMounted, ref } from 'vue'
+
 import { useRouter } from 'vue-router'
 // 值一律从子路径导入：element-plus 根入口引用全部组件，会禁用 tree-shaking
 import { ElMessage } from 'element-plus/es/components/message/index'
@@ -7,6 +10,7 @@ import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import { useAppStore, usePermissionStore, useUserStore } from '@/store'
 import { useLogout } from '@/composables/useLogout'
 import AppIcon from '@/components/AppIcon.vue'
+const narrowLayout = useMediaQuery('(max-width: 800px)')
 const emit = defineEmits<{ 'open-menu': [] }>()
 
 const router = useRouter()
@@ -86,6 +90,7 @@ function handleCommand(command: string): void {
       <span class="navbar__badge">SaaS</span>
     </div>
 
+    <Breadcrumb v-if="!narrowLayout" class="navbar__breadcrumb" />
     <div class="navbar__right">
       <el-tooltip content="刷新页面" placement="bottom">
         <button class="navbar__icon-btn" type="button" aria-label="刷新页面" @click="refreshPage()">
@@ -150,9 +155,11 @@ function handleCommand(command: string): void {
   align-items: center;
   justify-content: space-between;
   height: var(--layout-navbar-height);
-  padding: 0 28px;
+  padding: 0 20px;
+  gap: 24px;
   background: transparent;
 
+  &__breadcrumb { flex: 1; min-width: 0; }
   &__left,
   &__right {
     display: flex;
@@ -208,7 +215,7 @@ function handleCommand(command: string): void {
     align-items: center;
     gap: 10px;
     color: var(--app-text);
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 650;
     white-space: nowrap;
     img {
@@ -268,6 +275,7 @@ function handleCommand(command: string): void {
 @media (max-width: 800px) {
   .navbar {
     padding: 0 12px;
+    &__breadcrumb { display: none; }
     &__mobile-menu {
       display: inline-flex;
     }

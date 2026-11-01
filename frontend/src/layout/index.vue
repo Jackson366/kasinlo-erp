@@ -7,6 +7,9 @@ import Sidebar from './components/Sidebar.vue'
 import Navbar from './components/Navbar.vue'
 import TagsView from './components/TagsView.vue'
 import Breadcrumb from './components/Breadcrumb.vue'
+import { useMediaQuery } from '@/composables/useMediaQuery'
+
+const narrowLayout = useMediaQuery('(max-width: 800px)')
 
 const route = useRoute()
 const appStore = useAppStore()
@@ -70,7 +73,7 @@ const viewKey = computed(() => route.path)
     <aside class="layout__aside"><Sidebar /></aside>
     <section class="layout__body">
       <div v-show="!isHome" class="layout__navigation">
-        <Breadcrumb />
+        <Breadcrumb v-if="narrowLayout" class="layout__breadcrumb" />
         <TagsView />
       </div>
       <main id="main-content" class="layout__content" aria-label="工作区" tabindex="-1">
@@ -116,19 +119,20 @@ const viewKey = computed(() => route.path)
   &__body {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 12px;
     min-width: 0;
     min-height: 0;
-    padding: 4px 24px 24px 8px;
+    padding: 0 16px 16px 8px;
   }
   // 首页不显示导航卡，补一点上边距，避免内容贴着顶栏
   &.is-home &__body {
     padding-top: 18px;
   }
+  &__breadcrumb { display: none; }
   &__navigation {
     flex: none;
     min-width: 0;
-    padding: 18px 24px 10px;
+    padding: 0 16px;
     background: var(--app-surface);
     border-radius: var(--radius-lg);
   }
@@ -155,8 +159,9 @@ const viewKey = computed(() => route.path)
       gap: 12px;
       padding: 0 12px 12px;
     }
+    &__breadcrumb { display: block; }
     &__navigation {
-      padding: 14px 16px 6px;
+      padding: 8px 12px 0;
     }
     &.is-home &__body {
       padding-top: 12px;

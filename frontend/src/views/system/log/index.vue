@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ListPanel from '@/components/ListPanel.vue'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
@@ -7,6 +8,7 @@ import { logApi, type LoginLogQuery, type OperationLogQuery } from '@/api/log'
 import type { LoginLogItem, OperationLogItem } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListFilters from '@/components/ListFilters.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import { exportStamp, formatDateTime, formatLatency, fromNow } from '@/utils/format'
 import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
@@ -218,16 +220,15 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
 
 <template>
   <div class="log-page">
-    <!-- tab 头放在卡片外：每个 tab 内部再是「搜索卡片 + 表格卡片」，
-         与其它列表页的视觉节奏一致（筛选、表格各占一张卡） -->
+    <!-- Each tab owns its table height; the shared tab shell keeps natural scrolling. -->
     <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <!-- 操作日志 -->
       <el-tab-pane label="操作日志" name="operation">
-        <div class="page-card">
+        <ListPanel>
           <!-- 搜索与操作合并一行 -->
           <div class="list-head">
             <span class="list-head__title">操作日志<em>共 {{ opTotal }} 条</em></span>
-            <el-form class="filter-form" label-width="76px" @submit.prevent>
+            <ListFilters :active-values="[opQuery.method]">
               <el-form-item label="关键字">
                 <el-input
                   v-model="opQuery.keyword"
@@ -242,19 +243,22 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
                   <el-option v-for="item in opModules" :key="item" :label="item" :value="item" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="方法">
-                <el-select v-model="opQuery.method" placeholder="全部" clearable>
-                  <el-option v-for="item in methodOptions" :key="item" :label="item" :value="item" />
-                </el-select>
-              </el-form-item>
-            </el-form>
+              <template #advanced>
+                <el-form-item label="方法">
+                  <el-select v-model="opQuery.method" placeholder="全部" clearable>
+                    <el-option v-for="item in methodOptions" :key="item" :label="item" :value="item" />
+                  </el-select>
+                </el-form-item>
+              </template>
+              <template #actions>
+                <el-button type="primary" @click="searchOpNow">
+                  <AppIcon name="Search" />
+                  <span>查询</span>
+                </el-button>
+                <el-button @click="cancelOpSearch(); resetOperations()">重置</el-button>
+              </template>
+            </ListFilters>
             <div class="list-head__actions">
-              <el-button type="primary" @click="searchOpNow">
-                <AppIcon name="Search" />
-                <span>查询</span>
-              </el-button>
-              <el-button @click="cancelOpSearch(); resetOperations()">重置</el-button>
-              <span class="list-head__divider" />
               <el-button v-perm="'system:log:export'" :loading="exportingOp" @click="exportOperations">
                 <AppIcon name="Download" />
                 <span>导出</span>
@@ -266,7 +270,7 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
               </el-button>
             </div>
           </div>
-        <el-table v-loading="opLoading" :data="opRows" stripe>
+        <el-table height="100%" v-loading="opLoading" :data="opRows" stripe>
           <el-table-column type="expand">
             <template #default="{ row }">
               <div class="log-detail">
@@ -317,25 +321,28 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
           </template>
         </el-table>
 
-        <Pagination
-          v-model:page="opQuery.page!"
-          v-model:page-size="opQuery.pageSize!"
-          :total="opTotal"
-          @change="loadOperations"
+        <div class="table-pager">
+          <Pagination
+            v-model:page="opQuery.page!"
+            v-model:page-size="opQuery.pageSize!"
+            :total="opTotal"
+            @change="loadOperations"
         />
         </div>
+        </ListPanel>
       </el-tab-pane>
 
       <!-- 登录日志 -->
       <el-tab-pane label="登录日志" name="login">
-        <div class="page-card">
+        <ListPanel>
           <!-- 搜索与操作合并一行 -->
           <div class="list-head">
             <span class="list-head__title">登录日志<em>共 {{ loginTotal }} 条</em></span>
-            <el-form class="filter-form" label-width="76px" @submit.prevent>
+            <ListFilters>
               <el-form-item label="关键字">
                 <el-input
-                  v-model="loginQuery.keyword" @input="searchLoginSoon"
+                  v-model="loginQuery.keyword"
+                  @input="searchLoginSoon"
                   placeholder="账号 / IP / 说明"
                   clearable
                   @keyup.enter="searchLogins"
@@ -347,14 +354,15 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
                   <el-option label="失败" :value="false" />
                 </el-select>
               </el-form-item>
-            </el-form>
+              <template #actions>
+                <el-button type="primary" @click="searchLogins">
+                  <AppIcon name="Search" />
+                  <span>查询</span>
+                </el-button>
+                <el-button @click="resetLogins">重置</el-button>
+              </template>
+            </ListFilters>
             <div class="list-head__actions">
-              <el-button type="primary" @click="searchLogins">
-                <AppIcon name="Search" />
-                <span>查询</span>
-              </el-button>
-              <el-button @click="resetLogins">重置</el-button>
-              <span class="list-head__divider" />
               <el-button v-perm="'system:log:export'" :loading="exportingLogin" @click="exportLogins">
                 <AppIcon name="Download" />
                 <span>导出</span>
@@ -366,7 +374,7 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
               </el-button>
             </div>
           </div>
-        <el-table v-loading="loginLoading" :data="loginRows" stripe>
+        <el-table height="100%" v-loading="loginLoading" :data="loginRows" stripe>
           <el-table-column prop="username" label="账号" min-width="130" />
           <el-table-column prop="ip" label="登录 IP" min-width="140" />
           <el-table-column label="结果" width="100" align="center">
@@ -388,13 +396,15 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
           </template>
         </el-table>
 
-        <Pagination
-          v-model:page="loginQuery.page!"
-          v-model:page-size="loginQuery.pageSize!"
-          :total="loginTotal"
-          @change="loadLogins"
+        <div class="table-pager">
+          <Pagination
+            v-model:page="loginQuery.page!"
+            v-model:page-size="loginQuery.pageSize!"
+            :total="loginTotal"
+            @change="loadLogins"
         />
         </div>
+        </ListPanel>
       </el-tab-pane>
       </el-tabs>
 
