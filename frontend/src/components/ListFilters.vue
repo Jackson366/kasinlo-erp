@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, useId } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  useId,
+  watch,
+} from 'vue'
 import AppIcon from './AppIcon.vue'
 
 const props = withDefaults(defineProps<{ activeValues?: unknown[] }>(), {
@@ -16,6 +24,34 @@ const activeCount = computed(
 const expanded = ref(false)
 const advancedId = useId()
 const toggle = ref<HTMLButtonElement>()
+const common = ref<HTMLElement>()
+const actionRow = ref<HTMLElement>()
+const wrapped = ref(false)
+let observer: ResizeObserver | undefined
+
+function measureActionRow(): void {
+  if (
+    !common.value ||
+    !actionRow.value ||
+    !actionRow.value.getClientRects().length
+  )
+    return
+  wrapped.value =
+    actionRow.value.getBoundingClientRect().top >
+    common.value.getBoundingClientRect().top + 2
+}
+onMounted(() => {
+  observer = new ResizeObserver(measureActionRow)
+  if (actionRow.value) {
+    observer.observe(actionRow.value)
+    if (actionRow.value.parentElement)
+      observer.observe(actionRow.value.parentElement)
+  }
+  if (common.value) observer.observe(common.value)
+  measureActionRow()
+})
+watch(expanded, () => void nextTick(measureActionRow))
+onBeforeUnmount(() => observer?.disconnect())
 
 function collapse(event: KeyboardEvent): void {
   if (event.key !== 'Escape' || !expanded.value) return
@@ -33,7 +69,7 @@ function collapse(event: KeyboardEvent): void {
     @submit.prevent
     @keydown="collapse"
   >
-    <div class="list-filters__common"><slot /></div>
+    <div ref="common" class="list-filters__common"><slot /></div>
     <div
       v-if="$slots.advanced"
       v-show="expanded"
@@ -44,24 +80,30 @@ function collapse(event: KeyboardEvent): void {
     >
       <slot name="advanced" />
     </div>
-    <div class="list-filters__actions">
-      <slot name="actions" />
-      <button
-        v-if="$slots.advanced"
-        ref="toggle"
-        type="button"
-        class="list-filters__toggle"
-        :aria-expanded="expanded"
-        :aria-controls="advancedId"
-        @click="expanded = !expanded"
-      >
-        {{ expanded ? '收起筛选' : '更多筛选'
-        }}{{ activeCount ? `（${activeCount}）` : '' }}
-        <AppIcon :name="expanded ? 'ArrowUp' : 'ArrowDown'" />
-      </button>
-    </div>
-    <div v-if="$slots.tools" class="list-head__actions list-filters__tools">
-      <slot name="tools" />
+    <div
+      ref="actionRow"
+      class="list-filters__action-row"
+      :class="{ 'is-wrapped': wrapped }"
+    >
+      <div class="list-filters__actions">
+        <slot name="actions" />
+        <button
+          v-if="$slots.advanced"
+          ref="toggle"
+          type="button"
+          class="list-filters__toggle"
+          :aria-expanded="expanded"
+          :aria-controls="advancedId"
+          @click="expanded = !expanded"
+        >
+          {{ expanded ? '收起筛选' : '更多筛选'
+          }}{{ activeCount ? `（${activeCount}）` : '' }}
+          <AppIcon :name="expanded ? 'ArrowUp' : 'ArrowDown'" />
+        </button>
+      </div>
+      <div v-if="$slots.tools" class="list-head__actions list-filters__tools">
+        <slot name="tools" />
+      </div>
     </div>
   </el-form>
 </template>
@@ -94,9 +136,21 @@ function collapse(event: KeyboardEvent): void {
     max-width: 100%;
     flex: 0 0 auto;
   }
+  &__action-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    flex: 1 0 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
   &__tools {
     margin-left: auto;
     justify-content: flex-end;
+  }
+  &__action-row.is-wrapped &__tools {
+    margin-left: 0;
   }
   :deep(.el-form-item) {
     margin: 0;
