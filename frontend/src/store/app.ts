@@ -5,16 +5,15 @@ import { applyTheme, persistTheme, resolveInitialTheme, type ThemeMode } from '@
 /** 侧边栏访问过的标签页 */
 export interface TagView {
   path: string
+  fullPath?: string
   title: string
   closable: boolean
 }
 
-const SIDEBAR_KEY = 'nova_sidebar_collapsed'
 const PRIMARY_SIDEBAR_KEY = 'nova_sidebar_primary_collapsed'
 
 /** 应用级 UI 状态：侧边栏折叠、标签页、主题 */
 export const useAppStore = defineStore('app', () => {
-  const sidebarCollapsed = ref(localStorage.getItem(SIDEBAR_KEY) === '1')
   const primarySidebarCollapsed = ref(localStorage.getItem(PRIMARY_SIDEBAR_KEY) === '1')
   const tags = ref<TagView[]>([])
 
@@ -24,13 +23,7 @@ export const useAppStore = defineStore('app', () => {
   /** 是否暗色主题，供模板做分支（如切换按钮的图标） */
   const isDark = computed(() => theme.value === 'dark')
 
-  /** 切换侧边栏折叠状态并持久化 */
-  function toggleSidebar(): void {
-    sidebarCollapsed.value = !sidebarCollapsed.value
-    localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed.value ? '1' : '0')
-  }
-
-  /** 一级图标栏独立于二级菜单折叠，切换分组不会改变此偏好。 */
+  /** Single sidebar collapse preference; narrow-screen drawer always stays expanded. */
   function togglePrimarySidebar(): void {
     primarySidebarCollapsed.value = !primarySidebarCollapsed.value
     localStorage.setItem(PRIMARY_SIDEBAR_KEY, primarySidebarCollapsed.value ? '1' : '0')
@@ -52,7 +45,10 @@ export const useAppStore = defineStore('app', () => {
   function addTag(tag: TagView): void {
     if (!tag.title) return
     const exist = tags.value.find((item) => item.path === tag.path)
-    if (exist) return
+    if (exist) {
+      exist.fullPath = tag.fullPath
+      return
+    }
     tags.value.push(tag)
   }
 
@@ -77,12 +73,10 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
-    sidebarCollapsed,
     primarySidebarCollapsed,
     tags,
     theme,
     isDark,
-    toggleSidebar,
     togglePrimarySidebar,
     setTheme,
     toggleTheme,

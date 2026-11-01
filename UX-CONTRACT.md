@@ -14,15 +14,15 @@
 
 ## Canonical UI Map
 
-| Capability      | Canonical owner                    | Source of truth              | Allowed variants                                   | Verification                          |
-| --------------- | ---------------------------------- | ---------------------------- | -------------------------------------------------- | ------------------------------------- |
-| Table Selection | useListTools + ElTable             | AGENTS.md §5.45 / §5.98      | 当前页勾选；筛选或数据集合变化清空                 | scripts/purchase-workbench-verify.mjs |
-| Select/Listbox  | Element Plus ElSelect              | Existing shared stack        | authored + 中文 locale                             | 同上，真实下拉打开与选择              |
-| Date            | Element Plus ElDatePicker          | docs/API.md 日期闭区间       | authored，date / daterange                         | 同上，打开中文日历                    |
-| Form            | OrderPage + ElForm + useUnsavedChanges    | docs/API.md §11.3            | 新建/编辑；失败保留输入；关闭前提示未保存          | 同上                                  |
-| Scrollbar       | styles/index.scss                  | DESIGN.md / variables.scss   | 全局标准属性 + WebKit 回退，forced-colors 跟随系统 | 同上，样式与窄屏检查                  |
-| Toast           | Element Plus ElMessage             | Existing request interceptor | 服务端成功后反馈；关键错误另有持续文案             | 同上                                  |
-| CRUD            | invApi + useTableQuery + OrderPage | docs/API.md §11.3            | 采购连续核对 / 历史列表 / 既有销售列表             | 同上                                  |
+| Capability      | Canonical owner                        | Source of truth              | Allowed variants                                   | Verification                          |
+| --------------- | -------------------------------------- | ---------------------------- | -------------------------------------------------- | ------------------------------------- |
+| Table Selection | useListTools + ElTable                 | AGENTS.md §5.45 / §5.98      | 当前页勾选；筛选或数据集合变化清空                 | scripts/purchase-workbench-verify.mjs |
+| Select/Listbox  | Element Plus ElSelect                  | Existing shared stack        | authored + 中文 locale                             | 同上，真实下拉打开与选择              |
+| Date            | Element Plus ElDatePicker              | docs/API.md 日期闭区间       | authored，date / daterange                         | 同上，打开中文日历                    |
+| Form            | OrderPage + ElForm + useUnsavedChanges | docs/API.md §11.3            | 新建/编辑；失败保留输入；关闭前提示未保存          | 同上                                  |
+| Scrollbar       | styles/index.scss                      | DESIGN.md / variables.scss   | 全局标准属性 + WebKit 回退，forced-colors 跟随系统 | 同上，样式与窄屏检查                  |
+| Toast           | Element Plus ElMessage                 | Existing request interceptor | 服务端成功后反馈；关键错误另有持续文案             | 同上                                  |
+| CRUD            | invApi + useTableQuery + OrderPage     | docs/API.md §11.3            | 采购连续核对 / 历史列表 / 既有销售列表             | 同上                                  |
 
 ## Procurement flow
 
@@ -40,7 +40,7 @@
 
 ## Verification boundary
 
-采购浏览器脚本使用确定性的模拟 API，验证实际 Vue 页面、路由、权限显隐、表单与请求状态。它不证明真实后端的事务、入库或付款正确；这些继续由后端业务测试负责。静态审计对 TagsView 的 ElDropdown 触发按钮有既有误报：动作由父级组件处理，不能为让扫描通过而添加空点击处理。
+采购浏览器脚本使用确定性的模拟 API，验证实际 Vue 页面、路由、权限显隐、表单与请求状态。它不证明真实后端的事务、入库或付款正确；这些继续由后端业务测试负责。静态审计对 Navbar 的 ElDropdown 触发按钮有误报：动作由父级组件处理，不能为让扫描通过而添加空点击处理。
 
 ## 列表筛选折叠
 
@@ -52,13 +52,17 @@
 
 ## Sidebar navigation
 
-主导航直接使用服务端已授权菜单树，沿用路由、权限过滤及外链行为。一级栏与二级栏分别由 app store 中的 `primarySidebarCollapsed` 与 `sidebarCollapsed` 控制，分别持久化到 `nova_sidebar_primary_collapsed` 与原有 `nova_sidebar_collapsed` 键。
+2026-11-01 参考图改版：Layout / Navbar / Sidebar / navigation.ts 为外壳 owner。品牌图片不变；顶部栏贯穿全宽。单侧栏折叠只使用 app store 的 primarySidebarCollapsed 与原 nova_sidebar_primary_collapsed 偏好，旧二级栏及 nova_sidebar_collapsed 不再读取。侧栏 ElMenu 使用服务端授权树，经 navigationMenus 对内置 Inv 叶子进行业务展示分组，不新增路由或授权；未知菜单、外链、隐藏过滤和自定义目录保持原行为。合同管理归入财务；打印模板归入既有系统管理目录，账号没有系统管理目录但有打印权限时，使用仅含已授权打印入口的系统设置展示分组，不扩大权限。分组仅用于展开，不自动导航；深链进入和退出图标模式自动展开当前祖先。图标栏使用 ElMenu 原有提示/弹出菜单与键盘行为。宽屏侧栏独立滚动，业务页仍由 layout__content 滚动，不裁掉长表单。
 
-一级栏展开时左图标右文字，宽 132px，图标 20px、文字 14px；收起时为 64px 图标栏，图标以固定中心缩到 18px，文字缩到 12px 并同步淡出、隐藏。产品标识固定 30px。一级栏底部按钮与顶栏折叠按钮均只切换一级栏文字。图标模式的每一项保留 aria-label，并在悬停及键盘聚焦时提供 ElTooltip 名称提示。聚焦及当前状态可辨认。
+800px 及以下用 ElDrawer 展示导航，菜单固定文字展开；组件提供焦点陷阱、Esc、关闭按钮和焦点归还。成功变更路由后关闭，不改变桌面折叠偏好。顶栏现有刷新、全屏、主题及账户动作继续保留，不添加没有实际行为的搜索或通知。
 
-右边缘箭头继续只切换二级栏，二级栏固定宽 148px；切换二级栏不改变一级栏尺寸。两栏都展开为 280px，一级仅图标且二级展开为 212px，仅一级文字栏为 132px，两栏都收起为 64px。没有二级菜单时只占当前一级栏宽度。内容区与侧栏从同一组尺寸令牌计算，不独立写死宽度。
+## 导航卡片与标签页
 
-点击一级分组自动打开二级栏，保留一级图标模式；选择分组用于浏览菜单，不自动跳到第一个子页。路由变化恢复对应分组高亮。二级栏隐藏时保留内部各分组的展开状态；一级折叠以 200ms 同步改变栏宽、图标 scale、文字字号及显隐；二级图标固定 16px、文字 13px，二级折叠不缩放一级菜单。减少动态效果模式取消宽度、字号、图标和淡出过渡，直接切换到最终状态。
+Breadcrumb 与 TagsView 共享白色导航表面。面包屑首页为链接，分组是非路由文本，当前页标记 aria-current=page；不向目录或展示分组执行无效导航。已打开页面使用带名称的 nav + router-link，当前页标记 aria-current，关闭为独立原生按钮，禁止嵌套交互控件。新增/切换标签将当前项滚入可见区；关闭后焦点移到当前链接。关闭当前页先等待路由及未保存保护通过，取消时保留标签。标签保存最近 fullPath，切换时恢复采购筛选、分页及编辑查询参数；不把标签当作表单草稿持久化。页面缓存仍以 route.path 为 key，不改刷新保护。
+
+标签右键、触屏长按或 Shift+F10 / 菜单键打开共享 ElDropdown，不先切换页面；不再显示右侧“更多”图标。“关闭当前标签”作用于所点标签，首页禁用；“关闭其它标签”保留所点标签及固定首页，若需要离开当前编辑页，先通过原路由守卫再移除标签。“关闭全部标签”先导航首页并通过守卫，再移除可关闭标签。无其它可关闭标签时禁用对应操作。Esc 关闭并还焦点，点击外部关闭，菜单由组件处理方向键及 Enter。
+
+验证：scripts/reference-layout-verify.mjs 覆盖真实 Vue + Mock 的桌面/图标/窄屏菜单、深链、子菜单、标签键盘关闭及未保存取消、查询恢复、主题、长表单滚动和无结果筛选。navigation.spec.ts 验证授权叶子不增不减、隐藏过滤及未知目录/外链保留。Mock 不验证真实后端事务。
 
 ## 采购首次使用
 
@@ -74,7 +78,7 @@
 
 批量继续使用 useListTools，业务后果由 options.consequences 注入；结果由 options.onResult 提供完整失败列表，BatchResultDialog 负责有界表格和全部复制，浏览器禁止复制时保留手工复制入口。数据集合变化清空选择，批量目标与跳过计数在执行前快照，避免等待期间筛选变动污染结果。
 
-验证：scripts/purchase-audit-verify.mjs、scripts/purchase-workbench-verify.mjs。后者动效采样从真实 click/keydown 开始，防止 Playwright 等待可操作元素期间提前耗尽采样窗口。静态 audit_project.py 对 TagsView 的既有误报仍按上文边界处理。
+验证：scripts/purchase-audit-verify.mjs、scripts/purchase-workbench-verify.mjs。后者动效采样从真实 click/keydown 开始，防止 Playwright 等待可操作元素期间提前耗尽采样窗口。静态 audit_project.py 对 Navbar 的既有误报仍按上文边界处理。
 
 ## 采购指南的退出与重开
 

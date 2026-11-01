@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, provide, ref } from 'vue'
+import { computed, nextTick, provide, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { pageLeaveGuardsKey } from '@/composables/useUnsavedChanges'
 import { useAppStore, usePermissionStore } from '@/store'
 import Sidebar from './components/Sidebar.vue'
 import Navbar from './components/Navbar.vue'
 import TagsView from './components/TagsView.vue'
+import Breadcrumb from './components/Breadcrumb.vue'
 
 const route = useRoute()
 const appStore = useAppStore()
@@ -16,7 +17,13 @@ const permissionStore = usePermissionStore()
 // 不要用「把 refreshKey 拼进 :key」的做法：那会让每次刷新都产生一个**新的 key**，
 // 而 keep-alive 是按 key 存缓存的——旧 key 的实例永远留在缓存里，既不会被复用，
 // 也不会被回收，反复刷新页面就会持续泄漏组件实例（连带它们的定时器、监听、DOM 引用）。
-const sidebarHasSecondary = ref(false)
+const mobileMenuOpen = ref(false)
+watch(
+  () => route.fullPath,
+  () => {
+    mobileMenuOpen.value = false
+  },
+)
 const refreshing = ref(false)
 const pageLeaveGuards = new Set<() => Promise<boolean>>()
 provide(pageLeaveGuardsKey, pageLeaveGuards)
@@ -51,15 +58,15 @@ const viewKey = computed(() => route.path)
 </script>
 
 <template>
-  <div class="layout" :class="{ 'is-collapsed': appStore.sidebarCollapsed, 'is-primary-collapsed': appStore.primarySidebarCollapsed }">
-    <aside class="layout__aside" :class="{ 'is-rail-only': !sidebarHasSecondary }">
-      <Sidebar @secondary-change="sidebarHasSecondary = $event" />
-    </aside>
-
+  <div class="layout" :class="{ 'is-collapsed': appStore.primarySidebarCollapsed }">
+    <Navbar class="layout__header" @open-menu="mobileMenuOpen = true" />
+    <aside class="layout__aside"><Sidebar /></aside>
     <section class="layout__body">
-      <Navbar />
-      <TagsView />
-      <main class="layout__content">
+      <div class="layout__navigation">
+        <Breadcrumb />
+        <TagsView />
+      </div>
+      <main id="main-content" class="layout__content" aria-label="工作区">
         <router-view v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
             <keep-alive :include="aliveIncludes">
@@ -69,45 +76,77 @@ const viewKey = computed(() => route.path)
         </router-view>
       </main>
     </section>
+    <el-drawer
+      v-model="mobileMenuOpen"
+      title="菜单"
+      direction="ltr"
+      size="280px"
+      class="layout-menu-drawer"
+    >
+      <Sidebar expanded />
+    </el-drawer>
   </div>
 </template>
 
 <style scoped lang="scss">
 .layout {
-  --sidebar-rail-width: var(--layout-sidebar-primary-width);
-  display: flex;
+  --sidebar-width: var(--layout-sidebar-width);
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-rows: var(--layout-navbar-height) minmax(0, 1fr);
   height: 100%;
-  overflow: hidden;
-
+  background: var(--app-bg);
+  transition: grid-template-columns var(--transition-base);
+  &.is-collapsed {
+    --sidebar-width: var(--layout-sidebar-collapsed);
+  }
+  &__header {
+    grid-column: 1 / -1;
+  }
   &__aside {
-    width: calc(var(--sidebar-rail-width) + var(--layout-sidebar-secondary-width));
-    flex-shrink: 0;
-    transition: width var(--transition-base);
+    min-height: 0;
   }
-
-  &.is-collapsed &__aside {
-    width: var(--sidebar-rail-width);
-  }
-
-  &.is-primary-collapsed { --sidebar-rail-width: var(--layout-sidebar-primary-collapsed); }
-  &__aside.is-rail-only { width: var(--sidebar-rail-width); }
-
   &__body {
     display: flex;
     flex-direction: column;
-    flex: 1;
+    gap: 20px;
     min-width: 0;
+    min-height: 0;
+    padding: 4px 24px 24px 8px;
   }
-
+  &__navigation {
+    flex: none;
+    min-width: 0;
+    padding: 18px 24px 10px;
+    background: var(--app-surface);
+    border-radius: var(--radius-lg);
+  }
   &__content {
     flex: 1;
     min-height: 0;
-    padding: 16px;
-    overflow-y: auto;
-    background: var(--app-bg);
+    overflow: auto;
+    scrollbar-gutter: stable;
+    scroll-padding-block: 16px;
+  }
+}
+@media (max-width: 800px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    &__aside {
+      display: none;
+    }
+    &__body {
+      gap: 12px;
+      padding: 0 12px 12px;
+    }
+    &__navigation {
+      padding: 14px 16px 6px;
+    }
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .layout__aside { transition: none; }
+  .layout {
+    transition: none;
+  }
 }
 </style>

@@ -16,8 +16,6 @@ declare module 'vue' {
     EChart: typeof import('./components/EChart.vue')['default']
     ElAlert: typeof import('element-plus/es/components/alert/index')['ElAlert']
     ElAvatar: typeof import('element-plus/es/components/avatar/index')['ElAvatar']
-    ElBreadcrumb: typeof import('element-plus/es/components/breadcrumb/index')['ElBreadcrumb']
-    ElBreadcrumbItem: typeof import('element-plus/es/components/breadcrumb/index')['ElBreadcrumbItem']
     ElButton: typeof import('element-plus/es/components/button/index')['ElButton']
     ElCheckbox: typeof import('element-plus/es/components/checkbox/index')['ElCheckbox']
     ElCol: typeof import('element-plus/es/components/col/index')['ElCol']
