@@ -522,7 +522,7 @@ GORM 对「字段带 `default` 标签、且当前取值等于 Go 零值」的字
 
 原因见 AGENTS.md §5.62：前端登录后的落地页由「菜单树里第一个可访问的叶子」推导，
 而菜单树按 `sort ASC, id ASC` 取，顶级 sort 平局时 `id` 小的赢。
-「数据概览」是顶级菜单且 sort=1，严格小于其它顶级节点，落地页稳定落在它上面。
+「首页」是顶级菜单且 sort=1，严格小于其它顶级节点，落地页稳定落在它上面。
 这段校准只动这两个顶层入口的相对顺序，其余节点一律不碰 ——
 管理员在「菜单管理」里对其它的调整仍然是权威。
 
@@ -591,7 +591,7 @@ SELECT (SELECT count(*) FROM sys_role_menus WHERE role_id = 1) AS super_grants,
 SELECT id, title, deleted_at FROM sys_menus
 WHERE id < 1000 AND deleted_at IS NOT NULL ORDER BY id;
 
--- 顶层入口顺序（数据概览的 sort 必须严格小于其它顶级节点，否则落地页会漂移）
+-- 顶层入口顺序（首页的 sort 必须严格小于其它顶级节点，否则落地页会漂移）
 SELECT name, title, sort FROM sys_menus
 WHERE parent_id = 0 AND deleted_at IS NULL ORDER BY sort, id;
 

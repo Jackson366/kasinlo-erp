@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import ListFilters from '@/components/ListFilters.vue'
-import { useAdvancedFilters } from '@/composables/useAdvancedFilters'
-
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
@@ -217,14 +214,6 @@ onMounted(async () => {
 // 关键字录入即查询（防抖）：操作日志 / 登录日志各一套
 const { searchSoon: searchOpSoon, searchNow: searchOpNow, cancel: cancelOpSearch } = useDebouncedSearch(searchOperations)
 const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
-const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = useAdvancedFilters(
-  opQuery,
-  () => [
-    { key: 'method', label: '方法', emptyValue: undefined, valueLabel: () => opQuery.method || '' },
-  ],
-  searchOpNow,
-)
-
 </script>
 
 <template>
@@ -235,21 +224,10 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
       <!-- 操作日志 -->
       <el-tab-pane label="操作日志" name="operation">
         <div class="page-card">
-          <!-- 常用条件保持可见，其余条件按需展开；业务动作独立排列。 -->
-          <div class="list-head list-head--filters">
+          <!-- 搜索与操作合并一行 -->
+          <div class="list-head">
             <span class="list-head__title">操作日志<em>共 {{ opTotal }} 条</em></span>
-            <div class="list-head__actions">
-              <el-button v-perm="'system:log:export'" :loading="exportingOp" @click="exportOperations">
-                <AppIcon name="Download" />
-                <span>导出</span>
-              </el-button>
-              <el-button @click="openPrint('operation')">打印</el-button>
-              <el-button v-perm="'system:log:delete'" type="danger" plain @click="clearLogs">
-                <AppIcon name="Delete" />
-                <span>清空</span>
-              </el-button>
-            </div>
-            <ListFilters :active-filters="advancedFilters" @clear="clearAdvancedFilter">
+            <el-form class="filter-form" label-width="76px" @submit.prevent>
               <el-form-item label="关键字">
                 <el-input
                   v-model="opQuery.keyword"
@@ -264,21 +242,29 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
                   <el-option v-for="item in opModules" :key="item" :label="item" :value="item" />
                 </el-select>
               </el-form-item>
-              <template #actions>
-                <el-button type="primary" @click="searchOpNow">
-                  <AppIcon name="Search" />
-                  <span>查询</span>
-                </el-button>
-                <el-button @click="cancelOpSearch(); resetOperations()">重置</el-button>
-              </template>
-              <template #advanced>
-                <el-form-item label="方法">
-                  <el-select v-model="opQuery.method" placeholder="全部" clearable>
-                    <el-option v-for="item in methodOptions" :key="item" :label="item" :value="item" />
-                  </el-select>
-                </el-form-item>
-              </template>
-            </ListFilters>
+              <el-form-item label="方法">
+                <el-select v-model="opQuery.method" placeholder="全部" clearable>
+                  <el-option v-for="item in methodOptions" :key="item" :label="item" :value="item" />
+                </el-select>
+              </el-form-item>
+            </el-form>
+            <div class="list-head__actions">
+              <el-button type="primary" @click="searchOpNow">
+                <AppIcon name="Search" />
+                <span>查询</span>
+              </el-button>
+              <el-button @click="cancelOpSearch(); resetOperations()">重置</el-button>
+              <span class="list-head__divider" />
+              <el-button v-perm="'system:log:export'" :loading="exportingOp" @click="exportOperations">
+                <AppIcon name="Download" />
+                <span>导出</span>
+              </el-button>
+              <el-button @click="openPrint('operation')">打印</el-button>
+              <el-button v-perm="'system:log:delete'" type="danger" plain @click="clearLogs">
+                <AppIcon name="Delete" />
+                <span>清空</span>
+              </el-button>
+            </div>
           </div>
         <el-table v-loading="opLoading" :data="opRows" stripe>
           <el-table-column type="expand">

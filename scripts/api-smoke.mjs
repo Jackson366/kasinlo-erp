@@ -196,11 +196,11 @@ async function main() {
   ok('获取动态路由树', Array.isArray(routeList) && routeList.length > 0, `len=${routeList.length}`)
   const titles = routeList.map((r) => r.meta?.title).join(',')
   ok(
-    '路由包含数据概览、进销存与系统管理',
-    titles.includes('数据概览') && titles.includes('进销存') && titles.includes('系统管理'),
+    '路由包含首页、进销存与系统',
+    titles.includes('首页') && titles.includes('进销存') && titles.includes('系统'),
     titles,
   )
-  // 进销存是主线功能，登录后应直接落在「数据概览」而不是框架自带的仪表盘
+  // 进销存是主线功能，登录后应直接落在「首页」而不是框架自带的仪表盘
   const firstLeaf = (node) => {
     for (const child of node.children || []) {
       if (child.children && child.children.length > 0) {
@@ -213,7 +213,7 @@ async function main() {
     return null
   }
   const landing = firstLeaf({ children: routeList })
-  ok('首页落在进销存数据概览', landing?.meta?.title === '数据概览', landing?.meta?.title)
+  ok('首页落在经营首页', landing?.meta?.title === '首页', landing?.meta?.title)
   const flat = JSON.stringify(routeList)
   ok('动态路由中不含按钮权限点', !flat.includes('system:user:create'), '按钮项应被过滤')
 
@@ -1173,7 +1173,7 @@ async function main() {
 
   const invOverview = await request('GET', '/inv/overview', { token })
   ok(
-    '数据概览返回十项指标',
+    '首页概览返回十项指标',
     invOverview.json?.code === 0 && typeof invOverview.json.data.productCount === 'number' && typeof invOverview.json.data.receivableTotal === 'number',
     JSON.stringify(invOverview.json?.data),
   )

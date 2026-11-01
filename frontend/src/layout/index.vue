@@ -12,6 +12,10 @@ const route = useRoute()
 const appStore = useAppStore()
 const permissionStore = usePermissionStore()
 
+// 首页是落地页：面包屑只会重复一个「首页」，标签卡也只有一个不可关闭的标签，
+// 整条导航区在这里没有信息量，直接让位给内容。不在首页时保持原样。
+const isHome = computed(() => route.path === permissionStore.homePath())
+
 // 页面刷新：把当前页面从 keep-alive 的缓存名单里摘掉一帧，逼它重建。
 //
 // 不要用「把 refreshKey 拼进 :key」的做法：那会让每次刷新都产生一个**新的 key**，
@@ -58,15 +62,18 @@ const viewKey = computed(() => route.path)
 </script>
 
 <template>
-  <div class="layout" :class="{ 'is-collapsed': appStore.primarySidebarCollapsed }">
+  <div
+    class="layout"
+    :class="{ 'is-collapsed': appStore.primarySidebarCollapsed, 'is-home': isHome }"
+  >
     <Navbar class="layout__header" @open-menu="mobileMenuOpen = true" />
     <aside class="layout__aside"><Sidebar /></aside>
     <section class="layout__body">
-      <div class="layout__navigation">
+      <div v-show="!isHome" class="layout__navigation">
         <Breadcrumb />
         <TagsView />
       </div>
-      <main id="main-content" class="layout__content" aria-label="工作区">
+      <main id="main-content" class="layout__content" aria-label="工作区" tabindex="-1">
         <router-view v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
             <keep-alive :include="aliveIncludes">
@@ -114,6 +121,10 @@ const viewKey = computed(() => route.path)
     min-height: 0;
     padding: 4px 24px 24px 8px;
   }
+  // 首页不显示导航卡，补一点上边距，避免内容贴着顶栏
+  &.is-home &__body {
+    padding-top: 18px;
+  }
   &__navigation {
     flex: none;
     min-width: 0;
@@ -127,6 +138,11 @@ const viewKey = computed(() => route.path)
     overflow: auto;
     scrollbar-gutter: stable;
     scroll-padding-block: 16px;
+    // 首页隐藏标签卡后，关闭标签的焦点落到这里；内容区是 landmark 而不是控件，
+    // 不需要给整块区域画焦点框。
+    &:focus {
+      outline: none;
+    }
   }
 }
 @media (max-width: 800px) {
@@ -141,6 +157,9 @@ const viewKey = computed(() => route.path)
     }
     &__navigation {
       padding: 14px 16px 6px;
+    }
+    &.is-home &__body {
+      padding-top: 12px;
     }
   }
 }

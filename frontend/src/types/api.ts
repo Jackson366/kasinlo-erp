@@ -745,7 +745,7 @@ export interface InvSettleBatchPayload {
   remark?: string
 }
 
-/** 数据概览 */
+/** 首页概览 */
 export interface InvOverview {
   customerCount: number
   activeCustomer: number

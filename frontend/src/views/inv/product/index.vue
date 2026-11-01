@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import ListFilters from '@/components/ListFilters.vue'
-import { useAdvancedFilters } from '@/composables/useAdvancedFilters'
-
 /**
  * 商品管理页：商品档案的完整维护入口，粒度是「商品 → 规格 → 计量单位」三层。
  *
@@ -745,19 +742,6 @@ onMounted(() => {
 })
 // 关键字录入即查询（防抖），不必再按回车
 const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(search)
-const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = useAdvancedFilters(
-  query,
-  () => [
-    {
-      key: 'status',
-      label: '状态',
-      emptyValue: undefined,
-      valueLabel: () => (query.status === 0 ? '停用' : '启用'),
-    },
-  ],
-  searchNow,
-)
-
 </script>
 
 <template>
@@ -829,8 +813,8 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
       <!-- 右栏：商品表格 -->
       <div class="product-main">
         <div class="page-card">
-          <!-- 常用条件保持可见，其余条件按需展开；业务动作独立排列。 -->
-          <div class="list-head list-head--filters">
+          <!-- 搜索与操作合并一行 -->
+          <div class="list-head">
             <span class="list-head__title">
               商品<em>共 {{ total }} 条</em>
               <em v-if="selection.length">
@@ -838,7 +822,35 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
                 <a @click="clearSelection(tableRef)">清空</a>
               </em>
             </span>
+            <el-form class="filter-form" label-width="76px" @submit.prevent>
+              <el-form-item label="关键字">
+                <el-input
+                  v-model="query.keyword"
+                  @input="searchSoon"
+                  placeholder="编码 / 名称 / 条码 / 规格"
+                  clearable
+                  @keyup.enter="searchNow"
+                />
+              </el-form-item>
+              <el-form-item label="分类">
+                <el-select v-model="query.categoryId" placeholder="全部" clearable @change="searchNow">
+                  <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="状态">
+                <el-select v-model="query.status" placeholder="全部" clearable>
+                  <el-option label="启用" :value="1" />
+                  <el-option label="停用" :value="0" />
+                </el-select>
+              </el-form-item>
+            </el-form>
             <div class="list-head__actions">
+              <el-button type="primary" @click="searchNow">
+                <AppIcon name="Search" />
+                <span>查询</span>
+              </el-button>
+              <el-button @click="cancelSearch(); reset()">重置</el-button>
+              <span class="list-head__divider" />
               <el-button v-if="selection.length" v-perm="'inv:product:delete'" :loading="batchRunning" @click="batchDelete">
                 批量删除
               </el-button>
@@ -854,37 +866,6 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
                 <AppIcon name="Refresh" />
               </el-button>
             </div>
-            <ListFilters :active-filters="advancedFilters" @clear="clearAdvancedFilter">
-              <el-form-item label="关键字">
-                <el-input
-                  v-model="query.keyword"
-                  @input="searchSoon"
-                  placeholder="编码 / 名称 / 条码 / 规格"
-                  clearable
-                  @keyup.enter="searchNow"
-                />
-              </el-form-item>
-              <el-form-item label="分类">
-                <el-select v-model="query.categoryId" placeholder="全部" clearable @change="searchNow">
-                  <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
-                </el-select>
-              </el-form-item>
-              <template #actions>
-                <el-button type="primary" @click="searchNow">
-                  <AppIcon name="Search" />
-                  <span>查询</span>
-                </el-button>
-                <el-button @click="cancelSearch(); reset()">重置</el-button>
-              </template>
-              <template #advanced>
-                <el-form-item label="状态">
-                  <el-select v-model="query.status" placeholder="全部" clearable>
-                    <el-option label="启用" :value="1" />
-                    <el-option label="停用" :value="0" />
-                  </el-select>
-                </el-form-item>
-              </template>
-            </ListFilters>
           </div>
 
       <el-table
@@ -1409,6 +1390,24 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
 .product-main {
   flex: 1;
   min-width: 0; // 否则表格会把弹性盒撑破，出现横向滚动
+}
+
+// 商品页右侧卡片比其它列表窄（左边还有分类栏），宽屏下也可能放不下
+// 「筛选字段 + 查询/重置 + 业务动作」。按卡片自身宽度把操作串到下一行，
+// 避免 165px 固定宽度的字段溢出压住查询按钮。
+.product-main .page-card {
+  container-type: inline-size;
+}
+
+@container (max-width: 900px) {
+  .list-head {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 12px;
+
+    > .list-head__actions {
+      justify-content: flex-start;
+    }
+  }
 }
 
 // 分类节点：名称占满剩余宽度，操作按钮**常显**。

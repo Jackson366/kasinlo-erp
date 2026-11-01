@@ -13,7 +13,7 @@ export const routes: RouteRecord[] = [
     path: `/${group}`,
     component: '',
     meta: {
-      title: group === 'inv' ? '进销存' : '系统管理',
+      title: group === 'inv' ? '进销存' : '系统',
       icon: group === 'inv' ? 'Goods' : 'Setting',
       hidden: false,
       keepAlive: false,

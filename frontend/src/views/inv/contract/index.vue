@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import ListFilters from '@/components/ListFilters.vue'
-import { useAdvancedFilters } from '@/composables/useAdvancedFilters'
-
 /**
  * 合同管理台账（含付款计划、验收、质保与期次收付款）。
  *
@@ -917,35 +914,55 @@ onMounted(() => {
 })
 
 const attachType: InvAttachBizType = 'contract'
-const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = useAdvancedFilters(
-  query,
-  () => [
-    {
-      key: 'bizType',
-      label: '类型',
-      emptyValue: '' as const,
-      valueLabel: () => (query.bizType === 'purchase' ? '采购合同' : '销售合同'),
-    },
-    {
-      key: 'dateRange',
-      label: '签订日期',
-      emptyValue: null,
-      valueLabel: () => query.dateRange?.join(' 至 ') || '',
-    },
-  ],
-  searchNow,
-)
-
 </script>
 
 <template>
   <div class="contract-page">
     <div class="page-card">
-      <div class="list-head list-head--filters">
+      <div class="list-head">
         <span class="list-head__title">
           合同管理<em>共 {{ total }} 份</em>
         </span>
+        <el-form class="filter-form" label-width="76px" @submit.prevent>
+          <el-form-item label="关键字">
+            <el-input
+              v-model="query.keyword"
+              placeholder="编号 / 名称 / 往来单位 / 业务员"
+              clearable
+              @input="searchSoon"
+              @keyup.enter="searchNow"
+            />
+          </el-form-item>
+          <el-form-item label="类型">
+            <el-select v-model="query.bizType" placeholder="全部" clearable>
+              <el-option label="采购合同" value="purchase" />
+              <el-option label="销售合同" value="sales" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="阶段">
+            <el-select v-model="query.stage" placeholder="全部" clearable>
+              <el-option v-for="s in stageOptions" :key="s.value" :label="s.label" :value="s.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="签订日期">
+            <el-date-picker
+              v-model="query.dateRange"
+              type="daterange"
+              value-format="YYYY-MM-DD"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              unlink-panels
+            />
+          </el-form-item>
+        </el-form>
         <div class="list-head__actions">
+          <el-button type="primary" @click="searchNow">
+            <AppIcon name="Search" />
+            <span>查询</span>
+          </el-button>
+          <el-button @click="cancelSearch(); reset()">重置</el-button>
+          <span class="list-head__divider" />
           <el-button :loading="exporting" @click="exportRows">导出</el-button>
           <el-button @click="printVisible = true">打印</el-button>
           <el-button v-perm="'inv:contract:create'" type="primary" @click="openCreate">
@@ -956,48 +973,6 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
             <AppIcon name="Refresh" />
           </el-button>
         </div>
-        <ListFilters :active-filters="advancedFilters" @clear="clearAdvancedFilter">
-          <el-form-item label="关键字">
-            <el-input
-              v-model="query.keyword"
-              placeholder="编号 / 名称 / 往来单位 / 业务员"
-              clearable
-              @input="searchSoon"
-              @keyup.enter="searchNow"
-            />
-          </el-form-item>
-          <el-form-item label="阶段">
-            <el-select v-model="query.stage" placeholder="全部" clearable>
-              <el-option v-for="s in stageOptions" :key="s.value" :label="s.label" :value="s.value" />
-            </el-select>
-          </el-form-item>
-          <template #actions>
-            <el-button type="primary" @click="searchNow">
-              <AppIcon name="Search" />
-              <span>查询</span>
-            </el-button>
-            <el-button @click="cancelSearch(); reset()">重置</el-button>
-          </template>
-          <template #advanced>
-            <el-form-item label="类型">
-              <el-select v-model="query.bizType" placeholder="全部" clearable>
-                <el-option label="采购合同" value="purchase" />
-                <el-option label="销售合同" value="sales" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="签订日期">
-              <el-date-picker
-                v-model="query.dateRange"
-                type="daterange"
-                value-format="YYYY-MM-DD"
-                range-separator="至"
-                start-placeholder="开始日期"
-                end-placeholder="结束日期"
-                unlink-panels
-              />
-            </el-form-item>
-          </template>
-        </ListFilters>
       </div>
 
       <el-table v-loading="loading" :data="rows" stripe>

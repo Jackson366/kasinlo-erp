@@ -184,7 +184,7 @@ scope.EnsureDeptWritable(id) // 写操作前的闸门
 | --- | --- | --- | --- | --- |
 | `super_admin`（ID=1） | 62 | 全部权限 | 全部 | 不可删除、不可裁剪权限 |
 | `system_admin`（ID=2） | 49 | 除导出类外的管理权限 | 本部门及以下 | 不含任何删除权限 |
-| `viewer`（ID=3） | 18 | 只读（可见进销存与系统管理的列表页，**不含任何导出**） | 全部 | 能看列表但不能批量取数 |
+| `viewer`（ID=3） | 18 | 只读（可见进销存与系统的列表页，**不含任何导出**） | 全部 | 能看列表但不能批量取数 |
 
 > 「能查看列表」与「能批量导出」被刻意划成两个风险等级 ——
 > 导出等于把整批数据带走，所以只读角色不授予 `*:export`。
@@ -289,11 +289,11 @@ src/
 ├── types/api.ts      与后端 DTO 一一对应（含进销存全部类型）
 ├── utils/            auth（令牌）/ request（axios）/ download / format（含 exportStamp、
 │                     formatMoney / formatQty）/ theme
-└── views/            页面：system/ 系统管理、inv/ 进销存
+└── views/            页面：system/ 系统、inv/ 进销存
     └── inv/
         ├── components/  PartyPage.vue（客户/供应商通用主体）
         │                OrderPage.vue（采购/销售单据通用主体）
-        ├── overview/    数据概览（登录落地页）
+        ├── overview/    首页（登录落地页）
         ├── purchase/    采购管理  sales/ 销售管理
         ├── stock/       库存管理（出入库单据 + 库存查询两个 tab）
         ├── finance/     应收应付   report/ 报表中心
@@ -301,7 +301,7 @@ src/
         └── customer/    客户管理  supplier/ 供应商管理
 ```
 
-系统管理那几个列表页（user/role/menu/dept 与日志页）的查询状态与弹窗骨架
+系统那几个列表页（user/role/menu/dept 与日志页）的查询状态与弹窗骨架
 都复用上面的组合式函数，页面里只写「调哪个接口」和「本页独有的附加动作」，
 约定见 `AGENTS.md` §3。进销存页同样照抄这套抽象：客户与供应商共用
 `PartyPage.vue`（靠 `bizType` 区分），采购与销售共用 `OrderPage.vue`，
@@ -321,7 +321,7 @@ src/
 先看模块总览，再看菜单树、内置角色与权限码是怎么分配的。
 
 > **进销存就是这套后台的主线业务**（`inv`），框架自带的 `dashboard`（仪表盘）
-> 已整体下线。登录后的落地页是「数据概览」—— 一个**顶级菜单**，
+> 已整体下线。登录后的落地页是「首页」—— 一个**顶级菜单**，
 > 由前端 `firstLeafPath(menus)` 按菜单树顺序推导而来；其余 10 个进销存页面
 > 归「进销存」目录。老库升级时会自动完成这两步迁移（见 `docs/UPGRADE.md`）。
 
@@ -585,7 +585,7 @@ cp test/testdata/config.example.yaml test/testdata/config.yaml
 
 按侧边栏顺序走一遍，即可覆盖全部功能：
 
-### 进销存 → 数据概览
+### 首页
 
 **登录后的默认落地页。** 五张指标卡（客户总数 / 本月销售额 / 应收总额 / 库存商品 / 待处理单据）、
 近 30 天销售与采购趋势面积图、品类销售占比环形图、本月客户销售排行。
@@ -1135,7 +1135,7 @@ cp test/testdata/config.example.yaml test/testdata/config.yaml
 列表行一次带出「余额 + 单据数」，避免逐行再发一次请求。
 被单据引用过的往来单位不可删除（返回 40900），否则历史单据会指向一个查不到的单位。
 
-### 系统管理 → 用户管理
+### 系统 → 用户管理
 
 列表支持按用户名/昵称/手机号搜索、按部门与状态筛选、按创建时间排序。
 
@@ -1155,13 +1155,13 @@ cp test/testdata/config.example.yaml test/testdata/config.yaml
 - 密码列留空使用默认密码 `Aa123456`
 - 单文件上限 5 MB、单次最多 1000 行
 
-### 系统管理 → 角色管理
+### 系统 → 角色管理
 
 - 每个角色有两个维度：**菜单权限**（功能）与**数据范围**（数据）。
 - 「分配菜单」用树形勾选，父节点会随子节点自动带上。
 - 内置角色（`super_admin` / `system_admin` / `viewer`）不可删除；超管的权限不可裁剪。
 
-### 系统管理 → 菜单管理
+### 系统 → 菜单管理
 
 这是**整个系统的骨架**，理解它就理解了权限与路由的关系。
 
@@ -1182,12 +1182,12 @@ cp test/testdata/config.example.yaml test/testdata/config.yaml
 | `keepAlive` | 是否缓存页面 |
 | `hidden` | 是否在侧边栏隐藏（如详情页） |
 
-### 系统管理 → 部门管理
+### 系统 → 部门管理
 
 树形结构，支持拖拽排序。**部门下有用户时不允许删除**（会提示先转移用户）。
 部门直接参与数据范围计算：「本部门及以下」就是沿这棵树向下展开。
 
-### 系统管理 → 日志管理
+### 系统 → 日志管理
 
 - **操作日志**：谁、什么时候、在哪个模块做了什么、耗时多少、请求体是什么。
   敏感字段（`password` / `oldPassword` / `refreshToken`）落库前**递归脱敏**。
@@ -1631,7 +1631,7 @@ func Modules(cfg *config.Config) []module.Module {
 	return []module.Module{
 		// ... 框架模块
 		module.Group(
-			module.MenuNode{Name: "System", Title: "系统管理", Icon: "Setting",
+			module.MenuNode{Name: "System", Title: "系统", Icon: "Setting",
 				Path: "/system", Redirect: "/system/user", Sort: 2},
 			user.Module(), role.Module(), menu.Module(), dept.Module(), log.Module(cfg.Security),
 		),

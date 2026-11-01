@@ -252,3 +252,57 @@ func lookupUserStatus(t *testing.T, id int64) int16 {
 	}
 	return rows[0].Status
 }
+
+// TestUpgradeRenamesBuiltinMenus 内置菜单改名必须对存量库生效，且不覆盖管理员自定义标题。
+//
+// 新库由模块清单直接写入新标题，根本走不到改名分支；老库里 title 仍是旧值，
+// 只有 seed 启动时显式 UPDATE 才会变。这里先造出「老库」状态，再跑一次真实种子入口。
+func TestUpgradeRenamesBuiltinMenus(t *testing.T) {
+	setup(t)
+	db := database.DB()
+
+	setTitle := func(name, title string) {
+		t.Helper()
+		if err := db.Model(&model.Menu{}).Where("name = ?", name).
+			Update("title", title).Error; err != nil {
+			t.Fatalf("准备菜单标题 %s=%s 失败: %v", name, title, err)
+		}
+	}
+	titleOf := func(name string) string {
+		t.Helper()
+		var m model.Menu
+		if err := db.Where("name = ?", name).Take(&m).Error; err != nil {
+			t.Fatalf("读取菜单 %s 失败: %v", name, err)
+		}
+		return m.Title
+	}
+
+	// 老库状态：两个内置标题是旧值；另一个内置节点已被管理员改成自定义名字
+	setTitle("InvOverview", "数据概览")
+	setTitle("System", "系统管理")
+	setTitle("InvStock", "仓库")
+	t.Cleanup(func() {
+		// 共享测试库：恢复内置标题，避免影响其它用例
+		for name, title := range map[string]string{
+			"InvOverview": "首页",
+			"System":      "系统",
+			"InvStock":    "库存管理",
+		} {
+			_ = db.Model(&model.Menu{}).Where("name = ?", name).Update("title", title).Error
+		}
+	})
+
+	if err := seed.Run(seed.Options{DemoData: true}); err != nil {
+		t.Fatalf("存量库重跑种子失败: %v", err)
+	}
+
+	if got := titleOf("InvOverview"); got != "首页" {
+		t.Fatalf("首页标题未从旧值纠正: %q", got)
+	}
+	if got := titleOf("System"); got != "系统" {
+		t.Fatalf("系统分组标题未从旧值纠正: %q", got)
+	}
+	if got := titleOf("InvStock"); got != "仓库" {
+		t.Fatalf("管理员自定义标题被覆盖: %q", got)
+	}
+}

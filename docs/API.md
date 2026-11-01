@@ -314,14 +314,14 @@
     "name": "InvOverview",
     "path": "/inv/overview",
     "component": "inv/overview/index",
-    "meta": { "title": "数据概览", "icon": "Odometer", "keepAlive": true, "permission": "inv:overview:view" }
+    "meta": { "title": "首页", "icon": "Odometer", "keepAlive": true, "permission": "inv:overview:view" }
   },
   {
     "id": 10,
     "name": "System",
     "path": "/system",
     "component": "",
-    "meta": { "title": "系统管理", "icon": "Setting" },
+    "meta": { "title": "系统", "icon": "Setting" },
     "children": [
       { "id": 11, "name": "SystemUser", "path": "/system/user", "component": "system/user/index", "meta": { "title": "用户管理" } }
     ]
@@ -481,14 +481,14 @@
 > 只有 `inv:sales:list` 的账号传 `bizType=purchase` 会被拒（403），
 > 否则换个查询参数就能读到另一条业务线的单据。
 
-### 11.1 数据概览
+### 11.1 首页概览
 
 | 方法 | 路径 | 权限码 | 说明 |
 | --- | --- | --- | --- |
 | GET | `/api/v1/inv/overview` | `inv:overview:view` | 客户数/活跃客户/本月新增、应收/应付总额、本月销售/采购、待处理单据、商品数与预警数 |
 
 **这是登录后的落地页**。落地页由前端 `firstLeafPath(menus)` 按菜单树顺序推导 ——
-「数据概览」是**顶级菜单**且 sort=1，第一个叶子就是它（见 AGENTS.md §5.62）。
+「首页」是**顶级菜单**且 sort=1，第一个叶子就是它（见 AGENTS.md §5.62）。
 
 ### 11.2 基础资料（客户 / 供应商 / 商品 / 商品分类）
 

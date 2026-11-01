@@ -38,15 +38,15 @@ func Modules(cfg *config.Config) []module.Module {
 		auth.Module(cfg.Security),
 		// 登录后即可用，没有菜单（入口在右上角头像下拉里）
 		profile.Module(),
-		// 业务模块：进销存。「数据概览」是它注册的顶级菜单（Sort=1），
+		// 业务模块：进销存。「首页」是它注册的顶级菜单（Sort=1），
 		// 登录后的落地页就是它；其余 8 个页面归「进销存」目录（Sort=2）。
 		inv.Module(),
-		// 「系统管理」分组。分组挂在哪个目录下属于导航结构，
+		// 「系统」分组。分组挂在哪个目录下属于导航结构，
 		// 是组装决策，所以在这里声明 —— 各系统模块不必知道自己被归在哪个目录。
 		// Sort=3：排在两个进销存顶级入口之后。
 		module.Group(
 			module.MenuNode{
-				Name: "System", Title: "系统管理", Icon: "Setting",
+				Name: "System", Title: "系统", Icon: "Setting",
 				Path: "/system", Redirect: "/system/user", Sort: 3,
 			},
 			user.Module(),
@@ -55,7 +55,7 @@ func Modules(cfg *config.Config) []module.Module {
 			dept.Module(),
 			log.Module(cfg.Security),
 			// 运维：备份 / 恢复 / 数据清理 / 巡检 / 系统升级。
-			// 放「系统管理」下而不是独立顶级菜单：它是偶发动作，
+			// 放「系统」下而不是独立顶级菜单：它是偶发动作，
 			// 不该和每天都在用的进销存入口抢位置。
 			ops.Module(cfg),
 		),

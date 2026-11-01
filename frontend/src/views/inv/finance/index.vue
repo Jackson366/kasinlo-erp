@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import ListFilters from '@/components/ListFilters.vue'
-import { useAdvancedFilters } from '@/composables/useAdvancedFilters'
-
 /**
  * 应收应付页：应收（销售）与应付（采购）两个视图，结构一致。
  * 汇总数据随列表接口一并返回，避免多打一次请求。
@@ -309,19 +306,6 @@ follow('/inv/finance', () => {
   rows.value = []
   void load()
 })
-const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = useAdvancedFilters(
-  query,
-  () => [
-    {
-      key: 'source',
-      label: '来源',
-      emptyValue: '' as const,
-      valueLabel: () => (query.source === 'plan' ? '合同期次' : '单据'),
-    },
-  ],
-  searchNow,
-)
-
 </script>
 
 <template>
@@ -341,26 +325,10 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
         <el-tab-pane label="应付明细" name="payable" />
       </el-tabs>
 
-      <!-- 常用条件保持可见，其余条件按需展开；业务动作独立排列。 -->
-      <div class="list-head list-head--filters">
+      <!-- 搜索与操作合并一行 -->
+      <div class="list-head">
         <span class="list-head__title">{{ tabLabel }}<em>共 {{ total }} 条</em></span>
-        <div class="list-head__actions">
-          <el-button
-            v-perm="'inv:finance:settle'"
-            type="primary"
-            plain
-            :disabled="!selection.length"
-            @click="openBatch"
-          >
-            {{ activeTab === 'receivable' ? '批量收款' : '批量付款' }}{{ selection.length ? `（${selection.length}）` : '' }}
-          </el-button>
-          <el-button :loading="exporting" @click="handleExport">导出</el-button>
-          <el-button @click="printVisible = true">打印</el-button>
-          <el-button @click="load">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
-        <ListFilters :active-filters="advancedFilters" @clear="clearAdvancedFilter">
+        <el-form class="filter-form" label-width="76px" @submit.prevent>
           <el-form-item label="关键字">
             <el-input
               v-model="query.keyword"
@@ -378,22 +346,35 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
               <el-option label="已逾期" value="overdue" />
             </el-select>
           </el-form-item>
-          <template #actions>
-            <el-button type="primary" @click="searchNow">
-              <AppIcon name="Search" />
-              <span>查询</span>
-            </el-button>
-            <el-button @click="cancelSearch(); reset()">重置</el-button>
-          </template>
-          <template #advanced>
-            <el-form-item label="来源">
-              <el-select v-model="query.source" placeholder="全部" clearable>
-                <el-option label="单据" value="order" />
-                <el-option label="合同期次" value="plan" />
-              </el-select>
-            </el-form-item>
-          </template>
-        </ListFilters>
+          <el-form-item label="来源">
+            <el-select v-model="query.source" placeholder="全部" clearable>
+              <el-option label="单据" value="order" />
+              <el-option label="合同期次" value="plan" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <div class="list-head__actions">
+          <el-button type="primary" @click="searchNow">
+            <AppIcon name="Search" />
+            <span>查询</span>
+          </el-button>
+          <el-button @click="cancelSearch(); reset()">重置</el-button>
+          <span class="list-head__divider" />
+          <el-button
+            v-perm="'inv:finance:settle'"
+            type="primary"
+            plain
+            :disabled="!selection.length"
+            @click="openBatch"
+          >
+            {{ activeTab === 'receivable' ? '批量收款' : '批量付款' }}{{ selection.length ? `（${selection.length}）` : '' }}
+          </el-button>
+          <el-button :loading="exporting" @click="handleExport">导出</el-button>
+          <el-button @click="printVisible = true">打印</el-button>
+          <el-button @click="load">
+            <AppIcon name="Refresh" />
+          </el-button>
+        </div>
       </div>
 
       <el-alert v-if="loadError" type="error" :closable="false" show-icon title="应收应付加载失败，请重新加载后办理。">
