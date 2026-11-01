@@ -8219,7 +8219,7 @@ const docTemplate = `{
                 },
                 "content": {
                     "type": "string",
-                    "maxLength": 8000
+                    "maxLength": 512000
                 },
                 "docType": {
                     "type": "string",

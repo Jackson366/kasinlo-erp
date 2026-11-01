@@ -692,7 +692,7 @@ type PrintTemplateReq struct {
 	Name    string `json:"name" binding:"required,max=64" label:"模板名称"`
 	DocType string `json:"docType" binding:"omitempty,max=32" label:"单据类型"`
 	Paper   string `json:"paper" binding:"omitempty,oneof=A4 A5" label:"纸张"`
-	Content string `json:"content" binding:"omitempty,max=8000" label:"版式配置"`
+	Content string `json:"content" binding:"omitempty,max=512000" label:"版式配置"`
 	Status  *int16 `json:"status" binding:"omitempty,oneof=0 1" label:"状态"`
 	Remark  string `json:"remark" binding:"omitempty,max=255" label:"备注"`
 }

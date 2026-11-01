@@ -205,7 +205,7 @@ public class MasterDataService {
         }
         if (h.startsWith("PrintTemplate")) {
             String content = s(b, "content");
-            require(content.isBlank() || content.startsWith("{"), "打印模板配置必须为 JSON 对象");
+            PrintContentValidator.validate(content);
             data.putIfAbsent("paper", "A4");
         }
         if (id == 0) id = db.insert(table, data);

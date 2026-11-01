@@ -108,7 +108,76 @@ export interface PrintFooterConfig {
   signLabel: string
 }
 
+/** 位置以明细下方落款区左上角为原点，单位 mm，跟随末页落款而非固定页码。 */
+export interface PrintStampConfig {
+  enabled: boolean
+  image: string
+  xMm: number
+  yMm: number
+  widthMm: number
+  heightMm: number
+}
+
+export const DEFAULT_STAMP: PrintStampConfig = {
+  enabled: false,
+  image: '',
+  xMm: 100,
+  yMm: 0,
+  widthMm: 40,
+  heightMm: 40,
+}
+export const MAX_STAMP_BYTES = 256 * 1024
+export const MAX_PRINT_CONTENT = 512000
+
+export function stampImageSource(value: unknown): string {
+  return typeof value === 'string' &&
+    value.length <= Math.ceil(MAX_STAMP_BYTES / 3) * 4 + 22 &&
+    /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(value)
+    ? value
+    : ''
+}
+
+export function normalizeStamp(value: unknown): PrintStampConfig {
+  const raw =
+    value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  const mm = (key: keyof PrintStampConfig, min: number, max: number) => {
+    const n = raw[key]
+    return typeof n === 'number' && Number.isFinite(n)
+      ? Math.min(max, Math.max(min, n))
+      : (DEFAULT_STAMP[key] as number)
+  }
+  return {
+    enabled: raw.enabled === true,
+    image: stampImageSource(raw.image),
+    xMm: mm('xMm', 0, 210),
+    yMm: mm('yMm', 0, 60),
+    widthMm: mm('widthMm', 10, 80),
+    heightMm: mm('heightMm', 10, 80),
+  }
+}
+
+/** 页边距内可用宽度；A5/更换页边距后约束印章不越出纸面。 */
+export function stampLayout(
+  stamp: PrintStampConfig,
+  paper: 'A4' | 'A5',
+  marginMm: number,
+) {
+  const width = Math.min(
+    stamp.widthMm,
+    (paper === 'A5' ? 148 : 210) - 2 * marginMm,
+  )
+  return {
+    ...stamp,
+    widthMm: width,
+    xMm: Math.min(
+      stamp.xMm,
+      Math.max(0, (paper === 'A5' ? 148 : 210) - 2 * marginMm - width),
+    ),
+  }
+}
+
 export interface PrintContentConfig {
+  stamp: PrintStampConfig
   /** 单据标题；留空时按单据方向显示「入库单 / 出库单 / 采购单 / 销售单」 */
   title: string
   columns: PrintColumn[]
@@ -138,11 +207,18 @@ export const ALL_COLUMNS: PrintColumn[] = [
  * 默认列集合：纸质送货单的七列（名称 / 规格型号 / 计量单位 / 单价 / 数量 / 金额 / 备注）。
  * 序号与商品编码留在列池里按需添加——纸面窄的时候，多两列编号会让商品名挤成两行。
  */
-export const DEFAULT_COLUMNS: PrintColumn[] = ['name', 'spec', 'unit', 'price', 'qty', 'amount', 'note'].map(
-  (k) => ({ ...ALL_COLUMNS.find((c) => c.key === k)! }),
-)
+export const DEFAULT_COLUMNS: PrintColumn[] = [
+  'name',
+  'spec',
+  'unit',
+  'price',
+  'qty',
+  'amount',
+  'note',
+].map((k) => ({ ...ALL_COLUMNS.find((c) => c.key === k)! }))
 
 export const DEFAULT_CONTENT: PrintContentConfig = {
+  stamp: { ...DEFAULT_STAMP },
   title: '',
   columns: DEFAULT_COLUMNS.map((c) => ({ ...c })),
   meta: [],
@@ -188,7 +264,10 @@ export type SheetMode = 'order' | 'stock'
  * 这正是纸质送货单的抬头。业务员 / 制单人默认不亮但留在列表里——
  * 纸面窄的时候多两个字段就会折行，需要的人在设计器里勾一下即可。
  */
-export function defaultMetaFields(mode: SheetMode, partyLabel: string): PrintMetaField[] {
+export function defaultMetaFields(
+  mode: SheetMode,
+  partyLabel: string,
+): PrintMetaField[] {
   if (mode === 'order') {
     return [
       { key: 'party', label: partyLabel || '往来单位', visible: true },
@@ -213,7 +292,11 @@ export function defaultSignItems(mode: SheetMode): string[] {
 }
 
 /** 默认收货声明。bizType / direction 决定「款未付」这类措辞是否成立 */
-export function defaultDeclaration(mode: SheetMode, bizType?: string, direction?: string): string {
+export function defaultDeclaration(
+  mode: SheetMode,
+  bizType?: string,
+  direction?: string,
+): string {
   if (mode === 'order') {
     return bizType === 'purchase'
       ? '本人确认上述货物数量、型号、外观均无误，货款按约定结算。'
@@ -225,7 +308,11 @@ export function defaultDeclaration(mode: SheetMode, bizType?: string, direction?
 }
 
 /** 默认签字处标签 */
-export function defaultSignLabel(mode: SheetMode, partyLabel: string, direction?: string): string {
+export function defaultSignLabel(
+  mode: SheetMode,
+  partyLabel: string,
+  direction?: string,
+): string {
   if (mode === 'order') return `${partyLabel || '往来单位'}签字`
   return direction === 'in' ? '仓管签字' : '客户签字'
 }
@@ -247,7 +334,9 @@ function legacyColumns(raw: Record<string, unknown>): PrintColumn[] {
   ]
   const on = new Set(flags.filter(([, f]) => raw[f] === true).map(([k]) => k))
   // 名称与数量是主体，永远在；其余按老模板的布尔开关取舍
-  const kept = DEFAULT_COLUMNS.filter((c) => c.key === 'name' || c.key === 'qty' || on.has(c.key))
+  const kept = DEFAULT_COLUMNS.filter(
+    (c) => c.key === 'name' || c.key === 'qty' || on.has(c.key),
+  )
   return kept.map((c) => ({ ...c }))
 }
 
@@ -265,6 +354,7 @@ function legacyColumns(raw: Record<string, unknown>): PrintColumn[] {
  */
 export function parseContent(raw?: string | null): PrintContentConfig {
   const base: PrintContentConfig = {
+    stamp: { ...DEFAULT_STAMP },
     title: '',
     columns: DEFAULT_COLUMNS.map((c) => ({ ...c })),
     meta: [],
@@ -279,8 +369,11 @@ export function parseContent(raw?: string | null): PrintContentConfig {
   } catch {
     return base
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    return base
   const cfg: PrintContentConfig = {
     ...base,
+    stamp: normalizeStamp(parsed.stamp),
     title: typeof parsed.title === 'string' ? parsed.title : base.title,
     header: { ...base.header, ...((parsed.header as object) || {}) },
     page: { ...base.page, ...((parsed.page as object) || {}) },
@@ -294,15 +387,23 @@ export function parseContent(raw?: string | null): PrintContentConfig {
     cfg.footer.text = parsed.footer
   }
   // 老结构的 margin 是 px（预览内边距），与 @page 毫米语义不同，缺 marginMm 就用默认
-  if (typeof cfg.page.marginMm !== 'number' || !Number.isFinite(cfg.page.marginMm)) {
+  if (
+    typeof cfg.page.marginMm !== 'number' ||
+    !Number.isFinite(cfg.page.marginMm)
+  ) {
     cfg.page.marginMm = DEFAULT_CONTENT.page.marginMm
   }
+  cfg.page.marginMm = Math.max(0, Math.min(30, cfg.page.marginMm))
   if (Array.isArray(parsed.meta)) {
-    cfg.meta = (parsed.meta as PrintMetaField[]).filter((m) => m && typeof m.key === 'string')
+    cfg.meta = (parsed.meta as PrintMetaField[]).filter(
+      (m) => m && typeof m.key === 'string',
+    )
   } else {
     cfg.meta = []
   }
-  const cols = Array.isArray(parsed.columns) ? (parsed.columns as PrintColumn[]) : null
+  const cols = Array.isArray(parsed.columns)
+    ? (parsed.columns as PrintColumn[])
+    : null
   if (cols && cols.length > 0) {
     cfg.columns = cols
   } else {
@@ -321,7 +422,14 @@ export function parseContent(raw?: string | null): PrintContentConfig {
     cfg.columns = merged
   }
   // v2 及更早的模板没有声明字段：启用声明行，并关掉三联签收栏
-  if (typeof cfg.footer.declaration !== 'string' || !('declaration' in (parsed.footer as object || {}))) {
+  if (
+    typeof cfg.footer.declaration !== 'string' ||
+    !(
+      parsed.footer &&
+      typeof parsed.footer === 'object' &&
+      'declaration' in parsed.footer
+    )
+  ) {
     cfg.footer.showSign = false
   }
   if (typeof cfg.footer.declaration !== 'string') cfg.footer.declaration = ''
@@ -340,9 +448,14 @@ export function colVisible(cfg: PrintContentConfig, key: ColumnKey): boolean {
  * 出入库单没有成交价：模板里即便留着单价 / 金额列（老模板、跨单据复用），
  * 打出来也只会是一列 0.00。这里按纸面模式直接剔掉，不留空账。
  */
-export function visibleCols(cfg: PrintContentConfig, mode?: SheetMode): PrintColumn[] {
+export function visibleCols(
+  cfg: PrintContentConfig,
+  mode?: SheetMode,
+): PrintColumn[] {
   return cfg.columns.filter(
-    (c) => c.visible && !(mode === 'stock' && (c.key === 'price' || c.key === 'amount')),
+    (c) =>
+      c.visible &&
+      !(mode === 'stock' && (c.key === 'price' || c.key === 'amount')),
   )
 }
 
@@ -402,6 +515,9 @@ export function applyPrintPage(paper: 'A4' | 'A5', marginMm: number): void {
     el.id = id
     document.head.appendChild(el)
   }
-  const mm = Number.isFinite(marginMm) && marginMm > 0 ? marginMm : DEFAULT_CONTENT.page.marginMm
+  const mm =
+    Number.isFinite(marginMm) && marginMm >= 0
+      ? marginMm
+      : DEFAULT_CONTENT.page.marginMm
   el.textContent = `@page { size: ${paper} portrait; margin: ${mm}mm; }`
 }

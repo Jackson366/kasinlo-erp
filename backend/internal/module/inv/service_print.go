@@ -49,6 +49,9 @@ func (s *Service) PrintTemplateList(q page.Query) ([]PrintTemplateRow, int64, er
 
 // PrintTemplateCreate 新增打印模板。
 func (s *Service) PrintTemplateCreate(req PrintTemplateReq) (int64, error) {
+	if err := validatePrintContent(req.Content); err != nil {
+		return 0, err
+	}
 	if err := s.printTemplateFree(req.Code, 0); err != nil {
 		return 0, err
 	}
@@ -72,6 +75,9 @@ func (s *Service) PrintTemplateCreate(req PrintTemplateReq) (int64, error) {
 
 // PrintTemplateUpdate 修改打印模板。
 func (s *Service) PrintTemplateUpdate(id int64, req PrintTemplateReq) error {
+	if err := validatePrintContent(req.Content); err != nil {
+		return err
+	}
 	if err := s.printTemplateFree(req.Code, id); err != nil {
 		return err
 	}

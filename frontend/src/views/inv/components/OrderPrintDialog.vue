@@ -6,9 +6,14 @@
  * 取数（单据详情 + 启用中的模板）、模板选择、版式渲染与调起系统打印都在这里。
  * 模板按 docType 匹配业务线（采购单 / 销售单），都不匹配则取第一个。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
+import { printSheet } from './printSheet'
 import { invApi } from '@/api'
-import type { InvOrderDetail, InvOrderRow, InvPrintTemplateRow } from '@/types/api'
+import type {
+  InvOrderDetail,
+  InvOrderRow,
+  InvPrintTemplateRow,
+} from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import { parseContent, type PrintContentConfig } from './printConfig'
 import PrintSheet from './PrintSheet.vue'
@@ -25,13 +30,30 @@ const emit = defineEmits<{ printed: [] }>()
 
 const visible = ref(false)
 const loading = ref(false)
+const printing = ref(false)
+const showStamp = ref(true)
+const printError = ref('')
+const previewRef = ref<HTMLElement>()
 const detail = ref<InvOrderDetail | null>(null)
 const templates = ref<InvPrintTemplateRow[]>([])
 const templateId = ref<number | null>(null)
 
-const currentTemplate = computed(() => templates.value.find((t) => t.id === templateId.value))
-const paper = computed(() => (currentTemplate.value?.paper === 'A5' ? 'A5' : 'A4'))
-const cfg = computed<PrintContentConfig>(() => parseContent(currentTemplate.value?.content))
+const currentTemplate = computed(() =>
+  templates.value.find((t) => t.id === templateId.value),
+)
+const paper = computed(() =>
+  currentTemplate.value?.paper === 'A5' ? 'A5' : 'A4',
+)
+const cfg = computed<PrintContentConfig>(() =>
+  parseContent(currentTemplate.value?.content),
+)
+watch(templateId, () => {
+  showStamp.value = true
+  printError.value = ''
+})
+const missingStamp = computed(
+  () => cfg.value.stamp.enabled && showStamp.value && !cfg.value.stamp.image,
+)
 
 /**
  * 纸面标题优先级：模板里填的标题 > 模板的单据类型（如「销货出库单」）
@@ -49,6 +71,8 @@ const title = computed(() => {
 
 /** 打开并取数。模板默认选与业务线匹配的类型，都没有则取第一个 */
 async function open(row: InvOrderRow): Promise<void> {
+  showStamp.value = true
+  printError.value = ''
   visible.value = true
   loading.value = true
   detail.value = null
@@ -65,22 +89,35 @@ async function open(row: InvOrderRow): Promise<void> {
     const key = props.bizType === 'purchase' ? '采购' : '销售'
     const sameLine = t.list.filter((x) => (x.docType || '').startsWith(key))
     const matched =
-      sameLine.find((x) => (x.docType || '').includes('订单')) ?? sameLine[0] ?? t.list[0]
+      sameLine.find((x) => (x.docType || '').includes('订单')) ??
+      sameLine[0] ??
+      t.list[0]
     templateId.value = matched?.id ?? null
   } finally {
     loading.value = false
   }
 }
 
-function doPrint(): void {
-  if (!detail.value) return
-  document.body.classList.add('printing')
-  const done = () => document.body.classList.remove('printing')
-  window.addEventListener('afterprint', done, { once: true })
-  window.print()
-  // 部分浏览器（尤其 Firefox 旧版）不触发 afterprint，兜底摘掉类
-  setTimeout(done, 2000)
-  emit('printed')
+async function doPrint(): Promise<void> {
+  if (
+    !detail.value ||
+    !previewRef.value ||
+    printing.value ||
+    missingStamp.value
+  )
+    return
+  printing.value = true
+  printError.value = ''
+  try {
+    await nextTick()
+    if (!visible.value) return
+    await printSheet(previewRef.value)
+    emit('printed')
+  } catch {
+    printError.value = '印章或 Logo 加载失败，请重新打开预览后重试'
+  } finally {
+    printing.value = false
+  }
 }
 
 defineExpose({ open })
@@ -94,12 +131,15 @@ defineExpose({ open })
     top="4vh"
     :close-on-click-modal="false"
     destroy-on-close
+    :close-on-press-escape="!printing"
+    :show-close="!printing"
   >
     <div v-loading="loading" class="print-body">
       <div class="print-body__toolbar">
         <span class="print-body__label">打印模板</span>
         <el-select
           v-model="templateId"
+          :disabled="printing"
           placeholder="选择模板（未配置时按默认版式打印）"
           style="width: 320px"
         >
@@ -110,9 +150,18 @@ defineExpose({ open })
             :label="`${t.name}（${t.paper || 'A4'}）`"
           />
         </el-select>
+        <el-checkbox
+          v-if="cfg.stamp.enabled"
+          v-model="showStamp"
+          :disabled="printing"
+          >显示印章</el-checkbox
+        >
         <el-button
           type="primary"
-          :disabled="!detail || templates.length === 0"
+          :disabled="
+            loading || !detail || templates.length === 0 || missingStamp
+          "
+          :loading="printing"
           @click="doPrint"
         >
           <AppIcon name="Printer" />
@@ -122,12 +171,20 @@ defineExpose({ open })
           暂无启用中的模板，可到「打印模板」页新增
         </span>
         <span class="print-body__note">
-          出现日期 / 网址页眉页脚时，在打印对话框「更多设置」里把「边距」选为「无」即可去掉
+          出现日期 /
+          网址页眉页脚时，在打印对话框「更多设置」里把「边距」选为「无」即可去掉
         </span>
       </div>
 
-      <div v-if="detail" class="print-body__preview">
+      <p v-if="missingStamp" role="alert" class="print-body__hint">
+        模板未配置印章图片，请取消“显示印章”后打印，或到模板设计器补充图片。
+      </p>
+      <p v-if="printError" role="alert" class="print-body__hint">
+        {{ printError }}
+      </p>
+      <div v-if="detail" ref="previewRef" class="print-body__preview">
         <PrintSheet
+          :show-stamp="showStamp"
           mode="order"
           :detail="detail"
           :cfg="cfg"
@@ -148,6 +205,7 @@ defineExpose({ open })
     display: flex;
     align-items: center;
     gap: 12px;
+    flex-wrap: wrap;
     margin-bottom: 16px;
   }
 
@@ -170,36 +228,6 @@ defineExpose({ open })
     max-height: 72vh;
     overflow: auto;
     padding: 4px;
-  }
-}
-</style>
-
-<style lang="scss">
-/* 打印态：纸面以外的整页内容全部隐掉（与出入库单打印共用同一套全局规则） */
-@media print {
-  body.printing * {
-    visibility: hidden !important;
-  }
-
-  body.printing .print-body__preview {
-    max-height: none;
-    overflow: visible;
-    padding: 0;
-  }
-
-  body.printing .sheet {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: auto !important;
-    /* 页边距已由模板注入 @page（毫米），纸面自身留白归零，避免双重边距 */
-    padding: 0 !important;
-    box-shadow: none;
-  }
-
-  body.printing .sheet,
-  body.printing .sheet * {
-    visibility: visible !important;
   }
 }
 </style>
