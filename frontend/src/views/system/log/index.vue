@@ -257,18 +257,18 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
                 </el-button>
                 <el-button @click="cancelOpSearch(); resetOperations()">重置</el-button>
               </template>
+              <template #tools>
+                <el-button v-perm="'system:log:export'" :loading="exportingOp" @click="exportOperations">
+                  <AppIcon name="Download" />
+                  <span>导出</span>
+                </el-button>
+                <el-button @click="openPrint('operation')">打印</el-button>
+                <el-button v-perm="'system:log:delete'" type="danger" plain @click="clearLogs">
+                  <AppIcon name="Delete" />
+                  <span>清空</span>
+                </el-button>
+              </template>
             </ListFilters>
-            <div class="list-head__actions">
-              <el-button v-perm="'system:log:export'" :loading="exportingOp" @click="exportOperations">
-                <AppIcon name="Download" />
-                <span>导出</span>
-              </el-button>
-              <el-button @click="openPrint('operation')">打印</el-button>
-              <el-button v-perm="'system:log:delete'" type="danger" plain @click="clearLogs">
-                <AppIcon name="Delete" />
-                <span>清空</span>
-              </el-button>
-            </div>
           </div>
         <el-table height="100%" v-loading="opLoading" :data="opRows" stripe>
           <el-table-column type="expand">
@@ -361,18 +361,18 @@ const { searchSoon: searchLoginSoon } = useDebouncedSearch(searchLogins)
                 </el-button>
                 <el-button @click="resetLogins">重置</el-button>
               </template>
+              <template #tools>
+                <el-button v-perm="'system:log:export'" :loading="exportingLogin" @click="exportLogins">
+                  <AppIcon name="Download" />
+                  <span>导出</span>
+                </el-button>
+                <el-button @click="openPrint('login')">打印</el-button>
+                <el-button v-perm="'system:log:delete'" type="danger" plain @click="clearLogs">
+                  <AppIcon name="Delete" />
+                  <span>清空</span>
+                </el-button>
+              </template>
             </ListFilters>
-            <div class="list-head__actions">
-              <el-button v-perm="'system:log:export'" :loading="exportingLogin" @click="exportLogins">
-                <AppIcon name="Download" />
-                <span>导出</span>
-              </el-button>
-              <el-button @click="openPrint('login')">打印</el-button>
-              <el-button v-perm="'system:log:delete'" type="danger" plain @click="clearLogs">
-                <AppIcon name="Delete" />
-                <span>清空</span>
-              </el-button>
-            </div>
           </div>
         <el-table height="100%" v-loading="loginLoading" :data="loginRows" stripe>
           <el-table-column prop="username" label="账号" min-width="130" />

@@ -366,23 +366,23 @@ follow('/inv/finance', () => {
               >重置</el-button
             >
           </template>
+          <template #tools>
+            <el-button
+              v-perm="'inv:finance:settle'"
+              type="primary"
+              plain
+              :disabled="!selection.length"
+              @click="openBatch"
+            >
+              {{ activeTab === 'receivable' ? '批量收款' : '批量付款' }}{{ selection.length ? `（${selection.length}）` : '' }}
+            </el-button>
+            <el-button :loading="exporting" @click="handleExport">导出</el-button>
+            <el-button @click="printVisible = true">打印</el-button>
+            <el-button @click="load">
+              <AppIcon name="Refresh" />
+            </el-button>
+          </template>
         </ListFilters>
-        <div class="list-head__actions">
-          <el-button
-            v-perm="'inv:finance:settle'"
-            type="primary"
-            plain
-            :disabled="!selection.length"
-            @click="openBatch"
-          >
-            {{ activeTab === 'receivable' ? '批量收款' : '批量付款' }}{{ selection.length ? `（${selection.length}）` : '' }}
-          </el-button>
-          <el-button :loading="exporting" @click="handleExport">导出</el-button>
-          <el-button @click="printVisible = true">打印</el-button>
-          <el-button @click="load">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
       </div>
 
       <el-alert v-if="loadError" type="error" :closable="false" show-icon title="应收应付加载失败，请重新加载后办理。">

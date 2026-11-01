@@ -1458,53 +1458,53 @@ function onKeywordInput(): void {
             </el-button>
             <el-button @click="reset">重置</el-button>
           </template>
-        </ListFilters>
-        <div class="list-head__actions">
-          <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
-          <el-dropdown v-if="selection.length" trigger="click">
-            <el-button v-perm="`inv:${bizType}:finish`" :loading="batchRunning">
-              批量处理
-              <AppIcon name="ArrowDown" />
+          <template #tools>
+            <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
+            <el-dropdown v-if="selection.length" trigger="click">
+              <el-button v-perm="`inv:${bizType}:finish`" :loading="batchRunning">
+                批量处理
+                <AppIcon name="ArrowDown" />
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="batchAudit"
+                    >审核（仅待处理）</el-dropdown-item
+                  >
+                  <el-dropdown-item @click="batchReverse"
+                    >反审核（仅已审核）</el-dropdown-item
+                  >
+                  <el-dropdown-item divided @click="exportRows(selection)"
+                    >导出选中</el-dropdown-item
+                  >
+                  <el-dropdown-item @click="printVisible = true"
+                    >打印选中</el-dropdown-item
+                  >
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button
+              v-if="!isWorkbench"
+              :loading="exporting"
+              @click="exportRows()"
+              >导出</el-button
+            >
+            <el-button v-if="!isWorkbench" @click="printVisible = true"
+              >打印</el-button
+            >
+            <el-button
+              v-if="!isPurchase"
+              v-perm="`inv:${bizType}:create`"
+              type="primary"
+              @click="openCreate"
+            >
+              <AppIcon name="Plus" />
+              <span>{{ createText }}</span>
             </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item @click="batchAudit"
-                  >审核（仅待处理）</el-dropdown-item
-                >
-                <el-dropdown-item @click="batchReverse"
-                  >反审核（仅已审核）</el-dropdown-item
-                >
-                <el-dropdown-item divided @click="exportRows(selection)"
-                  >导出选中</el-dropdown-item
-                >
-                <el-dropdown-item @click="printVisible = true"
-                  >打印选中</el-dropdown-item
-                >
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-button
-            v-if="!isWorkbench"
-            :loading="exporting"
-            @click="exportRows()"
-            >导出</el-button
-          >
-          <el-button v-if="!isWorkbench" @click="printVisible = true"
-            >打印</el-button
-          >
-          <el-button
-            v-if="!isPurchase"
-            v-perm="`inv:${bizType}:create`"
-            type="primary"
-            @click="openCreate"
-          >
-            <AppIcon name="Plus" />
-            <span>{{ createText }}</span>
-          </el-button>
-          <el-button aria-label="刷新单据" :loading="loading" @click="load">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
+            <el-button aria-label="刷新单据" :loading="loading" @click="load">
+              <AppIcon name="Refresh" />
+            </el-button>
+          </template>
+        </ListFilters>
       </div>
 
       <div v-if="listError" class="purchase-list-error" role="alert">

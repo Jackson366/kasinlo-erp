@@ -122,7 +122,7 @@ TemplateDesigner + PrintContentConfig.stamp 为盖章配置 owner，PrintSheet �
 
 ## 列表工作区空间与筛选
 
-ListPanel 为表格面板尺寸 owner，ListFilters 为筛选披露 owner；公共 .list-head 管理标题/业务动作与筛选两行，Pagination 沿用同 tick 归并的事件契约。覆盖采购全部单据/销售、往来单位、商品、合同、应收应付、库存与出入库、系统用户/角色/菜单/部门/日志。打印模板仅更新筛选结构，不施加表格高度规则。
+ListPanel 为表格面板尺寸 owner，ListFilters 为筛选披露和同排业务动作 owner；公共 .list-head 管理标题与下方筛选/业务动作两行，Pagination 沿用同 tick 归并的事件契约。覆盖采购全部单据/销售、往来单位、商品、合同、应收应付、库存与出入库、系统用户/角色/菜单/部门/日志。打印模板仅更新筛选结构，不施加表格高度规则。
 
 ListPanel 依 layout__content 的尺寸、面板在滚动内容中的位置、父卡片底边距和头部尺寸调整自身，不改共享外壳 overflow 或高度。表体内部滚动，页脚位于面板底部，数据条数、空结果与刷新不改变面板足迹。可用空间不足时保留至少 200px 表体，通过原工作区滚动抵达页脚。库存/日志的每个标签面板各有独立 owner；采购工作台和页内详情使用 fit=false，编辑继续自然滚动。ResizeObserver 与帧调度在卸载时清理，缓存再进入重新测量。
 

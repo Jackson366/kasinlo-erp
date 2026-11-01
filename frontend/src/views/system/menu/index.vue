@@ -448,18 +448,18 @@ const { searchSoon } = useDebouncedSearch(loadTree)
             </el-button>
             <el-button @click="resetQuery">重置</el-button>
           </template>
+          <template #tools>
+            <el-button :loading="exporting" @click="handleExport">导出</el-button>
+            <el-button @click="printVisible = true">打印</el-button>
+            <el-button v-perm="'system:menu:create'" type="primary" @click="openCreate(0)">
+              <AppIcon name="Plus" />
+              <span>新增菜单</span>
+            </el-button>
+            <el-button @click="loadTree">
+              <AppIcon name="Refresh" />
+            </el-button>
+          </template>
         </ListFilters>
-        <div class="list-head__actions">
-          <el-button :loading="exporting" @click="handleExport">导出</el-button>
-          <el-button @click="printVisible = true">打印</el-button>
-          <el-button v-perm="'system:menu:create'" type="primary" @click="openCreate(0)">
-            <AppIcon name="Plus" />
-            <span>新增菜单</span>
-          </el-button>
-          <el-button @click="loadTree">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
       </div>
 
       <el-table height="100%"

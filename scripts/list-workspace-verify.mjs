@@ -100,23 +100,78 @@ try {
     })
   }
   await go('/system/user')
-  await check('expanded user filters use bounded widths and fit one desktop row', async () => {
-    const filters = page.locator('.list-filters')
-    const toggle = page.getByRole('button', { name: '更多筛选', exact: true })
-    await toggle.click()
-    await expect(page.locator('.list-filters__advanced')).toBeVisible()
-    const fields = await filters.locator('.el-form-item:visible').evaluateAll(items => items.map(el => el.getBoundingClientRect().toJSON()))
-    expect(fields).toHaveLength(3)
-    expect(fields[0].width).toBeLessThanOrEqual(301)
-    expect(fields[1].width).toBeLessThanOrEqual(221)
-    expect(fields[2].width).toBeLessThanOrEqual(221)
-    expect(Math.abs(fields[0].top - fields[2].top)).toBeLessThan(2)
-    expect(await filters.evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(40)
-    await page.screenshot({ path: path.join(out, 'user-compact-filters.png'), fullPage: true })
-    await page.getByRole('button', { name: '收起筛选', exact: true }).press('Escape')
-    await expect(page.getByRole('button', { name: '更多筛选', exact: true })).toBeFocused()
-  })
+  await check(
+    'expanded user fields use bounded widths and tools wrap below when needed',
+    async () => {
+      const filters = page.locator('.list-filters')
+      const toggle = page.getByRole('button', { name: '更多筛选', exact: true })
+      await toggle.click()
+      await expect(page.locator('.list-filters__advanced')).toBeVisible()
+      const fields = await filters
+        .locator('.el-form-item:visible')
+        .evaluateAll((items) =>
+          items.map((el) => el.getBoundingClientRect().toJSON()),
+        )
+      expect(fields).toHaveLength(3)
+      expect(fields[0].width).toBeLessThanOrEqual(301)
+      expect(fields[1].width).toBeLessThanOrEqual(221)
+      expect(fields[2].width).toBeLessThanOrEqual(221)
+      expect(Math.abs(fields[0].top - fields[2].top)).toBeLessThan(2)
+      expect(
+        await filters.evaluate((el) => el.getBoundingClientRect().height),
+      ).toBeLessThanOrEqual(80)
+      await page.screenshot({
+        path: path.join(out, 'user-compact-filters.png'),
+        fullPage: true,
+      })
+      await page
+        .getByRole('button', { name: '收起筛选', exact: true })
+        .press('Escape')
+      await expect(
+        page.getByRole('button', { name: '更多筛选', exact: true }),
+      ).toBeFocused()
+    },
+  )
   await go('/inv/sales')
+  await check(
+    'business actions follow More filters and reflow when expanded',
+    async () => {
+      await page.setViewportSize({ width: 1600, height: 900 })
+      const tools = page.locator('.list-filters__tools')
+      const toggle = page.locator('.list-filters__toggle')
+      await expect(
+        tools.getByRole('button', { name: '新增销售单', exact: true }),
+      ).toBeVisible()
+      await expect(
+        page.locator('.list-head > .list-head__actions'),
+      ).toHaveCount(0)
+      await expect
+        .poll(async () => {
+          const a = await tools.boundingBox()
+          const b = await toggle.boundingBox()
+          return Math.abs(a.y - b.y)
+        })
+        .toBeLessThan(2)
+      const closed = await tools.boundingBox()
+      const more = await toggle.boundingBox()
+      expect(closed.x).toBeGreaterThanOrEqual(more.x + more.width)
+      await toggle.click()
+      await expect
+        .poll(async () => (await tools.boundingBox()).y)
+        .toBeGreaterThan(closed.y + 20)
+      const open = await tools.boundingBox()
+      expect(open.x + open.width).toBeLessThanOrEqual(1600)
+      await page.screenshot({
+        path: path.join(out, 'sales-actions-expanded.png'),
+        fullPage: true,
+      })
+      await toggle.click()
+      await expect
+        .poll(async () => (await tools.boundingBox()).y)
+        .toBe(closed.y)
+      await page.setViewportSize({ width: 1440, height: 900 })
+    },
+  )
   await check('56px top bar, 44px tags and breadcrumb in header', async () => {
     expect(
       await page

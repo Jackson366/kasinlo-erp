@@ -426,49 +426,49 @@ const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(searc
               >重置</el-button
             >
           </template>
+          <template #tools>
+            <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
+            <el-dropdown v-if="selectedRows.length" trigger="click">
+              <el-button :loading="batchRunning">
+                <span>批量处理（{{ selectedRows.length }}）</span>
+                <AppIcon name="ArrowDown" />
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="batchStatus(1)">启用</el-dropdown-item>
+                  <el-dropdown-item @click="batchStatus(0)">禁用</el-dropdown-item>
+                  <el-dropdown-item divided @click="batchDelete">删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button v-perm="'system:user:export'" @click="printVisible = true">打印</el-button>
+            <el-button v-perm="'system:user:create'" type="primary" @click="openCreate">
+              <AppIcon name="Plus" />
+              <span>新增用户</span>
+            </el-button>
+            <el-button v-perm="'system:user:import'" @click="openImport">
+              <AppIcon name="Upload" />
+              <span>导入</span>
+            </el-button>
+            <el-dropdown v-perm="'system:user:export'" trigger="click" @command="handleExport">
+              <el-button :loading="exporting">
+                <AppIcon name="Download" />
+                <span>导出</span>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="filtered">按当前筛选条件导出</el-dropdown-item>
+                  <el-dropdown-item command="selected" :disabled="selectedRows.length === 0">
+                    导出选中项{{ selectedRows.length ? `（${selectedRows.length}）` : '' }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button @click="loadList">
+              <AppIcon name="Refresh" />
+            </el-button>
+          </template>
         </ListFilters>
-        <div class="list-head__actions">
-          <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
-          <el-dropdown v-if="selectedRows.length" trigger="click">
-            <el-button :loading="batchRunning">
-              <span>批量处理（{{ selectedRows.length }}）</span>
-              <AppIcon name="ArrowDown" />
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item @click="batchStatus(1)">启用</el-dropdown-item>
-                <el-dropdown-item @click="batchStatus(0)">禁用</el-dropdown-item>
-                <el-dropdown-item divided @click="batchDelete">删除</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-button v-perm="'system:user:export'" @click="printVisible = true">打印</el-button>
-          <el-button v-perm="'system:user:create'" type="primary" @click="openCreate">
-            <AppIcon name="Plus" />
-            <span>新增用户</span>
-          </el-button>
-          <el-button v-perm="'system:user:import'" @click="openImport">
-            <AppIcon name="Upload" />
-            <span>导入</span>
-          </el-button>
-          <el-dropdown v-perm="'system:user:export'" trigger="click" @command="handleExport">
-            <el-button :loading="exporting">
-              <AppIcon name="Download" />
-              <span>导出</span>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="filtered">按当前筛选条件导出</el-dropdown-item>
-                <el-dropdown-item command="selected" :disabled="selectedRows.length === 0">
-                  导出选中项{{ selectedRows.length ? `（${selectedRows.length}）` : '' }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-button @click="loadList">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
       </div>
 
       <el-table height="100%"

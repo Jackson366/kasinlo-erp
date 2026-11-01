@@ -495,12 +495,12 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 </el-button>
                 <el-button @click="resetInventory">重置</el-button>
               </template>
+              <template #tools>
+                <el-button :loading="inventoryLoading" @click="loadInventory">
+                  <AppIcon name="Refresh" />
+                </el-button>
+              </template>
             </ListFilters>
-            <div class="list-head__actions">
-              <el-button :loading="inventoryLoading" @click="loadInventory">
-                <AppIcon name="Refresh" />
-              </el-button>
-            </div>
           </div>
 
           <el-table height="100%" v-loading="inventoryLoading" :data="inventory" stripe>
@@ -598,35 +598,35 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 </el-button>
                 <el-button @click="reset">重置</el-button>
               </template>
+              <template #tools>
+                <el-button
+                  v-if="selection.length"
+                  v-perm="'inv:stock:delete'"
+                  :loading="batchRunning"
+                  @click="batchVoid"
+                >
+                  批量作废
+                </el-button>
+                <el-button
+                  :loading="exporting"
+                  @click="exportRows(selection.length ? selection : undefined)"
+                >
+                  导出{{ selection.length ? '选中' : '' }}
+                </el-button>
+                <el-button @click="printVisible = true">打印</el-button>
+                <el-button
+                  v-perm="'inv:stock:create'"
+                  type="primary"
+                  @click="openCreate"
+                >
+                  <AppIcon name="Plus" />
+                  <span>新增出入库单</span>
+                </el-button>
+                <el-button @click="load">
+                  <AppIcon name="Refresh" />
+                </el-button>
+              </template>
             </ListFilters>
-            <div class="list-head__actions">
-              <el-button
-                v-if="selection.length"
-                v-perm="'inv:stock:delete'"
-                :loading="batchRunning"
-                @click="batchVoid"
-              >
-                批量作废
-              </el-button>
-              <el-button
-                :loading="exporting"
-                @click="exportRows(selection.length ? selection : undefined)"
-              >
-                导出{{ selection.length ? '选中' : '' }}
-              </el-button>
-              <el-button @click="printVisible = true">打印</el-button>
-              <el-button
-                v-perm="'inv:stock:create'"
-                type="primary"
-                @click="openCreate"
-              >
-                <AppIcon name="Plus" />
-                <span>新增出入库单</span>
-              </el-button>
-              <el-button @click="load">
-                <AppIcon name="Refresh" />
-              </el-button>
-            </div>
           </div>
 
           <el-alert v-if="listError" type="error" :closable="false" show-icon title="出入库单加载失败，请重新加载后查看。">

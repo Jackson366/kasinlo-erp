@@ -60,6 +60,9 @@ function collapse(event: KeyboardEvent): void {
         <AppIcon :name="expanded ? 'ArrowUp' : 'ArrowDown'" />
       </button>
     </div>
+    <div v-if="$slots.tools" class="list-head__actions list-filters__tools">
+      <slot name="tools" />
+    </div>
   </el-form>
 </template>
 
@@ -80,12 +83,16 @@ function collapse(event: KeyboardEvent): void {
     min-width: 0;
     max-width: 100%;
   }
-  &__actions {
+  &__actions,
+  &__tools {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
     min-height: 32px;
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 0 auto;
   }
   :deep(.el-form-item) {
     margin: 0;

@@ -141,16 +141,16 @@ const { searchSoon } = useDebouncedSearch(search)
             </el-button>
             <el-button @click="reset">重置</el-button>
           </template>
+          <template #tools>
+            <el-button v-perm="'inv:print:create'" type="primary" @click="openCreateDialog">
+              <AppIcon name="Plus" />
+              <span>新增模板</span>
+            </el-button>
+            <el-button @click="load">
+              <AppIcon name="Refresh" />
+            </el-button>
+          </template>
         </ListFilters>
-        <div class="list-head__actions">
-          <el-button v-perm="'inv:print:create'" type="primary" @click="openCreateDialog">
-            <AppIcon name="Plus" />
-            <span>新增模板</span>
-          </el-button>
-          <el-button @click="load">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
       </div>
 
       <div v-loading="loading" class="tpl-grid">

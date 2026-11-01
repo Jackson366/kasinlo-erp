@@ -254,23 +254,23 @@ const { searchSoon } = useDebouncedSearch(search)
             </el-button>
             <el-button @click="reset">重置</el-button>
           </template>
+          <template #tools>
+            <el-button v-if="selection.length" v-perm="`inv:${partyPerm}:delete`" :loading="batchRunning" @click="batchDelete">
+              批量删除
+            </el-button>
+            <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">
+              导出{{ selection.length ? '选中' : '' }}
+            </el-button>
+            <el-button @click="printVisible = true">打印</el-button>
+            <el-button v-perm="`inv:${partyPerm}:create`" type="primary" @click="openCreate">
+              <AppIcon name="Plus" />
+              <span>{{ createText }}</span>
+            </el-button>
+            <el-button @click="load">
+              <AppIcon name="Refresh" />
+            </el-button>
+          </template>
         </ListFilters>
-        <div class="list-head__actions">
-          <el-button v-if="selection.length" v-perm="`inv:${partyPerm}:delete`" :loading="batchRunning" @click="batchDelete">
-            批量删除
-          </el-button>
-          <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">
-            导出{{ selection.length ? '选中' : '' }}
-          </el-button>
-          <el-button @click="printVisible = true">打印</el-button>
-          <el-button v-perm="`inv:${partyPerm}:create`" type="primary" @click="openCreate">
-            <AppIcon name="Plus" />
-            <span>{{ createText }}</span>
-          </el-button>
-          <el-button @click="load">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
       </div>
 
       <el-table height="100%"

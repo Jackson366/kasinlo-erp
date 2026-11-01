@@ -969,18 +969,18 @@ const attachType: InvAttachBizType = 'contract'
               >重置</el-button
             >
           </template>
+          <template #tools>
+            <el-button :loading="exporting" @click="exportRows">导出</el-button>
+            <el-button @click="printVisible = true">打印</el-button>
+            <el-button v-perm="'inv:contract:create'" type="primary" @click="openCreate">
+              <AppIcon name="Plus" />
+              <span>新增合同</span>
+            </el-button>
+            <el-button @click="load">
+              <AppIcon name="Refresh" />
+            </el-button>
+          </template>
         </ListFilters>
-        <div class="list-head__actions">
-          <el-button :loading="exporting" @click="exportRows">导出</el-button>
-          <el-button @click="printVisible = true">打印</el-button>
-          <el-button v-perm="'inv:contract:create'" type="primary" @click="openCreate">
-            <AppIcon name="Plus" />
-            <span>新增合同</span>
-          </el-button>
-          <el-button @click="load">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
       </div>
 
       <el-table height="100%" v-loading="loading" :data="rows" stripe>

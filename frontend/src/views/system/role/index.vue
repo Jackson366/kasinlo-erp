@@ -303,24 +303,24 @@ const { searchSoon } = useDebouncedSearch(search)
             </el-button>
             <el-button @click="resetQuery">重置</el-button>
           </template>
+          <template #tools>
+            <el-button v-if="selectedRows.length" :loading="batchRunning" @click="batchDelete">
+              批量删除（{{ selectedRows.length }}）
+            </el-button>
+            <el-button v-perm="'system:role:export'" @click="printVisible = true">打印</el-button>
+            <el-button v-perm="'system:role:create'" type="primary" @click="openCreate">
+              <AppIcon name="Plus" />
+              <span>新增角色</span>
+            </el-button>
+            <el-button v-perm="'system:role:export'" :loading="exporting" @click="handleExport">
+              <AppIcon name="Download" />
+              <span>导出</span>
+            </el-button>
+            <el-button @click="loadList">
+              <AppIcon name="Refresh" />
+            </el-button>
+          </template>
         </ListFilters>
-        <div class="list-head__actions">
-          <el-button v-if="selectedRows.length" :loading="batchRunning" @click="batchDelete">
-            批量删除（{{ selectedRows.length }}）
-          </el-button>
-          <el-button v-perm="'system:role:export'" @click="printVisible = true">打印</el-button>
-          <el-button v-perm="'system:role:create'" type="primary" @click="openCreate">
-            <AppIcon name="Plus" />
-            <span>新增角色</span>
-          </el-button>
-          <el-button v-perm="'system:role:export'" :loading="exporting" @click="handleExport">
-            <AppIcon name="Download" />
-            <span>导出</span>
-          </el-button>
-          <el-button @click="loadList">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
       </div>
 
       <el-table height="100%"
