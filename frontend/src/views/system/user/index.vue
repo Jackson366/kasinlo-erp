@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import ListFilters from '@/components/ListFilters.vue'
-import { useAdvancedFilters } from '@/composables/useAdvancedFilters'
-
 import { computed, onMounted, reactive, ref } from 'vue'
 import type { TableInstance } from 'element-plus'
 import { ElMessage } from 'element-plus/es/components/message/index'
@@ -376,28 +373,53 @@ onMounted(() => {
 })
 // 关键字录入即查询（防抖），不必再按回车
 const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(search)
-const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = useAdvancedFilters(
-  query,
-  () => [
-    {
-      key: 'status',
-      label: '状态',
-      emptyValue: undefined,
-      valueLabel: () => (query.status === 0 ? '禁用' : '启用'),
-    },
-  ],
-  searchNow,
-)
-
 </script>
 
 <template>
   <div class="user-page">
-    <!-- 常用条件保持可见，其余条件按需展开；业务动作独立排列。 -->
+    <!-- 搜索与操作合并一行 -->
     <div class="page-card">
-      <div class="list-head list-head--filters">
+      <div class="list-head">
         <span class="list-head__title">用户<em>共 {{ total }} 条</em></span>
+        <el-form class="filter-form" label-width="76px" @submit.prevent>
+          <el-form-item label="关键字">
+            <el-input
+              v-model="query.keyword"
+              @input="searchSoon"
+              placeholder="用户名 / 昵称 / 手机号"
+              clearable
+              @keyup.enter="searchNow"
+            />
+          </el-form-item>
+          <el-form-item label="所属部门">
+            <el-tree-select
+              v-model="query.deptId"
+              :data="deptTree"
+              :props="{ label: 'name', children: 'children' }"
+              node-key="id"
+              check-strictly
+              clearable
+              placeholder="全部部门"
+            />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select v-model="query.status" placeholder="全部" clearable>
+              <el-option
+                v-for="item in statusOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-form>
         <div class="list-head__actions">
+          <el-button type="primary" @click="searchNow">
+            <AppIcon name="Search" />
+            <span>查询</span>
+          </el-button>
+          <el-button @click="cancelSearch(); resetQuery()">重置</el-button>
+          <span class="list-head__divider" />
           <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
           <el-dropdown v-if="selectedRows.length" trigger="click">
             <el-button :loading="batchRunning">
@@ -439,47 +461,6 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
             <AppIcon name="Refresh" />
           </el-button>
         </div>
-        <ListFilters :active-filters="advancedFilters" @clear="clearAdvancedFilter">
-          <el-form-item label="关键字">
-            <el-input
-              v-model="query.keyword"
-              @input="searchSoon"
-              placeholder="用户名 / 昵称 / 手机号"
-              clearable
-              @keyup.enter="searchNow"
-            />
-          </el-form-item>
-          <el-form-item label="所属部门">
-            <el-tree-select
-              v-model="query.deptId"
-              :data="deptTree"
-              :props="{ label: 'name', children: 'children' }"
-              node-key="id"
-              check-strictly
-              clearable
-              placeholder="全部部门"
-            />
-          </el-form-item>
-          <template #actions>
-            <el-button type="primary" @click="searchNow">
-              <AppIcon name="Search" />
-              <span>查询</span>
-            </el-button>
-            <el-button @click="cancelSearch(); resetQuery()">重置</el-button>
-          </template>
-          <template #advanced>
-            <el-form-item label="状态">
-              <el-select v-model="query.status" placeholder="全部" clearable>
-                <el-option
-                  v-for="item in statusOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </el-select>
-            </el-form-item>
-          </template>
-        </ListFilters>
       </div>
 
       <el-table

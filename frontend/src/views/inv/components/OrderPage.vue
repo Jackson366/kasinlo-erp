@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import ListFilters from '@/components/ListFilters.vue'
-import { useAdvancedFilters } from '@/composables/useAdvancedFilters'
-
 /**
  * 共享单据查询、录入与过账逻辑。采购另提供连续核对工作区，销售保留列表路径。
  */
@@ -1245,43 +1242,6 @@ function onCompositionEnd(): void {
 function onKeywordInput(): void {
   if (!composing.value) searchSoon()
 }
-const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = useAdvancedFilters(
-  query,
-  () => [
-    {
-      key: 'dateRange',
-      label: '单据日期',
-      emptyValue: [],
-      valueLabel: () => query.dateRange?.join(' 至 ') || '',
-    },
-    ...(!isWorkbench.value
-      ? [
-          {
-            key: 'settleStatus' as const,
-            label: isPurchase.value ? '付款状态' : '结算状态',
-            emptyValue: undefined,
-            valueLabel: () =>
-              ({ unpaid: '未结清', partial: '部分结算', paid: '已结清' })[query.settleStatus!] ||
-              '',
-          },
-        ]
-      : []),
-    ...(isPurchase.value && !isWorkbench.value
-      ? [
-          {
-            key: 'handoff' as const,
-            label: '交接视图',
-            emptyValue: '',
-            valueLabel: () =>
-              ({ auditable: '我可审核', created: '我发起的', reversed: '反审核后待处理' })[
-                query.handoff as 'auditable' | 'created' | 'reversed'
-              ] || '',
-          },
-        ]
-      : []),
-  ],
-  searchNow,
-)
 
 </script>
 
@@ -1420,8 +1380,8 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
           </div>
         </template>
       </section>
-      <!-- 常用条件保持可见，其余条件按需展开；业务动作独立排列。 -->
-      <div class="list-head list-head--filters">
+      <!-- 搜索与操作合并一行 -->
+      <div class="list-head">
         <span class="list-head__title">
           {{ isWorkbench ? '待处理采购单' : title
           }}<em>{{ hasFilters ? '筛选结果' : '共' }} {{ total }} 张</em>
@@ -1432,7 +1392,63 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
             >
           </em>
         </span>
+        <el-form class="filter-form" label-width="76px" novalidate @submit.prevent>
+          <el-form-item v-if="isPurchase" label="交接视图">
+            <el-select v-model="query.handoff" clearable placeholder="数据范围内全部" @change="search">
+              <el-option
+                v-if="userStore.hasAnyPerm(['inv:purchase:finish'])"
+                label="我可审核"
+                value="auditable"
+              />
+              <el-option label="我发起的" value="created" />
+              <el-option label="反审核后待处理" value="reversed" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="关键字">
+            <el-input
+              v-model="query.keyword"
+              @input="onKeywordInput"
+              @compositionstart="composing = true"
+              @compositionend="onCompositionEnd"
+              @clear="searchNow"
+              placeholder="单号 / 往来单位 / 业务员"
+              clearable
+              @keyup.enter="searchNow"
+            />
+          </el-form-item>
+          <el-form-item label="单据日期">
+            <el-date-picker
+              v-model="query.dateRange"
+              type="daterange"
+              value-format="YYYY-MM-DD"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              unlink-panels
+            />
+          </el-form-item>
+          <el-form-item v-if="!isWorkbench" label="单据状态">
+            <el-select v-model="query.status" placeholder="全部" clearable>
+              <el-option label="待处理" :value="1" />
+              <el-option label="已审核" :value="2" />
+              <el-option label="已取消" :value="3" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="!isWorkbench" :label="isPurchase ? '付款状态' : '结算状态'">
+            <el-select v-model="query.settleStatus" placeholder="全部" clearable>
+              <el-option label="未结清" value="unpaid" />
+              <el-option label="部分结算" value="partial" />
+              <el-option label="已结清" value="paid" />
+            </el-select>
+          </el-form-item>
+        </el-form>
         <div class="list-head__actions">
+          <el-button :type="isPurchase ? 'default' : 'primary'" @click="searchNow">
+            <AppIcon name="Search" />
+            <span>查询</span>
+          </el-button>
+          <el-button @click="reset">重置</el-button>
+          <span v-if="!isWorkbench" class="list-head__divider" />
           <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
           <el-dropdown v-if="selection.length" trigger="click">
             <el-button v-perm="`inv:${bizType}:finish`" :loading="batchRunning">
@@ -1478,76 +1494,6 @@ const { activeFilters: advancedFilters, clearFilter: clearAdvancedFilter } = use
             <AppIcon name="Refresh" />
           </el-button>
         </div>
-        <ListFilters :active-filters="advancedFilters" @clear="clearAdvancedFilter">
-          <el-form-item label="关键字">
-            <el-input
-              v-model="query.keyword"
-              @input="onKeywordInput"
-              @compositionstart="composing = true"
-              @compositionend="onCompositionEnd"
-              @clear="searchNow"
-              placeholder="单号 / 往来单位 / 业务员"
-              clearable
-              @keyup.enter="searchNow"
-            />
-          </el-form-item>
-          <el-form-item v-if="isPurchase && isWorkbench" label="交接视图">
-            <el-select v-model="query.handoff" clearable placeholder="数据范围内全部" @change="search">
-              <el-option
-                v-if="userStore.hasAnyPerm(['inv:purchase:finish'])"
-                label="我可审核"
-                value="auditable"
-              />
-              <el-option label="我发起的" value="created" />
-              <el-option label="反审核后待处理" value="reversed" />
-            </el-select>
-          </el-form-item>
-          <el-form-item v-if="!isWorkbench" label="单据状态">
-            <el-select v-model="query.status" placeholder="全部" clearable>
-              <el-option label="待处理" :value="1" />
-              <el-option label="已审核" :value="2" />
-              <el-option label="已取消" :value="3" />
-            </el-select>
-          </el-form-item>
-          <template #actions>
-            <el-button :type="isPurchase ? 'default' : 'primary'" @click="searchNow">
-              <AppIcon name="Search" />
-              <span>查询</span>
-            </el-button>
-            <el-button @click="reset">重置</el-button>
-          </template>
-          <template #advanced>
-            <el-form-item label="单据日期">
-              <el-date-picker
-                v-model="query.dateRange"
-                type="daterange"
-                value-format="YYYY-MM-DD"
-                range-separator="至"
-                start-placeholder="开始日期"
-                end-placeholder="结束日期"
-                unlink-panels
-              />
-            </el-form-item>
-            <el-form-item v-if="!isWorkbench" :label="isPurchase ? '付款状态' : '结算状态'">
-              <el-select v-model="query.settleStatus" placeholder="全部" clearable>
-                <el-option label="未结清" value="unpaid" />
-                <el-option label="部分结算" value="partial" />
-                <el-option label="已结清" value="paid" />
-              </el-select>
-            </el-form-item>
-            <el-form-item v-if="isPurchase && !isWorkbench" label="交接视图">
-              <el-select v-model="query.handoff" clearable placeholder="数据范围内全部" @change="search">
-                <el-option
-                  v-if="userStore.hasAnyPerm(['inv:purchase:finish'])"
-                  label="我可审核"
-                  value="auditable"
-                />
-                <el-option label="我发起的" value="created" />
-                <el-option label="反审核后待处理" value="reversed" />
-              </el-select>
-            </el-form-item>
-          </template>
-        </ListFilters>
       </div>
 
       <div v-if="listError" class="purchase-list-error" role="alert">
