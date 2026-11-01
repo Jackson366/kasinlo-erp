@@ -16,6 +16,30 @@ describe('authorized navigation projection', () => {
     expect(JSON.stringify(routes)).toBe(before)
     expect(navigationMenus(routes).some((item) => item.meta.title === '采购')).toBe(true)
   })
+  it('places contracts under finance and print templates under the existing system directory', () => {
+    const menus = navigationMenus(routes)
+    expect(navigationTrail(menus, '/inv/contract').map((item) => item.meta.title)).toEqual([
+      '财务',
+      '合同管理',
+    ])
+    expect(navigationTrail(menus, '/inv/print').map((item) => item.meta.title)).toEqual([
+      '系统管理',
+      '打印模板',
+    ])
+    expect(menus.some((item) => ['InvContract', 'InvPrint'].includes(item.name))).toBe(false)
+  })
+  it('keeps print accessible without adding system permissions, and hides unauthorized print entries', () => {
+    const printOnly = structuredClone(routes[1])
+    printOnly.children = printOnly.children!.filter((item) => item.name === 'InvPrint')
+    const menus = navigationMenus([printOnly])
+    expect(leaves(menus)).toEqual(['/inv/print'])
+    expect(navigationTrail(menus, '/inv/print').map((item) => item.meta.title)).toEqual([
+      '系统设置',
+      '打印模板',
+    ])
+    printOnly.children![0].meta.hidden = true
+    expect(navigationMenus([printOnly])).toEqual([])
+  })
   it('omits empty business groups for restricted accounts', () => {
     const restricted = structuredClone(routes)
     restricted[1].children = restricted[1].children?.filter((item) => item.name === 'InvSales')

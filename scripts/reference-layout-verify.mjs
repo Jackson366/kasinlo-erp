@@ -96,6 +96,29 @@ try {
     },
   )
   await check(
+    'print templates live under system and contracts under finance with working breadcrumbs',
+    async () => {
+      await aside
+        .locator('.el-sub-menu__title')
+        .filter({ hasText: /^系统管理$/ })
+        .click()
+      await aside.getByRole('menuitem', { name: '打印模板', exact: true }).click()
+      await expect(page).toHaveURL(/inv\/print/)
+      await expect(page.locator('.breadcrumb')).toContainText('系统管理')
+      await expect(page.locator('.breadcrumb')).toContainText('打印模板')
+      await aside
+        .locator('.el-sub-menu__title')
+        .filter({ hasText: /^财务$/ })
+        .click()
+      await aside.getByRole('menuitem', { name: '合同管理', exact: true }).click()
+      await expect(page).toHaveURL(/inv\/contract/)
+      await expect(page.locator('.breadcrumb')).toContainText('财务')
+      await expect(page.locator('.breadcrumb')).toContainText('合同管理')
+      await aside.getByRole('menuitem', { name: '库存管理', exact: true }).click()
+      await expect(page.locator('.stock-page .el-tab-pane:visible .el-table__row')).toHaveCount(4)
+    },
+  )
+  await check(
     'inventory search no-results, clear and query retain table and navigation',
     async () => {
       const input = page
