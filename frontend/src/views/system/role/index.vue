@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ListPanel from '@/components/ListPanel.vue'
 import { computed, nextTick, onMounted, reactive, ref, type Ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
@@ -13,6 +14,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListFilters from '@/components/ListFilters.vue'
 import { formatDate, exportStamp, flattenTree } from '@/utils/format'
 import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
@@ -280,46 +282,48 @@ const { searchSoon } = useDebouncedSearch(search)
 
 <template>
   <div class="role-page">
-    <div class="page-card">
+    <ListPanel>
       <!-- 搜索与操作合并一行 -->
       <div class="list-head">
         <span class="list-head__title">角色<em>共 {{ total }} 条</em></span>
-        <el-form class="filter-form" label-width="76px" @submit.prevent>
+        <ListFilters>
           <el-form-item label="关键字">
             <el-input
-              v-model="query.keyword" @input="searchSoon"
+              v-model="query.keyword"
+              @input="searchSoon"
               placeholder="角色名称 / 标识"
               clearable
               @keyup.enter="search"
             />
           </el-form-item>
-        </el-form>
-        <div class="list-head__actions">
-          <el-button type="primary" @click="search">
-            <AppIcon name="Search" />
-            <span>查询</span>
-          </el-button>
-          <el-button @click="resetQuery">重置</el-button>
-          <span class="list-head__divider" />
-          <el-button v-if="selectedRows.length" :loading="batchRunning" @click="batchDelete">
-            批量删除（{{ selectedRows.length }}）
-          </el-button>
-          <el-button v-perm="'system:role:export'" @click="printVisible = true">打印</el-button>
-          <el-button v-perm="'system:role:create'" type="primary" @click="openCreate">
-            <AppIcon name="Plus" />
-            <span>新增角色</span>
-          </el-button>
-          <el-button v-perm="'system:role:export'" :loading="exporting" @click="handleExport">
-            <AppIcon name="Download" />
-            <span>导出</span>
-          </el-button>
-          <el-button @click="loadList">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
+          <template #actions>
+            <el-button type="primary" @click="search">
+              <AppIcon name="Search" />
+              <span>查询</span>
+            </el-button>
+            <el-button @click="resetQuery">重置</el-button>
+          </template>
+          <template #tools>
+            <el-button v-if="selectedRows.length" :loading="batchRunning" @click="batchDelete">
+              批量删除（{{ selectedRows.length }}）
+            </el-button>
+            <el-button v-perm="'system:role:export'" @click="printVisible = true">打印</el-button>
+            <el-button v-perm="'system:role:create'" type="primary" @click="openCreate">
+              <AppIcon name="Plus" />
+              <span>新增角色</span>
+            </el-button>
+            <el-button v-perm="'system:role:export'" :loading="exporting" @click="handleExport">
+              <AppIcon name="Download" />
+              <span>导出</span>
+            </el-button>
+            <el-button @click="loadList">
+              <AppIcon name="Refresh" />
+            </el-button>
+          </template>
+        </ListFilters>
       </div>
 
-      <el-table
+      <el-table height="100%"
         ref="tableRef"
         v-loading="loading"
         :data="rows"
@@ -389,13 +393,15 @@ const { searchSoon } = useDebouncedSearch(search)
         </template>
       </el-table>
 
-      <Pagination
+      <div class="table-pager">
+        <Pagination
         v-model:page="query.page"
         v-model:page-size="query.pageSize"
         :total="total"
         @change="loadList"
       />
-    </div>
+      </div>
+    </ListPanel>
 
     <!-- 新增 / 编辑 -->
     <el-dialog

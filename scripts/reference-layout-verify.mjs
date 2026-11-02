@@ -177,7 +177,12 @@ try {
     await close.focus()
     await page.keyboard.press('Enter')
     await expect(nav.getByRole('link', { name: '采购管理', exact: true })).toHaveCount(0)
-    await expect(nav.locator('[aria-current="page"]')).toBeFocused()
+    // The pinned home tag hides the navigation card; focus then belongs to the workspace.
+    if (page.url().includes('/inv/overview')) {
+      await expect(content).toBeFocused()
+    } else {
+      await expect(nav.locator('[aria-current="page"]')).toBeFocused()
+    }
   })
   async function visit(route) {
     await page.evaluate((value) => {

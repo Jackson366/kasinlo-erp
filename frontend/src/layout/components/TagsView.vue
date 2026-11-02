@@ -242,13 +242,13 @@ async function handleCommand(command: string): Promise<void> {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 0;
+    padding: 6px 0;
   }
   &__item {
     display: inline-flex;
     flex: none;
     align-items: center;
-    height: 38px;
+    height: 32px;
     padding-right: 8px;
     color: var(--app-text);
     background: var(--app-surface);
@@ -276,7 +276,7 @@ async function handleCommand(command: string): Promise<void> {
     height: 100%;
     padding: 0 12px;
     color: inherit;
-    font-size: 14px;
+    font-size: 13px;
     border-radius: var(--radius-sm);
   }
   &__close {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ListPanel from '@/components/ListPanel.vue'
 /**
  * 共享单据查询、录入与过账逻辑。采购另提供连续核对工作区，销售保留列表路径。
  */
@@ -22,6 +23,7 @@ import type {
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListFilters from '@/components/ListFilters.vue'
 import ListPrintDialog, {
   type ListPrintColumn,
 } from '@/components/ListPrintDialog.vue'
@@ -58,7 +60,11 @@ const userStore = useUserStore()
 const isPurchase = computed(() => props.bizType === 'purchase')
 const route = useRoute()
 const router = useRouter()
-const pagePath = route.path
+// Backend menus own route paths; cached pages must keep their business route owner.
+const orderRouteName = isPurchase.value ? 'InvPurchase' : 'InvSales'
+const pagePath = router.hasRoute(orderRouteName)
+  ? router.resolve({ name: orderRouteName }).path
+  : route.path
 const workspaceView = ref<'pending' | 'all'>(
   isPurchase.value && route.query.view !== 'all' ? 'pending' : 'all',
 )
@@ -470,7 +476,9 @@ const editorLoading = ref(false)
 const editorError = ref('')
 const purchaseEditing = computed(
   () =>
-    isPurchase.value && ['create', 'edit'].includes(String(route.query.action)),
+    isPurchase.value &&
+    route.path === pagePath &&
+    ['create', 'edit'].includes(String(route.query.action)),
 )
 let originDetail = false
 let editorScroll = 0
@@ -676,8 +684,14 @@ function enterPurchaseEditor(action: 'create' | 'edit', id?: number): void {
       : null
   editorScroll = document.querySelector('.layout__content')?.scrollTop ?? 0
   void router.push({
-    path: pagePath,
-    query: { ...route.query, action, editId: id ? String(id) : undefined },
+    ...(router.hasRoute(orderRouteName)
+      ? { name: orderRouteName }
+      : { path: pagePath }),
+    query: {
+      ...(route.path === pagePath ? route.query : {}),
+      action,
+      editId: id ? String(id) : undefined,
+    },
   })
 }
 function openCreate(): void {
@@ -1275,7 +1289,7 @@ function onKeywordInput(): void {
         <AppIcon name="Plus" />新增采购单
       </el-button>
     </header>
-    <div class="page-card" :class="{ 'is-detail-open': listDetailOpen }">
+    <ListPanel :fit="!isWorkbench && !listDetailOpen" :class="{ 'is-detail-open': listDetailOpen }">
       <!-- 「全部单据」的详情就在列表原位展开，不再盖一层 1280px 弹窗。
            列表 DOM 保持挂载（只换显示状态），返回时筛选、页码、焦点和滚动位置都还在。 -->
       <section
@@ -1392,18 +1406,13 @@ function onKeywordInput(): void {
             >
           </em>
         </span>
-        <el-form class="filter-form" label-width="76px" novalidate @submit.prevent>
-          <el-form-item v-if="isPurchase" label="交接视图">
-            <el-select v-model="query.handoff" clearable placeholder="数据范围内全部" @change="search">
-              <el-option
-                v-if="userStore.hasAnyPerm(['inv:purchase:finish'])"
-                label="我可审核"
-                value="auditable"
-              />
-              <el-option label="我发起的" value="created" />
-              <el-option label="反审核后待处理" value="reversed" />
-            </el-select>
-          </el-form-item>
+        <ListFilters
+          :active-values="[
+            isPurchase ? query.handoff : undefined,
+            !isWorkbench ? query.status : undefined,
+            !isWorkbench ? query.settleStatus : undefined,
+          ]"
+        >
           <el-form-item label="关键字">
             <el-input
               v-model="query.keyword"
@@ -1427,73 +1436,87 @@ function onKeywordInput(): void {
               unlink-panels
             />
           </el-form-item>
-          <el-form-item v-if="!isWorkbench" label="单据状态">
-            <el-select v-model="query.status" placeholder="全部" clearable>
-              <el-option label="待处理" :value="1" />
-              <el-option label="已审核" :value="2" />
-              <el-option label="已取消" :value="3" />
-            </el-select>
-          </el-form-item>
-          <el-form-item v-if="!isWorkbench" :label="isPurchase ? '付款状态' : '结算状态'">
-            <el-select v-model="query.settleStatus" placeholder="全部" clearable>
-              <el-option label="未结清" value="unpaid" />
-              <el-option label="部分结算" value="partial" />
-              <el-option label="已结清" value="paid" />
-            </el-select>
-          </el-form-item>
-        </el-form>
-        <div class="list-head__actions">
-          <el-button :type="isPurchase ? 'default' : 'primary'" @click="searchNow">
-            <AppIcon name="Search" />
-            <span>查询</span>
-          </el-button>
-          <el-button @click="reset">重置</el-button>
-          <span v-if="!isWorkbench" class="list-head__divider" />
-          <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
-          <el-dropdown v-if="selection.length" trigger="click">
-            <el-button v-perm="`inv:${bizType}:finish`" :loading="batchRunning">
-              批量处理
-              <AppIcon name="ArrowDown" />
+          <template #advanced>
+            <el-form-item v-if="isPurchase" label="交接视图">
+              <el-select v-model="query.handoff" clearable placeholder="数据范围内全部" @change="search">
+                <el-option
+                  v-if="userStore.hasAnyPerm(['inv:purchase:finish'])"
+                  label="我可审核"
+                  value="auditable"
+                />
+                <el-option label="我发起的" value="created" />
+                <el-option label="反审核后待处理" value="reversed" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="!isWorkbench" label="单据状态">
+              <el-select v-model="query.status" placeholder="全部" clearable>
+                <el-option label="待处理" :value="1" />
+                <el-option label="已审核" :value="2" />
+                <el-option label="已取消" :value="3" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="!isWorkbench" :label="isPurchase ? '付款状态' : '结算状态'">
+              <el-select v-model="query.settleStatus" placeholder="全部" clearable>
+                <el-option label="未结清" value="unpaid" />
+                <el-option label="部分结算" value="partial" />
+                <el-option label="已结清" value="paid" />
+              </el-select>
+            </el-form-item>
+          </template>
+          <template #actions>
+            <el-button :type="isPurchase ? 'default' : 'primary'" @click="searchNow">
+              <AppIcon name="Search" />
+              <span>查询</span>
             </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item @click="batchAudit"
-                  >审核（仅待处理）</el-dropdown-item
-                >
-                <el-dropdown-item @click="batchReverse"
-                  >反审核（仅已审核）</el-dropdown-item
-                >
-                <el-dropdown-item divided @click="exportRows(selection)"
-                  >导出选中</el-dropdown-item
-                >
-                <el-dropdown-item @click="printVisible = true"
-                  >打印选中</el-dropdown-item
-                >
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-button
-            v-if="!isWorkbench"
-            :loading="exporting"
-            @click="exportRows()"
-            >导出</el-button
-          >
-          <el-button v-if="!isWorkbench" @click="printVisible = true"
-            >打印</el-button
-          >
-          <el-button
-            v-if="!isPurchase"
-            v-perm="`inv:${bizType}:create`"
-            type="primary"
-            @click="openCreate"
-          >
-            <AppIcon name="Plus" />
-            <span>{{ createText }}</span>
-          </el-button>
-          <el-button aria-label="刷新单据" :loading="loading" @click="load">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
+            <el-button @click="reset">重置</el-button>
+          </template>
+          <template #tools>
+            <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
+            <el-dropdown v-if="selection.length" trigger="click">
+              <el-button v-perm="`inv:${bizType}:finish`" :loading="batchRunning">
+                批量处理
+                <AppIcon name="ArrowDown" />
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="batchAudit"
+                    >审核（仅待处理）</el-dropdown-item
+                  >
+                  <el-dropdown-item @click="batchReverse"
+                    >反审核（仅已审核）</el-dropdown-item
+                  >
+                  <el-dropdown-item divided @click="exportRows(selection)"
+                    >导出选中</el-dropdown-item
+                  >
+                  <el-dropdown-item @click="printVisible = true"
+                    >打印选中</el-dropdown-item
+                  >
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button
+              v-if="!isWorkbench"
+              :loading="exporting"
+              @click="exportRows()"
+              >导出</el-button
+            >
+            <el-button v-if="!isWorkbench" @click="printVisible = true"
+              >打印</el-button
+            >
+            <el-button
+              v-if="!isPurchase"
+              v-perm="`inv:${bizType}:create`"
+              type="primary"
+              @click="openCreate"
+            >
+              <AppIcon name="Plus" />
+              <span>{{ createText }}</span>
+            </el-button>
+            <el-button aria-label="刷新单据" :loading="loading" @click="load">
+              <AppIcon name="Refresh" />
+            </el-button>
+          </template>
+        </ListFilters>
       </div>
 
       <div v-if="listError" class="purchase-list-error" role="alert">
@@ -1586,7 +1609,7 @@ function onKeywordInput(): void {
           </div>
         </template>
       </PurchaseWorkbench>
-      <el-table
+      <el-table height="100%"
         v-else
         ref="tableRef"
         v-loading="loading"
@@ -1615,14 +1638,14 @@ function onKeywordInput(): void {
         <el-table-column
           prop="orderDate"
           label="单据日期"
-          :width="isPurchase ? 112 : 100"
+          width="112"
         >
           <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
         </el-table-column>
         <el-table-column
           prop="dueDate"
           :label="dueDateLabel"
-          :width="isPurchase ? 120 : 100"
+          width="120"
         >
           <template #default="{ row }">{{ formatDay(row.dueDate) }}</template>
         </el-table-column>
@@ -1676,8 +1699,8 @@ function onKeywordInput(): void {
           </template>
         </el-table-column>
         <el-table-column
-          :label="isPurchase ? '付款状态' : '结算'"
-          :width="isPurchase ? 132 : 84"
+          :label="isPurchase ? '付款状态' : '结算状态'"
+          :width="isPurchase ? 132 : 104"
           align="center"
         >
           <template #default="{ row }">
@@ -1704,7 +1727,7 @@ function onKeywordInput(): void {
         <el-table-column label="操作人员" width="96" show-overflow-tooltip>
           <template #default="{ row }">{{ row.operator || '-' }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="84" align="center">
+        <el-table-column label="审核状态" width="92" align="center">
           <template #default="{ row }">
             <el-tag
               :type="statusMeta[row.status]?.type"
@@ -1715,102 +1738,23 @@ function onKeywordInput(): void {
             </el-tag>
           </template>
         </el-table-column>
-        <!-- 宽度按最多按钮的状态算（待处理单：详情/打印/编辑/审核 4 个，
-             已审核单：详情/打印/反审核 3 个），写小了按钮会折成两行 -->
-        <el-table-column
-          label="操作"
-          :width="isPurchase ? 210 : 250"
-          fixed="right"
-          :align="isPurchase ? 'left' : 'center'"
-        >
+        <!-- Primary links stay visible; secondary and state-changing actions share one menu. -->
+        <el-table-column label="操作" width="176" fixed="right">
           <template #default="{ row }">
-            <div :class="{ 'purchase-row-actions': isPurchase }">
-              <el-button
-                v-if="!isPurchase"
-                link
-                type="primary"
-                @click="openDetail(row as InvOrderRow)"
-                >查看</el-button
-              >
-              <el-button
-                v-if="!isPurchase"
-                link
-                type="primary"
-                @click="openAttach(row as InvOrderRow)"
-              >
-                附件{{
-                  attachCounts[String(row.id)]
-                    ? `(${attachCounts[String(row.id)]})`
-                    : ''
-                }}
-              </el-button>
-              <el-button
-                v-if="!isPurchase"
-                link
-                type="primary"
-                @click="printRef?.open(row as InvOrderRow)"
-                >打印</el-button
-              >
-              <el-button
-                v-if="row.status === 1"
-                v-perm="`inv:${bizType}:update`"
-                link
-                type="primary"
-                @click="openEdit(row as InvOrderRow)"
-              >
-                编辑
-              </el-button>
-              <el-button
-                v-if="row.status === 1"
-                v-perm="`inv:${bizType}:finish`"
-                link
-                type="success"
-                @click="changeStatus(row as InvOrderRow, 2)"
-              >
-                {{ isPurchase ? '审核并入库' : '审核' }}
-              </el-button>
-              <el-dropdown v-if="isPurchase" trigger="click">
-                <el-button link type="primary"
-                  >更多<AppIcon name="ArrowDown"
-                /></el-button>
-                <template #dropdown
-                  ><el-dropdown-menu>
-                    <el-dropdown-item @click="openAttach(row as InvOrderRow)"
-                      >附件{{
-                        attachCounts[String(row.id)]
-                          ? ` (${attachCounts[String(row.id)]})`
-                          : ''
-                      }}</el-dropdown-item
-                    >
-                    <el-dropdown-item
-                      @click="printRef?.open(row as InvOrderRow)"
-                      >打印</el-dropdown-item
-                    >
-                    <el-dropdown-item
-                      v-if="row.status === 2"
-                      v-perm="'inv:purchase:finish'"
-                      divided
-                      :disabled="row.settledAmount > 0"
-                      @click="reverseOrder(row as InvOrderRow)"
-                    >
-                      {{
-                        row.settledAmount > 0
-                          ? '已有付款，无法反审核'
-                          : '反审核'
-                      }}
-                    </el-dropdown-item>
-                  </el-dropdown-menu></template
-                >
+            <div class="order-row-actions">
+              <el-button link type="primary" @click="openDetail(row as InvOrderRow)">查看</el-button>
+              <el-button link type="primary" @click="printRef?.open(row as InvOrderRow)">打印</el-button>
+              <el-dropdown trigger="click">
+                <el-button link type="primary" :aria-label="`单据 ${row.orderNo} 的更多操作`">更多<AppIcon name="ArrowDown" /></el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="openAttach(row as InvOrderRow)">附件{{ attachCounts[String(row.id)] ? ` (${attachCounts[String(row.id)]})` : '' }}</el-dropdown-item>
+                    <el-dropdown-item v-if="row.status === 1" v-perm="`inv:${bizType}:update`" @click="openEdit(row as InvOrderRow)">编辑</el-dropdown-item>
+                    <el-dropdown-item v-if="row.status === 1" v-perm="`inv:${bizType}:finish`" @click="changeStatus(row as InvOrderRow, 2)">{{ isPurchase ? '审核并入库' : '审核' }}</el-dropdown-item>
+                    <el-dropdown-item v-if="row.status === 2" v-perm="`inv:${bizType}:finish`" divided :disabled="row.settledAmount > 0" @click="reverseOrder(row as InvOrderRow)">{{ row.settledAmount > 0 ? '已有收付款，无法反审核' : '反审核' }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
               </el-dropdown>
-              <el-button
-                v-if="row.status === 2 && !isPurchase"
-                v-perm="`inv:${bizType}:finish`"
-                link
-                type="warning"
-                @click="reverseOrder(row as InvOrderRow)"
-              >
-                反审核
-              </el-button>
             </div>
           </template>
         </el-table-column>
@@ -1824,7 +1768,7 @@ function onKeywordInput(): void {
           @change="load"
         />
       </div>
-    </div>
+    </ListPanel>
     </div>
     <!-- 采购为独立编辑视图；销售沿用弹窗，共享同一份表单与提交逻辑。 -->
     <OrderEditorSurface
@@ -2588,45 +2532,20 @@ function onKeywordInput(): void {
     display: none;
   }
 }
+.order-page {
+  :deep(.el-table .cell) { white-space: nowrap; }
+}
 .purchase-page {
   .page-card {
     padding: 16px;
   }
   .list-head {
-    grid-template-columns: minmax(0, 1fr) auto;
     margin-bottom: 16px;
     padding-bottom: 16px;
     border-bottom: 1px solid var(--app-border-light);
   }
-  :deep(.el-table .cell) {
-    white-space: nowrap;
-  }
-  .list-head__title {
-    line-height: 24px;
-    grid-column: 1 / -1;
-    width: 100%;
-    color: var(--app-text);
-  }
-  .list-head .filter-form {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 12px 16px;
-  }
-  .list-head .filter-form :deep(.el-form-item) {
-    width: 100%;
-    margin: 0;
-  }
-  .list-head .filter-form :deep(.el-input),
-  .list-head .filter-form :deep(.el-select),
-  .list-head .filter-form :deep(.el-date-editor) {
-    width: 100%;
-    min-width: 0;
-  }
-  .list-head__actions {
-    flex-wrap: wrap;
-  }
 }
-.purchase-row-actions {
+.order-row-actions {
   display: flex;
   align-items: center;
   gap: 12px;
