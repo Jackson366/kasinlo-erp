@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ListPanel from '@/components/ListPanel.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import type { TableInstance } from 'element-plus'
 import { ElMessage } from 'element-plus/es/components/message/index'
@@ -19,6 +20,7 @@ import type {
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListFilters from '@/components/ListFilters.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import UserImportDialog from './UserImportDialog.vue'
 import UserPasswordDialog from './UserPasswordDialog.vue'
@@ -378,10 +380,10 @@ const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(searc
 <template>
   <div class="user-page">
     <!-- 搜索与操作合并一行 -->
-    <div class="page-card">
+    <ListPanel>
       <div class="list-head">
         <span class="list-head__title">用户<em>共 {{ total }} 条</em></span>
-        <el-form class="filter-form" label-width="76px" @submit.prevent>
+        <ListFilters :active-values="[query.status]">
           <el-form-item label="关键字">
             <el-input
               v-model="query.keyword"
@@ -402,68 +404,74 @@ const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(searc
               placeholder="全部部门"
             />
           </el-form-item>
-          <el-form-item label="状态">
-            <el-select v-model="query.status" placeholder="全部" clearable>
-              <el-option
-                v-for="item in statusOptions"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
-              />
-            </el-select>
-          </el-form-item>
-        </el-form>
-        <div class="list-head__actions">
-          <el-button type="primary" @click="searchNow">
-            <AppIcon name="Search" />
-            <span>查询</span>
-          </el-button>
-          <el-button @click="cancelSearch(); resetQuery()">重置</el-button>
-          <span class="list-head__divider" />
-          <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
-          <el-dropdown v-if="selectedRows.length" trigger="click">
-            <el-button :loading="batchRunning">
-              <span>批量处理（{{ selectedRows.length }}）</span>
-              <AppIcon name="ArrowDown" />
+          <template #advanced>
+            <el-form-item label="状态">
+              <el-select v-model="query.status" placeholder="全部" clearable>
+                <el-option
+                  v-for="item in statusOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+          </template>
+          <template #actions>
+            <el-button type="primary" @click="searchNow">
+              <AppIcon name="Search" />
+              <span>查询</span>
             </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item @click="batchStatus(1)">启用</el-dropdown-item>
-                <el-dropdown-item @click="batchStatus(0)">禁用</el-dropdown-item>
-                <el-dropdown-item divided @click="batchDelete">删除</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-button v-perm="'system:user:export'" @click="printVisible = true">打印</el-button>
-          <el-button v-perm="'system:user:create'" type="primary" @click="openCreate">
-            <AppIcon name="Plus" />
-            <span>新增用户</span>
-          </el-button>
-          <el-button v-perm="'system:user:import'" @click="openImport">
-            <AppIcon name="Upload" />
-            <span>导入</span>
-          </el-button>
-          <el-dropdown v-perm="'system:user:export'" trigger="click" @command="handleExport">
-            <el-button :loading="exporting">
-              <AppIcon name="Download" />
-              <span>导出</span>
+            <el-button
+              @click="cancelSearch(); resetQuery()"
+              >重置</el-button
+            >
+          </template>
+          <template #tools>
+            <!-- 批量动作只在有勾选时出现：没勾选时摆一排灰按钮，反而要多想一步 -->
+            <el-dropdown v-if="selectedRows.length" trigger="click">
+              <el-button :loading="batchRunning">
+                <span>批量处理（{{ selectedRows.length }}）</span>
+                <AppIcon name="ArrowDown" />
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="batchStatus(1)">启用</el-dropdown-item>
+                  <el-dropdown-item @click="batchStatus(0)">禁用</el-dropdown-item>
+                  <el-dropdown-item divided @click="batchDelete">删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button v-perm="'system:user:export'" @click="printVisible = true">打印</el-button>
+            <el-button v-perm="'system:user:create'" type="primary" @click="openCreate">
+              <AppIcon name="Plus" />
+              <span>新增用户</span>
             </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="filtered">按当前筛选条件导出</el-dropdown-item>
-                <el-dropdown-item command="selected" :disabled="selectedRows.length === 0">
-                  导出选中项{{ selectedRows.length ? `（${selectedRows.length}）` : '' }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-button @click="loadList">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
+            <el-button v-perm="'system:user:import'" @click="openImport">
+              <AppIcon name="Upload" />
+              <span>导入</span>
+            </el-button>
+            <el-dropdown v-perm="'system:user:export'" trigger="click" @command="handleExport">
+              <el-button :loading="exporting">
+                <AppIcon name="Download" />
+                <span>导出</span>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="filtered">按当前筛选条件导出</el-dropdown-item>
+                  <el-dropdown-item command="selected" :disabled="selectedRows.length === 0">
+                    导出选中项{{ selectedRows.length ? `（${selectedRows.length}）` : '' }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button @click="loadList">
+              <AppIcon name="Refresh" />
+            </el-button>
+          </template>
+        </ListFilters>
       </div>
 
-      <el-table
+      <el-table height="100%"
         ref="tableRef"
         v-loading="loading"
         :data="rows"
@@ -549,13 +557,15 @@ const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(searc
         </template>
       </el-table>
 
-      <Pagination
+      <div class="table-pager">
+        <Pagination
         v-model:page="query.page!"
         v-model:page-size="query.pageSize!"
         :total="total"
         @change="loadList"
       />
-    </div>
+      </div>
+    </ListPanel>
 
     <!-- 新增 / 编辑弹窗 -->
     <el-dialog

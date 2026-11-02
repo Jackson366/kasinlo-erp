@@ -65,14 +65,14 @@ onActivated(load)
         <el-button
           v-if="pending || failed"
           type="primary"
-          @click="router.push('/inv/purchase')"
+          @click="router.push({ name: 'InvPurchase' })"
           >进入采购工作台</el-button
         >
         <el-button
           v-if="user.hasAnyPerm(['inv:purchase:create'])"
           :type="pending || failed ? 'default' : 'primary'"
           @click="
-            router.push({ path: '/inv/purchase', query: { action: 'create' } })
+            router.push({ name: 'InvPurchase', query: { action: 'create' } })
           "
           >新增采购单</el-button
         >

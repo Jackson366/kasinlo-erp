@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ListPanel from '@/components/ListPanel.vue'
 /**
  * 应收应付页：应收（销售）与应付（采购）两个视图，结构一致。
  * 汇总数据随列表接口一并返回，避免多打一次请求。
@@ -13,6 +14,7 @@ import PurchaseReturnLink from '../components/PurchaseReturnLink.vue'
 import type { InvFinanceRow, InvFinanceSummary, InvSettlePayload } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListFilters from '@/components/ListFilters.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import { downloadFile } from '@/utils/download'
 import { formatDay, formatMoney } from '@/utils/format'
@@ -319,7 +321,7 @@ follow('/inv/finance', () => {
       <div class="summary-split">{{ summarySplit }}</div>
     </div>
 
-    <div class="page-card">
+    <ListPanel>
       <el-tabs v-model="activeTab" @tab-change="onTabChange">
         <el-tab-pane label="应收明细" name="receivable" />
         <el-tab-pane label="应付明细" name="payable" />
@@ -328,7 +330,7 @@ follow('/inv/finance', () => {
       <!-- 搜索与操作合并一行 -->
       <div class="list-head">
         <span class="list-head__title">{{ tabLabel }}<em>共 {{ total }} 条</em></span>
-        <el-form class="filter-form" label-width="76px" @submit.prevent>
+        <ListFilters :active-values="[query.source]">
           <el-form-item label="关键字">
             <el-input
               v-model="query.keyword"
@@ -346,41 +348,47 @@ follow('/inv/finance', () => {
               <el-option label="已逾期" value="overdue" />
             </el-select>
           </el-form-item>
-          <el-form-item label="来源">
-            <el-select v-model="query.source" placeholder="全部" clearable>
-              <el-option label="单据" value="order" />
-              <el-option label="合同期次" value="plan" />
-            </el-select>
-          </el-form-item>
-        </el-form>
-        <div class="list-head__actions">
-          <el-button type="primary" @click="searchNow">
-            <AppIcon name="Search" />
-            <span>查询</span>
-          </el-button>
-          <el-button @click="cancelSearch(); reset()">重置</el-button>
-          <span class="list-head__divider" />
-          <el-button
-            v-perm="'inv:finance:settle'"
-            type="primary"
-            plain
-            :disabled="!selection.length"
-            @click="openBatch"
-          >
-            {{ activeTab === 'receivable' ? '批量收款' : '批量付款' }}{{ selection.length ? `（${selection.length}）` : '' }}
-          </el-button>
-          <el-button :loading="exporting" @click="handleExport">导出</el-button>
-          <el-button @click="printVisible = true">打印</el-button>
-          <el-button @click="load">
-            <AppIcon name="Refresh" />
-          </el-button>
-        </div>
+          <template #advanced>
+            <el-form-item label="来源">
+              <el-select v-model="query.source" placeholder="全部" clearable>
+                <el-option label="单据" value="order" />
+                <el-option label="合同期次" value="plan" />
+              </el-select>
+            </el-form-item>
+          </template>
+          <template #actions>
+            <el-button type="primary" @click="searchNow">
+              <AppIcon name="Search" />
+              <span>查询</span>
+            </el-button>
+            <el-button
+              @click="cancelSearch(); reset()"
+              >重置</el-button
+            >
+          </template>
+          <template #tools>
+            <el-button
+              v-perm="'inv:finance:settle'"
+              type="primary"
+              plain
+              :disabled="!selection.length"
+              @click="openBatch"
+            >
+              {{ activeTab === 'receivable' ? '批量收款' : '批量付款' }}{{ selection.length ? `（${selection.length}）` : '' }}
+            </el-button>
+            <el-button :loading="exporting" @click="handleExport">导出</el-button>
+            <el-button @click="printVisible = true">打印</el-button>
+            <el-button @click="load">
+              <AppIcon name="Refresh" />
+            </el-button>
+          </template>
+        </ListFilters>
       </div>
 
       <el-alert v-if="loadError" type="error" :closable="false" show-icon title="应收应付加载失败，请重新加载后办理。">
         <el-button text @click="load">重新加载</el-button>
       </el-alert>
-      <el-table
+      <el-table height="100%"
         v-else
         :empty-text="returnTo ? '当前可见范围内未找到记录，请核查单号或联系财务负责人' : '暂无数据'"
         ref="tableRef"
@@ -464,7 +472,7 @@ follow('/inv/finance', () => {
       <div class="table-pager">
         <Pagination v-model:page="query.page" v-model:page-size="query.pageSize" :total="total" @change="load" />
       </div>
-    </div>
+    </ListPanel>
 
     <ListPrintDialog
       v-model="printVisible"

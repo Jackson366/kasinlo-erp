@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ListPanel from '@/components/ListPanel.vue'
 /**
  * 库存管理页：出入库单据 + 库存查询两个视图。
  *
@@ -28,6 +29,7 @@ import type {
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import Pagination from '@/components/Pagination.vue'
+import ListFilters from '@/components/ListFilters.vue'
 import ListPrintDialog, {
   type ListPrintColumn,
 } from '@/components/ListPrintDialog.vue'
@@ -463,6 +465,7 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
       <el-tabs v-model="activeTab" @tab-change="onTabChange">
         <!-- 库存查询 -->
         <el-tab-pane label="库存查询" name="inventory">
+          <ListPanel :surface="false">
           <!-- 搜索与统计合并一行 -->
           <div class="list-head">
             <span class="list-head__title">
@@ -475,7 +478,7 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 仅显示前 {{ inventoryLimit }} 条，请用关键字搜索其余
               </em>
             </span>
-            <el-form class="filter-form" label-width="76px" @submit.prevent>
+            <ListFilters>
               <el-form-item label="关键字">
                 <el-input
                   v-model="inventoryKeyword"
@@ -485,24 +488,22 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                   @keyup.enter="loadInventory"
                 />
               </el-form-item>
-            </el-form>
-            <div class="list-head__actions">
-              <el-button type="primary" @click="loadInventory">
-                <AppIcon name="Search" />
-                <span>查询</span>
-              </el-button>
-              <el-button
-                @click="resetInventory"
-                >重置</el-button
-              >
-              <span class="list-head__divider" />
-              <el-button :loading="inventoryLoading" @click="loadInventory">
-                <AppIcon name="Refresh" />
-              </el-button>
-            </div>
+              <template #actions>
+                <el-button type="primary" @click="loadInventory">
+                  <AppIcon name="Search" />
+                  <span>查询</span>
+                </el-button>
+                <el-button @click="resetInventory">重置</el-button>
+              </template>
+              <template #tools>
+                <el-button :loading="inventoryLoading" @click="loadInventory">
+                  <AppIcon name="Refresh" />
+                </el-button>
+              </template>
+            </ListFilters>
           </div>
 
-          <el-table v-loading="inventoryLoading" :data="inventory" stripe>
+          <el-table height="100%" v-loading="inventoryLoading" :data="inventory" stripe>
             <el-table-column prop="productCode" label="编码" width="100" />
             <el-table-column
               prop="productName"
@@ -558,10 +559,13 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
               </template>
             </el-table-column>
           </el-table>
+
+          </ListPanel>
         </el-tab-pane>
 
         <!-- 出入库单据 -->
         <el-tab-pane label="出入库单据" name="orders">
+          <ListPanel :surface="false">
           <!-- 搜索与操作合并一行 -->
           <div class="list-head">
             <span class="list-head__title">
@@ -571,7 +575,7 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 <a @click="clearSelection(tableRef)">清空</a>
               </em>
             </span>
-            <el-form class="filter-form" label-width="76px" @submit.prevent>
+            <ListFilters>
               <el-form-item label="关键字">
                 <el-input
                   v-model="query.keyword"
@@ -582,56 +586,53 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 />
               </el-form-item>
               <el-form-item label="方向">
-                <el-select
-                  v-model="query.direction"
-                  placeholder="全部方向"
-                  clearable
-                >
+                <el-select v-model="query.direction" placeholder="全部方向" clearable>
                   <el-option label="入库" value="in" />
                   <el-option label="出库" value="out" />
                 </el-select>
               </el-form-item>
-            </el-form>
-            <div class="list-head__actions">
-              <el-button type="primary" @click="search">
-                <AppIcon name="Search" />
-                <span>查询</span>
-              </el-button>
-              <el-button @click="reset">重置</el-button>
-              <span class="list-head__divider" />
-              <el-button
-                v-if="selection.length"
-                v-perm="'inv:stock:delete'"
-                :loading="batchRunning"
-                @click="batchVoid"
-              >
-                批量作废
-              </el-button>
-              <el-button
-                :loading="exporting"
-                @click="exportRows(selection.length ? selection : undefined)"
-              >
-                导出{{ selection.length ? '选中' : '' }}
-              </el-button>
-              <el-button @click="printVisible = true">打印</el-button>
-              <el-button
-                v-perm="'inv:stock:create'"
-                type="primary"
-                @click="openCreate"
-              >
-                <AppIcon name="Plus" />
-                <span>新增出入库单</span>
-              </el-button>
-              <el-button @click="load">
-                <AppIcon name="Refresh" />
-              </el-button>
-            </div>
+              <template #actions>
+                <el-button type="primary" @click="search">
+                  <AppIcon name="Search" />
+                  <span>查询</span>
+                </el-button>
+                <el-button @click="reset">重置</el-button>
+              </template>
+              <template #tools>
+                <el-button
+                  v-if="selection.length"
+                  v-perm="'inv:stock:delete'"
+                  :loading="batchRunning"
+                  @click="batchVoid"
+                >
+                  批量作废
+                </el-button>
+                <el-button
+                  :loading="exporting"
+                  @click="exportRows(selection.length ? selection : undefined)"
+                >
+                  导出{{ selection.length ? '选中' : '' }}
+                </el-button>
+                <el-button @click="printVisible = true">打印</el-button>
+                <el-button
+                  v-perm="'inv:stock:create'"
+                  type="primary"
+                  @click="openCreate"
+                >
+                  <AppIcon name="Plus" />
+                  <span>新增出入库单</span>
+                </el-button>
+                <el-button @click="load">
+                  <AppIcon name="Refresh" />
+                </el-button>
+              </template>
+            </ListFilters>
           </div>
 
           <el-alert v-if="listError" type="error" :closable="false" show-icon title="出入库单加载失败，请重新加载后查看。">
             <el-button text @click="load">重新加载</el-button>
           </el-alert>
-          <el-table
+          <el-table height="100%"
             v-else
             :empty-text="returnTo ? '当前可见范围内未找到入库单，请核查单号或联系仓储负责人' : '暂无数据'"
             ref="tableRef"
@@ -737,6 +738,8 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
               @change="load"
             />
           </div>
+
+          </ListPanel>
         </el-tab-pane>
       </el-tabs>
     </div>
