@@ -48,6 +48,31 @@ $radius-lg: 22px;
     --app-gradient-hello: linear-gradient(120deg, #ffffff 0%, #f2f7ff 100%);
     --app-gradient-text: linear-gradient(135deg, #2563eb, #93c5fd);
 
+    // ---- 登录页：参考图的蓝紫氛围，仅登录组件消费 ----
+    --app-login-bg: radial-gradient(
+      ellipse at 70% 28%,
+      #eaf0ff 0%,
+      #f6f7ff 55%,
+      #f8f9ff 100%
+    );
+    --app-login-arc-blue: linear-gradient(
+      145deg,
+      #dce8ff 0%,
+      #e9ebff 65%,
+      #f1f3ff 100%
+    );
+    --app-login-arc-violet: linear-gradient(145deg, #e5eaff 0%, #efedff 100%);
+    --app-login-card: rgba(255, 255, 255, 0.82);
+    --app-login-card-border: rgba(255, 255, 255, 0.9);
+    --app-login-input: #f0f2ff;
+    --app-login-secondary: #6b7396;
+    --app-login-icon-bg: linear-gradient(145deg, #ffffff, #eceaff);
+    --app-login-action: linear-gradient(110deg, #5865e8, #5042e1);
+    --app-login-action-hover: linear-gradient(110deg, #4d59d9, #4435ce);
+    --app-login-action-active: linear-gradient(110deg, #414cc5, #382cb7);
+    --app-login-on-action: #ffffff;
+    --app-login-shadow: 0 28px 60px rgba(83, 99, 183, 0.12);
+
     // ---- 描边 ----
     --app-border: #e4e6ef;
     --app-border-light: #f0f1f6;
@@ -111,6 +136,25 @@ $radius-lg: 22px;
     --app-primary-soft-border: #48416a;
     --app-gradient-hello: linear-gradient(120deg, #161b26 0%, #17223a 100%);
     --app-gradient-text: linear-gradient(135deg, #60a5fa, #bfdbfe);
+
+    --app-login-bg: radial-gradient(
+      ellipse at 70% 28%,
+      #1e2440 0%,
+      #121827 55%,
+      #0f1420 100%
+    );
+    --app-login-arc-blue: linear-gradient(145deg, #1c2b4c, #222840);
+    --app-login-arc-violet: linear-gradient(145deg, #252641, #1c2034);
+    --app-login-card: rgba(25, 31, 47, 0.94);
+    --app-login-card-border: #30384f;
+    --app-login-input: #242b42;
+    --app-login-secondary: #afb8d7;
+    --app-login-icon-bg: linear-gradient(145deg, #2a304c, #24253e);
+    --app-login-action: linear-gradient(110deg, #5865e8, #5042e1);
+    --app-login-action-hover: linear-gradient(110deg, #4d59d9, #4435ce);
+    --app-login-action-active: linear-gradient(110deg, #414cc5, #382cb7);
+    --app-login-on-action: #ffffff;
+    --app-login-shadow: 0 28px 60px rgba(0, 0, 0, 0.3);
 
     --app-border: #2a3243;
     --app-border-light: #212836;

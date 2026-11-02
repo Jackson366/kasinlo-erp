@@ -119,3 +119,7 @@ TemplateDesigner + PrintContentConfig.stamp 为盖章配置 owner，PrintSheet �
 设计器使用 ElUpload 选择文件、ElInputNumber 输入尺寸、ElSwitch 启用区域、ElMessage 反馈及 useUnsavedChanges 保护。坏图或更换失败保留原有效图片；保存失败保留输入及持续错误，处理中防重复与关闭。普通模板编辑保留 content，避免修改名称、状态后丢失版式。OrderPrintDialog / StockPrintDialog 每次打开默认按模板显示印章，可临时取消“显示印章”，不修改模板；所有纸面图片解码完成后才调用打印，加载失败/超时保持预览并提示重试。共享 printSheet 将同一纸面的副本放至 body 下独立打印层，使用 printing-sheet 开关，避开弹窗滚动裁切；不复用列表和报表的 printing 开关。打印结束移除副本与事件监听。
 
 验证入口：`npm run test:print-stamp` 使用真实 Vue + Mock 和测试几何图，验证校验、拖动、保存/失败重试/刷新、元数据编辑保留、打印开关、A5、窄屏暗色与未保存保护；导出浏览器 PDF 核对透明叠放。Go TestPrintStampValidation / Java PrintContentValidatorTest 独立验证服务端，不把 Mock 当作真实后端验收。
+
+## 登录页
+
+登录页以现有 ElForm/ElInput/ElButton、useUserStore.login、请求层 ElMessage 为 canonical owner；认证规则继续来自 docs/API.md、AGENTS.md §5.47 与现有服务端，不变更令牌、权限生成和登录后跳转。表单使用原生 submit（Enter/点击同一路径）及 novalidate，异步校验前置 busy 闸门防止重复提交；失败保留输入、显示持续错误，字段校验关联错误文本并聚焦首个错误字段。密码默认隐藏，后缀原生按钮支持键盘显示/隐藏；保留密码管理器与粘贴。演示填入仅开发构建可见，处理中禁用，不主动登录。帮助与忘记密码没有现有能力，因此不渲染入口或底部分隔占位。短屏使用文档滚动；窄屏保留品牌和所有表单操作。验证使用真实 Vue 登录页与 Mock/受控失败接口，不宣称真实后端认证验收。
