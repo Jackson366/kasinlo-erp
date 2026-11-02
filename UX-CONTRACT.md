@@ -120,6 +120,10 @@ TemplateDesigner + PrintContentConfig.stamp 为盖章配置 owner，PrintSheet �
 
 验证入口：`npm run test:print-stamp` 使用真实 Vue + Mock 和测试几何图，验证校验、拖动、保存/失败重试/刷新、元数据编辑保留、打印开关、A5、窄屏暗色与未保存保护；导出浏览器 PDF 核对透明叠放。Go TestPrintStampValidation / Java PrintContentValidatorTest 独立验证服务端，不把 Mock 当作真实后端验收。
 
+## 登录页
+
+登录页以现有 ElForm/ElInput/ElButton、useUserStore.login、请求层 ElMessage 为 canonical owner；认证规则继续来自 docs/API.md、AGENTS.md §5.47 与现有服务端，不变更令牌、权限生成和登录后跳转。表单使用原生 submit（Enter/点击同一路径）及 novalidate，异步校验前置 busy 闸门防止重复提交；失败保留输入、显示持续错误，字段校验关联错误文本并聚焦首个错误字段。密码默认隐藏，后缀原生按钮支持键盘显示/隐藏；保留密码管理器与粘贴。演示填入仅开发构建可见，处理中禁用，不主动登录。帮助与忘记密码没有现有能力，因此不渲染入口或底部分隔占位。短屏使用文档滚动；窄屏保留品牌和所有表单操作。验证使用真实 Vue 登录页与 Mock/受控失败接口，不宣称真实后端认证验收。
+
 ## 列表工作区空间与筛选
 
 ListPanel 为表格面板尺寸 owner，ListFilters 为筛选披露和同排业务动作 owner；公共 .list-head 管理标题与下方筛选/业务动作两行，Pagination 沿用同 tick 归并的事件契约。覆盖采购全部单据/销售、往来单位、商品、合同、应收应付、库存与出入库、系统用户/角色/菜单/部门/日志。打印模板仅更新筛选结构，不施加表格高度规则。
