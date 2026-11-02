@@ -99,6 +99,157 @@ try {
       }
     })
   }
+  await check(
+    'all purchase create entry points open the editor after cached visits',
+    async () => {
+      const editor = page.locator('.purchase-editor')
+      await go('/inv/purchase')
+      const create = page
+        .locator('.purchase-header')
+        .getByRole('button', { name: '新增采购单', exact: true })
+      await create.click()
+      await expect(page).toHaveURL(/action=create/)
+      await expect(editor).toBeVisible()
+      await editor
+        .getByRole('button', { name: '取消', exact: true })
+        .last()
+        .click()
+      await expect(editor).toBeHidden()
+      await page.getByRole('tab', { name: '全部单据', exact: true }).click()
+      await create.click()
+      await expect(editor).toBeVisible()
+      await editor
+        .getByRole('button', { name: '取消', exact: true })
+        .last()
+        .click()
+      await go('/inv/overview')
+      await page
+        .getByRole('button', { name: '新增采购单', exact: true })
+        .click()
+      await expect(page).toHaveURL(/inv\/purchase.*action=create/)
+      await expect(editor).toBeVisible()
+      await editor
+        .getByRole('button', { name: '取消', exact: true })
+        .last()
+        .click()
+      await go('/inv/supplier')
+      await go('/inv/purchase')
+      await create.click()
+      await expect(editor).toBeVisible()
+      await editor
+        .getByRole('button', { name: '取消', exact: true })
+        .last()
+        .click()
+    },
+  )
+  await check(
+    'create entry points follow the registered purchase route instead of a captured path',
+    async () => {
+      await go('/inv/overview')
+      await page.evaluate(async () => {
+        const { default: router } = await import('/src/router/index.ts')
+        const original = router
+          .getRoutes()
+          .find((record) => record.name === 'InvPurchase')
+        window.restorePurchaseRoute = () =>
+          router.addRoute('Root', {
+            path: original.path,
+            name: original.name,
+            component: original.components.default,
+            meta: original.meta,
+          })
+        router.addRoute('Root', {
+          path: '/qa/purchase',
+          name: original.name,
+          component: original.components.default,
+          meta: original.meta,
+        })
+      })
+      try {
+        await page
+          .getByRole('button', { name: '新增采购单', exact: true })
+          .click()
+        await expect(page).toHaveURL(/qa\/purchase.*action=create/)
+        const editor = page.locator('.purchase-editor')
+        await expect(editor).toBeVisible()
+        await editor
+          .getByRole('button', { name: '取消', exact: true })
+          .last()
+          .click()
+        await page
+          .locator('.purchase-header')
+          .getByRole('button', { name: '新增采购单', exact: true })
+          .click()
+        await expect(page).toHaveURL(/qa\/purchase.*action=create/)
+        await expect(editor).toBeVisible()
+        await editor
+          .getByRole('button', { name: '取消', exact: true })
+          .last()
+          .click()
+      } finally {
+        await go('/inv/overview')
+        await page.evaluate(() => {
+          window.restorePurchaseRoute()
+          delete window.restorePurchaseRoute
+        })
+      }
+    },
+  )
+  await check(
+    'supplier/customer actions share the filter row and follow query controls on wrap',
+    async () => {
+      for (const [route, title] of [
+        ['/inv/supplier', '新增供应商'],
+        ['/inv/customer', '新增客户'],
+      ]) {
+        await page.setViewportSize({ width: 1635, height: 900 })
+        await go(route)
+        const filters = page.locator('.list-filters')
+        const actions = filters.locator('.list-filters__actions')
+        const tools = filters.locator('.list-filters__tools')
+        await expect(
+          tools.getByRole('button', { name: title, exact: true }),
+        ).toBeVisible()
+        await expect
+          .poll(async () =>
+            Math.abs(
+              (await tools.boundingBox()).y - (await actions.boundingBox()).y,
+            ),
+          )
+          .toBeLessThan(2)
+        const panel = await filters.boundingBox()
+        const wide = await tools.boundingBox()
+        expect(
+          Math.abs(wide.x + wide.width - panel.x - panel.width),
+        ).toBeLessThan(2)
+        if (route.endsWith('supplier'))
+          await page.screenshot({
+            path: path.join(out, 'supplier-actions-desktop.png'),
+            fullPage: true,
+          })
+        await page.setViewportSize({ width: 1024, height: 900 })
+        await expect(filters.locator('.list-filters__action-row')).toHaveClass(
+          /is-wrapped/,
+        )
+        await expect
+          .poll(async () =>
+            Math.abs(
+              (await tools.boundingBox()).y - (await actions.boundingBox()).y,
+            ),
+          )
+          .toBeLessThan(2)
+        const wrapped = await tools.boundingBox()
+        const query = await actions.boundingBox()
+        expect(Math.abs(wrapped.x - query.x - query.width - 12)).toBeLessThan(2)
+        expect(wrapped.x + wrapped.width).toBeLessThanOrEqual(
+          (await filters.boundingBox()).x +
+            (await filters.boundingBox()).width +
+            1,
+        )
+      }
+      await page.setViewportSize({ width: 1440, height: 900 })
+    },
+  )
   await go('/system/user')
   await check(
     'expanded user fields use bounded widths and tools wrap below when needed',

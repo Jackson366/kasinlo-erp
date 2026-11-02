@@ -60,7 +60,11 @@ const userStore = useUserStore()
 const isPurchase = computed(() => props.bizType === 'purchase')
 const route = useRoute()
 const router = useRouter()
-const pagePath = route.path
+// Backend menus own route paths; cached pages must keep their business route owner.
+const orderRouteName = isPurchase.value ? 'InvPurchase' : 'InvSales'
+const pagePath = router.hasRoute(orderRouteName)
+  ? router.resolve({ name: orderRouteName }).path
+  : route.path
 const workspaceView = ref<'pending' | 'all'>(
   isPurchase.value && route.query.view !== 'all' ? 'pending' : 'all',
 )
@@ -472,7 +476,9 @@ const editorLoading = ref(false)
 const editorError = ref('')
 const purchaseEditing = computed(
   () =>
-    isPurchase.value && ['create', 'edit'].includes(String(route.query.action)),
+    isPurchase.value &&
+    route.path === pagePath &&
+    ['create', 'edit'].includes(String(route.query.action)),
 )
 let originDetail = false
 let editorScroll = 0
@@ -678,8 +684,14 @@ function enterPurchaseEditor(action: 'create' | 'edit', id?: number): void {
       : null
   editorScroll = document.querySelector('.layout__content')?.scrollTop ?? 0
   void router.push({
-    path: pagePath,
-    query: { ...route.query, action, editId: id ? String(id) : undefined },
+    ...(router.hasRoute(orderRouteName)
+      ? { name: orderRouteName }
+      : { path: pagePath }),
+    query: {
+      ...(route.path === pagePath ? route.query : {}),
+      action,
+      editId: id ? String(id) : undefined,
+    },
   })
 }
 function openCreate(): void {
