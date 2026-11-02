@@ -387,18 +387,20 @@ try {
     console.log('PASS ' + name)
   }
   const assertSidebarContrast = async () => {
-    const ratios = await page.locator('.sidebar__primary-item.is-active, .sidebar__menu .el-menu-item.is-active').evaluateAll(elements => {
+    const ratios = await page.locator('.layout__aside .sidebar__menu .el-menu-item.is-active').evaluateAll(elements => {
       const luminance = color => color.match(/[\d.]+/g).slice(0,3).map(Number).map(v => {
         v /= 255
         return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
       }).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0)
       return elements.map(el => {
         const style = getComputedStyle(el)
-        const [a,b] = [luminance(style.color), luminance(style.backgroundColor)].sort((a,b) => a-b)
+        let background = el
+        while (getComputedStyle(background).backgroundColor === 'rgba(0, 0, 0, 0)' && background.parentElement) background = background.parentElement
+        const [a,b] = [luminance(style.color), luminance(getComputedStyle(background).backgroundColor)].sort((a,b) => a-b)
         return (b + 0.05) / (a + 0.05)
       })
     })
-    expect(ratios.length).toBe(2)
+    expect(ratios.length).toBe(1)
     for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(4.5)
   }
   const review = page.locator('.purchase-review')
@@ -658,13 +660,18 @@ try {
     expect((await dateCell.boundingBox()).height).toBeLessThan(30)
     const detailHeader = table.locator('.el-table__header th .cell').nth(5)
     expect((await detailHeader.boundingBox()).height).toBeLessThan(30)
-    const actionGroup = table.locator('.purchase-row-actions').first()
+    const actionGroup = table.locator('.order-row-actions').first()
+    await expect(actionGroup.getByRole('button', { name: '查看', exact: true })).toBeVisible()
+    await expect(actionGroup.getByRole('button', { name: '打印', exact: true })).toBeVisible()
     const buttons = await actionGroup.locator('button').all()
     const boxes = await Promise.all(buttons.map(button => button.boundingBox()))
     const centers = boxes.map(box => box.y + box.height / 2)
     expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(2)
-    const otherGroup = table.locator('.purchase-row-actions').nth(1)
+    const otherGroup = table.locator('.order-row-actions').nth(1)
     expect(Math.abs((await actionGroup.boundingBox()).x - (await otherGroup.boundingBox()).x)).toBeLessThan(2)
+    await actionGroup.getByRole('button', { name: /的更多操作$/ }).click()
+    await expect(page.getByRole('menuitem', { name: /^附件/ })).toBeVisible()
+    await page.keyboard.press('Escape')
     await page.screenshot({path: out + '/purchase-history.png', fullPage: true})
 
     await page
@@ -746,276 +753,70 @@ try {
     await expect(dialog).not.toBeVisible()
     await expect(review.locator('.detail-head__no')).toHaveText('CG20261025100')
   })
-  await check('侧栏展开分组与保留文字的收起态', async () => {
-    const rail = page.locator('.sidebar__rail')
-    await expect(rail.getByRole('button', { name: '进销存', exact: true })).toBeVisible()
-    expect((await rail.boundingBox()).width).toBe(132)
-    const handle = page.getByRole('button', {name:'展开二级菜单',exact:true})
-    await expect(handle).toBeVisible()
-    const sideBox = await page.locator('.layout__aside').boundingBox()
-    const handleBox = await handle.boundingBox()
-    expect(Math.abs(handleBox.x + handleBox.width / 2 - sideBox.x - sideBox.width)).toBeLessThan(2)
-    await rail.getByRole('button', { name: '进销存', exact: true }).click()
-    const secondary = page.locator('.sidebar__secondary')
-    await expect(secondary).toBeVisible()
-    await expect(secondary.getByRole('menuitem', {name:'采购管理'})).toHaveClass(/is-active/)
-    await page.waitForTimeout(250)
-    expect((await page.locator('.layout__aside').boundingBox()).width).toBe(280)
-    await page.screenshot({path:out+'/sidebar-expanded.png',fullPage:true})
-    await secondary.locator('.el-sub-menu__title').filter({hasText:'单据管理'}).click()
-    await expect(secondary.getByRole('menuitem', {name:'采购管理',exact:true})).not.toBeVisible()
-    await page.getByRole('button', {name:'收起二级菜单',exact:true}).click()
-    await page.getByRole('button', {name:'展开二级菜单',exact:true}).click()
-    await expect(secondary.getByRole('menuitem', {name:'采购管理',exact:true})).not.toBeVisible()
-    await secondary.locator('.el-sub-menu__title').filter({hasText:'单据管理'}).click()
-    await expect(secondary.getByRole('menuitem', {name:'采购管理',exact:true})).toBeVisible()
-
-    await page.getByRole('button', { name: '收起二级菜单', exact: true }).click()
-    await expect(secondary).not.toBeVisible()
-    await expect(rail.getByRole('button', { name: '进销存', exact: true })).toBeVisible()
-    await page.waitForTimeout(250)
-    expect((await page.locator('.layout__aside').boundingBox()).width).toBe(132)
-    await page.screenshot({path:out+'/sidebar-collapsed.png',fullPage:true})
+  // Shared navigation and tag interactions are also covered by test:layout.
+  // Keep the purchase fixture's custom menu tree covered by the current single sidebar.
+  await check('单侧栏收起、刷新恢复与采购页面定位', async () => {
+    const aside = page.locator('.layout__aside')
+    await expect(aside).toHaveCSS('width', '240px')
+    await expect(aside.locator('.el-menu-item.is-active')).toHaveText('采购管理')
+    await page.getByRole('button', { name: '收起菜单', exact: true }).click()
+    await expect(aside).toHaveCSS('width', '76px')
     await page.reload()
-    await expect(page.locator('.sidebar__secondary')).not.toBeVisible()
-    await expect(rail.getByRole('button', { name: '进销存', exact: true })).toBeVisible()
+    await expect(aside.locator('.el-menu--collapse')).toBeVisible()
+    await page.getByRole('button', { name: '展开菜单', exact: true }).click()
+    await expect(aside.getByRole('menuitem', { name: '采购管理', exact: true })).toBeVisible()
+    await expect(aside).toHaveCSS('width', '240px')
   })
-  await check('标签页菜单由 ElDropdown 正常触发', async () => {
-    await page.locator('.tags-view__more-btn').click()
-    await expect(
-      page.getByRole('menuitem', { name: '关闭其它标签' }),
-    ).toBeVisible()
-    await page.keyboard.press('Escape')
-  })
-  await check('完整侧栏：文字单行、产品图标、当前页面与路由切换', async () => {
+  await check('完整菜单、原品牌图片、销售往返与标签右键菜单', async () => {
     state.fullNavigation = true
     await page.reload()
     await expect(review).toContainText(item.productName)
-    await page
-      .locator('.sidebar__rail')
-      .getByRole('button', { name: '进销存', exact: true })
-      .click()
-    await page.evaluate(() => document.documentElement.classList.remove('dark'))
-    const primary = page.locator('.sidebar__primary')
-    await expect(primary.locator('.sidebar__primary-item')).toHaveCount(3)
-    const logo = page.locator('.sidebar__logo')
-    expect(
-      await logo.evaluate((img) => img.complete && img.naturalWidth > 0),
-    ).toBe(true)
-    expect(await page.locator('link[rel="icon"]').getAttribute('href')).toBe(
-      '/brand/kasinlo-mark.png',
-    )
-    for (const label of await primary
-      .locator('.sidebar__primary-item > span')
-      .all()) {
-      const size = await label.boundingBox()
-      expect(size.height).toBeLessThanOrEqual(20)
-      expect(
-        await label.evaluate((el) => el.scrollWidth <= el.clientWidth),
-      ).toBe(true)
-    }
-    await expect(primary.locator('.is-active')).toHaveCount(1)
-    await expect(
-      page.locator('.sidebar__secondary .el-menu-item.is-active'),
-    ).toHaveText('采购管理')
-    await page.waitForTimeout(250)
-    await page.screenshot({
-      path: out + '/sidebar-full-light.png',
-      fullPage: true,
-    })
-    await expect(assertSidebarContrast).toPass({timeout:2000})
-    await page
-      .locator('.sidebar')
-      .screenshot({ path: out + '/sidebar-detail-light.png' })
-    await page
-      .locator('.sidebar__secondary')
-      .getByRole('menuitem', { name: '销售管理', exact: true })
-      .click()
+    const aside = page.locator('.layout__aside')
+    const logo = page.locator('.navbar__brand img')
+    await expect(logo).toHaveAttribute('src', '/brand/kasinlo-mark.png')
+    expect(await logo.evaluate(img => img.complete && img.naturalWidth > 0)).toBe(true)
+    expect(await page.locator('link[rel="icon"]').getAttribute('href')).toBe('/brand/kasinlo-mark.png')
+    await expect(aside.getByText('隐藏分组', { exact: true })).toHaveCount(0)
+    await aside.getByRole('menuitem', { name: '销售管理', exact: true }).click()
     await expect(page).toHaveURL(/\/inv\/sales/)
-    await expect(
-      page.locator('.sidebar__secondary .el-menu-item.is-active'),
-    ).toHaveText('销售管理')
-    await primary.getByRole('button', { name: '系统', exact: true }).click()
-    await expect(page.locator('.sidebar__heading')).toHaveText('系统')
-    await expect(page).toHaveURL(/\/inv\/sales/)
-    await primary.getByRole('button', { name: '进销存', exact: true }).click()
-    await page
-      .locator('.sidebar__secondary')
-      .getByRole('menuitem', { name: '采购管理', exact: true })
-      .click()
-    await expect(review).toContainText(item.productName)
-  })
-  await check('侧栏主题、键盘焦点、窄屏与减少动态效果', async () => {
-    const handle = page.getByRole('button', {
-      name: '收起二级菜单',
-      exact: true,
-    })
-    await page.keyboard.press('Tab')
-    await handle.focus()
-    expect(
-      await handle.evaluate((el) => getComputedStyle(el).outlineStyle),
-    ).toBe('solid')
-    await page.keyboard.press('Enter')
-    await expect(page.locator('.sidebar__secondary')).not.toBeVisible()
-    await expect(
-      page.getByRole('button', { name: '展开二级菜单', exact: true }),
-    ).toBeFocused()
-    await page.waitForTimeout(250)
-    await page
-      .locator('.sidebar')
-      .screenshot({ path: out + '/sidebar-detail-collapsed.png' })
-    await page.keyboard.press('Enter')
-    await page.evaluate(() => document.documentElement.classList.add('dark'))
-    await page.waitForTimeout(250)
-    await page
-      .locator('.sidebar')
-      .screenshot({ path: out + '/sidebar-detail-dark.png' })
-    await expect(assertSidebarContrast).toPass({timeout:2000})
-    await page.setViewportSize({ width: 640, height: 900 })
-    await expect(page.locator('.sidebar__secondary')).toBeVisible()
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true)
-    await page.emulateMedia({ reducedMotion: 'reduce' })
-    expect(
-      await page
-        .locator('.layout__aside')
-        .evaluate((el) => getComputedStyle(el).transitionDuration),
-    ).toBe('0s')
-    await expect(page.locator('.sidebar__rail')).toHaveCSS('transition-duration','0s')
-    await expect(page.locator('.sidebar__primary-label').first()).toHaveCSS('transition-duration','0s')
-    await page
-      .getByRole('button', { name: '收起二级菜单', exact: true })
-      .click()
-    await expect(page.locator('.layout__aside')).toHaveCSS('width', '132px')
-    await page
-      .getByRole('button', { name: '展开二级菜单', exact: true })
-      .click()
-    await page
-      .locator('.sidebar__rail')
-      .getByRole('link', { name: '首页', exact: true })
-      .click()
-    await expect(page.locator('.overview-page')).toBeVisible()
-    await expect(page.locator('.sidebar__toggle')).toHaveCount(0)
-    await expect(page.locator('.sidebar__rail')).toHaveCSS('width', '132px')
-    await expect(page.locator('.sidebar__primary .is-active')).toHaveCount(1)
-    await page.setViewportSize({ width: 1600, height: 1100 })
-  })
-  await check('菜单层级与缩放：一级 20/18px、二级 16px、键盘与偏好恢复', async () => {
-    await page.emulateMedia({reducedMotion:'no-preference'})
-    await page.evaluate(() => document.documentElement.classList.remove('dark'))
-    const sidebar = page.locator('.sidebar')
-    const rail = page.locator('.sidebar__rail')
-    const inventory = rail.getByRole('button', {name:'进销存',exact:true})
-    await inventory.click()
-    await page.locator('.sidebar__secondary').getByRole('menuitem',{name:'采购管理',exact:true}).click()
-    await expect(page.locator('.layout__aside')).toHaveCSS('width','280px')
-    const metrics = () => inventory.evaluate(el => {
-      const icon = el.querySelector('.el-icon')
-      const label = el.querySelector('span')
-      const box = icon.getBoundingClientRect()
-      return {width:box.width,height:box.height,x:box.x,font:getComputedStyle(label).fontSize,transform:getComputedStyle(icon).transform}
-    })
-    const baseline = await metrics()
-    expect(baseline.width).toBe(20)
-    expect(baseline.font).toBe('14px')
-    const secondaryItem = page.locator('.sidebar__secondary .el-menu-item.is-active')
-    await expect(secondaryItem).toHaveCSS('font-size','13px')
-    await expect(secondaryItem).toHaveCSS('font-weight','500')
-    expect((await secondaryItem.locator('.el-icon').boundingBox()).width).toBe(16)
-    expect((await inventory.boundingBox()).height).toBeGreaterThan((await secondaryItem.boundingBox()).height)
-    expect(await inventory.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(await secondaryItem.evaluate(el => getComputedStyle(el).backgroundColor))
-    // Measure during the actual width transition, not just the endpoint.
-    const sampleTransition = async (trigger, width, {icon=20,font=14,resize=false} = {}) => {
-      // Await registration separately from sampling so an immediate keyboard
-      // event cannot arrive before the listener is installed.
-      await inventory.evaluate(el => {
-        window.__sidebarTransitionSample = new Promise(resolve => {
-          const cleanup = () => {
-            document.removeEventListener('click', start, true)
-            document.removeEventListener('keydown', start, true)
-          }
-          const deadline = setTimeout(() => { cleanup(); resolve([]) }, 5000)
-          const start = async () => {
-            cleanup()
-            clearTimeout(deadline)
-            const samples = []
-            const until = performance.now() + 350
-            while (performance.now() < until) {
-              await new Promise(requestAnimationFrame)
-              const icon = el.querySelector('.el-icon'), label = el.querySelector('span')
-              const box = icon.getBoundingClientRect()
-              samples.push({width:box.width,height:box.height,x:box.x,font:getComputedStyle(label).fontSize,transform:getComputedStyle(icon).transform})
-            }
-            resolve(samples)
-          }
-          document.addEventListener('click', start, true)
-          document.addEventListener('keydown', start, true)
-        })
-      })
-      if (typeof trigger === 'function') await trigger()
-      else await trigger.click()
-      await expect(page.locator('.layout__aside')).toHaveCSS('width',width)
-      const samples = await page.evaluate(async () => {
-        const result = await window.__sidebarTransitionSample
-        delete window.__sidebarTransitionSample
-        return result
-      })
-      expect(samples.length).toBeGreaterThan(0)
-      for (const sample of samples) {
-        expect(sample.width).toBeGreaterThanOrEqual(17.99)
-        expect(sample.width).toBeLessThanOrEqual(20.01)
-        expect(Number.parseFloat(sample.font)).toBeGreaterThanOrEqual(11.99)
-        expect(Number.parseFloat(sample.font)).toBeLessThanOrEqual(14.01)
-        expect(sample.x + sample.width / 2).toBeCloseTo(baseline.x + baseline.width / 2, 1)
-      }
-      const settled = await metrics()
-      expect(settled.width).toBeCloseTo(icon,1)
-      expect(settled.font).toBe(font+'px')
-      if (resize) {
-        expect(samples.some(sample => sample.width > 18.05 && sample.width < 19.95)).toBe(true)
-        expect(samples.some(sample => Number.parseFloat(sample.font) > 12.05 && Number.parseFloat(sample.font) < 13.95)).toBe(true)
-      } else {
-        for (const sample of samples) expect(sample.width).toBeCloseTo(icon,1)
-      }
-    }
-    await sampleTransition(page.getByRole('button',{name:'收起二级菜单',exact:true}), '132px')
-    await expect(rail).toHaveCSS('width','132px')
-    await sampleTransition(sidebar.getByRole('button',{name:'收起一级菜单',exact:true}), '64px', {icon:18,font:12,resize:true})
-    await expect(rail).toHaveCSS('width','64px')
-    await expect(inventory.locator('span')).not.toBeVisible()
-    await expect(page.locator('.sidebar__wordmark')).not.toBeVisible()
-    expect((await page.locator('.sidebar__logo').boundingBox()).width).toBe(30)
-    await page.keyboard.press('Tab')
-    await inventory.focus()
-    await expect(page.getByRole('tooltip',{name:'进销存',exact:true})).toBeVisible()
+    await expect(aside.locator('.el-menu-item.is-active')).toHaveText('销售管理')
+    const tags = page.getByRole('navigation', { name: '已打开的页面' })
+    await tags.getByRole('link', { name: '销售管理', exact: true }).click({ button: 'right' })
+    await expect(page.getByRole('menuitem', { name: '关闭其它标签', exact: true })).toBeVisible()
     await page.keyboard.press('Escape')
-    await sampleTransition(() => page.keyboard.press('Enter'),'212px', {icon:18,font:12})
-    await expect(inventory.locator('span')).not.toBeVisible()
-    await expect(page.locator('.sidebar__secondary')).toBeVisible()
-    await page.screenshot({path:out+'/sidebar-primary-icons.png',clip:{x:0,y:0,width:226,height:580}})
-    await sampleTransition(page.getByRole('button',{name:'收起二级菜单',exact:true}), '64px', {icon:18,font:12})
-    await page.screenshot({path:out+'/sidebar-icons-only.png',clip:{x:0,y:0,width:80,height:580}})
-    await page.reload()
-    await expect(rail).toHaveCSS('width','64px')
-    await expect(inventory.locator('span')).not.toBeVisible()
-    await expect(page.locator('.layout__aside')).toHaveCSS('width','64px')
-    await page.locator('.navbar').getByRole('button',{name:'展开一级菜单',exact:true}).focus()
-    await sampleTransition(() => page.keyboard.press('Enter'), '132px', {icon:20,font:14,resize:true})
-    await expect(inventory.locator('span')).toBeVisible()
-    await sampleTransition(page.getByRole('button',{name:'展开二级菜单',exact:true}), '280px')
-    await expect(rail).toHaveCSS('width','132px')
-    await expect(page.locator('.sidebar__secondary .el-menu-item.is-active')).toHaveText('采购管理')
-    await page.mouse.move(500,500)
-    await page.waitForTimeout(200)
-    await page.screenshot({path:out+'/sidebar-horizontal-light.png',clip:{x:0,y:0,width:294,height:580}})
-    await expect(assertSidebarContrast).toPass({timeout:2000})
+    await aside.getByRole('menuitem', { name: '采购管理', exact: true }).click()
+    await expect(review).toContainText(item.productName)
+    await expect(aside.locator('.el-menu-item.is-active')).toHaveText('采购管理')
+    await page.screenshot({ path: out + '/sidebar-full-light.png', fullPage: true })
+  })
+  await check('侧栏键盘、暗色、窄屏抽屉与减少动态效果', async () => {
+    await page.evaluate(() => document.documentElement.classList.remove('dark'))
+    const toggle = page.getByRole('button', { name: '收起菜单', exact: true })
+    await toggle.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('button', { name: '展开菜单', exact: true })).toBeFocused()
+    await expect(page.locator('.layout__aside')).toHaveCSS('width', '76px')
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.layout__aside')).toHaveCSS('width', '240px')
     await page.evaluate(() => document.documentElement.classList.add('dark'))
-    await page.waitForTimeout(250)
-    await expect(assertSidebarContrast).toPass({timeout:2000})
-    await page.screenshot({path:out+'/sidebar-horizontal-dark.png',clip:{x:0,y:0,width:294,height:580}})
+    await expect(assertSidebarContrast).toPass({ timeout: 2000 })
+    await page.screenshot({ path: out + '/sidebar-dark.png', fullPage: true })
+    await page.setViewportSize({ width: 640, height: 900 })
+    await expect(page.locator('.layout__aside')).not.toBeVisible()
+    await page.getByRole('button', { name: '打开菜单', exact: true }).click()
+    const drawer = page.getByRole('dialog', { name: '菜单', exact: true })
+    await expect(drawer).toBeVisible()
+    await expect(drawer.getByRole('menuitem', { name: '采购管理', exact: true })).toBeVisible()
+    await drawer.getByRole('menuitem', { name: '销售管理', exact: true }).click()
+    await expect(page).toHaveURL(/\/inv\/sales/)
+    await expect(drawer).not.toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expect(page.locator('.layout')).toHaveCSS('transition-duration', '0s')
+    await page.setViewportSize({ width: 1600, height: 1100 })
+    await page.locator('.layout__aside').getByRole('menuitem', { name: '采购管理', exact: true }).click()
+    await expect(review).toContainText(item.productName)
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
   })
   await check('首页真实采购待办、快捷新建与刷新保留输入', async () => {
     state.fullNavigation = true
