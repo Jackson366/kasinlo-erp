@@ -236,7 +236,11 @@ try {
     await expect(page.locator('.finance-page')).toContainText(
       '应收应付加载失败',
     )
-    await expect(page.locator('.finance-page .el-table')).toHaveCount(0)
+    // KasTable 保留表头和面板；失败时不能暴露旧行或对旧结果执行操作。
+    await expect(page.locator('.finance-page .el-table__body-wrapper .el-table__row')).toHaveCount(0)
+    await expect(page.locator('.finance-page').getByRole('alert')).toContainText('应收应付加载失败')
+    await expect(page.locator('.finance-page').getByRole('button', { name: '导出', exact: true })).toBeDisabled()
+    await expect(page.locator('.finance-page').getByRole('button', { name: '打印', exact: true })).toBeDisabled()
     await page.evaluate(async () => {
       const { invApi } = await import('/src/api/inv.ts')
       invApi.payables = window.originalPayables
