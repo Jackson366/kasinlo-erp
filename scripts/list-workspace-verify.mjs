@@ -424,6 +424,82 @@ try {
       expect(g.panel.bottom, route).toBeLessThanOrEqual(g.main.bottom + 2)
     }
   })
+  await check('KasTable party pages clear selection, merge pagination and recover failures', async () => {
+    for (const [route, method] of [['/inv/customer', 'customers'], ['/inv/supplier', 'suppliers']]) {
+      await go(route)
+      await page.evaluate(async (method) => {
+        const { invApi } = await import('/src/api/inv.ts')
+        const original = invApi[method]
+        window.kasTableProbe = { original, method, calls: [], fail: false }
+        invApi[method] = async (params) => {
+          const probe = window.kasTableProbe
+          probe.calls.push({ ...params })
+          if (probe.fail) throw new Error('KasTable probe failure')
+          const result = await original({ page: 1, pageSize: 10 })
+          const all = Array.from({ length: 25 }, (_, i) => ({
+            ...result.list[0], id: 10000 + i, code: `KAS-${i}`, name: `KasTable 测试 ${i}`,
+          })).filter((row) => !params.keyword || row.name.includes(params.keyword))
+          const offset = (params.page - 1) * params.pageSize
+          return { ...result, list: all.slice(offset, offset + params.pageSize), total: all.length }
+        }
+      }, method)
+      const panel = page.locator('.kas-table')
+      const bodyRows = panel.locator('.el-table__body-wrapper tbody tr')
+      const refresh = panel.locator('.list-filters__tools > button').last()
+      const calls = () => page.evaluate(() => window.kasTableProbe.calls)
+      const clearCalls = () => page.evaluate(() => { window.kasTableProbe.calls = [] })
+      try {
+        await refresh.click()
+        await expect(bodyRows).toHaveCount(10)
+        await bodyRows.first().locator('.el-checkbox').click()
+        await expect(panel.locator('.list-head__title')).toContainText('已选 1 项')
+        await clearCalls()
+        await panel.getByPlaceholder('编号 / 名称 / 联系人').fill('no-kas-table-match')
+        await panel.getByPlaceholder('编号 / 名称 / 联系人').press('Enter')
+        await expect(panel.getByText('暂无数据', { exact: true })).toBeVisible()
+        await expect(panel.locator('.list-head__title')).not.toContainText('已选')
+        // 等过防抖窗口，证明 Enter 已取消原输入定时器。
+        await page.waitForTimeout(400)
+        expect(await calls()).toHaveLength(1)
+        await panel.getByRole('button', { name: '重置', exact: true }).click()
+        await expect(bodyRows).toHaveCount(10)
+        await panel.locator('.pagination .btn-next').click()
+        await expect.poll(async () => (await calls()).at(-1).page).toBe(2)
+        await expect(bodyRows.first()).toContainText('KAS-10')
+        await bodyRows.first().locator('.el-checkbox').click()
+        await clearCalls()
+        await panel.locator('.pagination .el-select').click()
+        await page.getByRole('option', { name: '20条/页', exact: true }).click()
+        await expect(bodyRows).toHaveCount(20)
+        await page.waitForTimeout(100)
+        expect(await calls()).toHaveLength(1)
+        expect((await calls())[0]).toMatchObject({ page: 1, pageSize: 20 })
+        await expect(panel.locator('.list-head__title')).not.toContainText('已选')
+
+        const before = await geometry()
+        await page.evaluate(() => { window.kasTableProbe.fail = true })
+        await refresh.click()
+        await expect(panel.getByRole('alert')).toContainText('列表加载失败')
+        await expect(bodyRows).toHaveCount(0)
+        await expect(panel.getByRole('button', { name: '导出', exact: true })).toBeDisabled()
+        await expect(panel.getByRole('button', { name: '打印', exact: true })).toBeDisabled()
+        expect(Math.abs(before.pager.bottom - (await geometry()).pager.bottom)).toBeLessThan(2)
+        await page.evaluate(() => { window.kasTableProbe.fail = false })
+        await panel.getByRole('button', { name: '重新加载', exact: true }).click()
+        await expect(bodyRows).toHaveCount(20)
+        await expect(panel.getByRole('alert')).toHaveCount(0)
+        await expect(panel.getByRole('button', { name: '打印', exact: true })).toBeEnabled()
+      } finally {
+        await page.evaluate(async () => {
+          const { invApi } = await import('/src/api/inv.ts')
+          const probe = window.kasTableProbe
+          invApi[probe.method] = probe.original
+          delete window.kasTableProbe
+        })
+      }
+    }
+  })
+  await go('/inv/stock')
   await check('stock tabs own independent table scroll regions', async () => {
     await page.getByRole('tab', { name: '出入库单据', exact: true }).click()
     expect((await geometry()).pager.bottom).toBeLessThanOrEqual(
@@ -477,6 +553,14 @@ try {
       })
     },
   )
+  await go('/inv/customer')
+  await check('KasTable fits 390px dark viewport with a reachable footer', async () => {
+    await expect(page.locator('.kas-table')).toBeVisible()
+    await page.locator('.kas-table .pagination').scrollIntoViewIfNeeded()
+    await expect(page.locator('.kas-table .pagination .btn-next')).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+    await page.screenshot({ path: path.join(out, 'kas-table-narrow-dark.png'), fullPage: true })
+  })
   expect(errors).toEqual([])
   await fs.writeFile(
     path.join(out, 'result.json'),

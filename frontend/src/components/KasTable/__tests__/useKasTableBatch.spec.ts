@@ -1,12 +1,15 @@
 import { expect, it, vi } from 'vitest'
-vi.mock('element-plus', () => ({
+const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+vi.mock('element-plus/es/components/message/index', () => ({
   ElMessage: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
-  ElMessageBox: { confirm: vi.fn().mockResolvedValue(undefined) },
+}))
+vi.mock('element-plus/es/components/message-box/index', () => ({
+  ElMessageBox: { confirm: confirmMock },
 }))
 vi.mock('@/utils/request', () => ({ ApiError: class ApiError extends Error {} }))
 vi.mock('@/utils/download', () => ({ downloadFile: vi.fn() }))
-import { runBatchAction, type BatchOutcome } from './useListTools'
-import { ElMessageBox } from 'element-plus'
+import { runBatchAction, type BatchOutcome } from '@/composables/useListTools'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 it('批量保存全部失败单号与原因，允许部分成功，确认展示业务后果', async () => {
   const rows = Array.from({ length: 12 }, (_, id) => ({
     id,
@@ -39,4 +42,17 @@ it('批量保存全部失败单号与原因，允许部分成功，确认展示�
     '批量审核确认',
     expect.any(Object),
   )
+})
+
+it('确认等待期间选择集合变化不会改动批量目标', async () => {
+  let confirm!: () => void
+  const confirmation = new Promise<void>((resolve) => { confirm = resolve })
+  confirmMock.mockReturnValueOnce(confirmation)
+  const rows = [{ id: 1 }, { id: 2 }]
+  const run = vi.fn().mockResolvedValue(undefined)
+  const pending = runBatchAction('删除', rows, run, (row) => String(row.id))
+  rows.splice(0, rows.length, { id: 3 })
+  confirm()
+  await pending
+  expect(run.mock.calls.map(([row]) => row.id)).toEqual([1, 2])
 })

@@ -283,6 +283,13 @@ db.Offset(q.Offset()).Limit(q.Limit()).Order(order)
 
 ### 列表页的三个公共抽象（新页面照抄，不要重写）
 
+标准分页列表优先使用 `components/KasTable`（功能聚合方式）：组件、子组件、hooks、
+类型与测试放在同目录，页面从其 `index.ts` 导入 `KasTable` / `useKasTable`。
+首批调用方为客户/供应商共用的 `PartyPage`，完整接入与行为边界见
+`frontend/src/components/KasTable/README.md`。业务列、权限和业务操作留在页面。
+原 `useTableQuery` / `useListTools` 保留兼容出口，底层实现统一归属 KasTable；
+不要在旧目录复制一份实现。跨页勾选、树表格、工作台等暂按现有行为运行。
+
 系统四个页面（user/role/menu/dept）与日志页曾各自维护同一套状态与骨架，
 差异只在「调哪个接口」。这些已经收敛成组合式函数，**新列表页直接用**：
 
@@ -2326,7 +2333,7 @@ DOM 里一条都不少；而「用 v-for 重建列表」的**自定义过滤**�
 逐条至少能精确说出「哪几条没成功、为什么」。
 
 配套：批量请求要能**静默**（`config.silent`），否则 10 条失败弹 10 次相同 toast，
-真正要看的信息被淹没。列表工具统一收在 `composables/useListTools.ts`。
+真正要看的信息被淹没。列表工具实现统一收在 `components/KasTable/hooks/`，`composables/useListTools.ts` 保留兼容出口。
 
 ### 5.99 按需导入的子组件，样式可能要引两份
 
