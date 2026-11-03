@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { useTableQuery } from './useTableQuery'
+import { useTableQuery } from '@/composables/useTableQuery'
 import type { PageResult } from '@/types/api'
 
 function deferred<T>() {

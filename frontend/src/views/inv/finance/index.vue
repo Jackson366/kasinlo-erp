@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import ListPanel from '@/components/ListPanel.vue'
+import { KasTable, useKasTableSelection, useKasTableExport, type KasTableHandle } from '@/components/KasTable'
 /**
  * 应收应付页：应收（销售）与应付（采购）两个视图，结构一致。
  * 汇总数据随列表接口一并返回，避免多打一次请求。
@@ -13,10 +13,8 @@ import { usePurchaseHandoff } from '@/composables/usePurchaseHandoff'
 import PurchaseReturnLink from '../components/PurchaseReturnLink.vue'
 import type { InvFinanceRow, InvFinanceSummary, InvSettlePayload } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
-import Pagination from '@/components/Pagination.vue'
 import ListFilters from '@/components/ListFilters.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
-import { downloadFile } from '@/utils/download'
 import { formatDay, formatMoney } from '@/utils/format'
 import { useLatestGuard } from '@/composables/useLatestGuard'
 import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
@@ -41,8 +39,8 @@ const summary = ref<InvFinanceSummary>({
 })
 
 /** 表格勾选（批量收付款用）。只允许勾「还有未结余额」的单据 */
-const tableRef = ref<{ clearSelection: () => void }>()
-const selection = ref<InvFinanceRow[]>([])
+const tableRef = ref<KasTableHandle>()
+const { selection, onSelectionChange, clearSelection } = useKasTableSelection<InvFinanceRow>()
 const selectedOutstanding = computed(() =>
   selection.value.reduce((sum, r) => sum + (Number(r.outstanding) || 0), 0),
 )
@@ -85,8 +83,7 @@ async function load(): Promise<void> {
   const ticket = guard.start()
   loading.value = true
   loadError.value = false
-  selection.value = []
-  tableRef.value?.clearSelection()
+  clearSelection(tableRef.value)
   try {
     const params = {
       page: query.page,
@@ -105,8 +102,7 @@ async function load(): Promise<void> {
     total.value = res.total
     summary.value = res.summary
     // 列表换了，勾选必须清空：留着旧行会让批量操作作用到看不见的单据上
-    selection.value = []
-    tableRef.value?.clearSelection()
+    clearSelection(tableRef.value)
   } catch {
     if (guard.isCurrent(ticket)) {
       loadError.value = true
@@ -216,10 +212,6 @@ const batchForm = reactive<{ method: string; settledAt: string; remark: string }
   remark: '',
 })
 
-function onSelectionChange(list: InvFinanceRow[]): void {
-  selection.value = list
-}
-
 function openBatch(): void {
   if (!selection.value.length) return
   Object.assign(batchForm, { method: '银行转账', settledAt: today(), remark: '' })
@@ -247,7 +239,6 @@ async function submitBatch(): Promise<void> {
 }
 
 // ---------------- 导出 / 打印 ----------------
-const exporting = ref(false)
 const printVisible = ref(false)
 
 const bizType = computed(() => (activeTab.value === 'payable' ? 'purchase' : 'sales'))
@@ -276,21 +267,17 @@ const printSubtitle = computed(() => {
   return parts.join(' · ')
 })
 
-async function handleExport(): Promise<void> {
-  if (exporting.value) return
-  exporting.value = true
-  try {
-    await downloadFile('/inv/export', {
-      entity: 'finance',
-      bizType: bizType.value,
-      keyword: query.keyword || undefined,
-      settleStatus: query.settle || undefined,
-      source: query.source || undefined,
-    }, `${tabLabel.value}.xlsx`)
-  } finally {
-    exporting.value = false
-  }
-}
+const { exporting, exportRows: handleExport } = useKasTableExport({
+  exportUrl: '/inv/export',
+  exportParams: () => ({
+    entity: 'finance',
+    bizType: bizType.value,
+    keyword: query.keyword || undefined,
+    settleStatus: query.settle || undefined,
+    source: query.source || undefined,
+  }),
+  get fallbackName() { return `${tabLabel.value}.xlsx` },
+})
 
 onMounted(() => { if (!returnTo.value) void load() })
 // 关键字录入即查询（防抖），不必再按回车
@@ -321,15 +308,30 @@ follow('/inv/finance', () => {
       <div class="summary-split">{{ summarySplit }}</div>
     </div>
 
-    <ListPanel>
-      <el-tabs v-model="activeTab" @tab-change="onTabChange">
-        <el-tab-pane label="应收明细" name="receivable" />
-        <el-tab-pane label="应付明细" name="payable" />
-      </el-tabs>
-
-      <!-- 搜索与操作合并一行 -->
-      <div class="list-head">
-        <span class="list-head__title">{{ tabLabel }}<em>共 {{ total }} 条</em></span>
+    <KasTable
+      ref="tableRef"
+      v-model:page="query.page"
+      v-model:page-size="query.pageSize"
+      :title="tabLabel"
+      :rows="rows"
+      :loading="loading"
+      :error="loadError"
+      error-text="应收应付加载失败，请重新加载后办理。"
+      :empty-text="returnTo ? '当前可见范围内未找到记录，请核查单号或联系财务负责人' : '暂无数据'"
+      :total="total"
+      :selected-count="selection.length"
+      @change="load"
+      @retry="load"
+      @selection-change="onSelectionChange"
+      @clear-selection="clearSelection(tableRef)"
+    >
+      <template #before>
+        <el-tabs v-model="activeTab" @tab-change="onTabChange">
+          <el-tab-pane label="应收明细" name="receivable" />
+          <el-tab-pane label="应付明细" name="payable" />
+        </el-tabs>
+      </template>
+      <template #filters>
         <ListFilters :active-values="[query.source]">
           <el-form-item label="关键字">
             <el-input
@@ -376,103 +378,85 @@ follow('/inv/finance', () => {
             >
               {{ activeTab === 'receivable' ? '批量收款' : '批量付款' }}{{ selection.length ? `（${selection.length}）` : '' }}
             </el-button>
-            <el-button :loading="exporting" @click="handleExport">导出</el-button>
-            <el-button @click="printVisible = true">打印</el-button>
+            <el-button :loading="exporting" :disabled="loading || loadError" @click="handleExport()">导出</el-button>
+            <el-button :disabled="loading || loadError" @click="printVisible = true">打印</el-button>
             <el-button @click="load">
               <AppIcon name="Refresh" />
             </el-button>
           </template>
         </ListFilters>
-      </div>
-
-      <el-alert v-if="loadError" type="error" :closable="false" show-icon title="应收应付加载失败，请重新加载后办理。">
-        <el-button text @click="load">重新加载</el-button>
-      </el-alert>
-      <el-table height="100%"
-        v-else
-        :empty-text="returnTo ? '当前可见范围内未找到记录，请核查单号或联系财务负责人' : '暂无数据'"
-        ref="tableRef"
-        v-loading="loading"
-        :data="rows"
-        stripe
-        @selection-change="onSelectionChange"
-      >
-        <el-table-column
-          type="selection"
-          width="46"
-          :selectable="(row: InvFinanceRow) => row.outstanding > 0 && row.source === 'order'"
-        />
-        <el-table-column label="来源" width="76" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.source === 'plan' ? 'warning' : 'info'" effect="plain">
-              {{ row.source === 'plan' ? '合同' : '单据' }}
-            </el-tag>
+      </template>
+      <el-table-column
+        type="selection"
+        width="46"
+        :selectable="(row: InvFinanceRow) => row.outstanding > 0 && row.source === 'order'"
+      />
+      <el-table-column label="来源" width="76" align="center">
+        <template #default="{ row }">
+          <el-tag size="small" :type="row.source === 'plan' ? 'warning' : 'info'" effect="plain">
+            {{ row.source === 'plan' ? '合同' : '单据' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="单号 / 合同" width="196">
+        <template #default="{ row }">
+          <template v-if="row.source === 'plan'">
+            <div class="contract-cell">
+              <span>{{ row.contractNo }}</span>
+              <em>第{{ row.planSeq }}期 {{ row.planName }}</em>
+            </div>
           </template>
-        </el-table-column>
-        <el-table-column label="单号 / 合同" width="196">
-          <template #default="{ row }">
-            <template v-if="row.source === 'plan'">
-              <div class="contract-cell">
-                <span>{{ row.contractNo }}</span>
-                <em>第{{ row.planSeq }}期 {{ row.planName }}</em>
-              </div>
-            </template>
-            <span v-else>{{ row.orderNo }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="partyName" label="往来单位" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="orderDate" label="日期" width="120">
-          <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
-        </el-table-column>
-        <el-table-column prop="dueDate" label="到期日" width="120">
-          <template #default="{ row }">
-            <span :class="row.overdue ? 'overdue' : ''">
-              {{ formatDay(row.dueDate) }}
-              <em v-if="row.overdue">逾期</em>
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="金额" width="130" align="right">
-          <template #default="{ row }">{{ formatMoney(row.totalAmount) }}</template>
-        </el-table-column>
-        <el-table-column label="已结算" width="130" align="right">
-          <template #default="{ row }">
-            <span class="text-secondary">{{ formatMoney(row.settledAmount) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="未结余额" width="130" align="right">
-          <template #default="{ row }">
-            <strong :class="row.outstanding > 0 ? 'outstanding' : ''">
-              {{ formatMoney(row.outstanding) }}
-            </strong>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="settleMeta[row.settleStatus]?.type" size="small" effect="light">
-              {{ settleMeta[row.settleStatus]?.text }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="110" fixed="right" align="center">
-          <template #default="{ row }">
-            <el-button
-              v-perm="'inv:finance:settle'"
-              link
-              type="primary"
-              :disabled="row.outstanding <= 0"
-              @click="openSettle(row as InvFinanceRow)"
-            >
-              {{ row.source === 'plan' ? (activeTab === 'receivable' ? '收款' : '付款') : (activeTab === 'receivable' ? '登记收款' : '登记付款') }}
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <div class="table-pager">
-        <Pagination v-model:page="query.page" v-model:page-size="query.pageSize" :total="total" @change="load" />
-      </div>
-    </ListPanel>
+          <span v-else>{{ row.orderNo }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="partyName" label="往来单位" min-width="150" show-overflow-tooltip />
+      <el-table-column prop="orderDate" label="日期" width="120">
+        <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
+      </el-table-column>
+      <el-table-column prop="dueDate" label="到期日" width="120">
+        <template #default="{ row }">
+          <span :class="row.overdue ? 'overdue' : ''">
+            {{ formatDay(row.dueDate) }}
+            <em v-if="row.overdue">逾期</em>
+          </span>
+        </template>
+      </el-table-column>
+      <el-table-column label="金额" width="130" align="right">
+        <template #default="{ row }">{{ formatMoney(row.totalAmount) }}</template>
+      </el-table-column>
+      <el-table-column label="已结算" width="130" align="right">
+        <template #default="{ row }">
+          <span class="text-secondary">{{ formatMoney(row.settledAmount) }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="未结余额" width="130" align="right">
+        <template #default="{ row }">
+          <strong :class="row.outstanding > 0 ? 'outstanding' : ''">
+            {{ formatMoney(row.outstanding) }}
+          </strong>
+        </template>
+      </el-table-column>
+      <el-table-column label="状态" width="100" align="center">
+        <template #default="{ row }">
+          <el-tag :type="settleMeta[row.settleStatus]?.type" size="small" effect="light">
+            {{ settleMeta[row.settleStatus]?.text }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="110" fixed="right" align="center">
+        <template #default="{ row }">
+          <el-button
+            v-perm="'inv:finance:settle'"
+            link
+            type="primary"
+            :disabled="row.outstanding <= 0"
+            @click="openSettle(row as InvFinanceRow)"
+          >
+            {{ row.source === 'plan' ? (activeTab === 'receivable' ? '收款' : '付款') : (activeTab === 'receivable' ? '登记收款' : '登记付款') }}
+          </el-button>
+        </template>
+      </el-table-column>
+    </KasTable>
 
     <ListPrintDialog
       v-model="printVisible"
@@ -633,12 +617,6 @@ follow('/inv/finance', () => {
   &.tone-red &__value {
     color: var(--tone-red);
   }
-}
-
-.table-pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
 }
 
 .batch-summary {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ListPanel from '@/components/ListPanel.vue'
+import { KasTable, useKasTable, type KasTableHandle } from '@/components/KasTable'
 /**
  * 库存管理页：出入库单据 + 库存查询两个视图。
  *
@@ -28,14 +29,11 @@ import type {
   InvStockDirection,
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
-import Pagination from '@/components/Pagination.vue'
 import ListFilters from '@/components/ListFilters.vue'
 import ListPrintDialog, {
   type ListPrintColumn,
 } from '@/components/ListPrintDialog.vue'
 import { formatDay, formatMoney, formatQty } from '@/utils/format'
-import { useTableQuery } from '@/composables/useTableQuery'
-import { useListTools } from '@/composables/useListTools'
 import { useLatestGuard } from '@/composables/useLatestGuard'
 import StockPrintDialog from '../components/StockPrintDialog.vue'
 import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
@@ -72,18 +70,29 @@ interface StockQuery {
   direction?: InvStockDirection
 }
 
-const { query, loading, error: listError, rows, total, load, search, reset } = useTableQuery<
-  StockQuery,
-  InvStockOrderRow
->({ keyword: '', direction: undefined }, (params) =>
-  invApi.stockOrders({
-    page: params.page,
-    pageSize: params.pageSize,
+function stockFilters(params: StockQuery) {
+  return {
     keyword: params.keyword || undefined,
     direction: params.direction ?? undefined,
     includeVoided: returnTo.value ? true : undefined,
+  }
+}
+const tableRef = ref<KasTableHandle>()
+const {
+  query, loading, error: listError, rows, total, load, search, reset,
+  selection, exporting, batchRunning, onSelectionChange, clearSelection, exportRows, runBatch,
+} = useKasTable<StockQuery, InvStockOrderRow>({
+  initial: { keyword: '', direction: undefined },
+  table: () => tableRef.value,
+  fetch: (params) => invApi.stockOrders({
+    page: params.page, pageSize: params.pageSize, ...stockFilters(params),
   }),
-)
+  export: {
+    exportUrl: '/inv/export',
+    exportParams: (params) => ({ entity: 'stock', ...stockFilters(params) }),
+    fallbackName: '出入库单据.xlsx',
+  },
+})
 
 // ---------------- 库存查询 ----------------
 const inventory = ref<InvInventoryRow[]>([])
@@ -368,26 +377,6 @@ function sourceLabel(t: string): string {
 }
 
 // ---------------- 导出 / 打印 / 批量（出入库单据） ----------------
-const tableRef = ref()
-const {
-  selection,
-  exporting,
-  batchRunning,
-  onSelectionChange,
-  clearSelection,
-  exportRows,
-  runBatch,
-} = useListTools<InvStockOrderRow>({
-  exportUrl: '/inv/export',
-  exportParams: () => ({
-    entity: 'stock',
-    keyword: query.keyword || undefined,
-    direction: query.direction || undefined,
-    includeVoided: returnTo.value ? true : undefined,
-  }),
-  fallbackName: '出入库单据.xlsx',
-})
-
 const printVisible = ref(false)
 const printRows = computed(() =>
   selection.value.length ? selection.value : rows.value,
@@ -442,7 +431,7 @@ onMounted(() => {
   loadPicks()
 })
 // 关键字录入即查询（防抖）：单据 tab 用 search，库存 tab 用 loadInventory
-const { searchSoon, cancel: cancelSearch } = useDebouncedSearch(search)
+const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(search)
 follow('/inv/stock', () => {
   cancelSearch()
   activeTab.value = 'orders'
@@ -565,16 +554,25 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
 
         <!-- 出入库单据 -->
         <el-tab-pane label="出入库单据" name="orders">
-          <ListPanel :surface="false">
-          <!-- 搜索与操作合并一行 -->
-          <div class="list-head">
-            <span class="list-head__title">
-              出入库单据<em>共 {{ total }} 条</em>
-              <em v-if="selection.length">
-                已选 {{ selection.length }} 项
-                <a @click="clearSelection(tableRef)">清空</a>
-              </em>
-            </span>
+          <KasTable
+            ref="tableRef"
+            v-model:page="query.page"
+            v-model:page-size="query.pageSize"
+            title="出入库单据"
+            :surface="false"
+            :rows="rows"
+            :loading="loading"
+            :error="listError"
+            error-text="出入库单加载失败，请重新加载后查看。"
+            :empty-text="returnTo ? '当前可见范围内未找到入库单，请核查单号或联系仓储负责人' : '暂无数据'"
+            :total="total"
+            :selected-count="selection.length"
+            @change="load"
+            @retry="load"
+            @selection-change="onSelectionChange"
+            @clear-selection="clearSelection()"
+          >
+            <template #filters>
             <ListFilters>
               <el-form-item label="关键字">
                 <el-input
@@ -582,7 +580,7 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                   @input="searchSoon"
                   placeholder="单号"
                   clearable
-                  @keyup.enter="search"
+                  @keyup.enter="searchNow"
                 />
               </el-form-item>
               <el-form-item label="方向">
@@ -592,11 +590,11 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 </el-select>
               </el-form-item>
               <template #actions>
-                <el-button type="primary" @click="search">
+                <el-button type="primary" @click="searchNow">
                   <AppIcon name="Search" />
                   <span>查询</span>
                 </el-button>
-                <el-button @click="reset">重置</el-button>
+                <el-button @click="cancelSearch(); reset()">重置</el-button>
               </template>
               <template #tools>
                 <el-button
@@ -609,11 +607,12 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 </el-button>
                 <el-button
                   :loading="exporting"
+                  :disabled="loading || listError"
                   @click="exportRows(selection.length ? selection : undefined)"
                 >
                   导出{{ selection.length ? '选中' : '' }}
                 </el-button>
-                <el-button @click="printVisible = true">打印</el-button>
+                <el-button :disabled="loading || listError" @click="printVisible = true">打印</el-button>
                 <el-button
                   v-perm="'inv:stock:create'"
                   type="primary"
@@ -627,20 +626,7 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 </el-button>
               </template>
             </ListFilters>
-          </div>
-
-          <el-alert v-if="listError" type="error" :closable="false" show-icon title="出入库单加载失败，请重新加载后查看。">
-            <el-button text @click="load">重新加载</el-button>
-          </el-alert>
-          <el-table height="100%"
-            v-else
-            :empty-text="returnTo ? '当前可见范围内未找到入库单，请核查单号或联系仓储负责人' : '暂无数据'"
-            ref="tableRef"
-            v-loading="loading"
-            :data="rows"
-            stripe
-            @selection-change="onSelectionChange"
-          >
+            </template>
             <el-table-column type="selection" width="44" />
             <el-table-column prop="orderNo" label="单号" width="150" />
             <el-table-column label="方向" width="90" align="center">
@@ -728,18 +714,7 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 </el-button>
               </template>
             </el-table-column>
-          </el-table>
-
-          <div class="table-pager">
-            <Pagination
-              v-model:page="query.page"
-              v-model:page-size="query.pageSize"
-              :total="total"
-              @change="load"
-            />
-          </div>
-
-          </ListPanel>
+          </KasTable>
         </el-tab-pane>
       </el-tabs>
     </div>
@@ -913,12 +888,6 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
 </template>
 
 <style scoped lang="scss">
-.table-pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
-}
-
 .stock-warn {
   color: var(--tone-red);
   font-weight: 600;

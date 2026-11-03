@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import ListPanel from '@/components/ListPanel.vue'
+import { KasTable, useKasTable, type KasTableHandle } from '@/components/KasTable'
 /**
  * 客户 / 供应商页面主体。两者字段、列、交互完全一致，差异只有
  * 「调哪个接口」「余额口径」「文案」——收敛成一个组件，由两个薄壳页面传入 bizType。
@@ -11,14 +11,11 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { invApi } from '@/api'
 import type { InvPartyPayload, InvPartyRow, Status } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
-import Pagination from '@/components/Pagination.vue'
 import ListFilters from '@/components/ListFilters.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { formatDate, formatMoney } from '@/utils/format'
 import { useCrudDialog } from '@/composables/useCrudDialog'
-import { useTableQuery } from '@/composables/useTableQuery'
-import { useListTools } from '@/composables/useListTools'
 import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 const props = defineProps<{
@@ -42,33 +39,47 @@ interface PartyQuery {
   page?: number
   pageSize?: number
   keyword?: string
-  status?: Status}
+  status?: Status
+}
 
+// 列表和导出共享同一份筛选转换，避免后续加条件时漏改一处。
+function filters(params: PartyQuery) {
+  return { keyword: params.keyword || undefined, status: params.status ?? undefined }
+}
+
+const tableRef = ref<KasTableHandle>()
 const {
   query,
   loading,
+  error: listError,
   rows,
   total,
   load,
   search,
   reset,
-} = useTableQuery<PartyQuery, InvPartyRow>(
-  { keyword: '', status: undefined },
-  (params) =>
-    props.bizType === 'purchase'
-      ? invApi.suppliers({
-          page: params.page,
-          pageSize: params.pageSize,
-          keyword: params.keyword || undefined,
-          status: params.status ?? undefined,
-        })
-      : invApi.customers({
-          page: params.page,
-          pageSize: params.pageSize,
-          keyword: params.keyword || undefined,
-          status: params.status ?? undefined,
-        }),
-)
+  selection,
+  exporting,
+  batchRunning,
+  onSelectionChange,
+  clearSelection,
+  exportRows,
+  runBatch,
+} = useKasTable<PartyQuery, InvPartyRow>({
+  initial: { keyword: '', status: undefined },
+  table: () => tableRef.value,
+  fetch: (params) => {
+    const payload = { page: params.page, pageSize: params.pageSize, ...filters(params) }
+    return props.bizType === 'purchase' ? invApi.suppliers(payload) : invApi.customers(payload)
+  },
+  export: {
+    exportUrl: '/inv/export',
+    exportParams: (params) => ({
+      entity: props.bizType === 'purchase' ? 'supplier' : 'customer',
+      ...filters(params),
+    }),
+    fallbackName: `${props.title}.xlsx`,
+  },
+})
 
 // ---------------- 新增 / 编辑 ----------------
 const formRef = ref<FormInstance>()
@@ -158,25 +169,6 @@ function onDialogOpen(): void {
 void editingId
 
 // ---------------- 导出 / 打印 / 批量 ----------------
-const tableRef = ref()
-const {
-  selection,
-  exporting,
-  batchRunning,
-  onSelectionChange,
-  clearSelection,
-  exportRows,
-  runBatch,
-} = useListTools<InvPartyRow>({
-  exportUrl: '/inv/export',
-  exportParams: () => ({
-    entity: props.bizType === 'purchase' ? 'supplier' : 'customer',
-    keyword: query.keyword || undefined,
-    status: query.status ?? undefined,
-  }),
-  fallbackName: `${props.title}.xlsx`,
-})
-
 const printVisible = ref(false)
 const printRows = computed(() => (selection.value.length ? selection.value : rows.value))
 
@@ -208,29 +200,33 @@ function deleteOne(row: InvPartyRow): Promise<unknown> {
 async function batchDelete(): Promise<void> {
   if (!selection.value.length) return
   const done = await runBatch('批量删除', selection.value, deleteOne, (r) => r.name)
-  if (done) {
-    clearSelection(tableRef.value)
-    load()
-  }
+  if (done) load()
 }
 
 onMounted(load)
 // 关键字录入即查询（防抖），不必再按回车
-const { searchSoon } = useDebouncedSearch(search)
+const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(search)
 </script>
 
 <template>
   <div class="party-page">
-    <ListPanel>
-      <!-- 搜索与操作合并一行 -->
-      <div class="list-head">
-        <span class="list-head__title">
-          {{ title }}<em>{{ subtitle }} · 共 {{ total }} 条</em>
-          <em v-if="selection.length">
-            已选 {{ selection.length }} 项
-            <a @click="clearSelection(tableRef)">清空</a>
-          </em>
-        </span>
+    <KasTable
+      ref="tableRef"
+      v-model:page="query.page"
+      v-model:page-size="query.pageSize"
+      :title="title"
+      :subtitle="subtitle"
+      :rows="rows"
+      :loading="loading"
+      :error="listError"
+      :total="total"
+      :selected-count="selection.length"
+      @change="load"
+      @retry="load"
+      @selection-change="onSelectionChange"
+      @clear-selection="clearSelection()"
+    >
+      <template #filters>
         <ListFilters>
           <el-form-item label="关键字">
             <el-input
@@ -238,7 +234,7 @@ const { searchSoon } = useDebouncedSearch(search)
               @input="searchSoon"
               placeholder="编号 / 名称 / 联系人"
               clearable
-              @keyup.enter="search"
+              @keyup.enter="searchNow"
             />
           </el-form-item>
           <el-form-item label="状态">
@@ -248,20 +244,20 @@ const { searchSoon } = useDebouncedSearch(search)
             </el-select>
           </el-form-item>
           <template #actions>
-            <el-button type="primary" @click="search">
+            <el-button type="primary" @click="searchNow">
               <AppIcon name="Search" />
               <span>查询</span>
             </el-button>
-            <el-button @click="reset">重置</el-button>
+            <el-button @click="cancelSearch(); reset()">重置</el-button>
           </template>
           <template #tools>
             <el-button v-if="selection.length" v-perm="`inv:${partyPerm}:delete`" :loading="batchRunning" @click="batchDelete">
               批量删除
             </el-button>
-            <el-button :loading="exporting" @click="exportRows(selection.length ? selection : undefined)">
+            <el-button :loading="exporting" :disabled="loading || listError" @click="exportRows(selection.length ? selection : undefined)">
               导出{{ selection.length ? '选中' : '' }}
             </el-button>
-            <el-button @click="printVisible = true">打印</el-button>
+            <el-button :disabled="loading || listError" @click="printVisible = true">打印</el-button>
             <el-button v-perm="`inv:${partyPerm}:create`" type="primary" @click="openCreate">
               <AppIcon name="Plus" />
               <span>{{ createText }}</span>
@@ -271,60 +267,42 @@ const { searchSoon } = useDebouncedSearch(search)
             </el-button>
           </template>
         </ListFilters>
-      </div>
-
-      <el-table height="100%"
-        ref="tableRef"
-        v-loading="loading"
-        :data="rows"
-        stripe
-        @selection-change="onSelectionChange"
-      >
-        <el-table-column type="selection" width="44" />
-        <el-table-column prop="code" label="编号" width="90" />
-        <el-table-column prop="name" label="名称" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="contact" label="联系人" width="90" />
-        <el-table-column prop="phone" label="电话" width="120" />
-        <el-table-column prop="address" label="地址" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="taxNo" label="开票信息" min-width="150" show-overflow-tooltip />
-        <el-table-column :label="balanceLabel" width="120" align="right">
-          <template #default="{ row }">
-            <span :class="row.balance > 0 ? 'amount-warn' : 'text-muted'">
-              {{ formatMoney(row.balance) }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="80" align="center">
-          <template #default="{ row }">
-            <StatusTag :status="row.status" />
-          </template>
-        </el-table-column>
-        <el-table-column label="创建时间" width="110">
-          <template #default="{ row }">
-            <span class="text-secondary">{{ formatDate(row.createdAt) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right" align="center">
-          <template #default="{ row }">
-            <el-button v-perm="`inv:${partyPerm}:update`" link type="primary" @click="openEdit(row as InvPartyRow)">
-              编辑
-            </el-button>
-            <el-button v-perm="`inv:${partyPerm}:delete`" link type="danger" @click="removeRow(row as InvPartyRow)">
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <div class="table-pager">
-        <Pagination
-          v-model:page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          @change="load"
-        />
-      </div>
-    </ListPanel>
+      </template>
+      <el-table-column type="selection" width="44" />
+      <el-table-column prop="code" label="编号" width="90" />
+      <el-table-column prop="name" label="名称" min-width="130" show-overflow-tooltip />
+      <el-table-column prop="contact" label="联系人" width="90" />
+      <el-table-column prop="phone" label="电话" width="120" />
+      <el-table-column prop="address" label="地址" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="taxNo" label="开票信息" min-width="150" show-overflow-tooltip />
+      <el-table-column :label="balanceLabel" width="120" align="right">
+        <template #default="{ row }">
+          <span :class="row.balance > 0 ? 'amount-warn' : 'text-muted'">
+            {{ formatMoney(row.balance) }}
+          </span>
+        </template>
+      </el-table-column>
+      <el-table-column label="状态" width="80" align="center">
+        <template #default="{ row }">
+          <StatusTag :status="row.status" />
+        </template>
+      </el-table-column>
+      <el-table-column label="创建时间" width="110">
+        <template #default="{ row }">
+          <span class="text-secondary">{{ formatDate(row.createdAt) }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="120" fixed="right" align="center">
+        <template #default="{ row }">
+          <el-button v-perm="`inv:${partyPerm}:update`" link type="primary" @click="openEdit(row as InvPartyRow)">
+            编辑
+          </el-button>
+          <el-button v-perm="`inv:${partyPerm}:delete`" link type="danger" @click="removeRow(row as InvPartyRow)">
+            删除
+          </el-button>
+        </template>
+      </el-table-column>
+    </KasTable>
 
     <ListPrintDialog
       v-model="printVisible"
@@ -400,12 +378,6 @@ const { searchSoon } = useDebouncedSearch(search)
 </template>
 
 <style scoped lang="scss">
-.table-pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
-}
-
 .amount-warn {
   color: var(--tone-amber);
   font-weight: 600;
