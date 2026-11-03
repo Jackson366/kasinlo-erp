@@ -126,10 +126,14 @@ TemplateDesigner + PrintContentConfig.stamp 为盖章配置 owner，PrintSheet �
 
 ## 列表工作区空间与筛选
 
-KasTable 首批用于客户/供应商共用的 PartyPage，提供标题、已选提示、原生列插槽、
-错误重试和分页；筛选继续使用 ListFilters。当前页勾选在查询、重置、翻页和刷新前清空，
-失败时隐藏旧行并禁用依赖旧结果的导出/打印，避免将旧快照当作本次结果。
-ListPanel 的原尺寸算法抽到 KasTable/hooks/useKasTableLayout，只由 ListPanel 调用；
+KasTable 覆盖客户/供应商、采购/销售单据、合同台账、出入库单据与应收应付列表，提供标题、
+计数单位、已选提示、原生列插槽、错误重试和分页；筛选继续使用 ListFilters。当前页勾选在查询、
+重置、翻页和刷新前清空；订单和财务继续由各自的加载入口清理，避免产生第二套查询状态。
+失败时隐藏旧行并禁用依赖旧结果的导出/打印。采购通过 before/body 插槽保留页内详情和专用核对区，
+继续恢复筛选、焦点和滚动；表格 DOM 在展开详情时保留，核对/详情关闭 fit，失败时隐藏分页。
+合同保留阶段/日期筛选与付款计划。出入库标签使用 surface=false，库存查询仍为原面板。
+应收应付由原票据守卫同步更新列表和汇总，保留未结余额及来源选择限制、批量收付款事务接口。
+ListPanel 的原尺寸算法收在 KasTable/hooks/useKasTableLayout，只由 ListPanel 调用；
 新旧列表仍共用这一份尺寸 owner，DOM 直接子节点和滚动契约不变。
 查询与列表工具的旧导入路径仅作兼容，新实现集中在 components/KasTable。
 

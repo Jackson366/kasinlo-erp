@@ -285,7 +285,7 @@ db.Offset(q.Offset()).Limit(q.Limit()).Order(order)
 
 标准分页列表优先使用 `components/KasTable`（功能聚合方式）：组件、子组件、hooks、
 类型与测试放在同目录，页面从其 `index.ts` 导入 `KasTable` / `useKasTable`。
-首批调用方为客户/供应商共用的 `PartyPage`，完整接入与行为边界见
+调用方包括客户/供应商、采购/销售、合同、出入库与应收应付，完整接入与行为边界见
 `frontend/src/components/KasTable/README.md`。业务列、权限和业务操作留在页面。
 原 `useTableQuery` / `useListTools` 保留兼容出口，底层实现统一归属 KasTable；
 不要在旧目录复制一份实现。跨页勾选、树表格、工作台等暂按现有行为运行。

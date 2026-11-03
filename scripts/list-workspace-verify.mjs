@@ -499,6 +499,59 @@ try {
       }
     }
   })
+  await check('KasTable document pages preserve units, selection and failure recovery', async () => {
+    const cases = [
+      { route: '/inv/purchase', tab: '全部单据', method: 'orders', title: '采购单据', unit: '张', error: '单据列表加载失败' },
+      { route: '/inv/sales', method: 'orders', title: '销售单据', unit: '张', error: '单据列表加载失败' },
+      { route: '/inv/contract', method: 'contracts', title: '合同管理', unit: '份', error: '合同列表加载失败' },
+      { route: '/inv/stock', tab: '出入库单据', method: 'stockOrders', title: '出入库单据', unit: '条', error: '出入库单加载失败' },
+      { route: '/inv/finance', tab: '应收明细', method: 'receivables', title: '应收明细', unit: '条', error: '应收应付加载失败' },
+      { route: '/inv/finance', tab: '应付明细', method: 'payables', title: '应付明细', unit: '条', error: '应收应付加载失败' },
+    ]
+    for (const c of cases) {
+      await go(c.route)
+      if (c.tab) await page.getByRole('tab', { name: c.tab, exact: true }).click()
+      const panel = page.locator('.kas-table:visible')
+      await expect(panel.locator(':scope > .el-table')).toBeVisible()
+      await expect(panel.locator('.list-head__title')).toContainText(c.title)
+      await expect(panel.locator('.list-head__title')).toContainText(new RegExp(`\\d+ ${c.unit}`))
+      await expect(panel.locator('.el-table__header-wrapper')).toContainText('操作')
+      const rows = panel.locator('.el-table__body-wrapper tbody tr')
+      await expect(rows.first()).toBeVisible()
+      const checkbox = rows.locator('.el-checkbox:not(.is-disabled)').first()
+      if (await checkbox.count()) {
+        await checkbox.click()
+        await expect(panel.locator('.list-head__title')).toContainText('已选 1 项')
+        await panel.getByRole('button', { name: '清空', exact: true }).click()
+        await expect(panel.locator('.list-head__title')).not.toContainText('已选')
+        await expect(panel.locator('.el-table__body-wrapper .el-checkbox.is-checked')).toHaveCount(0)
+      }
+      const before = await geometry()
+      await page.evaluate(async (method) => {
+        const { invApi } = await import('/src/api/inv.ts')
+        window.kasDocumentProbe = { method, original: invApi[method] }
+        invApi[method] = async () => { throw new Error('KasTable document failure') }
+      }, c.method)
+      try {
+        await panel.locator('.list-filters__tools > button').last().click()
+        await expect(panel.getByRole('alert')).toContainText(c.error)
+        await expect(rows).toHaveCount(0)
+        await expect(panel.getByRole('button', { name: '导出', exact: true })).toBeDisabled()
+        await expect(panel.getByRole('button', { name: '打印', exact: true })).toBeDisabled()
+      } finally {
+        await page.evaluate(async () => {
+          const { invApi } = await import('/src/api/inv.ts')
+          const probe = window.kasDocumentProbe
+          invApi[probe.method] = probe.original
+          delete window.kasDocumentProbe
+        })
+      }
+      await panel.getByRole('button', { name: '重新加载', exact: true }).click()
+      await expect(rows.first()).toBeVisible()
+      await expect(panel.getByRole('alert')).toHaveCount(0)
+      expect(Math.abs(before.pager.bottom - (await geometry()).pager.bottom)).toBeLessThan(2)
+    }
+  })
   await go('/inv/stock')
   await check('stock tabs own independent table scroll regions', async () => {
     await page.getByRole('tab', { name: '出入库单据', exact: true }).click()

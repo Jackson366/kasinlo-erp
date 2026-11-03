@@ -39,6 +39,13 @@ export interface KasTableOptions<F extends PageQuery, Row extends { id: number }
 export interface KasTableProps<Row> {
   title: string
   subtitle?: string
+  unit?: string
+  resultLabel?: string
+  fit?: boolean
+  surface?: boolean
+  showPagination?: boolean
+  emptyText?: string
+  errorText?: string
   selectedCount?: number
   rows: Row[]
   loading: boolean

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import ListPanel from '@/components/ListPanel.vue'
+import { KasTable, useKasTableQuery, useKasTableExport } from '@/components/KasTable'
 /**
  * 合同管理台账（含付款计划、验收、质保与期次收付款）。
  *
@@ -38,9 +38,7 @@ import type {
   InvPlanTrigger,
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
-import Pagination from '@/components/Pagination.vue'
 import ListFilters from '@/components/ListFilters.vue'
-import { useTableQuery } from '@/composables/useTableQuery'
 import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 import { formatDateTime, formatDay, formatMoney } from '@/utils/format'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
@@ -60,34 +58,22 @@ interface ContractQuery {
   pageSize: number
 }
 
-const {
-  query,
-  loading,
-  rows,
-  total,
-  load,
-  search,
-  reset,
-} = useTableQuery<ContractQuery, InvContractRow>(
+function contractFilters(params: ContractQuery) {
+  const [startDate, endDate] = params.dateRange ?? []
+  // 完成/终止按 status 查询，其他阶段保留原服务端日期判定。
+  const status = params.stage === 'finished' ? 2 : params.stage === 'terminated' ? 3 : undefined
+  const stage = params.stage === 'finished' || params.stage === 'terminated' ? undefined : params.stage || undefined
+  return {
+    keyword: params.keyword || undefined,
+    bizType: params.bizType || undefined,
+    stage, status,
+    partyId: params.partyId || undefined,
+    startDate, endDate,
+  }
+}
+const { query, loading, error: listError, rows, total, load, search, reset } = useKasTableQuery<ContractQuery, InvContractRow>(
   { keyword: '', bizType: '', stage: '', partyId: undefined, dateRange: null, page: 1, pageSize: 10 },
-  (p) => {
-    const [startDate, endDate] = p.dateRange ?? []
-    // 「已完成 / 已终止」不是日期条件，映射成 status；
-    // 其余阶段直接传给后端做日期判定（见 contractQuery）
-    const status = p.stage === 'finished' ? 2 : p.stage === 'terminated' ? 3 : undefined
-    const stage = p.stage === 'finished' || p.stage === 'terminated' ? undefined : p.stage || undefined
-    return invApi.contracts({
-      page: p.page,
-      pageSize: p.pageSize,
-      keyword: p.keyword || undefined,
-      bizType: p.bizType || undefined,
-      stage,
-      status,
-      partyId: p.partyId || undefined,
-      startDate,
-      endDate,
-    })
-  },
+  (params) => invApi.contracts({ page: params.page, pageSize: params.pageSize, ...contractFilters(params) }),
 )
 
 // 关键字录入即查询（防抖），不必再按回车
@@ -865,34 +851,11 @@ function openAttach(row: InvContractRow): void {
 // ---------------- 导出 ----------------
 //
 // 导出与列表共用同一批筛选（含签订日期区间）：页面上筛什么、导出就是什么。
-const exporting = ref(false)
-
-async function exportRows(): Promise<void> {
-  exporting.value = true
-  try {
-    const [startDate, endDate] = query.dateRange ?? []
-    const status = query.stage === 'finished' ? 2 : query.stage === 'terminated' ? 3 : undefined
-    const stage = query.stage === 'finished' || query.stage === 'terminated' ? undefined : query.stage || undefined
-    await invApi.exportList(
-      {
-        entity: 'contract',
-        keyword: query.keyword || undefined,
-        bizType: query.bizType || undefined,
-        stage,
-        status,
-        partyId: query.partyId || undefined,
-        startDate,
-        endDate,
-      },
-      '合同台账.xlsx',
-    )
-    ElMessage.success('导出成功')
-  } catch {
-    // 失败提示由响应拦截器统一处理
-  } finally {
-    exporting.value = false
-  }
-}
+const { exporting, exportRows } = useKasTableExport<InvContractRow>({
+  exportUrl: '/inv/export',
+  exportParams: () => ({ entity: 'contract', ...contractFilters(query) }),
+  fallbackName: '合同台账.xlsx',
+})
 
 // ---------------- 打印 ----------------
 const printVisible = ref(false)
@@ -920,11 +883,20 @@ const attachType: InvAttachBizType = 'contract'
 
 <template>
   <div class="contract-page">
-    <ListPanel>
-      <div class="list-head">
-        <span class="list-head__title">
-          合同管理<em>共 {{ total }} 份</em>
-        </span>
+    <KasTable
+      v-model:page="query.page"
+      v-model:page-size="query.pageSize"
+      title="合同管理"
+      unit="份"
+      :rows="rows"
+      :loading="loading"
+      :error="listError"
+      error-text="合同列表加载失败，请重新加载后查看。"
+      :total="total"
+      @change="load"
+      @retry="load"
+    >
+      <template #filters>
         <ListFilters :active-values="[query.stage, query.dateRange]">
           <el-form-item label="关键字">
             <el-input
@@ -970,8 +942,8 @@ const attachType: InvAttachBizType = 'contract'
             >
           </template>
           <template #tools>
-            <el-button :loading="exporting" @click="exportRows">导出</el-button>
-            <el-button @click="printVisible = true">打印</el-button>
+            <el-button :loading="exporting" :disabled="loading || listError" @click="exportRows()">导出</el-button>
+            <el-button :disabled="loading || listError" @click="printVisible = true">打印</el-button>
             <el-button v-perm="'inv:contract:create'" type="primary" @click="openCreate">
               <AppIcon name="Plus" />
               <span>新增合同</span>
@@ -981,88 +953,76 @@ const attachType: InvAttachBizType = 'contract'
             </el-button>
           </template>
         </ListFilters>
-      </div>
-
-      <el-table height="100%" v-loading="loading" :data="rows" stripe>
-        <el-table-column prop="contractNo" label="合同编号" width="140" show-overflow-tooltip />
-        <el-table-column prop="name" label="合同名称" min-width="170" show-overflow-tooltip />
-        <el-table-column label="类型" width="96">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.bizType === 'purchase' ? 'warning' : 'success'" effect="plain">
-              {{ bizLabel((row as InvContractRow).bizType) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="partyName" label="往来单位" min-width="140" show-overflow-tooltip />
-        <el-table-column label="签订日期" width="108">
-          <template #default="{ row }">{{ formatDay(row.signDate) }}</template>
-        </el-table-column>
-        <el-table-column label="合同金额" width="120" align="right">
-          <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
-        </el-table-column>
-        <el-table-column label="已收付" width="118" align="right">
-          <template #default="{ row }">
-            <span :class="{ 'text-muted': !row.settledAmount }">
-              {{ row.planCount ? formatMoney(row.settledAmount) : '—' }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="未收付" width="118" align="right">
-          <template #default="{ row }">
-            <span :class="{ 'text-warning': row.outstanding > 0 }">
-              {{ row.planCount ? formatMoney(row.outstanding) : '—' }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="进度" width="76" align="right">
-          <template #default="{ row }">{{ progressText(row as InvContractRow) }}</template>
-        </el-table-column>
-        <el-table-column label="阶段" width="100">
-          <template #default="{ row }">
-            <el-tag size="small" :type="stageTone(row.stage)" effect="light">
-              {{ row.stageLabel }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="质保到期" width="106">
-          <template #default="{ row }">
-            {{ row.warrantyEndAt ? formatDay(row.warrantyEndAt) : '—' }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="216" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row as InvContractRow)">详情</el-button>
-            <el-button
-              v-if="row.status === 0"
-              v-perm="'inv:contract:audit'"
-              link
-              type="primary"
-              @click="quickAudit(row as InvContractRow)"
-            >
-              审核
-            </el-button>
-            <el-button v-else link type="primary" @click="openAttach(row as InvContractRow)">
-              附件{{ row.attachmentCount ? `(${row.attachmentCount})` : '' }}
-            </el-button>
-            <el-button v-perm="'inv:contract:update'" link type="primary" @click="openEdit(row as InvContractRow)">
-              编辑
-            </el-button>
-            <el-button v-perm="'inv:contract:delete'" link type="danger" @click="removeRow(row as InvContractRow)">
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <div class="table-pager">
-        <Pagination
-          v-model:page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          @change="load"
-        />
-      </div>
-    </ListPanel>
+      </template>
+      <el-table-column prop="contractNo" label="合同编号" width="140" show-overflow-tooltip />
+      <el-table-column prop="name" label="合同名称" min-width="170" show-overflow-tooltip />
+      <el-table-column label="类型" width="96">
+        <template #default="{ row }">
+          <el-tag size="small" :type="row.bizType === 'purchase' ? 'warning' : 'success'" effect="plain">
+            {{ bizLabel((row as InvContractRow).bizType) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="partyName" label="往来单位" min-width="140" show-overflow-tooltip />
+      <el-table-column label="签订日期" width="108">
+        <template #default="{ row }">{{ formatDay(row.signDate) }}</template>
+      </el-table-column>
+      <el-table-column label="合同金额" width="120" align="right">
+        <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
+      </el-table-column>
+      <el-table-column label="已收付" width="118" align="right">
+        <template #default="{ row }">
+          <span :class="{ 'text-muted': !row.settledAmount }">
+            {{ row.planCount ? formatMoney(row.settledAmount) : '—' }}
+          </span>
+        </template>
+      </el-table-column>
+      <el-table-column label="未收付" width="118" align="right">
+        <template #default="{ row }">
+          <span :class="{ 'text-warning': row.outstanding > 0 }">
+            {{ row.planCount ? formatMoney(row.outstanding) : '—' }}
+          </span>
+        </template>
+      </el-table-column>
+      <el-table-column label="进度" width="76" align="right">
+        <template #default="{ row }">{{ progressText(row as InvContractRow) }}</template>
+      </el-table-column>
+      <el-table-column label="阶段" width="100">
+        <template #default="{ row }">
+          <el-tag size="small" :type="stageTone(row.stage)" effect="light">
+            {{ row.stageLabel }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="质保到期" width="106">
+        <template #default="{ row }">
+          {{ row.warrantyEndAt ? formatDay(row.warrantyEndAt) : '—' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="216" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="openDetail(row as InvContractRow)">详情</el-button>
+          <el-button
+            v-if="row.status === 0"
+            v-perm="'inv:contract:audit'"
+            link
+            type="primary"
+            @click="quickAudit(row as InvContractRow)"
+          >
+            审核
+          </el-button>
+          <el-button v-else link type="primary" @click="openAttach(row as InvContractRow)">
+            附件{{ row.attachmentCount ? `(${row.attachmentCount})` : '' }}
+          </el-button>
+          <el-button v-perm="'inv:contract:update'" link type="primary" @click="openEdit(row as InvContractRow)">
+            编辑
+          </el-button>
+          <el-button v-perm="'inv:contract:delete'" link type="danger" @click="removeRow(row as InvContractRow)">
+            删除
+          </el-button>
+        </template>
+      </el-table-column>
+    </KasTable>
 
     <!-- 新增 / 编辑 -->
     <el-dialog
@@ -1853,12 +1813,6 @@ const attachType: InvAttachBizType = 'contract'
   :deep(.el-table) {
     width: 100%;
   }
-}
-
-.table-pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
 }
 
 .unit-suffix {

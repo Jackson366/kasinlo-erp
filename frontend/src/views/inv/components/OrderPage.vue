@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import ListPanel from '@/components/ListPanel.vue'
+import { KasTable, useKasTableQuery, useKasTableSelection, useKasTableExport, useKasTableBatch, type BatchOutcome } from '@/components/KasTable'
 /**
  * 共享单据查询、录入与过账逻辑。采购另提供连续核对工作区，销售保留列表路径。
  */
@@ -22,7 +22,6 @@ import type {
   InvAttachBizType,
 } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
-import Pagination from '@/components/Pagination.vue'
 import ListFilters from '@/components/ListFilters.vue'
 import ListPrintDialog, {
   type ListPrintColumn,
@@ -43,9 +42,7 @@ import {
 } from '@/utils/format'
 import PurchaseGuide from './PurchaseGuide.vue'
 import type { GuideOrder } from './purchaseGuidePresentation'
-import { useTableQuery } from '@/composables/useTableQuery'
 import { useUserStore } from '@/store'
-import { useListTools, type BatchOutcome } from '@/composables/useListTools'
 import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
 
 const props = defineProps<{
@@ -108,7 +105,7 @@ const {
   rows,
   total,
   load: loadList,
-} = useTableQuery<OrderQuery, InvOrderRow>(
+} = useKasTableQuery<OrderQuery, InvOrderRow>(
   {
     handoff:
       isPurchase.value &&
@@ -1046,15 +1043,9 @@ async function requestCloseForm(): Promise<void> {
 
 // ---------------- 导出 / 打印 / 批量 ----------------
 const tableRef = ref()
-const {
-  selection,
-  exporting,
-  batchRunning,
-  onSelectionChange,
-  clearSelection,
-  exportRows,
-  runBatch,
-} = useListTools<InvOrderRow>({
+const { selection, onSelectionChange, clearSelection } = useKasTableSelection<InvOrderRow>()
+const { batchRunning, runBatch } = useKasTableBatch<InvOrderRow>()
+const { exporting, exportRows } = useKasTableExport<InvOrderRow>({
   exportUrl: '/inv/export',
   exportParams: () => ({
     entity: 'order',
@@ -1289,123 +1280,134 @@ function onKeywordInput(): void {
         <AppIcon name="Plus" />新增采购单
       </el-button>
     </header>
-    <ListPanel :fit="!isWorkbench && !listDetailOpen" :class="{ 'is-detail-open': listDetailOpen }">
-      <!-- 「全部单据」的详情就在列表原位展开，不再盖一层 1280px 弹窗。
-           列表 DOM 保持挂载（只换显示状态），返回时筛选、页码、焦点和滚动位置都还在。 -->
-      <section
-        v-if="listDetailOpen"
-        ref="listDetailPanel"
-        class="order-detail-panel"
-        tabindex="-1"
-        aria-label="采购单据详情"
-        :aria-busy="detailLoading"
-        @keydown.esc.stop.prevent="closeListDetail"
-      >
-        <header class="order-detail-panel__head">
-          <el-button class="order-detail-panel__back" text @click="closeListDetail">
-            <AppIcon name="ArrowLeft" />返回单据列表
-          </el-button>
-          <div class="order-detail-panel__titles">
-            <h2>采购单据详情</h2>
-            <p>核对完可直接办理审核或编辑；返回列表不会丢失筛选和页码。</p>
-          </div>
-          <PurchaseGuide
-            :order="detail?.row"
-            :busy="detailLoading"
-            :failed="detailError"
-          />
-        </header>
-        <div
-          v-if="detailLoading"
-          v-loading="true"
-          class="detail-pending"
-          aria-label="正在加载采购单"
-        />
-        <div
-          v-else-if="detailError"
-          class="order-detail-panel__error"
-          role="alert"
+    <KasTable
+      ref="tableRef"
+      v-model:page="query.page"
+      v-model:page-size="query.pageSize"
+      :title="isWorkbench ? '待处理采购单' : title"
+      unit="张"
+      :result-label="hasFilters ? '筛选结果' : '共'"
+      :rows="rows"
+      :loading="loading"
+      :error="listError"
+      error-text="单据列表加载失败，请重新加载后继续处理。"
+      :total="total"
+      :selected-count="selection.length"
+      :fit="!isWorkbench && !listDetailOpen"
+      :show-pagination="!listError"
+      :class="{ 'is-detail-open': listDetailOpen }"
+      @change="load"
+      @retry="load"
+      @selection-change="onSelectionChange"
+      @clear-selection="clearSelection(tableRef)"
+    >
+      <template #before>
+        <!-- 「全部单据」的详情就在列表原位展开，不再盖一层 1280px 弹窗。
+             列表 DOM 保持挂载（只换显示状态），返回时筛选、页码、焦点和滚动位置都还在。 -->
+        <section
+          v-if="listDetailOpen"
+          ref="listDetailPanel"
+          class="order-detail-panel"
+          tabindex="-1"
+          aria-label="采购单据详情"
+          :aria-busy="detailLoading"
+          @keydown.esc.stop.prevent="closeListDetail"
         >
-          <strong>采购单加载失败</strong>
-          <p>当前数据可能已变化，请重新加载后再核对。</p>
-          <el-button @click="retryDetail">重新加载</el-button>
-        </div>
-        <template v-else-if="detail">
-          <el-alert
-            v-if="reviewResult"
-            :title="reviewResult"
-            type="success"
-            show-icon
-            :closable="false"
-            class="purchase-result"
-          />
-          <OrderDetailContent
-            :order="detail.row"
-            :items="detail.items"
-            :party-label="partyLabel"
-            :is-purchase="true"
-            :picks="picks"
-          />
-          <p v-if="detail.row.status === 1" class="purchase-impact">
-            审核后增加库存并形成应付，请确认货物已实际到达。
-          </p>
-          <div class="purchase-review-actions">
-            <div class="purchase-review-actions__secondary">
-              <el-button @click="openAttach(detail.row)"
-                >附件{{
-                  attachCounts[String(detail.row.id)]
-                    ? ` (${attachCounts[String(detail.row.id)]})`
-                    : ''
-                }}</el-button
-              >
-              <el-button @click="printRef?.open(detail.row)">打印</el-button>
-              <el-button
-                v-if="detail.row.status === 2"
-                v-perm="'inv:purchase:finish'"
-                :disabled="detail.row.settledAmount > 0 || reverseRunning"
-                @click="reverseOrder(detail.row)"
-                >反审核</el-button
-              >
-              <span
-                v-if="detail.row.status === 2 && detail.row.settledAmount > 0"
-                class="text-muted"
-                >已登记付款，请先联系财务撤销付款记录</span
-              >
+          <header class="order-detail-panel__head">
+            <el-button class="order-detail-panel__back" text @click="closeListDetail">
+              <AppIcon name="ArrowLeft" />返回单据列表
+            </el-button>
+            <div class="order-detail-panel__titles">
+              <h2>采购单据详情</h2>
+              <p>核对完可直接办理审核或编辑；返回列表不会丢失筛选和页码。</p>
             </div>
-            <div
-              v-if="detail.row.status === 1"
-              class="purchase-review-actions__primary"
-            >
-              <el-button
-                v-perm="'inv:purchase:update'"
-                :disabled="loading"
-                @click="openEdit(detail.row)"
-                >编辑采购单</el-button
-              >
-              <el-button
-                v-perm="'inv:purchase:finish'"
-                type="primary"
-                :disabled="loading"
-                data-purchase-tour="approve"
-                @click="openApprove(detail.row)"
-                >审核并入库</el-button
-              >
-            </div>
+            <PurchaseGuide
+              :order="detail?.row"
+              :busy="detailLoading"
+              :failed="detailError"
+            />
+          </header>
+          <div
+            v-if="detailLoading"
+            v-loading="true"
+            class="detail-pending"
+            aria-label="正在加载采购单"
+          />
+          <div
+            v-else-if="detailError"
+            class="order-detail-panel__error"
+            role="alert"
+          >
+            <strong>采购单加载失败</strong>
+            <p>当前数据可能已变化，请重新加载后再核对。</p>
+            <el-button @click="retryDetail">重新加载</el-button>
           </div>
-        </template>
-      </section>
-      <!-- 搜索与操作合并一行 -->
-      <div class="list-head">
-        <span class="list-head__title">
-          {{ isWorkbench ? '待处理采购单' : title
-          }}<em>{{ hasFilters ? '筛选结果' : '共' }} {{ total }} 张</em>
-          <em v-if="selection.length">
-            已选 {{ selection.length }} 项
-            <el-button link type="primary" @click="clearSelection(tableRef)"
-              >清空</el-button
-            >
-          </em>
-        </span>
+          <template v-else-if="detail">
+            <el-alert
+              v-if="reviewResult"
+              :title="reviewResult"
+              type="success"
+              show-icon
+              :closable="false"
+              class="purchase-result"
+            />
+            <OrderDetailContent
+              :order="detail.row"
+              :items="detail.items"
+              :party-label="partyLabel"
+              :is-purchase="true"
+              :picks="picks"
+            />
+            <p v-if="detail.row.status === 1" class="purchase-impact">
+              审核后增加库存并形成应付，请确认货物已实际到达。
+            </p>
+            <div class="purchase-review-actions">
+              <div class="purchase-review-actions__secondary">
+                <el-button @click="openAttach(detail.row)"
+                  >附件{{
+                    attachCounts[String(detail.row.id)]
+                      ? ` (${attachCounts[String(detail.row.id)]})`
+                      : ''
+                  }}</el-button
+                >
+                <el-button @click="printRef?.open(detail.row)">打印</el-button>
+                <el-button
+                  v-if="detail.row.status === 2"
+                  v-perm="'inv:purchase:finish'"
+                  :disabled="detail.row.settledAmount > 0 || reverseRunning"
+                  @click="reverseOrder(detail.row)"
+                  >反审核</el-button
+                >
+                <span
+                  v-if="detail.row.status === 2 && detail.row.settledAmount > 0"
+                  class="text-muted"
+                  >已登记付款，请先联系财务撤销付款记录</span
+                >
+              </div>
+              <div
+                v-if="detail.row.status === 1"
+                class="purchase-review-actions__primary"
+              >
+                <el-button
+                  v-perm="'inv:purchase:update'"
+                  :disabled="loading"
+                  @click="openEdit(detail.row)"
+                  >编辑采购单</el-button
+                >
+                <el-button
+                  v-perm="'inv:purchase:finish'"
+                  type="primary"
+                  :disabled="loading"
+                  data-purchase-tour="approve"
+                  @click="openApprove(detail.row)"
+                  >审核并入库</el-button
+                >
+              </div>
+            </div>
+          </template>
+        </section>
+      </template>
+      <template #filters>
         <ListFilters
           :active-values="[
             isPurchase ? query.handoff : undefined,
@@ -1497,10 +1499,11 @@ function onKeywordInput(): void {
             <el-button
               v-if="!isWorkbench"
               :loading="exporting"
+              :disabled="loading || listError"
               @click="exportRows()"
               >导出</el-button
             >
-            <el-button v-if="!isWorkbench" @click="printVisible = true"
+            <el-button v-if="!isWorkbench" :disabled="loading || listError" @click="printVisible = true"
               >打印</el-button
             >
             <el-button
@@ -1517,258 +1520,241 @@ function onKeywordInput(): void {
             </el-button>
           </template>
         </ListFilters>
-      </div>
-
-      <div v-if="listError" class="purchase-list-error" role="alert">
-        <strong>单据列表加载失败</strong>
-        <p>当前数据可能已变化，请重新加载后继续处理。</p>
-        <el-button @click="load">重新加载</el-button>
-      </div>
-      <PurchaseWorkbench
-        v-else-if="isWorkbench"
-        :rows="rows"
-        :selected-id="selectedId"
-        :loading="loading"
-        :detail-loading="detailLoading"
-        :detail-error="detailError"
-        :has-detail="Boolean(detail)"
-        :filtered="hasFilters"
-        :mobile-detail="mobileDetail"
-        @select="selectOrder"
-        @retry="retryDetail"
-        @reset="reset"
-        @back="mobileDetail = false"
-      >
-        <template v-if="detail">
-          <el-alert
-            v-if="reviewResult"
-            :title="reviewResult"
-            type="success"
-            show-icon
-            :closable="false"
-            class="purchase-result"
-          />
-          <OrderDetailContent
-            :order="detail.row"
-            :items="detail.items"
-            :party-label="partyLabel"
-            :is-purchase="true"
-            :picks="picks"
-          />
-          <p v-if="detail.row.status === 1" class="purchase-impact">
-            审核后增加库存并形成应付，请确认货物已实际到达。
-          </p>
-          <div class="purchase-review-actions">
-            <div class="purchase-review-actions__secondary">
-              <el-button @click="openAttach(detail.row)"
-                >附件{{
-                  attachCounts[String(detail.row.id)]
-                    ? ` (${attachCounts[String(detail.row.id)]})`
-                    : ''
-                }}</el-button
-              >
-              <el-button @click="printRef?.open(detail.row)">打印</el-button>
-              <el-button
-                v-if="detail.row.status === 2"
-                v-perm="'inv:purchase:finish'"
-                :disabled="detail.row.settledAmount > 0 || reverseRunning"
-                @click="reverseOrder(detail.row)"
-                >反审核</el-button
-              >
-              <span
-                v-if="detail.row.status === 2 && detail.row.settledAmount > 0"
-                class="text-muted"
-                >已登记付款，请先联系财务撤销付款记录</span
-              >
-            </div>
-            <div class="purchase-review-actions__primary">
-              <template v-if="detail.row.status === 1">
-                <el-button
-                  v-perm="'inv:purchase:update'"
-                  :disabled="loading"
-                  @click="openEdit(detail.row)"
-                  >编辑采购单</el-button
+      </template>
+      <template v-if="isWorkbench" #body>
+        <div v-if="listError" class="purchase-list-error" role="alert">
+          <strong>单据列表加载失败</strong>
+          <p>当前数据可能已变化，请重新加载后继续处理。</p>
+          <el-button @click="load">重新加载</el-button>
+        </div>
+        <PurchaseWorkbench
+          v-else
+          :rows="rows"
+          :selected-id="selectedId"
+          :loading="loading"
+          :detail-loading="detailLoading"
+          :detail-error="detailError"
+          :has-detail="Boolean(detail)"
+          :filtered="hasFilters"
+          :mobile-detail="mobileDetail"
+          @select="selectOrder"
+          @retry="retryDetail"
+          @reset="reset"
+          @back="mobileDetail = false"
+        >
+          <template v-if="detail">
+            <el-alert
+              v-if="reviewResult"
+              :title="reviewResult"
+              type="success"
+              show-icon
+              :closable="false"
+              class="purchase-result"
+            />
+            <OrderDetailContent
+              :order="detail.row"
+              :items="detail.items"
+              :party-label="partyLabel"
+              :is-purchase="true"
+              :picks="picks"
+            />
+            <p v-if="detail.row.status === 1" class="purchase-impact">
+              审核后增加库存并形成应付，请确认货物已实际到达。
+            </p>
+            <div class="purchase-review-actions">
+              <div class="purchase-review-actions__secondary">
+                <el-button @click="openAttach(detail.row)"
+                  >附件{{
+                    attachCounts[String(detail.row.id)]
+                      ? ` (${attachCounts[String(detail.row.id)]})`
+                      : ''
+                  }}</el-button
                 >
+                <el-button @click="printRef?.open(detail.row)">打印</el-button>
                 <el-button
+                  v-if="detail.row.status === 2"
                   v-perm="'inv:purchase:finish'"
+                  :disabled="detail.row.settledAmount > 0 || reverseRunning"
+                  @click="reverseOrder(detail.row)"
+                  >反审核</el-button
+                >
+                <span
+                  v-if="detail.row.status === 2 && detail.row.settledAmount > 0"
+                  class="text-muted"
+                  >已登记付款，请先联系财务撤销付款记录</span
+                >
+              </div>
+              <div class="purchase-review-actions__primary">
+                <template v-if="detail.row.status === 1">
+                  <el-button
+                    v-perm="'inv:purchase:update'"
+                    :disabled="loading"
+                    @click="openEdit(detail.row)"
+                    >编辑采购单</el-button
+                  >
+                  <el-button
+                    v-perm="'inv:purchase:finish'"
+                    type="primary"
+                    :disabled="loading"
+                    data-purchase-tour="approve"
+                    @click="openApprove(detail.row)"
+                    >审核并入库</el-button
+                  >
+                </template>
+                <el-button
+                  v-else
                   type="primary"
                   :disabled="loading"
-                  data-purchase-tour="approve"
-                  @click="openApprove(detail.row)"
-                  >审核并入库</el-button
+                  @click="nextOrder"
+                  >{{ rows.length ? '处理下一张' : '返回待办' }}</el-button
                 >
-              </template>
-              <el-button
-                v-else
-                type="primary"
-                :disabled="loading"
-                @click="nextOrder"
-                >{{ rows.length ? '处理下一张' : '返回待办' }}</el-button
-              >
+              </div>
             </div>
+          </template>
+        </PurchaseWorkbench>
+      </template>
+      <el-table-column type="selection" width="44" />
+      <el-table-column prop="orderNo" label="单号" width="150">
+        <template #default="{ row }"
+          ><el-button
+            link
+            type="primary"
+            @click="openDetail(row as InvOrderRow)"
+            >{{ row.orderNo }}</el-button
+          ></template
+        >
+      </el-table-column>
+      <el-table-column
+        :label="partyLabel"
+        min-width="120"
+        show-overflow-tooltip
+      >
+        <template #default="{ row }">{{ row.partyName }}</template>
+      </el-table-column>
+      <el-table-column
+        prop="orderDate"
+        label="单据日期"
+        width="112"
+      >
+        <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
+      </el-table-column>
+      <el-table-column
+        prop="dueDate"
+        :label="dueDateLabel"
+        width="120"
+      >
+        <template #default="{ row }">{{ formatDay(row.dueDate) }}</template>
+      </el-table-column>
+      <el-table-column
+        label="明细"
+        :width="isPurchase ? 72 : 52"
+        align="center"
+      >
+        <template #default="{ row }">{{ row.itemCount }} 行</template>
+      </el-table-column>
+      <el-table-column
+        v-if="isPurchase"
+        label="审核记录 / 等待"
+        min-width="220"
+      >
+        <template #default="{ row }">
+          <template v-if="row.status === 1"
+            ><span
+              :class="{
+                'text-warning': pendingAge(row.pendingSince).warning,
+              }"
+              >{{ pendingAge(row.pendingSince).text }}</span
+            >
+            <div v-if="row.reversedAt" class="text-muted">
+              反审核后待处理 · 上次审核
+              {{ row.auditorName || `账号 #${row.auditorId}` }}
+              {{ formatDateTime(row.auditedAt) }}
+            </div></template
+          >
+          <template v-else-if="row.auditedAt"
+            >{{ row.auditorName || `账号 #${row.auditorId}` }}
+            <div class="text-muted">
+              {{ formatDateTime(row.auditedAt) }}
+            </div></template
+          >
+          <span v-else>{{
+            row.status === 2 ? '历史数据未记录' : '尚未审核'
+          }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="金额" width="112" align="right">
+        <template #default="{ row }">
+          <strong>{{ formatMoney(row.totalAmount) }}</strong>
+        </template>
+      </el-table-column>
+      <el-table-column label="已结算" width="100" align="right">
+        <template #default="{ row }">
+          <span class="text-secondary">{{
+            formatMoney(row.settledAmount)
+          }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column
+        :label="isPurchase ? '付款状态' : '结算状态'"
+        :width="isPurchase ? 132 : 104"
+        align="center"
+      >
+        <template #default="{ row }">
+          <span
+            v-if="isPurchase && row.status !== 2"
+            class="text-secondary"
+            >{{ row.status === 1 ? '审核后形成应付' : '—' }}</span
+          >
+          <el-tag
+            v-else
+            :type="settleMeta[row.settleStatus]?.type"
+            size="small"
+            effect="light"
+          >
+            {{ settleMeta[row.settleStatus]?.text }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <!-- 业务员 / 操作人员紧挨着放：一个说「这单是谁跑来的」，一个说「谁录的」，
+           现场追责时看的是这两列，分开摆反而要在屏幕上左右找 -->
+      <el-table-column label="业务员" width="72" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.salesman || '-' }}</template>
+      </el-table-column>
+      <el-table-column label="操作人员" width="96" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.operator || '-' }}</template>
+      </el-table-column>
+      <el-table-column label="审核状态" width="92" align="center">
+        <template #default="{ row }">
+          <el-tag
+            :type="statusMeta[row.status]?.type"
+            size="small"
+            effect="light"
+          >
+            {{ statusMeta[row.status]?.text }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <!-- Primary links stay visible; secondary and state-changing actions share one menu. -->
+      <el-table-column label="操作" width="176" fixed="right">
+        <template #default="{ row }">
+          <div class="order-row-actions">
+            <el-button link type="primary" @click="openDetail(row as InvOrderRow)">查看</el-button>
+            <el-button link type="primary" @click="printRef?.open(row as InvOrderRow)">打印</el-button>
+            <el-dropdown trigger="click">
+              <el-button link type="primary" :aria-label="`单据 ${row.orderNo} 的更多操作`">更多<AppIcon name="ArrowDown" /></el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="openAttach(row as InvOrderRow)">附件{{ attachCounts[String(row.id)] ? ` (${attachCounts[String(row.id)]})` : '' }}</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 1" v-perm="`inv:${bizType}:update`" @click="openEdit(row as InvOrderRow)">编辑</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 1" v-perm="`inv:${bizType}:finish`" @click="changeStatus(row as InvOrderRow, 2)">{{ isPurchase ? '审核并入库' : '审核' }}</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === 2" v-perm="`inv:${bizType}:finish`" divided :disabled="row.settledAmount > 0" @click="reverseOrder(row as InvOrderRow)">{{ row.settledAmount > 0 ? '已有收付款，无法反审核' : '反审核' }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </template>
-      </PurchaseWorkbench>
-      <el-table height="100%"
-        v-else
-        ref="tableRef"
-        v-loading="loading"
-        :data="rows"
-        stripe
-        @selection-change="onSelectionChange"
-      >
-        <el-table-column type="selection" width="44" />
-        <el-table-column prop="orderNo" label="单号" width="150">
-          <template #default="{ row }"
-            ><el-button
-              link
-              type="primary"
-              @click="openDetail(row as InvOrderRow)"
-              >{{ row.orderNo }}</el-button
-            ></template
-          >
-        </el-table-column>
-        <el-table-column
-          :label="partyLabel"
-          min-width="120"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">{{ row.partyName }}</template>
-        </el-table-column>
-        <el-table-column
-          prop="orderDate"
-          label="单据日期"
-          width="112"
-        >
-          <template #default="{ row }">{{ formatDay(row.orderDate) }}</template>
-        </el-table-column>
-        <el-table-column
-          prop="dueDate"
-          :label="dueDateLabel"
-          width="120"
-        >
-          <template #default="{ row }">{{ formatDay(row.dueDate) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="明细"
-          :width="isPurchase ? 72 : 52"
-          align="center"
-        >
-          <template #default="{ row }">{{ row.itemCount }} 行</template>
-        </el-table-column>
-        <el-table-column
-          v-if="isPurchase"
-          label="审核记录 / 等待"
-          min-width="220"
-        >
-          <template #default="{ row }">
-            <template v-if="row.status === 1"
-              ><span
-                :class="{
-                  'text-warning': pendingAge(row.pendingSince).warning,
-                }"
-                >{{ pendingAge(row.pendingSince).text }}</span
-              >
-              <div v-if="row.reversedAt" class="text-muted">
-                反审核后待处理 · 上次审核
-                {{ row.auditorName || `账号 #${row.auditorId}` }}
-                {{ formatDateTime(row.auditedAt) }}
-              </div></template
-            >
-            <template v-else-if="row.auditedAt"
-              >{{ row.auditorName || `账号 #${row.auditorId}` }}
-              <div class="text-muted">
-                {{ formatDateTime(row.auditedAt) }}
-              </div></template
-            >
-            <span v-else>{{
-              row.status === 2 ? '历史数据未记录' : '尚未审核'
-            }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="金额" width="112" align="right">
-          <template #default="{ row }">
-            <strong>{{ formatMoney(row.totalAmount) }}</strong>
-          </template>
-        </el-table-column>
-        <el-table-column label="已结算" width="100" align="right">
-          <template #default="{ row }">
-            <span class="text-secondary">{{
-              formatMoney(row.settledAmount)
-            }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column
-          :label="isPurchase ? '付款状态' : '结算状态'"
-          :width="isPurchase ? 132 : 104"
-          align="center"
-        >
-          <template #default="{ row }">
-            <span
-              v-if="isPurchase && row.status !== 2"
-              class="text-secondary"
-              >{{ row.status === 1 ? '审核后形成应付' : '—' }}</span
-            >
-            <el-tag
-              v-else
-              :type="settleMeta[row.settleStatus]?.type"
-              size="small"
-              effect="light"
-            >
-              {{ settleMeta[row.settleStatus]?.text }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <!-- 业务员 / 操作人员紧挨着放：一个说「这单是谁跑来的」，一个说「谁录的」，
-             现场追责时看的是这两列，分开摆反而要在屏幕上左右找 -->
-        <el-table-column label="业务员" width="72" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.salesman || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="操作人员" width="96" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.operator || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="审核状态" width="92" align="center">
-          <template #default="{ row }">
-            <el-tag
-              :type="statusMeta[row.status]?.type"
-              size="small"
-              effect="light"
-            >
-              {{ statusMeta[row.status]?.text }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <!-- Primary links stay visible; secondary and state-changing actions share one menu. -->
-        <el-table-column label="操作" width="176" fixed="right">
-          <template #default="{ row }">
-            <div class="order-row-actions">
-              <el-button link type="primary" @click="openDetail(row as InvOrderRow)">查看</el-button>
-              <el-button link type="primary" @click="printRef?.open(row as InvOrderRow)">打印</el-button>
-              <el-dropdown trigger="click">
-                <el-button link type="primary" :aria-label="`单据 ${row.orderNo} 的更多操作`">更多<AppIcon name="ArrowDown" /></el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item @click="openAttach(row as InvOrderRow)">附件{{ attachCounts[String(row.id)] ? ` (${attachCounts[String(row.id)]})` : '' }}</el-dropdown-item>
-                    <el-dropdown-item v-if="row.status === 1" v-perm="`inv:${bizType}:update`" @click="openEdit(row as InvOrderRow)">编辑</el-dropdown-item>
-                    <el-dropdown-item v-if="row.status === 1" v-perm="`inv:${bizType}:finish`" @click="changeStatus(row as InvOrderRow, 2)">{{ isPurchase ? '审核并入库' : '审核' }}</el-dropdown-item>
-                    <el-dropdown-item v-if="row.status === 2" v-perm="`inv:${bizType}:finish`" divided :disabled="row.settledAmount > 0" @click="reverseOrder(row as InvOrderRow)">{{ row.settledAmount > 0 ? '已有收付款，无法反审核' : '反审核' }}</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <div v-if="!listError" class="table-pager">
-        <Pagination
-          v-model:page="query.page"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          @change="load"
-        />
-      </div>
-    </ListPanel>
+      </el-table-column>
+    </KasTable>
     </div>
     <!-- 采购为独立编辑视图；销售沿用弹窗，共享同一份表单与提交逻辑。 -->
     <OrderEditorSurface
@@ -2539,7 +2525,7 @@ function onKeywordInput(): void {
   .page-card {
     padding: 16px;
   }
-  .list-head {
+  :deep(.list-head) {
     margin-bottom: 16px;
     padding-bottom: 16px;
     border-bottom: 1px solid var(--app-border-light);
@@ -2591,7 +2577,7 @@ function onKeywordInput(): void {
   margin-bottom: 20px;
 }
 /* 列表页内详情：标题、正文、动作三层，动作区沿用核对区的同一套骨架。 */
-.page-card.is-detail-open > :not(.order-detail-panel) {
+.page-card.is-detail-open :deep(> :not(.order-detail-panel)) {
   display: none;
 }
 .order-detail-panel {
@@ -2665,26 +2651,20 @@ function onKeywordInput(): void {
   .purchase-page .page-card {
     padding: 16px;
   }
-  .purchase-page .list-head {
+  .purchase-page :deep(.list-head) {
     grid-template-columns: minmax(0, 1fr);
     margin-bottom: 20px;
   }
-  .purchase-page .list-head .filter-form {
+  .purchase-page :deep(.list-head .filter-form) {
     grid-template-columns: minmax(0, 1fr);
   }
-  .table-pager {
+  :deep(.table-pager) {
     overflow-x: auto;
     justify-content: flex-start;
   }
 }
 .approve-alert {
   margin-bottom: 14px;
-}
-
-.table-pager {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
 }
 
 .pick-hint {
