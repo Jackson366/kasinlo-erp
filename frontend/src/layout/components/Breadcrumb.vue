@@ -7,8 +7,9 @@ import AppIcon from '@/components/AppIcon.vue'
 const route = useRoute()
 const permissionStore = usePermissionStore()
 const homePath = computed(() => permissionStore.homePath())
+// 首页本身只会有「首页」这一项，面包屑在这里没有信息量，整条不渲染
+const isHome = computed(() => route.path === homePath.value)
 const items = computed(() => {
-  if (route.path === homePath.value) return []
   const trail = navigationTrail(navigationMenus(permissionStore.menus), route.path)
   return trail.length
     ? trail
@@ -17,15 +18,10 @@ const items = computed(() => {
 </script>
 
 <template>
-  <nav class="breadcrumb" aria-label="面包屑导航">
+  <nav v-if="!isHome" class="breadcrumb" aria-label="面包屑导航">
     <ol>
       <li>
-        <router-link v-if="items.length" :to="homePath" aria-label="首页"
-          ><AppIcon name="House"
-        /></router-link>
-        <span v-else aria-current="page"
-          ><AppIcon name="House" /><span class="breadcrumb__home">首页</span></span
-        >
+        <router-link :to="homePath" aria-label="首页"><AppIcon name="House" /></router-link>
       </li>
       <li v-for="(item, index) in items" :key="item.path">
         <span class="breadcrumb__separator" aria-hidden="true">/</span>
@@ -84,9 +80,6 @@ const items = computed(() => {
   }
   &__separator {
     color: var(--app-text-muted);
-  }
-  &__home {
-    margin-left: 10px;
   }
 }
 </style>
