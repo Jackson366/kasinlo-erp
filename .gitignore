@@ -55,7 +55,3 @@ Thumbs.db
 backend/data/
 data/
 
-# Java migration build and local data
-backend-java/target/
-backend-java/data/
-data/

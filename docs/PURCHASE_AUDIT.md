@@ -1,6 +1,6 @@
 # 采购审核优化（2026-10-27）
 
-本次在现有单级审核上增加责任留痕、下游摘要与一致的撤销入口。权限码和原有审核/反审核的库存、结算事务保持原有业务语义；Java 与 Go 后端提供相同新增字段，Mock 同步支持。
+本次在现有单级审核上增加责任留痕、下游摘要与一致的撤销入口。权限码和原有审核/反审核的库存、结算事务保持原有业务语义；Go 后端提供新增字段，Mock 同步支持。
 
 ## 本期业务决定
 
@@ -27,7 +27,6 @@ inv_orders 新增可空 auditor_id、audited_at、reversed_by、reversed_at、pe
 
 成功事件和状态、库存一起提交；业务失败或历史写入失败全部回滚，不产生成功事件。再次审核生成新入库单，历史作废入库单继续保留。失败原因通过现有接口错误反馈；本期没有增加独立埋点平台或指标看板，不能把失败计入成功事件表。
 
-- Java：Flyway V3 增量迁移；V1/V2 脚本不变。旧备份恢复允许缺少新增的审核事件表，历史字段保持空。
 - Go：AutoMigrate 增量同步，结构版本升至 v5，旧二进制连接新库会被版本闸门阻止。
 - 历史审核信息不从入库单或操作日志推断补录。
 - 原单即使后来删除，事件快照仍保留；管理员明确执行业务数据清理时，审核事件随单据范围清理，备份/恢复包含新表。
@@ -42,8 +41,7 @@ GET /inv/orders 新增 handoff=auditable|created|reversed，非法值拒绝；�
 
 - 前端：typecheck、Vitest、production build。
 - 浏览器：test:purchase（既有工作台回归）与 test:purchase-audit（真实 Vue + Mock 的审核、反审核、三次历史、付款拦截、十条失败复制、交接筛选、窄屏暗色）。截图只证明界面，Mock 不证明真实库存事务。
-- Java：mvn verify，新增 TradeAuditTest 与 AuditMigrationTest，覆盖并发只写一次、失败整体回滚、权限/范围、审核历史与 V2 老数据迁移。review-smoke.py 复测真实 HTTP。
-- Go：gofmt、vet、build、internal 包测试与模块边界校验。当前环境没有可启动的 PostgreSQL 服务，未运行 Go test 包的 PostgreSQL 集成测试，也未进行 Java PostgreSQL 验证。
+- Go：gofmt、vet、build、internal 包测试与模块边界校验。当前环境没有可启动的 PostgreSQL 服务，未运行 Go test 包的 PostgreSQL 集成测试。
 - UI 静态审计：新增范围无发现；仓库原有 TagsView 的 ElDropdown 触发按钮仍被扫描器误报为无动作，见 UX-CONTRACT.md Verification boundary。
 
 ## 评审仍需确认
