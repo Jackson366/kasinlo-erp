@@ -20,6 +20,7 @@ import (
 	"nova-erp/internal/module/inv"
 	"nova-erp/internal/module/log"
 	"nova-erp/internal/module/menu"
+	"nova-erp/internal/module/openplatform"
 	"nova-erp/internal/module/ops"
 	"nova-erp/internal/module/profile"
 	"nova-erp/internal/module/role"
@@ -62,6 +63,9 @@ func Modules(cfg *config.Config) []module.Module {
 	}
 	if platformInventory, enabled := inv.PlatformInventoryModule(cfg.OpenPlatform); enabled {
 		modules = append(modules, platformInventory)
+	}
+	if cfg.OpenPlatform.BridgeURL != "" {
+		modules = append(modules, openplatform.Module(cfg.OpenPlatform))
 	}
 	return modules
 }

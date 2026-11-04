@@ -22,6 +22,12 @@ export const constantRoutes: RouteRecordRaw[] = [
     meta: { title: '登录', hidden: true },
   },
   {
+    path: '/open-platform/authorize',
+    name: 'OpenPlatformAuthorize',
+    component: () => import('@/views/open-platform/Authorize.vue'),
+    meta: { title: '开放平台授权', hidden: true },
+  },
+  {
     path: '/',
     name: 'Root',
     component: Layout,
