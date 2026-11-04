@@ -33,6 +33,7 @@ func (s Server) Handler() http.Handler {
 	mux.HandleFunc("POST /oauth/device_authorization", s.start)
 	mux.HandleFunc("POST /oauth/token", s.token)
 	mux.HandleFunc("POST /oauth/revoke", s.revoke)
+	mux.HandleFunc("GET /oauth/status", s.status)
 	mux.HandleFunc("GET /openapi/v1/inventory", s.inventory)
 	mux.HandleFunc("POST /internal/erp/device/inspect", s.bridge(s.inspect))
 	mux.HandleFunc("POST /internal/erp/device/decision", s.bridge(s.decide))
@@ -161,19 +162,37 @@ func bearer(r *http.Request) string {
 	return value
 }
 
-func (s Server) inventory(w http.ResponseWriter, r *http.Request) {
+func (s Server) activeGrant(w http.ResponseWriter, r *http.Request) (oauth.Grant, bool) {
 	token := bearer(r)
 	if !validHex(token, 64) {
 		reject(w, http.StatusUnauthorized, "invalid_token")
-		return
+		return oauth.Grant{}, false
 	}
 	grant, err := s.Store.Lookup(r.Context(), token)
 	if errors.Is(err, sql.ErrNoRows) {
 		reject(w, http.StatusUnauthorized, "invalid_token")
-		return
+		return oauth.Grant{}, false
 	}
 	if err != nil {
 		failure(w, "lookup_access_grant", err)
+		return oauth.Grant{}, false
+	}
+	return grant, true
+}
+
+func (s Server) status(w http.ResponseWriter, r *http.Request) {
+	grant, ok := s.activeGrant(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"clientId": grant.ClientID, "scope": oauth.Scope, "expiresAt": grant.ExpiresAt,
+	})
+}
+
+func (s Server) inventory(w http.ResponseWriter, r *http.Request) {
+	grant, ok := s.activeGrant(w, r)
+	if !ok {
 		return
 	}
 	page, status, err := s.ERP.Inventory(r.Context(), grant, r.URL.Query())

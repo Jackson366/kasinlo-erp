@@ -3,11 +3,14 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -157,5 +160,83 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 	}
 	if res := call(http.MethodGet, inventory, accessToken, "", ""); res.Code != http.StatusUnauthorized {
 		t.Fatal("revoked token was accepted")
+	}
+
+	if binary := os.Getenv("KAS_TEST_BINARY"); binary != "" {
+		t.Run("cli shares and revokes credentials", func(t *testing.T) {
+			testCLI(t, binary, handler, bridgeSecret)
+		})
+	}
+}
+
+func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret string) {
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	configDir := t.TempDir()
+	run := func(want int, args ...string) []byte {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, binary, append([]string{"--server", server.URL, "--profile", "shared"}, args...)...)
+		cmd.Env = append(os.Environ(), "KAS_CONFIG_DIR="+configDir)
+		out, err := cmd.Output()
+		code := 0
+		if err != nil {
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) {
+				t.Fatalf("could not run kas: %v", err)
+			}
+			code = exit.ExitCode()
+		}
+		if code != want {
+			t.Fatalf("kas %s %s exited %d, want %d: %v", args[0], args[1], code, want, err)
+		}
+		return out
+	}
+
+	var session struct {
+		SessionID string `json:"session_id"`
+		UserCode string `json:"user_code"`
+	}
+	pending := run(0, "auth", "login", "--no-wait")
+	if json.Unmarshal(pending, &session) != nil || session.SessionID == "" || session.UserCode == "" ||
+		strings.Contains(string(pending), "device_code") {
+		t.Fatal("expected a resumable login with a public verification code")
+	}
+	decision := httptest.NewRequest(http.MethodPost, "/internal/erp/device/decision",
+		strings.NewReader(`{"userId":27,"epoch":4,"approve":true,"userCode":"`+session.UserCode+`"}`))
+	decision.Header.Set("Authorization", "Bearer "+bridgeSecret)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, decision)
+	if rec.Code != http.StatusOK {
+		t.Fatal("browser authorization decision was rejected")
+	}
+	run(0, "auth", "login", "--session", session.SessionID)
+	if out := run(0, "auth", "status"); !strings.Contains(string(out), `"authenticated":true`) ||
+		strings.Contains(string(out), "access_token") {
+		t.Fatal("separate CLI process could not see the shared grant")
+	}
+	if out := run(0, "inventory", "list", "--page-size", "10"); !strings.Contains(string(out), `"stock":15`) {
+		t.Fatal("separate CLI process could not query inventory")
+	}
+
+	// Save the current token only for verifying the server revoked it.
+	configs, err := os.ReadDir(configDir)
+	if err != nil || len(configs) != 1 {
+		t.Fatal("expected one shared credential profile")
+	}
+	raw, err := os.ReadFile(filepath.Join(configDir, configs[0].Name(), "credential.json"))
+	var cached struct { Token string `json:"token"` }
+	if err != nil || json.Unmarshal(raw, &cached) != nil || cached.Token == "" {
+		t.Fatal("expected a saved local credential")
+	}
+	run(0, "auth", "logout")
+	run(3, "inventory", "list")
+	req := httptest.NewRequest(http.MethodGet, "/oauth/status", nil)
+	req.Header.Set("Authorization", "Bearer "+cached.Token)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatal("logout did not revoke the server-side grant")
 	}
 }
