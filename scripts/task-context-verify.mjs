@@ -113,6 +113,13 @@ try {
       await expect(page.getByRole('dialog')).toHaveCount(0)
       await expect(page).toHaveURL(/action=create/)
       await expect(editor.locator('.purchase-editor__heading')).toBeFocused()
+      const back = editor.locator('header').getByRole('button', { name: '返回采购工作台' })
+      await expect(back).toBeVisible()
+      const cards = editor.locator('.purchase-entry-form > .purchase-entry-card')
+      await expect(cards).toHaveCount(2)
+      await expect(cards.nth(0).getByRole('heading', { name: '基本信息' })).toBeVisible()
+      await expect(cards.nth(1).getByRole('heading', { name: '采购明细' })).toBeVisible()
+      await expect(editor.locator('footer').getByRole('button')).toHaveCount(1)
       await page.screenshot({
         path: out + '/purchase-editor-desktop.png',
         fullPage: true,
@@ -135,7 +142,7 @@ try {
       await expect(discard).toBeVisible()
       await keepEditing()
       await expect(field(editor, '备注')).toHaveValue('采购未保存')
-      await editor.getByRole('button', { name: '返回采购工作台' }).click()
+      await back.click()
       await discardChanges()
       await expect(editor).toHaveCount(0)
       await expect(page).toHaveURL(/q=CG/)
@@ -160,7 +167,7 @@ try {
     await page.reload()
     await expect(field(editor, '备注')).toHaveValue(original)
     await expect(page).toHaveURL(/action=edit/)
-    await editor.getByRole('button', { name: '取消', exact: true }).click()
+    await editor.getByRole('button', { name: '返回采购工作台', exact: true }).click()
     await expect(editor).toHaveCount(0)
   })
   await check('采购编辑深链仍检查创建与编辑权限', async () => {
@@ -206,7 +213,7 @@ try {
       path: out + '/purchase-editor-narrow.png',
       fullPage: true,
     })
-    await editor.getByRole('button', { name: '取消', exact: true }).click()
+    await editor.getByRole('button', { name: '返回采购工作台', exact: true }).click()
     await discardChanges()
     await page.setViewportSize({ width: 1440, height: 1000 })
     await page.getByRole('button', { name: '切换到亮色主题' }).click()
