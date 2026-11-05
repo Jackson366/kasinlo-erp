@@ -111,16 +111,14 @@ try {
       await expect(page).toHaveURL(/action=create/)
       await expect(editor).toBeVisible()
       await editor
-        .getByRole('button', { name: '取消', exact: true })
-        .last()
+        .getByRole('button', { name: '返回采购工作台', exact: true })
         .click()
       await expect(editor).toBeHidden()
       await page.getByRole('tab', { name: '全部单据', exact: true }).click()
       await create.click()
       await expect(editor).toBeVisible()
       await editor
-        .getByRole('button', { name: '取消', exact: true })
-        .last()
+        .getByRole('button', { name: '返回采购工作台', exact: true })
         .click()
       await go('/inv/overview')
       await page
@@ -129,16 +127,14 @@ try {
       await expect(page).toHaveURL(/inv\/purchase.*action=create/)
       await expect(editor).toBeVisible()
       await editor
-        .getByRole('button', { name: '取消', exact: true })
-        .last()
+        .getByRole('button', { name: '返回采购工作台', exact: true })
         .click()
       await go('/inv/supplier')
       await go('/inv/purchase')
       await create.click()
       await expect(editor).toBeVisible()
       await editor
-        .getByRole('button', { name: '取消', exact: true })
-        .last()
+        .getByRole('button', { name: '返回采购工作台', exact: true })
         .click()
     },
   )
@@ -173,8 +169,7 @@ try {
         const editor = page.locator('.purchase-editor')
         await expect(editor).toBeVisible()
         await editor
-          .getByRole('button', { name: '取消', exact: true })
-          .last()
+          .getByRole('button', { name: '返回采购工作台', exact: true })
           .click()
         await page
           .locator('.purchase-header')
@@ -183,8 +178,7 @@ try {
         await expect(page).toHaveURL(/qa\/purchase.*action=create/)
         await expect(editor).toBeVisible()
         await editor
-          .getByRole('button', { name: '取消', exact: true })
-          .last()
+          .getByRole('button', { name: '返回采购工作台', exact: true })
           .click()
       } finally {
         await go('/inv/overview')
@@ -576,8 +570,7 @@ try {
           .evaluate((el) => getComputedStyle(el).overflowY),
       ).toBe('auto')
       await page
-        .getByRole('button', { name: '取消', exact: true })
-        .last()
+        .getByRole('button', { name: '返回采购工作台', exact: true })
         .click()
     },
   )

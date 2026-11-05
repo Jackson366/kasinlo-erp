@@ -1769,6 +1769,16 @@ function onKeywordInput(): void {
     >
       <template v-if="isPurchase" #header="{ titleId, titleClass }">
         <div class="purchase-dialog-heading">
+          <el-button
+            class="purchase-heading-back"
+            type="primary"
+            link
+            :disabled="submitting || validating"
+            @click="requestCloseForm"
+          >
+            <AppIcon name="ArrowLeft" />
+            <span>返回采购工作台</span>
+          </el-button>
           <h1 :id="titleId" :class="titleClass">
             {{ dialogMode === 'create' ? createText : '编辑采购单' }}
           </h1>
@@ -1829,20 +1839,10 @@ function onKeywordInput(): void {
           </div>
         </div>
       </template>
-      <!-- 返回动作放进表单卡片：和字段共用同一条左基线，页头只留标题与指南。 -->
-      <div v-if="isPurchase" class="purchase-body-back">
-        <el-button
-          :disabled="submitting || validating"
-          @click="requestCloseForm"
-        >
-          <AppIcon name="ArrowLeft" />
-          <span>返回采购工作台</span>
-        </el-button>
-      </div>
       <div
         v-if="editorLoading"
         v-loading="true"
-        class="detail-pending"
+        class="detail-pending purchase-entry-card"
         aria-label="正在读取采购单"
       />
       <el-alert
@@ -1878,196 +1878,201 @@ function onKeywordInput(): void {
         :class="{ 'purchase-entry-form': isPurchase }"
         novalidate
       >
-        <el-row :gutter="16" :class="{ 'purchase-basics': isPurchase }">
-          <el-col v-if="!isPurchase" :xs="24" :sm="12" :lg="6" class="order-number-field">
-            <el-form-item label="单据编号">
-              <el-input
-                v-model="form.orderNo"
-                :disabled="dialogMode === 'edit'"
-                placeholder="留空自动生成"
-                clearable
-                maxlength="32"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12" :lg="isPurchase ? 8 : 6" class="order-party-field">
-            <el-form-item :label="partyLabel" prop="partyId" data-purchase-tour="party">
-              <el-select
-                v-model="form.partyId"
-                filterable
-                placeholder="请选择"
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="p in parties"
-                  :key="p.id"
-                  :label="p.name"
-                  :value="p.id"
+        <div :class="isPurchase ? 'purchase-entry-card' : 'sales-entry-section'">
+          <h2 v-if="isPurchase" class="purchase-section-title purchase-basics-title">基本信息</h2>
+          <el-row :gutter="16" :class="{ 'purchase-basics': isPurchase }">
+            <el-col v-if="!isPurchase" :xs="24" :sm="12" :lg="6" class="order-number-field">
+              <el-form-item label="单据编号">
+                <el-input
+                  v-model="form.orderNo"
+                  :disabled="dialogMode === 'edit'"
+                  placeholder="留空自动生成"
+                  clearable
+                  maxlength="32"
                 />
-              </el-select>
-              <div v-if="isPurchase && userStore.hasAnyPerm(['inv:supplier:create']) && router.hasRoute('InvSupplier')" class="purchase-field-tools">
-                <router-link to="/inv/supplier" target="_blank" rel="noopener" aria-label="维护供应商（新标签页）" title="在新标签页维护供应商">维护供应商</router-link>
-              </div>
-              <div v-if="partyTruncated" class="pick-hint">
-                仅显示前 {{ partyLimit }} 个{{ partyLabel }}，请用关键字搜索其余
-              </div>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12" :lg="6" class="order-date-field">
-            <el-form-item label="单据日期" prop="orderDate">
-              <el-date-picker
-                v-model="form.orderDate"
-                type="date"
-                value-format="YYYY-MM-DD"
-                placeholder="选择日期"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12" :lg="6" class="order-due-field">
-            <el-form-item :label="dueDateLabel">
-              <el-date-picker
-                v-model="form.dueDate"
-                type="date"
-                value-format="YYYY-MM-DD"
-                placeholder="选填"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12" :lg="isPurchase ? 4 : 6" class="order-salesman-field">
-            <!-- 业务员是自由文本而不是人员下拉：跑业务的常常没有后台账号
-                 （门店、外包、已离职但历史单据还要能查），挂账号后这些人就录不进单 -->
-            <el-form-item label="业务员">
-              <el-input
-                v-model="form.salesman"
-                maxlength="64"
-                placeholder="选填"
-              />
-            </el-form-item>
-          </el-col>
-        </el-row>
-
-        <el-form-item :label="isPurchase ? '' : '明细'" :class="{ 'purchase-lines': isPurchase }">
-          <div v-if="isPurchase" class="purchase-lines-toolbar">
-            <div class="purchase-lines-title">采购明细 <span>{{ form.items.length }} 行</span></div>
-            <div class="purchase-resource-tools">
-              <router-link v-if="userStore.hasAnyPerm(['inv:product:create']) && router.hasRoute('InvProduct')" to="/inv/product" target="_blank" rel="noopener" aria-label="维护商品（新标签页）" title="在新标签页维护商品">维护商品</router-link>
-              <el-button text size="small" :loading="optionsLoading" @click="refreshOptions">刷新可选资料</el-button>
-            </div>
-          </div>
-          <div v-if="picksTruncated" class="pick-hint">
-            商品超过 {{ pickLimit }} 个，下拉只加载了一部分 ——
-            可以先在「商品档案」里按关键字找到它
-          </div>
-          <div class="item-editor">
-            <div class="item-editor__head">
-              <span class="col-product">商品</span>
-              <span class="col-spec">规格</span>
-              <span class="col-unit">单位</span>
-              <span class="col-num">数量</span>
-              <span v-if="!isPurchase" class="col-base">折算</span>
-              <span class="col-num">单价</span>
-              <span class="col-num">金额</span>
-              <span class="col-act" />
-            </div>
-            <div
-              v-for="(item, index) in form.items"
-              :key="index"
-              class="item-editor__row"
-            >
-              <el-select
-                v-model="item.productId"
-                class="col-product"
-                filterable
-                :filter-method="filterProducts"
-                placeholder="输入商品名称 / 编码 / 规格搜索"
-                @change="onProductPickChange(item)"
-                @visible-change="onPickVisible"
-              >
-                <el-option
-                  v-for="p in filteredPicks"
-                  :key="p.id"
-                  :label="productLabel(p)"
-                  :value="p.id"
-                />
-              </el-select>
-              <el-select
-                v-model="item.specId"
-                class="col-spec"
-                placeholder="规格"
-                :disabled="!item.productId"
-                @change="onSpecChange(item)"
-              >
-                <el-option
-                  v-for="s in specOptions(item)"
-                  :key="s.id"
-                  :label="`${s.spec || '—'}（库存 ${formatQty(s.stock)}）`"
-                  :value="s.id"
-                />
-              </el-select>
-              <el-select
-                v-model="item.unitId"
-                class="col-unit"
-                placeholder="单位"
-                :disabled="!item.specId"
-                @change="onUnitChange(item)"
-              >
-                <el-option
-                  v-for="u in unitOptions(item)"
-                  :key="u.id"
-                  :label="u.unit"
-                  :value="u.id"
-                />
-              </el-select>
-              <div class="col-num quantity-cell">
-                <el-input-number
-                  v-model="item.qty"
-                  :aria-label="`第 ${index + 1} 行数量`"
-                  :min="0.01"
-                  :precision="3"
-                  :controls="false"
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="isPurchase ? 8 : 6" class="order-party-field">
+              <el-form-item :label="partyLabel" prop="partyId" data-purchase-tour="party">
+                <el-select
+                  v-model="form.partyId"
+                  filterable
+                  placeholder="请选择"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="p in parties"
+                    :key="p.id"
+                    :label="p.name"
+                    :value="p.id"
+                  />
+                </el-select>
+                <div v-if="isPurchase && userStore.hasAnyPerm(['inv:supplier:create']) && router.hasRoute('InvSupplier')" class="purchase-field-tools">
+                  <router-link to="/inv/supplier" target="_blank" rel="noopener" aria-label="维护供应商（新标签页）" title="在新标签页维护供应商">维护供应商</router-link>
+                </div>
+                <div v-if="partyTruncated" class="pick-hint">
+                  仅显示前 {{ partyLimit }} 个{{ partyLabel }}，请用关键字搜索其余
+                </div>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="6" class="order-date-field">
+              <el-form-item label="单据日期" prop="orderDate">
+                <el-date-picker
+                  v-model="form.orderDate"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  placeholder="选择日期"
                   style="width: 100%"
                 />
-                <span v-if="isPurchase" class="quantity-base">{{ item.unitId ? `折算 ${formatQty(qtyBase(item))} ${unitOptions(item).find((u) => u.isBase)?.unit || ''}` : '—' }}</span>
-              </div>
-              <span v-if="!isPurchase" class="col-base">
-                {{ formatQty(qtyBase(item)) }}
-                {{ unitOptions(item).find((u) => u.isBase)?.unit || '' }}
-              </span>
-              <el-input-number
-                v-model="item.price"
-                class="col-num"
-                :min="0"
-                :precision="2"
-                :controls="false"
-              />
-              <span class="col-num amount">{{
-                formatMoney((item.qty || 0) * (item.price || 0))
-              }}</span>
-              <el-button
-                class="col-act"
-                link
-                type="danger"
-                @click="removeItem(index)"
-                >删除</el-button
-              >
-            </div>
-            <div class="item-editor__foot">
-              <el-button link type="primary" @click="addItem">
-                <AppIcon name="Plus" />
-                <span>添加明细</span>
-              </el-button>
-              <span v-if="!isPurchase" class="item-editor__total">
-                合计：<strong>{{ formatMoney(formTotal) }}</strong>
-              </span>
-            </div>
-          </div>
-        </el-form-item>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="6" class="order-due-field">
+              <el-form-item :label="dueDateLabel">
+                <el-date-picker
+                  v-model="form.dueDate"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  placeholder="选填"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="isPurchase ? 4 : 6" class="order-salesman-field">
+              <!-- 业务员是自由文本而不是人员下拉：跑业务的常常没有后台账号
+                   （门店、外包、已离职但历史单据还要能查），挂账号后这些人就录不进单 -->
+              <el-form-item label="业务员">
+                <el-input
+                  v-model="form.salesman"
+                  maxlength="64"
+                  placeholder="选填"
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </div>
 
-        <el-form-item label="备注">
-          <el-input v-model="form.remark" placeholder="选填" />
-        </el-form-item>
+        <div :class="isPurchase ? 'purchase-entry-card' : 'sales-entry-section'">
+          <el-form-item :label="isPurchase ? '' : '明细'">
+            <div v-if="isPurchase" class="purchase-lines-toolbar">
+              <h2 class="purchase-section-title">采购明细 <span>{{ form.items.length }} 行</span></h2>
+              <div class="purchase-resource-tools">
+                <router-link v-if="userStore.hasAnyPerm(['inv:product:create']) && router.hasRoute('InvProduct')" to="/inv/product" target="_blank" rel="noopener" aria-label="维护商品（新标签页）" title="在新标签页维护商品">维护商品</router-link>
+                <el-button text size="small" :loading="optionsLoading" @click="refreshOptions">刷新可选资料</el-button>
+              </div>
+            </div>
+            <div v-if="picksTruncated" class="pick-hint">
+              商品超过 {{ pickLimit }} 个，下拉只加载了一部分 ——
+              可以先在「商品档案」里按关键字找到它
+            </div>
+            <div class="item-editor">
+              <div class="item-editor__head">
+                <span class="col-product">商品</span>
+                <span class="col-spec">规格</span>
+                <span class="col-unit">单位</span>
+                <span class="col-num">数量</span>
+                <span v-if="!isPurchase" class="col-base">折算</span>
+                <span class="col-num">单价</span>
+                <span class="col-num">金额</span>
+                <span class="col-act" />
+              </div>
+              <div
+                v-for="(item, index) in form.items"
+                :key="index"
+                class="item-editor__row"
+              >
+                <el-select
+                  v-model="item.productId"
+                  class="col-product"
+                  filterable
+                  :filter-method="filterProducts"
+                  placeholder="输入商品名称 / 编码 / 规格搜索"
+                  @change="onProductPickChange(item)"
+                  @visible-change="onPickVisible"
+                >
+                  <el-option
+                    v-for="p in filteredPicks"
+                    :key="p.id"
+                    :label="productLabel(p)"
+                    :value="p.id"
+                  />
+                </el-select>
+                <el-select
+                  v-model="item.specId"
+                  class="col-spec"
+                  placeholder="规格"
+                  :disabled="!item.productId"
+                  @change="onSpecChange(item)"
+                >
+                  <el-option
+                    v-for="s in specOptions(item)"
+                    :key="s.id"
+                    :label="`${s.spec || '—'}（库存 ${formatQty(s.stock)}）`"
+                    :value="s.id"
+                  />
+                </el-select>
+                <el-select
+                  v-model="item.unitId"
+                  class="col-unit"
+                  placeholder="单位"
+                  :disabled="!item.specId"
+                  @change="onUnitChange(item)"
+                >
+                  <el-option
+                    v-for="u in unitOptions(item)"
+                    :key="u.id"
+                    :label="u.unit"
+                    :value="u.id"
+                  />
+                </el-select>
+                <div class="col-num quantity-cell">
+                  <el-input-number
+                    v-model="item.qty"
+                    :aria-label="`第 ${index + 1} 行数量`"
+                    :min="0.01"
+                    :precision="3"
+                    :controls="false"
+                    style="width: 100%"
+                  />
+                  <span v-if="isPurchase" class="quantity-base">{{ item.unitId ? `折算 ${formatQty(qtyBase(item))} ${unitOptions(item).find((u) => u.isBase)?.unit || ''}` : '—' }}</span>
+                </div>
+                <span v-if="!isPurchase" class="col-base">
+                  {{ formatQty(qtyBase(item)) }}
+                  {{ unitOptions(item).find((u) => u.isBase)?.unit || '' }}
+                </span>
+                <el-input-number
+                  v-model="item.price"
+                  class="col-num"
+                  :min="0"
+                  :precision="2"
+                  :controls="false"
+                />
+                <span class="col-num amount">{{
+                  formatMoney((item.qty || 0) * (item.price || 0))
+                }}</span>
+                <el-button
+                  class="col-act"
+                  link
+                  type="danger"
+                  @click="removeItem(index)"
+                  >删除</el-button
+                >
+              </div>
+              <div class="item-editor__foot">
+                <el-button link type="primary" @click="addItem">
+                  <AppIcon name="Plus" />
+                  <span>添加明细</span>
+                </el-button>
+                <span v-if="!isPurchase" class="item-editor__total">
+                  合计：<strong>{{ formatMoney(formTotal) }}</strong>
+                </span>
+              </div>
+            </div>
+          </el-form-item>
+
+          <el-form-item label="备注" class="order-remark-field">
+            <el-input v-model="form.remark" placeholder="选填" />
+          </el-form-item>
+        </div>
       </el-form>
       </template>
       <template #footer>
@@ -2076,6 +2081,7 @@ function onKeywordInput(): void {
           <span class="editor-save-note">保存只记录单据，不会增加库存或登记付款。</span>
         </div>
         <el-button
+          v-if="!isPurchase"
           :disabled="submitting || validating"
           @click="requestCloseForm"
           >取消</el-button
@@ -2264,6 +2270,7 @@ function onKeywordInput(): void {
 .purchase-dialog-heading {
   display: grid;
   grid-template-areas:
+    'back back'
     'title guide'
     'meta meta';
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2361,12 +2368,35 @@ function onKeywordInput(): void {
   padding: 0 4px;
   font-size: 12px;
 }
-.purchase-body-back {
-  margin-bottom: 16px;
+.purchase-heading-back {
+  grid-area: back;
+  justify-self: start;
+  min-height: 32px;
+  margin-bottom: 4px;
+
   :deep(.app-icon) {
     margin-right: 6px;
-    font-size: 14px;
   }
+
+  &:hover span {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 3px;
+  }
+}
+.sales-entry-section {
+  display: contents;
+}
+.purchase-entry-card {
+  min-width: 0;
+  padding: 20px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-md);
 }
 .purchase-entry-status {
   margin-bottom: 16px;
@@ -2406,6 +2436,9 @@ function onKeywordInput(): void {
   }
 }
 .purchase-entry-form {
+  display: grid;
+  gap: 16px;
+
   :deep(.el-form-item__label) {
     height: auto;
     margin-bottom: 6px;
@@ -2416,20 +2449,27 @@ function onKeywordInput(): void {
     display: block;
     min-width: 0;
   }
-  .purchase-lines {
-    margin-top: 8px;
-  }
   .item-editor {
-    padding: 12px 0 0;
-    border-width: 1px 0 0;
-    border-radius: 0;
+    padding: 0;
+    border: 0;
   }
   .item-editor__head,
   .item-editor__row {
     min-width: 920px;
+    padding: 8px;
+  }
+  .item-editor__head {
+    color: var(--app-text-secondary);
+    background: var(--app-surface-subtle);
+    border-radius: var(--radius-sm);
   }
   .item-editor__row {
     align-items: flex-start;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--app-border-light);
+  }
+  .item-editor__foot {
+    margin-top: 8px;
   }
   .quantity-base {
     display: block;
@@ -2444,6 +2484,9 @@ function onKeywordInput(): void {
   .el-form-item {
     margin-bottom: 16px;
   }
+  .order-remark-field {
+    margin-bottom: 0;
+  }
   .col-num :deep(input) {
     text-align: right;
     font-variant-numeric: tabular-nums;
@@ -2455,10 +2498,12 @@ function onKeywordInput(): void {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px 16px;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
-.purchase-lines-title {
-  font-size: 14px;
+.purchase-section-title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
   font-weight: 600;
   color: var(--app-text);
   span {
@@ -2467,6 +2512,9 @@ function onKeywordInput(): void {
     font-weight: 400;
     color: var(--app-text-secondary);
   }
+}
+.purchase-basics-title {
+  margin-bottom: 16px;
 }
 .purchase-resource-tools {
   display: flex;
@@ -2490,6 +2538,9 @@ function onKeywordInput(): void {
   line-height: 1.6;
 }
 @media (max-width: 800px) {
+  .purchase-entry-card {
+    padding: 16px;
+  }
   .editor-footer-summary {
     flex-basis: 100%;
   }

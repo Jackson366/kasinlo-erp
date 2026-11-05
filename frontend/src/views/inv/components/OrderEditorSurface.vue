@@ -37,7 +37,7 @@ watch(
         />
       </div>
     </header>
-    <div class="purchase-editor__body"><slot /></div>
+    <slot />
     <footer class="purchase-editor__footer"><slot name="footer" /></footer>
   </section>
   <el-dialog
@@ -65,8 +65,6 @@ watch(
     padding: 0 20px;
     margin-bottom: 16px;
   }
-  // 标题块横向占满，指南入口靠右；标题与编号上下两行。
-  // 返回动作不在这里 —— 它作为表单卡片顶部的次级按钮，和表单内容共用左基线。
   &__heading {
     min-width: 0;
   }
@@ -78,12 +76,6 @@ watch(
     font-weight: 600;
     line-height: 1.4;
   }
-  &__body {
-    padding: 20px;
-    background: var(--app-surface);
-    border: 1px solid var(--app-border);
-    border-radius: var(--radius-md);
-  }
   &__footer {
     position: sticky;
     bottom: 0;
@@ -93,9 +85,11 @@ watch(
     justify-content: flex-end;
     align-items: center;
     gap: 12px;
+    margin-top: 16px;
     padding: 12px 20px;
     background: var(--app-surface);
-    border-top: 1px solid var(--app-border);
+    border: 1px solid var(--app-border);
+    border-radius: var(--radius-md);
   }
   &__footer :deep(.el-button + .el-button) {
     margin-left: 0;
@@ -104,9 +98,6 @@ watch(
 @media (max-width: 800px) {
   .purchase-editor__header {
     padding: 0 16px;
-  }
-  .purchase-editor__body {
-    padding: 16px;
   }
   .purchase-editor__footer {
     padding: 12px 16px;

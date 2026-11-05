@@ -563,7 +563,7 @@ try {
       page.locator('.el-date-picker:visible .el-date-picker__header'),
     ).toContainText('年')
     await page.keyboard.press('Escape')
-    await dialog.getByRole('button', { name: '取消', exact: true }).click()
+    await dialog.getByRole('button', { name: '返回采购工作台', exact: true }).click()
   })
   await check('编辑失败保留输入与未保存关闭保护', async () => {
     await review.getByRole('button', { name: '编辑采购单' }).click()
@@ -574,7 +574,7 @@ try {
     await dialog.getByRole('button', { name: '保存采购单' }).click()
     await expect(dialog).toContainText('本次输入已保留')
     await expect(remark).toHaveValue('保留这条修改')
-    await dialog.getByRole('button', { name: '取消', exact: true }).click()
+    await dialog.getByRole('button', { name: '返回采购工作台', exact: true }).click()
     const confirm = page.getByRole('dialog', { name: '放弃本次修改？' })
     await confirm.getByRole('button', { name: '继续编辑' }).click()
     await expect(remark).toHaveValue('保留这条修改')
