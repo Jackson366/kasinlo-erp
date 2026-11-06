@@ -41,9 +41,6 @@ const summary = ref<InvFinanceSummary>({
 /** 表格勾选（批量收付款用）。只允许勾「还有未结余额」的单据 */
 const tableRef = ref<KasTableHandle>()
 const { selection, onSelectionChange, clearSelection } = useKasTableSelection<InvFinanceRow>()
-const selectedOutstanding = computed(() =>
-  selection.value.reduce((sum, r) => sum + (Number(r.outstanding) || 0), 0),
-)
 
 const query = reactive<{
   page: number
@@ -139,6 +136,8 @@ const formRef = ref<FormInstance>()
 const dialogVisible = ref(false)
 const submitting = ref(false)
 const currentRow = ref<InvFinanceRow | null>(null)
+const settlementVerb = ref<'收款' | '付款'>('收款')
+const activeSettlementVerb = computed(() => activeTab.value === 'receivable' ? '收款' : '付款')
 
 const form = reactive<InvSettlePayload>({
   orderId: 0,
@@ -146,6 +145,12 @@ const form = reactive<InvSettlePayload>({
   method: '银行转账',
   settledAt: '',
   remark: '',
+})
+
+const settlementPreview = computed(() => {
+  const amount = Number(form.amount)
+  if (!currentRow.value || !Number.isFinite(amount) || amount < 0.01 || amount > currentRow.value.outstanding) return null
+  return { amount, remaining: currentRow.value.outstanding - amount }
 })
 
 const rules: FormRules = {
@@ -160,6 +165,7 @@ function today(): string {
 
 function openSettle(row: InvFinanceRow): void {
   currentRow.value = row
+  settlementVerb.value = activeSettlementVerb.value
   Object.assign(form, {
     orderId: row.orderId,
     amount: row.outstanding,
@@ -171,8 +177,13 @@ function openSettle(row: InvFinanceRow): void {
 }
 
 async function submitForm(): Promise<void> {
+  if (submitting.value) return
   const valid = formRef.value ? await formRef.value.validate().catch(() => false) : false
-  if (!valid) return
+  if (!valid || !dialogVisible.value || submitting.value) return
+  if (!settlementPreview.value) {
+    ElMessage.warning('请输入有效金额，且金额不能超过未结余额')
+    return
+  }
   submitting.value = true
   try {
     const row = currentRow.value
@@ -206,6 +217,11 @@ async function submitForm(): Promise<void> {
  */
 const batchVisible = ref(false)
 const batchSubmitting = ref(false)
+const batchRows = ref<InvFinanceRow[]>([])
+const batchVerb = ref<'收款' | '付款'>('收款')
+const batchOutstanding = computed(() =>
+  batchRows.value.reduce((sum, row) => sum + Number(row.outstanding), 0),
+)
 const batchForm = reactive<{ method: string; settledAt: string; remark: string }>({
   method: '银行转账',
   settledAt: '',
@@ -214,16 +230,18 @@ const batchForm = reactive<{ method: string; settledAt: string; remark: string }
 
 function openBatch(): void {
   if (!selection.value.length) return
+  batchRows.value = [...selection.value]
+  batchVerb.value = activeSettlementVerb.value
   Object.assign(batchForm, { method: '银行转账', settledAt: today(), remark: '' })
   batchVisible.value = true
 }
 
 async function submitBatch(): Promise<void> {
-  if (!selection.value.length) return
+  if (!batchRows.value.length || batchSubmitting.value) return
   batchSubmitting.value = true
   try {
     const res = await invApi.settleBatch({
-      orderIds: selection.value.map((r) => r.orderId),
+      orderIds: batchRows.value.map((r) => r.orderId),
       method: batchForm.method,
       settledAt: batchForm.settledAt || undefined,
       remark: batchForm.remark || undefined,
@@ -468,10 +486,12 @@ follow('/inv/finance', () => {
 
     <el-dialog
       v-model="dialogVisible"
-      :title="activeTab === 'receivable' ? '登记收款' : '登记付款'"
+      :title="`登记${settlementVerb}`"
       width="640px"
       top="6vh"
       :close-on-click-modal="false"
+      :close-on-press-escape="!submitting"
+      :show-close="!submitting"
       destroy-on-close
     >
       <el-descriptions v-if="currentRow" :column="1" border size="small" class="mb-16">
@@ -486,7 +506,7 @@ follow('/inv/finance', () => {
         <el-descriptions-item label="未结余额">{{ formatMoney(currentRow.outstanding) }}</el-descriptions-item>
       </el-descriptions>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
-        <el-form-item label="金额" prop="amount">
+        <el-form-item :label="`本次${settlementVerb}金额`" prop="amount">
           <el-input-number v-model="form.amount" :min="0.01" :max="currentRow?.outstanding ?? 0" :precision="2" :controls="false" style="width: 100%" />
         </el-form-item>
         <el-form-item label="结算方式">
@@ -503,31 +523,44 @@ follow('/inv/finance', () => {
           <el-input v-model="form.remark" placeholder="选填" />
         </el-form-item>
       </el-form>
+      <dl class="settlement-summary" aria-label="登记金额摘要" aria-live="polite">
+        <div class="settlement-summary__item">
+          <dt>本次登记</dt>
+          <dd>{{ settlementPreview ? formatMoney(settlementPreview.amount) : '—' }}</dd>
+        </div>
+        <div class="settlement-summary__item">
+          <dt>登记后剩余</dt>
+          <dd>{{ settlementPreview ? formatMoney(settlementPreview.remaining) : '—' }}</dd>
+        </div>
+      </dl>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
+        <el-button :disabled="submitting" @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitForm">登记{{ settlementVerb }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 批量收付款 -->
     <el-dialog
       v-model="batchVisible"
-      :title="activeTab === 'receivable' ? '批量收款' : '批量付款'"
+      :title="`批量登记${batchVerb}`"
       width="620px"
       top="8vh"
       :close-on-click-modal="false"
+      :close-on-press-escape="!batchSubmitting"
+      :show-close="!batchSubmitting"
       destroy-on-close
     >
-      <div class="batch-summary">
-        <div class="batch-summary__item">
-          <span>单据</span>
-          <strong>{{ selection.length }} 张</strong>
+      <dl class="settlement-summary" aria-label="批量登记摘要">
+        <div class="settlement-summary__item">
+          <dt>本次登记单据</dt>
+          <dd>{{ batchRows.length }} 张</dd>
         </div>
-        <div class="batch-summary__item">
-          <span>合计未结</span>
-          <strong class="batch-summary__amount">{{ formatMoney(selectedOutstanding) }}</strong>
+        <div class="settlement-summary__item">
+          <dt>预计登记合计</dt>
+          <dd>{{ formatMoney(batchOutstanding) }}</dd>
         </div>
-      </div>
+      </dl>
+      <p class="settlement-note">按每张单据提交时的未结余额全额登记。</p>
       <el-form label-width="88px">
         <el-form-item label="结算方式">
           <el-select v-model="batchForm.method" style="width: 100%">
@@ -544,9 +577,9 @@ follow('/inv/finance', () => {
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="batchVisible = false">取消</el-button>
+        <el-button :disabled="batchSubmitting" @click="batchVisible = false">取消</el-button>
         <el-button type="primary" :loading="batchSubmitting" @click="submitBatch">
-          确定{{ activeTab === 'receivable' ? '收款' : '付款' }}
+          批量登记{{ batchVerb }}
         </el-button>
       </template>
     </el-dialog>
@@ -619,30 +652,35 @@ follow('/inv/finance', () => {
   }
 }
 
-.batch-summary {
+.settlement-summary {
   display: flex;
-  gap: 32px;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+  margin: 0;
   padding: 12px 16px;
-  margin-bottom: 18px;
   background: var(--app-surface-subtle);
   border-radius: var(--radius-sm);
 
   &__item {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
+    display: grid;
+    gap: 4px;
     font-size: 13px;
     color: var(--app-text-secondary);
 
-    strong {
-      font-size: 16px;
+    dd {
+      margin: 0;
       color: var(--app-text);
+      font-size: 16px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
     }
   }
+}
 
-  &__amount {
-    color: var(--tone-amber) !important;
-  }
+.settlement-note {
+  margin: 8px 0 16px;
+  color: var(--app-text-secondary);
+  font-size: 13px;
 }
 
 .overdue {
