@@ -10,7 +10,7 @@ import { KasTable, useKasTable, type KasTableHandle } from '@/components/KasTabl
  * 库存只有一个数（记在规格上的基本单位数量），单据上的折算是入口的换算，
  * 两者不是两套账，而是「输入」与「结果」。
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -142,6 +142,8 @@ const pickLimit = 1000
 const formRef = ref<FormInstance>()
 const dialogVisible = ref(false)
 const submitting = ref(false)
+const showLineErrors = ref(false)
+const stockLines = ref<HTMLElement>()
 
 interface StockFormItem {
   productId: number | undefined
@@ -166,6 +168,9 @@ const form = reactive<{
   items: [],
 })
 
+const directionLabel = computed(() => form.direction === 'in' ? '入库' : '出库')
+const lineErrors = computed(() => showLineErrors.value ? form.items.map(stockLineError) : [])
+
 const rules: FormRules = {
   orderDate: [{ required: true, message: '请选择单据日期', trigger: 'change' }],
 }
@@ -177,6 +182,7 @@ function today(): string {
 }
 
 function openCreate(): void {
+  showLineErrors.value = false
   Object.assign(form, {
     orderNo: '',
     direction: 'in',
@@ -240,20 +246,25 @@ function syncUnit(item: StockFormItem): void {
   item.unitId = (units.find((u) => u.isBase) ?? units[0])?.id
 }
 
+function stockLineError(item: StockFormItem): string {
+  if (!item.productId) return '请选择商品'
+  if (!item.specId) return '请选择规格'
+  if (!item.unitId) return '请选择计量单位'
+  const qty = Number(item.qty)
+  if (!Number.isFinite(qty) || qty < 0.01) return '请输入不小于 0.01 的数量'
+  return ''
+}
+
 async function submitForm(): Promise<void> {
+  if (submitting.value) return
+  showLineErrors.value = true
   const valid = formRef.value
     ? await formRef.value.validate().catch(() => false)
     : false
-  if (!valid) return
-  const items = form.items.filter(
-    (it) => it.productId && it.specId && it.unitId,
-  )
-  if (items.length === 0) {
-    ElMessage.warning('请至少添加一条明细')
-    return
-  }
-  if (items.length !== form.items.length) {
-    ElMessage.warning('有明细行还没选完规格与单位，请补全后再提交')
+  if (!valid || !dialogVisible.value || submitting.value) return
+  if (!form.items.length || lineErrors.value.some(Boolean)) {
+    await nextTick()
+    stockLines.value?.querySelector<HTMLElement>('[data-stock-line-error]')?.focus()
     return
   }
   const payload: InvStockOrderPayload = {
@@ -263,7 +274,7 @@ async function submitForm(): Promise<void> {
     orderDate: form.orderDate,
     salesman: form.salesman.trim() || undefined,
     remark: form.remark,
-    items: items.map((it) => ({
+    items: form.items.map((it) => ({
       productId: it.productId as number,
       specId: it.specId as number,
       unitId: it.unitId as number,
@@ -722,61 +733,70 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
     <!-- 新增出入库单 -->
     <el-dialog
       v-model="dialogVisible"
-      title="新增出入库单"
+      :title="`新增${directionLabel}单`"
       width="1280px"
       top="6vh"
       :close-on-click-modal="false"
+      :close-on-press-escape="!submitting"
+      :show-close="!submitting"
       destroy-on-close
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
-        <el-row :gutter="16">
-          <el-col :span="6">
-            <el-form-item label="单据编号">
-              <el-input
-                v-model="form.orderNo"
-                placeholder="留空自动生成"
-                clearable
-                maxlength="32"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item label="方向">
-              <el-radio-group v-model="form.direction">
-                <el-radio-button value="in">入库</el-radio-button>
-                <el-radio-button value="out">出库</el-radio-button>
-              </el-radio-group>
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item label="单据日期" prop="orderDate">
-              <el-date-picker
-                v-model="form.orderDate"
-                type="date"
-                value-format="YYYY-MM-DD"
-                placeholder="选择日期"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <!-- 与采购 / 销售单一致：业务员是自由文本，不挂账号 -->
-            <el-form-item label="业务员">
-              <el-input
-                v-model="form.salesman"
-                maxlength="64"
-                placeholder="选填"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item label="备注">
-              <el-input v-model="form.remark" placeholder="选填" />
-            </el-form-item>
-          </el-col>
-        </el-row>
+      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="stock-entry-form">
+        <section class="stock-entry-section">
+          <h2>基本信息</h2>
+          <el-row :gutter="16">
+            <el-col :xs="24" :sm="12" :lg="6">
+              <el-form-item label="方向">
+                <el-radio-group v-model="form.direction">
+                  <el-radio-button value="in">入库</el-radio-button>
+                  <el-radio-button value="out">出库</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="6">
+              <el-form-item label="单据日期" prop="orderDate">
+                <el-date-picker
+                  v-model="form.orderDate"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  placeholder="选择日期"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="6">
+              <el-form-item label="单据编号（选填）">
+                <el-input
+                  v-model="form.orderNo"
+                  placeholder="留空自动生成"
+                  clearable
+                  maxlength="32"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="6">
+              <!-- 与采购 / 销售单一致：业务员是自由文本，不挂账号 -->
+              <el-form-item label="业务员（选填）">
+                <el-input
+                  v-model="form.salesman"
+                  maxlength="64"
+                  placeholder="选填"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item label="备注（选填）">
+                <el-input v-model="form.remark" placeholder="选填" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </section>
 
-        <el-form-item label="明细">
+        <section ref="stockLines" class="stock-entry-section">
+          <h2>{{ directionLabel }}明细</h2>
+          <p v-if="showLineErrors && !form.items.length" class="stock-line-error" role="alert" tabindex="-1" data-stock-line-error>
+            请至少添加一条明细
+          </p>
           <div v-if="picksTruncated" class="pick-hint">
             商品超过 {{ pickLimit }} 个，下拉只加载了一部分 ——
             可以先在「商品档案」里按关键字找到它
@@ -790,72 +810,77 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
               <span class="col-base">折算</span>
               <span class="col-act" />
             </div>
-            <div
-              v-for="(item, index) in form.items"
-              :key="index"
-              class="item-editor__row"
-            >
-              <el-select
-                v-model="item.productId"
-                class="col-product"
-                filterable
-                :filter-method="filterProducts"
-                placeholder="输入商品名称 / 编码 / 规格搜索"
-                @change="onProductPickChange(item)"
-                @visible-change="onPickVisible"
-              >
-                <el-option
-                  v-for="p in filteredPicks"
-                  :key="p.id"
-                  :label="productLabel(p)"
-                  :value="p.id"
+            <div v-for="(item, index) in form.items" :key="index" class="item-editor__entry">
+              <p v-if="lineErrors[index]" class="stock-line-error" role="alert" tabindex="-1" data-stock-line-error>
+                第 {{ index + 1 }} 行：{{ lineErrors[index] }}
+              </p>
+              <div class="item-editor__row">
+                <el-select
+                  v-model="item.productId"
+                  class="col-product"
+                  :aria-label="`第 ${index + 1} 行商品`"
+                  filterable
+                  :filter-method="filterProducts"
+                  placeholder="输入商品名称 / 编码 / 规格搜索"
+                  @change="onProductPickChange(item)"
+                  @visible-change="onPickVisible"
+                >
+                  <el-option
+                    v-for="p in filteredPicks"
+                    :key="p.id"
+                    :label="productLabel(p)"
+                    :value="p.id"
+                  />
+                </el-select>
+                <el-select
+                  v-model="item.specId"
+                  class="col-spec"
+                  :aria-label="`第 ${index + 1} 行规格`"
+                  placeholder="规格"
+                  :disabled="!item.productId"
+                  @change="onSpecChange(item)"
+                >
+                  <el-option
+                    v-for="s in specOptions(item)"
+                    :key="s.id"
+                    :label="`${s.spec || '—'}（库存 ${formatQty(s.stock)}）`"
+                    :value="s.id"
+                  />
+                </el-select>
+                <el-select
+                  v-model="item.unitId"
+                  class="col-unit"
+                  :aria-label="`第 ${index + 1} 行单位`"
+                  placeholder="单位"
+                  :disabled="!item.specId"
+                >
+                  <el-option
+                    v-for="u in unitOptions(item)"
+                    :key="u.id"
+                    :label="u.unit"
+                    :value="u.id"
+                  />
+                </el-select>
+                <el-input-number
+                  v-model="item.qty"
+                  class="col-num"
+                  :aria-label="`第 ${index + 1} 行数量`"
+                  :min="0.01"
+                  :precision="3"
+                  :controls="false"
                 />
-              </el-select>
-              <el-select
-                v-model="item.specId"
-                class="col-spec"
-                placeholder="规格"
-                :disabled="!item.productId"
-                @change="onSpecChange(item)"
-              >
-                <el-option
-                  v-for="s in specOptions(item)"
-                  :key="s.id"
-                  :label="`${s.spec || '—'}（库存 ${formatQty(s.stock)}）`"
-                  :value="s.id"
-                />
-              </el-select>
-              <el-select
-                v-model="item.unitId"
-                class="col-unit"
-                placeholder="单位"
-                :disabled="!item.specId"
-              >
-                <el-option
-                  v-for="u in unitOptions(item)"
-                  :key="u.id"
-                  :label="u.unit"
-                  :value="u.id"
-                />
-              </el-select>
-              <el-input-number
-                v-model="item.qty"
-                class="col-num"
-                :min="0.01"
-                :precision="3"
-                :controls="false"
-              />
-              <span class="col-base">
-                {{ formatQty(qtyBase(item)) }}
-                {{ unitOptions(item).find((u) => u.isBase)?.unit || '' }}
-              </span>
-              <el-button
-                class="col-act"
-                link
-                type="danger"
-                @click="removeItem(index)"
-                >删除</el-button
-              >
+                <span class="col-base">
+                  {{ item.unitId ? formatQty(qtyBase(item)) : '—' }}
+                  {{ unitOptions(item).find((u) => u.isBase)?.unit || '' }}
+                </span>
+                <el-button
+                  class="col-act"
+                  link
+                  type="danger"
+                  @click="removeItem(index)"
+                  >删除</el-button
+                >
+              </div>
             </div>
             <div class="item-editor__foot">
               <el-button link type="primary" @click="addItem">
@@ -864,14 +889,17 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
               </el-button>
             </div>
           </div>
-        </el-form-item>
+        </section>
       </el-form>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitForm"
-          >确定</el-button
-        >
+        <div class="stock-entry-footer">
+          <p>提交后立即过账，库存将{{ form.direction === 'in' ? '增加' : '扣减' }}。</p>
+          <div>
+            <el-button :disabled="submitting" @click="dialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="submitting" @click="submitForm">确认{{ directionLabel }}</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 
@@ -903,23 +931,73 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
   border-radius: var(--radius-sm);
 }
 
+.stock-entry-form {
+  display: grid;
+  gap: 16px;
+}
+
+.stock-entry-section {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-md);
+
+  h2 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    color: var(--app-text);
+  }
+
+  .el-form-item {
+    margin-bottom: 12px;
+  }
+
+  .el-col:last-child .el-form-item {
+    margin-bottom: 0;
+  }
+}
+
+.stock-line-error {
+  margin: 4px 0 8px;
+  color: var(--app-danger);
+}
+
+.stock-entry-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 16px;
+
+  p {
+    margin: 0;
+    color: var(--app-text-secondary);
+    font-size: 13px;
+  }
+
+  > div {
+    margin-left: auto;
+  }
+}
+
 .item-editor {
   width: 100%;
-  border: 1px solid var(--app-border-light);
-  border-radius: var(--radius-sm);
-  padding: 10px;
+  overflow-x: auto;
 
   &__head,
   &__row {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 800px;
+    padding: 8px;
   }
 
   &__head {
     font-size: 12px;
-    color: var(--app-text-muted);
-    padding-bottom: 6px;
+    color: var(--app-text-secondary);
+    background: var(--app-surface-subtle);
+    border-radius: var(--radius-sm);
   }
 
   &__row {
