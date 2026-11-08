@@ -131,9 +131,12 @@ try {
     expect((await page.locator('.authorize-revoke-dialog.el-dialog').boundingBox()).width).toBeLessThanOrEqual(288)
     await expect(page.getByRole('button', { name: '确认撤销' })).toBeInViewport()
     await capture('revoke-dark-mobile.png')
+    await page.getByRole('button', { name: '保留授权' }).click()
+    await expect(page.getByRole('dialog')).toBeHidden()
+    expect((await page.locator('.authorize-grant-info').boundingBox()).width).toBeGreaterThanOrEqual(170)
+    await capture('grants-dark-mobile.png')
     await page.evaluate(() => document.documentElement.classList.remove('dark'))
     await page.setViewportSize({ width: 1440, height: 1100 })
-    await page.getByRole('button', { name: '保留授权' }).click()
     expect(revokeCount).toBe(0)
   })
   await check('revocation failure offers refresh and retains server grant', async () => {

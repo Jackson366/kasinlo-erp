@@ -369,8 +369,8 @@ onUnmounted(() => { if (clock) clearInterval(clock) })
   .authorize-facts > div { grid-template-columns: 88px 1fr; gap: 8px; font-size: 13px; }
   .authorize-grants { padding: 24px 20px; margin-top: 24px; }
   .authorize-section-head { flex-wrap: wrap; }
-  .authorize-grant-list > li { flex-wrap: wrap; gap: 12px; }
-  .authorize-revoke { margin-left: 52px; }
+  .authorize-grant-list > li { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; }
+  .authorize-revoke { grid-column: 2; justify-self: start; margin-left: 0; }
   .authorize-decisions { flex-direction: column; }
 }
 </style>
