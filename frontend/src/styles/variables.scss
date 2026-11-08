@@ -31,6 +31,7 @@ $radius-lg: 22px;
 
     // ---- 品牌色 ----
     --brand-primary: #5146d9;
+    --app-on-accent: #ffffff;
     --brand-primary-hover: #4538c4;
     --brand-primary-active: #392eaa;
     --brand-gradient: linear-gradient(135deg, #807bff, #6258df);
@@ -75,6 +76,7 @@ $radius-lg: 22px;
 
     // ---- 描边 ----
     --app-border: #e4e6ef;
+    --app-control-border: #81879a;
     --app-border-light: #f0f1f6;
 
     // ---- 文字 ----
@@ -121,6 +123,7 @@ $radius-lg: 22px;
 
     // 暗色下主色提亮一档，保证在深底上的可读性与对比度
     --brand-primary: #aaa4ff;
+    --app-on-accent: #161b26;
     --brand-primary-hover: #c2bdff;
     --brand-primary-active: #9189f7;
     --brand-gradient: linear-gradient(135deg, #8c83f3, #6458c9);
@@ -157,6 +160,7 @@ $radius-lg: 22px;
     --app-login-shadow: 0 28px 60px rgba(0, 0, 0, 0.3);
 
     --app-border: #2a3243;
+    --app-control-border: #77839a;
     --app-border-light: #212836;
 
     --app-text: #e6eaf2;

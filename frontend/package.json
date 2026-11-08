@@ -19,6 +19,7 @@
     "test:task-context": "node ../scripts/task-context-verify.mjs",
     "test:list-workspace": "node ../scripts/list-workspace-verify.mjs",
     "test:layout": "node ../scripts/reference-layout-verify.mjs",
+    "test:open-platform-ui": "node ../scripts/open-platform-ui-verify.mjs",
     "test:print-stamp": "node ../scripts/print-stamp-verify.mjs"
   },
   "dependencies": {
