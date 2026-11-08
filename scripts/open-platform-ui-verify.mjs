@@ -169,7 +169,8 @@ try {
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
         const button = page.getByRole('button', { name: '允许查询库存' })
         expect((await button.boundingBox()).height).toBeGreaterThanOrEqual(48)
-        const contrast = await button.evaluate(el => {
+        // Theme changes animate button colors; assert their settled contrast.
+        await expect.poll(() => button.evaluate(el => {
           const luminance = color => {
             const channels = color.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => {
               v /= 255
@@ -180,8 +181,7 @@ try {
           const style = getComputedStyle(el)
           const a = luminance(style.color), b = luminance(style.backgroundColor)
           return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
-        })
-        expect(contrast).toBeGreaterThanOrEqual(4.5)
+        })).toBeGreaterThanOrEqual(4.5)
         await capture(`permission-${dark ? 'dark' : 'light'}-${width}.png`)
       }
     }
