@@ -127,7 +127,8 @@ try {
     await capture('revoke-desktop.png')
     await page.setViewportSize({ width: 320, height: 900 })
     await page.evaluate(() => document.documentElement.classList.add('dark'))
-    expect((await page.getByRole('dialog').boundingBox()).width).toBeLessThanOrEqual(288)
+    // Element Plus puts role=dialog on the full-screen overlay; measure its content.
+    expect((await page.locator('.authorize-revoke-dialog.el-dialog').boundingBox()).width).toBeLessThanOrEqual(288)
     await expect(page.getByRole('button', { name: '确认撤销' })).toBeInViewport()
     await capture('revoke-dark-mobile.png')
     await page.evaluate(() => document.documentElement.classList.remove('dark'))
