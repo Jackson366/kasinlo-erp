@@ -154,6 +154,12 @@ onMounted(() => {
       </div>
     </div>
 
+    <RouterLink to="/open-platform/authorize" class="page-card profile-tool-access">
+      <AppIcon name="Key" aria-hidden="true" />
+      <div><h3>CLI 与智能体授权</h3><p>连接工具，查看和撤销当前账号的访问授权。</p></div>
+      <span>管理授权 <AppIcon name="ArrowRight" aria-hidden="true" /></span>
+    </RouterLink>
+
     <div class="profile-body">
       <!-- 基本信息与密码 -->
       <div class="page-card">
@@ -298,6 +304,21 @@ onMounted(() => {
     gap: 6px;
     font-size: 12px;
   }
+}
+
+.profile-tool-access {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--app-text);
+
+  > .app-icon { font-size: 24px; color: var(--brand-primary); flex-shrink: 0; }
+  > div { flex: 1; }
+  h3 { margin: 0 0 8px; font-size: 15px; }
+  p { margin: 0; color: var(--app-text-secondary); line-height: 1.6; font-size: 13px; }
+  > span { display: inline-flex; align-items: center; gap: 8px; color: var(--brand-primary); min-height: 48px; }
+  &:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 4px; }
+  @media (max-width: 480px) { flex-wrap: wrap; > span { margin-left: 40px; } }
 }
 
 .profile-body {

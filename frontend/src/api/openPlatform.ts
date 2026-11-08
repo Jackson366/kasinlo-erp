@@ -15,15 +15,15 @@ export interface OpenPlatformGrant {
 
 export const openPlatformApi = {
   inspect(userCode: string) {
-    return http.post<DeviceAuthorization>('/open-platform/device/inspect', { userCode })
+    return http.post<DeviceAuthorization>('/open-platform/device/inspect', { userCode }, { silent: true })
   },
   decide(userCode: string, approve: boolean) {
-    return http.post<void>('/open-platform/device/decision', { userCode, approve })
+    return http.post<void>('/open-platform/device/decision', { userCode, approve }, { silent: true })
   },
   grants() {
-    return http.get<OpenPlatformGrant[]>('/open-platform/grants')
+    return http.get<OpenPlatformGrant[]>('/open-platform/grants', undefined, { silent: true })
   },
   revoke(id: string) {
-    return http.post<void>(`/open-platform/grants/${encodeURIComponent(id)}/revoke`)
+    return http.post<void>(`/open-platform/grants/${encodeURIComponent(id)}/revoke`, undefined, { silent: true })
   },
 }
