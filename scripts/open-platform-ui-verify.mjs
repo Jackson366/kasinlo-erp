@@ -64,7 +64,10 @@ try {
     await page.getByLabel('设备验证码', { exact: true }).fill('a1b2 c3d4-e5f6')
     await page.getByRole('button', { name: '查看授权请求' }).click()
   }
-  const capture = async name => { await page.screenshot({ path: path.join(out, name), fullPage: true }) }
+  const capture = async name => {
+    await expect(page.locator('#nprogress')).toHaveCount(0)
+    await page.screenshot({ path: path.join(out, name), fullPage: true, animations: 'disabled' })
+  }
   await check('direct authorization link loads current account and existing grants', async () => {
     await go()
     await expect(page.getByRole('link', { name: '查看当前账号资料' })).toHaveText('张三')
@@ -120,7 +123,15 @@ try {
   await check('revocation requires confirmation; cancel sends no mutation', async () => {
     await page.getByRole('button', { name: /^撤销 kas CLI/ }).click()
     await expect(page.getByRole('dialog')).toContainText('共用')
+    await expect(page.getByRole('dialog')).toBeVisible()
     await capture('revoke-desktop.png')
+    await page.setViewportSize({ width: 320, height: 900 })
+    await page.evaluate(() => document.documentElement.classList.add('dark'))
+    expect((await page.getByRole('dialog').boundingBox()).width).toBeLessThanOrEqual(288)
+    await expect(page.getByRole('button', { name: '确认撤销' })).toBeInViewport()
+    await capture('revoke-dark-mobile.png')
+    await page.evaluate(() => document.documentElement.classList.remove('dark'))
+    await page.setViewportSize({ width: 1440, height: 1100 })
     await page.getByRole('button', { name: '保留授权' }).click()
     expect(revokeCount).toBe(0)
   })

@@ -335,7 +335,7 @@ onUnmounted(() => { if (clock) clearInterval(clock) })
 .authorize-grant-info { flex: 1; min-width: 0; }
 .authorize-grant-info h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 8px; font-size: 15px; overflow-wrap: anywhere; }
 .authorize-grant-info p, .authorize-grant-info details { color: var(--app-text-secondary); font-size: 13px; margin: 0; line-height: 1.65; }
-.authorize-grant-info summary { cursor: pointer; min-height: 32px; padding-top: 8px; }
+.authorize-grant-info summary { cursor: pointer; min-height: 48px; padding-top: 8px; }
 .authorize-grant-info code { display: block; padding-top: 4px; overflow-wrap: anywhere; }
 .authorize-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 40px 8px 24px; color: var(--app-text-secondary); }
 .authorize-empty > .app-icon { font-size: 28px; padding: 16px; box-sizing: content-box; border-radius: 50%; background: var(--app-fill); margin-bottom: 16px; }
@@ -377,6 +377,7 @@ onUnmounted(() => { if (clock) clearInterval(clock) })
 
 <style lang="scss">
 .authorize-revoke-dialog.el-dialog { max-width: calc(100vw - 32px); border-radius: var(--radius-md); }
+.authorize-revoke-dialog .el-dialog__headerbtn { width: 48px; height: 48px; }
 .authorize-revoke-dialog p { line-height: 1.75; margin: 0 0 12px; color: var(--app-text-secondary); }
 .authorize-revoke-dialog .el-dialog__footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; }
 .authorize-revoke-dialog .el-button--danger { --el-button-text-color: var(--app-on-accent); --el-button-hover-text-color: var(--app-on-accent); --el-button-active-text-color: var(--app-on-accent); }
