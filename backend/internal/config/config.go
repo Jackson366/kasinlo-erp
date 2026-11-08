@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,15 +15,49 @@ import (
 
 // Config 是应用的完整配置树。
 type Config struct {
-	App         AppConfig         `yaml:"app"`
-	Database    DatabaseConfig    `yaml:"database"`
-	JWT         JWTConfig         `yaml:"jwt"`
-	Log         LogConfig         `yaml:"log"`
-	CORS        CORSConfig        `yaml:"cors"`
-	Security    SecurityConfig    `yaml:"security"`
-	Backup      BackupConfig      `yaml:"backup"`
-	Maintenance MaintenanceConfig `yaml:"maintenance"`
-	Upgrade     UpgradeConfig     `yaml:"upgrade"`
+	App          AppConfig          `yaml:"app"`
+	Database     DatabaseConfig     `yaml:"database"`
+	JWT          JWTConfig          `yaml:"jwt"`
+	Log          LogConfig          `yaml:"log"`
+	CORS         CORSConfig         `yaml:"cors"`
+	Security     SecurityConfig     `yaml:"security"`
+	Backup       BackupConfig       `yaml:"backup"`
+	Maintenance  MaintenanceConfig  `yaml:"maintenance"`
+	Upgrade      UpgradeConfig      `yaml:"upgrade"`
+	OpenPlatform OpenPlatformConfig `yaml:"open_platform"`
+}
+
+// OpenPlatformConfig configures the trusted issuer for internal platform calls.
+type OpenPlatformConfig struct {
+	Secret       string `yaml:"-"`
+	Issuer       string `yaml:"issuer"`
+	Audience     string `yaml:"audience"`
+	BridgeURL    string `yaml:"bridge_url"`
+	BridgeSecret string `yaml:"-"`
+}
+
+func (c OpenPlatformConfig) validate(webSecret string) error {
+	if c.Secret == "" && c.Issuer == "" && c.Audience == "" && c.BridgeURL == "" && c.BridgeSecret == "" {
+		return nil
+	}
+	if len(c.Secret) < 32 || looksLikePlaceholder(c.Secret) || c.Secret == webSecret {
+		return fmt.Errorf("NOVA_OPEN_PLATFORM_SECRET 必须是独立的随机密钥，至少 32 字节")
+	}
+	if strings.TrimSpace(c.Issuer) == "" || strings.TrimSpace(c.Audience) == "" {
+		return fmt.Errorf("open_platform.issuer / audience 不能为空")
+	}
+	if c.BridgeURL != "" || c.BridgeSecret != "" {
+		u, err := url.Parse(c.BridgeURL)
+		if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+			(u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Errorf("open_platform.bridge_url 必须是合法的 HTTP(S) 地址")
+		}
+		if len(c.BridgeSecret) < 32 || looksLikePlaceholder(c.BridgeSecret) ||
+			c.BridgeSecret == c.Secret || c.BridgeSecret == webSecret {
+			return fmt.Errorf("NOVA_OPEN_PLATFORM_BRIDGE_SECRET 必须是独立的随机密钥，至少 32 字节")
+		}
+	}
+	return nil
 }
 
 // UpgradeConfig 是系统升级的默认参数。
@@ -299,6 +334,9 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) validate() error {
+	if err := c.OpenPlatform.validate(c.JWT.Secret); err != nil {
+		return err
+	}
 	if c.App.Port <= 0 {
 		return fmt.Errorf("app.port 必须大于 0")
 	}
@@ -607,6 +645,12 @@ func applyEnvOverrides(c *Config) {
 	num("NOVA_DATABASE_MAX_OPEN_CONNS", &c.Database.MaxOpenConns)
 	num("NOVA_DATABASE_STATEMENT_TIMEOUT", &c.Database.StatementTimeout)
 	str("NOVA_DATABASE_LOG_LEVEL", &c.Database.LogLevel)
+
+	str("NOVA_OPEN_PLATFORM_SECRET", &c.OpenPlatform.Secret)
+	str("NOVA_OPEN_PLATFORM_ISSUER", &c.OpenPlatform.Issuer)
+	str("NOVA_OPEN_PLATFORM_AUDIENCE", &c.OpenPlatform.Audience)
+	str("NOVA_OPEN_PLATFORM_BRIDGE_URL", &c.OpenPlatform.BridgeURL)
+	str("NOVA_OPEN_PLATFORM_BRIDGE_SECRET", &c.OpenPlatform.BridgeSecret)
 
 	str("NOVA_JWT_SECRET", &c.JWT.Secret)
 	str("NOVA_JWT_ISSUER", &c.JWT.Issuer)

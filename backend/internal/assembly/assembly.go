@@ -20,6 +20,7 @@ import (
 	"nova-erp/internal/module/inv"
 	"nova-erp/internal/module/log"
 	"nova-erp/internal/module/menu"
+	"nova-erp/internal/module/openplatform"
 	"nova-erp/internal/module/ops"
 	"nova-erp/internal/module/profile"
 	"nova-erp/internal/module/role"
@@ -33,7 +34,7 @@ import (
 // 下线一个模块 = 从这里摘掉 + 把命名空间记进 seed.retiredModules + 删目录，
 // 三件事缺一不可（见 docs/UPGRADE.md「下线一个模块」）。
 func Modules(cfg *config.Config) []module.Module {
-	return []module.Module{
+	modules := []module.Module{
 		// 公开接口：登录、刷新令牌
 		auth.Module(cfg.Security),
 		// 登录后即可用，没有菜单（入口在右上角头像下拉里）
@@ -60,4 +61,11 @@ func Modules(cfg *config.Config) []module.Module {
 			ops.Module(cfg),
 		),
 	}
+	if platformInventory, enabled := inv.PlatformInventoryModule(cfg.OpenPlatform); enabled {
+		modules = append(modules, platformInventory)
+	}
+	if cfg.OpenPlatform.BridgeURL != "" {
+		modules = append(modules, openplatform.Module(cfg.OpenPlatform))
+	}
+	return modules
 }
