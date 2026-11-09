@@ -3,16 +3,13 @@ import { nextTick, ref, watch } from 'vue'
 
 const props = defineProps<{
   modelValue: boolean
-  page: boolean
   title: string
-  beforeClose: (done: () => void) => void
 }>()
-const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 const heading = ref<HTMLElement>()
 watch(
   () => props.modelValue,
   async (visible) => {
-    if (visible && props.page) {
+    if (visible) {
       await nextTick()
       heading.value?.focus()
     }
@@ -23,7 +20,7 @@ watch(
 
 <template>
   <section
-    v-if="page && modelValue"
+    v-if="modelValue"
     class="purchase-editor"
     role="region"
     :aria-label="title"
@@ -40,20 +37,6 @@ watch(
     <slot />
     <footer class="purchase-editor__footer"><slot name="footer" /></footer>
   </section>
-  <el-dialog
-    v-else-if="!page"
-    :model-value="modelValue"
-    :title="title"
-    width="1280px"
-    top="6vh"
-    :close-on-click-modal="false"
-    :before-close="beforeClose"
-    destroy-on-close
-    @update:model-value="emit('update:modelValue', $event)"
-  >
-    <slot />
-    <template #footer><slot name="footer" /></template>
-  </el-dialog>
 </template>
 
 <style scoped lang="scss">
