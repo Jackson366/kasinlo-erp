@@ -176,10 +176,13 @@ const form = reactive<InvContractPayload>({
   retentionAmount: 0,
 })
 const plans = ref<PlanDraft[]>([])
+const warrantyOpen = ref<string[]>([])
+const replacingPlans = ref(false)
+const hasSettledPlan = computed(() => plans.value.some((plan) => plan.settledAmount > 0))
 
 const rules: FormRules<InvContractPayload> = {
   name: [{ required: true, message: '请输入合同名称', trigger: 'blur' }],
-  partyId: [{ required: true, message: '请选择往来单位', trigger: 'change' }],
+  partyId: [{ type: 'number', min: 1, required: true, message: '请选择往来单位', trigger: 'change' }],
   signDate: [{ required: true, message: '请选择签订日期', trigger: 'change' }],
 }
 
@@ -251,6 +254,7 @@ function openCreate(): void {
     retentionAmount: 0,
   })
   plans.value = []
+  warrantyOpen.value = []
   dialogMode.value = 'create'
   editingId.value = null
   markClean()
@@ -291,6 +295,7 @@ async function openEdit(row: InvContractRow): Promise<void> {
       remark: p.remark,
       settledAmount: p.settledAmount,
     }))
+    warrantyOpen.value = d.warrantyMonths || d.retentionRate || d.retentionAmount ? ['terms'] : []
     dialogMode.value = 'edit'
     editingId.value = d.id
     markClean()
@@ -310,7 +315,29 @@ function onBizTypeChange(): void {
 // ---------------- 付款计划编辑 ----------------
 
 /** 一键生成常见分期：预付 30 / 进度 40 / 验收 20 / 质保金 10 */
-function applyPlanTemplate(): void {
+async function applyPlanTemplate(): Promise<void> {
+  if (replacingPlans.value || submitting.value || validating.value) return
+  if (hasSettledPlan.value) {
+    ElMessage.warning('已有期次发生收付款，请逐期调整尚未收付款的计划')
+    return
+  }
+  const currentPlans = plans.value
+  if (currentPlans.length) {
+    replacingPlans.value = true
+    try {
+      await ElMessageBox.confirm(
+        `将用 30% / 40% / 20% / 10% 模板替换当前全部 ${currentPlans.length} 期计划，现有期次的名称、金额、日期和触发节点将被覆盖。`,
+        '替换付款计划？',
+        { confirmButtonText: '替换计划', cancelButtonText: '保留当前计划', type: 'warning', closeOnClickModal: false },
+      )
+    } catch {
+      return
+    } finally {
+      replacingPlans.value = false
+    }
+  }
+  // 确认期间可能离开页面或打开另一份合同，只替换发起确认的这份计划。
+  if (!dialogVisible.value || plans.value !== currentPlans || hasSettledPlan.value) return
   const amount = Number(form.amount) || 0
   const rows: Array<{ name: string; kind: InvPlanKind; rate: number; trigger: InvPlanTrigger | '' }> = [
     { name: '预付款', kind: 1, rate: 30, trigger: 'sign' },
@@ -330,6 +357,7 @@ function applyPlanTemplate(): void {
   if (!form.retentionAmount) {
     form.retentionRate = 10
     form.retentionAmount = Math.round(amount * 10) / 100
+    warrantyOpen.value = ['terms']
   }
 }
 
@@ -1028,7 +1056,8 @@ const attachType: InvAttachBizType = 'contract'
     <el-dialog
       v-model="dialogVisible"
       :title="dialogMode === 'create' ? '新增合同' : '编辑合同'"
-      width="980px"
+      width="1100px"
+      class="contract-editor"
       :close-on-click-modal="false"
       :before-close="beforeClose"
       top="6vh"
@@ -1044,231 +1073,244 @@ const attachType: InvAttachBizType = 'contract'
       />
       <el-form
         novalidate
-        ref="formRef" :model="form" :rules="rules" label-width="88px">
-        <el-row :gutter="16">
-          <el-col :span="8">
-            <el-form-item label="合同编号">
-              <el-input v-model="form.contractNo" placeholder="留空自动生成" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="16">
-            <el-form-item label="合同名称" prop="name">
-              <el-input v-model="form.name" placeholder="如：2026 年度钢材采购框架合同" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="合同类型">
-              <el-select v-model="form.bizType" style="width: 100%" @change="onBizTypeChange">
-                <el-option label="采购合同" value="purchase" />
-                <el-option label="销售合同" value="sales" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="16">
-            <el-form-item :label="partyLabel" prop="partyId">
-              <el-select v-model="form.partyId" filterable placeholder="请选择" style="width: 100%">
-                <el-option v-for="p in partyOptions" :key="p.id" :label="p.name" :value="p.id" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="签订日期" prop="signDate">
-              <el-date-picker
-                v-model="form.signDate"
-                type="date"
-                value-format="YYYY-MM-DD"
-                placeholder="必填"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="开始日期">
-              <el-date-picker
-                v-model="form.startDate"
-                type="date"
-                value-format="YYYY-MM-DD"
-                placeholder="选填"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="结束日期">
-              <el-date-picker
-                v-model="form.endDate"
-                type="date"
-                value-format="YYYY-MM-DD"
-                placeholder="选填"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="合同金额">
-              <el-input-number
-                v-model="form.amount"
-                :min="0"
-                :precision="2"
-                :controls="false"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="业务员">
-              <el-input v-model="form.salesman" placeholder="选填" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="备注">
-              <el-input v-model="form.remark" placeholder="选填" />
-            </el-form-item>
-          </el-col>
-        </el-row>
+        ref="formRef" :model="form" :rules="rules" label-position="top" class="contract-entry-form">
+        <section class="contract-entry-section">
+          <h2>基本信息</h2>
+          <el-row :gutter="16">
+            <el-col :xs="24" :sm="24" :lg="16">
+              <el-form-item label="合同名称" prop="name">
+                <el-input v-model="form.name" placeholder="如：2026 年度钢材采购框架合同" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="8">
+              <el-form-item label="合同编号">
+                <el-input v-model="form.contractNo" placeholder="留空自动生成" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="8">
+              <el-form-item label="合同类型">
+                <el-select v-model="form.bizType" style="width: 100%" @change="onBizTypeChange">
+                  <el-option label="采购合同" value="purchase" />
+                  <el-option label="销售合同" value="sales" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="24" :lg="16">
+              <el-form-item :label="partyLabel" prop="partyId">
+                <el-select v-model="form.partyId" :empty-values="[0, undefined, null]" filterable placeholder="请选择" style="width: 100%">
+                  <el-option v-for="p in partyOptions" :key="p.id" :label="p.name" :value="p.id" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="8">
+              <el-form-item label="签订日期" prop="signDate">
+                <el-date-picker
+                  v-model="form.signDate"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  placeholder="必填"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="8">
+              <el-form-item label="开始日期">
+                <el-date-picker
+                  v-model="form.startDate"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  placeholder="选填"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="8">
+              <el-form-item label="结束日期">
+                <el-date-picker
+                  v-model="form.endDate"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  placeholder="选填"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="8">
+              <el-form-item label="合同金额">
+                <el-input-number
+                  v-model="form.amount"
+                  :min="0"
+                  :precision="2"
+                  :controls="false"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :lg="8">
+              <el-form-item label="业务员">
+                <el-input v-model="form.salesman" placeholder="选填" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item label="备注">
+                <el-input v-model="form.remark" placeholder="选填" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </section>
 
-        <el-divider content-position="left">质保条款</el-divider>
-        <el-row :gutter="16">
-          <el-col :span="8">
-            <el-form-item label="质保期">
-              <el-input-number
-                v-model="form.warrantyMonths"
-                :min="0"
-                :max="120"
-                :controls="false"
-                style="width: 100%"
-              />
-              <span class="unit-suffix">月（验收后自动算到期日）</span>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="质保金比例">
-              <el-input-number
-                v-model="form.retentionRate"
-                :min="0"
-                :max="100"
-                :precision="2"
-                :controls="false"
-                style="width: 100%"
-                @change="onRetentionRate"
-              />
-              <span class="unit-suffix">%</span>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="质保金金额">
-              <el-input-number
-                v-model="form.retentionAmount"
-                :min="0"
-                :precision="2"
-                :controls="false"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-        </el-row>
+        <section class="contract-entry-section">
+          <div class="contract-plan-heading">
+            <h2>付款计划</h2>
+            <div class="contract-plan-actions">
+              <el-button link type="primary" :loading="replacingPlans" :disabled="hasSettledPlan" @click="applyPlanTemplate">按 30/40/20/10 生成</el-button>
+              <el-button link type="primary" @click="addPlan">添加一期</el-button>
+            </div>
+          </div>
+          <p v-if="hasSettledPlan" class="contract-entry-hint">已有期次发生收付款，请逐期调整尚未收付款的计划。</p>
+          <div class="plan-sum">
+            计划合计
+            <strong :class="{ over: planOver }">{{ formatMoney(planTotal) }}</strong>
+            / 合同金额 {{ formatMoney(Number(form.amount) || 0) }}
+            <span v-if="planOver" class="plan-sum__warn">超出合同金额</span>
+            <span v-else-if="plans.length" class="plan-sum__hint">
+              质保金期次合计 {{ formatMoney(retentionPlanTotal) }}
+            </span>
+          </div>
 
-        <el-divider content-position="left">
-          付款计划
-          <el-button link type="primary" style="margin-left: 8px" @click="applyPlanTemplate">
-            按 30/40/20/10 生成
-          </el-button>
-          <el-button link type="primary" @click="addPlan">添加一期</el-button>
-        </el-divider>
+          <el-table :data="plans" size="small" border empty-text="未设置付款计划（合同金额不计入应收应付）">
+            <el-table-column label="期次" width="58" align="center">
+              <template #default="{ row }">{{ row.seq }}</template>
+            </el-table-column>
+            <el-table-column label="名称" width="130">
+              <template #default="{ row }">
+                <el-input v-model="row.name" :aria-label="`第 ${row.seq} 期名称`" placeholder="预付款 / 尾款" />
+              </template>
+            </el-table-column>
+            <el-table-column label="类型" width="112">
+              <template #default="{ row }">
+                <el-select v-model="row.kind" :aria-label="`第 ${row.seq} 期类型`">
+                  <el-option label="预付款" :value="1" />
+                  <el-option label="进度款" :value="2" />
+                  <el-option label="验收款" :value="3" />
+                  <el-option label="质保金" :value="4" />
+                  <el-option label="其他" :value="5" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="比例%" width="96">
+              <template #default="{ $index, row }">
+                <el-input-number
+                  v-model="row.rate" :aria-label="`第 ${row.seq} 期比例`"
+                  :min="0"
+                  :max="100"
+                  :precision="2"
+                  :controls="false"
+                  :disabled="row.settledAmount > 0"
+                  style="width: 100%"
+                  @change="onPlanRate($index)"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="金额" width="126">
+              <template #default="{ $index, row }">
+                <el-input-number
+                  v-model="row.amount" :aria-label="`第 ${row.seq} 期金额`"
+                  :min="0"
+                  :precision="2"
+                  :controls="false"
+                  :disabled="row.settledAmount > 0"
+                  style="width: 100%"
+                  @change="onPlanAmount($index)"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="约定日期" width="148">
+              <template #default="{ row }">
+                <el-date-picker v-model="row.dueDate" :aria-label="`第 ${row.seq} 期约定日期`" type="date" value-format="YYYY-MM-DD" placeholder="选填" />
+              </template>
+            </el-table-column>
+            <el-table-column label="触发节点" width="124">
+              <template #default="{ row }">
+                <el-select v-model="row.triggerNode" :aria-label="`第 ${row.seq} 期触发节点`" clearable placeholder="按日期">
+                  <el-option label="签订即收付" value="sign" />
+                  <el-option label="验收后" value="accept" />
+                  <el-option label="质保到期" value="warranty_end" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="已收付" width="96" align="right">
+              <template #default="{ row }">
+                <span class="text-muted">{{ row.settledAmount ? formatMoney(row.settledAmount) : '—' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="" width="64" align="center">
+              <template #default="{ $index, row }">
+                <el-button
+                  link
+                  type="danger"
+                  :disabled="row.settledAmount > 0"
+                  @click="removePlan($index)"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
 
-        <el-table :data="plans" size="small" border empty-text="未设置付款计划（合同金额不计入应收应付）">
-          <el-table-column label="期次" width="58" align="center">
-            <template #default="{ row }">{{ row.seq }}</template>
-          </el-table-column>
-          <el-table-column label="名称" width="130">
-            <template #default="{ row }">
-              <el-input v-model="row.name" placeholder="预付款 / 尾款" />
-            </template>
-          </el-table-column>
-          <el-table-column label="类型" width="112">
-            <template #default="{ row }">
-              <el-select v-model="row.kind">
-                <el-option label="预付款" :value="1" />
-                <el-option label="进度款" :value="2" />
-                <el-option label="验收款" :value="3" />
-                <el-option label="质保金" :value="4" />
-                <el-option label="其他" :value="5" />
-              </el-select>
-            </template>
-          </el-table-column>
-          <el-table-column label="比例%" width="96">
-            <template #default="{ $index, row }">
-              <el-input-number
-                v-model="row.rate"
-                :min="0"
-                :max="100"
-                :precision="2"
-                :controls="false"
-                :disabled="row.settledAmount > 0"
-                style="width: 100%"
-                @change="onPlanRate($index)"
-              />
-            </template>
-          </el-table-column>
-          <el-table-column label="金额" width="126">
-            <template #default="{ $index, row }">
-              <el-input-number
-                v-model="row.amount"
-                :min="0"
-                :precision="2"
-                :controls="false"
-                :disabled="row.settledAmount > 0"
-                style="width: 100%"
-                @change="onPlanAmount($index)"
-              />
-            </template>
-          </el-table-column>
-          <el-table-column label="约定日期" width="148">
-            <template #default="{ row }">
-              <el-date-picker v-model="row.dueDate" type="date" value-format="YYYY-MM-DD" placeholder="选填" />
-            </template>
-          </el-table-column>
-          <el-table-column label="触发节点" width="124">
-            <template #default="{ row }">
-              <el-select v-model="row.triggerNode" clearable placeholder="按日期">
-                <el-option label="签订即收付" value="sign" />
-                <el-option label="验收后" value="accept" />
-                <el-option label="质保到期" value="warranty_end" />
-              </el-select>
-            </template>
-          </el-table-column>
-          <el-table-column label="已收付" width="96" align="right">
-            <template #default="{ row }">
-              <span class="text-muted">{{ row.settledAmount ? formatMoney(row.settledAmount) : '—' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="" width="52" align="center">
-            <template #default="{ $index, row }">
-              <el-button
-                link
-                type="danger"
-                :disabled="row.settledAmount > 0"
-                @click="removePlan($index)"
-              >
-                删
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <div class="plan-sum">
-          计划合计
-          <strong :class="{ over: planOver }">{{ formatMoney(planTotal) }}</strong>
-          / 合同金额 {{ formatMoney(Number(form.amount) || 0) }}
-          <span v-if="planOver" class="plan-sum__warn">超出合同金额</span>
-          <span v-else-if="plans.length" class="plan-sum__hint">
-            质保金期次合计 {{ formatMoney(retentionPlanTotal) }}
-          </span>
-        </div>
+        <el-collapse v-model="warrantyOpen" class="contract-warranty">
+          <el-collapse-item name="terms" title="质保条款（选填）">
+            <el-row :gutter="16">
+              <el-col :xs="24" :sm="12" :lg="8">
+                <el-form-item label="质保期">
+                  <el-input-number
+                    v-model="form.warrantyMonths"
+                    :min="0"
+                    :max="120"
+                    :controls="false"
+                    style="width: 100%"
+                  />
+                  <span class="unit-suffix">月（验收后自动算到期日）</span>
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="12" :lg="8">
+                <el-form-item label="质保金比例">
+                  <el-input-number
+                    v-model="form.retentionRate"
+                    :min="0"
+                    :max="100"
+                    :precision="2"
+                    :controls="false"
+                    style="width: 100%"
+                    @change="onRetentionRate"
+                  />
+                  <span class="unit-suffix">%</span>
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="12" :lg="8">
+                <el-form-item label="质保金金额">
+                  <el-input-number
+                    v-model="form.retentionAmount"
+                    :min="0"
+                    :precision="2"
+                    :controls="false"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </el-collapse-item>
+        </el-collapse>
       </el-form>
       <template #footer>
-        <el-button :disabled="submitting || validating" @click="closeContract">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitForm">保存合同</el-button>
+        <div class="contract-editor-footer">
+          <span class="contract-footer-total">合同金额 <strong>{{ formatMoney(Number(form.amount) || 0) }}</strong></span>
+          <div>
+            <el-button :disabled="submitting || validating" @click="closeContract">取消</el-button>
+            <el-button type="primary" :loading="submitting" @click="submitForm">保存合同</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 
@@ -1830,11 +1872,83 @@ const attachType: InvAttachBizType = 'contract'
   color: var(--el-color-warning);
 }
 
+.contract-entry-form {
+  display: grid;
+  gap: 16px;
+}
+
+.contract-entry-section {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-md);
+
+  h2 {
+    margin: 0 0 16px;
+    color: var(--app-text);
+    font-size: 16px;
+  }
+}
+
+.contract-plan-heading,
+.contract-plan-actions,
+.contract-editor-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.contract-plan-heading {
+  justify-content: space-between;
+  margin-bottom: 12px;
+
+  h2 {
+    margin: 0;
+  }
+}
+
+.contract-entry-hint {
+  margin: 0 0 12px;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+}
+
+.contract-warranty {
+  :deep(.el-collapse-item__header) {
+    padding: 0 16px;
+    font-weight: 600;
+  }
+
+  :deep(.el-collapse-item__content) {
+    padding: 12px 16px 0;
+  }
+}
+
+.contract-editor-footer {
+  justify-content: space-between;
+
+  > div {
+    margin-left: auto;
+  }
+}
+
+.contract-footer-total {
+  color: var(--app-text-secondary);
+
+  strong {
+    margin-left: 8px;
+    color: var(--app-text);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
 .plan-sum {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
   font-size: 13px;
   color: var(--el-text-color-regular);
 

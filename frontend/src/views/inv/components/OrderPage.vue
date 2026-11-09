@@ -55,6 +55,7 @@ const props = defineProps<{
 
 const userStore = useUserStore()
 const isPurchase = computed(() => props.bizType === 'purchase')
+const orderLabel = computed(() => isPurchase.value ? '采购单' : '销售单')
 const route = useRoute()
 const router = useRouter()
 // Backend menus own route paths; cached pages must keep their business route owner.
@@ -113,30 +114,26 @@ const {
         ? String(route.query.handoff)
         : '',
     keyword:
-      isPurchase.value && typeof route.query.q === 'string'
+      typeof route.query.q === 'string'
         ? route.query.q
         : '',
     status: isWorkbench.value
       ? 1
-      : isPurchase.value
-        ? [1, 2, 3].includes(Number(route.query.status))
-          ? Number(route.query.status)
-          : undefined
+      : [1, 2, 3].includes(Number(route.query.status))
+        ? Number(route.query.status)
         : undefined,
     settleStatus:
       !isWorkbench.value &&
-      isPurchase.value &&
       ['unpaid', 'partial', 'paid'].includes(String(route.query.settle))
         ? (route.query.settle as InvSettleStatus)
         : undefined,
     dateRange:
-      isPurchase.value &&
       typeof route.query.start === 'string' &&
       typeof route.query.end === 'string'
         ? [route.query.start, route.query.end]
         : [],
-    page: isPurchase.value ? urlNumber(route.query.page, 1, 100000) : 1,
-    pageSize: isPurchase.value ? urlNumber(route.query.size, 10, 200) : 10,
+    page: urlNumber(route.query.page, 1, 100000),
+    pageSize: urlNumber(route.query.size, 10, 200),
   },
   (params) =>
     invApi.orders({
@@ -162,7 +159,7 @@ const hasFilters = computed(() =>
 )
 
 function persistQuery(): void {
-  if (!isPurchase.value || route.path !== pagePath) return
+  if (route.path !== pagePath) return
   void router.replace({
     path: pagePath,
     query: {
@@ -170,7 +167,7 @@ function persistQuery(): void {
       action: route.query.action,
       editId: route.query.editId,
       handoff: query.handoff || undefined,
-      view: workspaceView.value,
+      view: isPurchase.value ? workspaceView.value : undefined,
       q: query.keyword || undefined,
       status:
         !isWorkbench.value && query.status ? String(query.status) : undefined,
@@ -471,9 +468,8 @@ async function cancelCustomNumber(): Promise<void> {
 }
 const editorLoading = ref(false)
 const editorError = ref('')
-const purchaseEditing = computed(
+const orderEditing = computed(
   () =>
-    isPurchase.value &&
     route.path === pagePath &&
     ['create', 'edit'].includes(String(route.query.action)),
 )
@@ -635,14 +631,14 @@ async function initializeEdit(row: Pick<InvOrderRow, 'id'>): Promise<void> {
   try {
     data = await invApi.orderDetail(row.id)
   } catch {
-    if (isPurchase.value && seq === editSeq.value)
-      editorError.value = '采购单加载失败，请重新加载。'
+    if (seq === editSeq.value)
+      editorError.value = `${orderLabel.value}加载失败，请重新加载。`
     return
   }
-  if (seq !== editSeq.value || (isPurchase.value && !purchaseEditing.value))
+  if (seq !== editSeq.value || !orderEditing.value)
     return
-  if (isPurchase.value && (data.bizType !== 'purchase' || data.status !== 1)) {
-    editorError.value = '此单据当前不可编辑，请返回工作台核实状态。'
+  if (data.bizType !== props.bizType || data.status !== 1) {
+    editorError.value = '此单据当前不可编辑，请返回列表核实状态。'
     return
   }
   editingOrder.value = data
@@ -673,7 +669,7 @@ async function initializeEdit(row: Pick<InvOrderRow, 'id'>): Promise<void> {
   loadOptions().catch(() => {})
 }
 
-function enterPurchaseEditor(action: 'create' | 'edit', id?: number): void {
+function enterOrderEditor(action: 'create' | 'edit', id?: number): void {
   originDetail = detailVisible.value
   editorTrigger =
     document.activeElement instanceof HTMLElement
@@ -692,21 +688,19 @@ function enterPurchaseEditor(action: 'create' | 'edit', id?: number): void {
   })
 }
 function openCreate(): void {
-  if (isPurchase.value) enterPurchaseEditor('create')
-  else initializeCreate()
+  enterOrderEditor('create')
 }
-async function openEdit(row: InvOrderRow): Promise<void> {
-  if (isPurchase.value) enterPurchaseEditor('edit', row.id)
-  else await initializeEdit(row)
+function openEdit(row: InvOrderRow): void {
+  enterOrderEditor('edit', row.id)
 }
-async function syncPurchaseEditor(): Promise<void> {
-  if (!isPurchase.value || route.path !== pagePath) return
+async function syncOrderEditor(): Promise<void> {
+  if (route.path !== pagePath) return
   ++editSeq.value
   editorLoading.value = false
   editorError.value = ''
-  if (!purchaseEditing.value) {
+  if (!orderEditing.value) {
     dialogVisible.value = false
-    document.title = `采购管理 · ${import.meta.env.VITE_APP_TITLE || 'Kasinlo ERP'}`
+    document.title = `${props.title} · ${import.meta.env.VITE_APP_TITLE || 'Kasinlo ERP'}`
     await nextTick()
     const scroller = document.querySelector('.layout__content')
     if (scroller) scroller.scrollTop = editorScroll
@@ -719,9 +713,9 @@ async function syncPurchaseEditor(): Promise<void> {
   showCustomNumber.value = false
   const action = route.query.action === 'edit' ? 'edit' : 'create'
   dialogMode.value = action
-  document.title = `${action === 'edit' ? '编辑采购单' : '新增采购单'} · ${import.meta.env.VITE_APP_TITLE || 'Kasinlo ERP'}`
+  document.title = `${action === 'edit' ? '编辑' : '新增'}${orderLabel.value} · ${import.meta.env.VITE_APP_TITLE || 'Kasinlo ERP'}`
   const permission = action === 'edit' ? 'update' : 'create'
-  if (!userStore.hasAnyPerm([`inv:purchase:${permission}`])) {
+  if (!userStore.hasAnyPerm([`inv:${props.bizType}:${permission}`])) {
     editorError.value = '当前账号没有办理此操作的权限。'
     markFormClean()
     return
@@ -730,7 +724,7 @@ async function syncPurchaseEditor(): Promise<void> {
   else {
     const id = Number(route.query.editId)
     if (!Number.isSafeInteger(id) || id <= 0) {
-      editorError.value = '采购单编号无效，请返回工作台重新选择。'
+      editorError.value = `${orderLabel.value}编号无效，请返回列表重新选择。`
       markFormClean()
       return
     }
@@ -807,7 +801,7 @@ async function submitForm(): Promise<void> {
     }
     dialogVisible.value = false
     markFormClean()
-    if (isPurchase.value) await returnFromEditor()
+    await returnFromEditor()
     if (isWorkbench.value && createdId) {
       // 新单即使不属于当前筛选页，也在核对区保留明确的保存结果。
       keepReviewResult.value = true
@@ -1009,8 +1003,6 @@ watch(rows, (list) => {
 
 const {
   markClean: markFormClean,
-  canLeave: canCloseForm,
-  beforeClose: beforeFormClose,
 } = useUnsavedChanges({
   active: () =>
     route.path === pagePath &&
@@ -1021,7 +1013,6 @@ const {
   busy: () => submitting.value || validating.value,
   label: isPurchase.value ? '采购单' : '销售单',
   guardUpdate: (to, from) =>
-    isPurchase.value &&
     (to.query.action !== from.query.action ||
       to.query.editId !== from.query.editId),
   onNavigate: () => {
@@ -1033,12 +1024,9 @@ const {
   },
 })
 async function requestCloseForm(): Promise<void> {
-  if (isPurchase.value) {
-    // The route-update guard owns confirmation, including browser Back.
-    await returnFromEditor()
-    if (!purchaseEditing.value && originDetail && detailTarget.value)
-      await openDetail(detailTarget.value)
-  } else if (await canCloseForm()) dialogVisible.value = false
+  await returnFromEditor()
+  if (isPurchase.value && !orderEditing.value && originDetail && detailTarget.value)
+    await openDetail(detailTarget.value)
 }
 
 // ---------------- 导出 / 打印 / 批量 ----------------
@@ -1167,26 +1155,15 @@ async function batchReverse(): Promise<void> {
   }
 }
 
-function consumeCreateAction(): void {
-  if (route.path !== pagePath || route.query.action !== 'create') return
-  if (!userStore.hasAnyPerm([`inv:${props.bizType}:create`])) return
-  if (isPurchase.value) return
-  openCreate()
-  const { action: _action, ...rest } = route.query
-  void router.replace({ path: pagePath, query: rest })
-}
 watch(
   [() => route.path, () => route.query.action, () => route.query.editId],
-  () => {
-    if (isPurchase.value) void syncPurchaseEditor()
-    else consumeCreateAction()
-  },
+  () => { void syncOrderEditor() },
 )
 async function consumeLinkedOrder(): Promise<void> {
   const id = Number(route.query.order)
   if (
     route.path !== pagePath ||
-    purchaseEditing.value || !Number.isSafeInteger(id) || id <= 0
+    orderEditing.value || !Number.isSafeInteger(id) || id <= 0
   )
     return
   // Restore the source filters as well as the record on a cached page.
@@ -1228,10 +1205,9 @@ watch(
 )
 onMounted(() => {
   const linkedId = Number(route.query.order)
-  if (!purchaseEditing.value && Number.isSafeInteger(linkedId) && linkedId > 0) void consumeLinkedOrder()
+  if (!orderEditing.value && Number.isSafeInteger(linkedId) && linkedId > 0) void consumeLinkedOrder()
   else void load()
-  if (isPurchase.value) void syncPurchaseEditor()
-  else consumeCreateAction()
+  void syncOrderEditor()
   void loadOptions().catch(() => {})
 })
 // 关键字录入即查询（防抖），不必再按回车
@@ -1252,7 +1228,7 @@ function onKeywordInput(): void {
 
 <template>
   <div class="order-page" :class="{ 'purchase-page': isPurchase }">
-    <div v-show="!purchaseEditing">
+    <div v-show="!orderEditing">
       <header v-if="isPurchase" class="purchase-header">
       <div class="purchase-title">
         <h1>采购工作台</h1>
@@ -1756,18 +1732,15 @@ function onKeywordInput(): void {
       </el-table-column>
     </KasTable>
     </div>
-    <!-- 采购为独立编辑视图；销售沿用弹窗，共享同一份表单与提交逻辑。 -->
+    <!-- 两类单据共用页内编辑、返回及未保存保护。 -->
     <OrderEditorSurface
-      v-model="dialogVisible"
-      :page="isPurchase"
+      :model-value="dialogVisible"
+      :class="{ 'sales-editor': !isPurchase }"
       :title="
-        dialogMode === 'create' ? createText : isPurchase
-            ? '编辑采购单'
-            : '编辑单据'
+        dialogMode === 'create' ? createText : `编辑${orderLabel}`
       "
-      :before-close="beforeFormClose"
     >
-      <template v-if="isPurchase" #header="{ titleId, titleClass }">
+      <template #header="{ titleId, titleClass }">
         <div class="purchase-dialog-heading">
           <el-button
             class="purchase-heading-back"
@@ -1777,12 +1750,13 @@ function onKeywordInput(): void {
             @click="requestCloseForm"
           >
             <AppIcon name="ArrowLeft" />
-            <span>返回采购工作台</span>
+            <span>{{ isPurchase ? '返回采购工作台' : '返回销售单据' }}</span>
           </el-button>
           <h1 :id="titleId" :class="titleClass">
-            {{ dialogMode === 'create' ? createText : '编辑采购单' }}
+            {{ dialogMode === 'create' ? createText : `编辑${orderLabel}` }}
           </h1>
           <PurchaseGuide
+            v-if="isPurchase"
             class="purchase-heading-guide"
             :entering="dialogMode === 'create'"
             :editing="dialogMode === 'edit'"
@@ -1843,7 +1817,7 @@ function onKeywordInput(): void {
         v-if="editorLoading"
         v-loading="true"
         class="detail-pending purchase-entry-card"
-        aria-label="正在读取采购单"
+        :aria-label="`正在读取${orderLabel}`"
       />
       <el-alert
         v-else-if="editorError"
@@ -1852,7 +1826,7 @@ function onKeywordInput(): void {
         :closable="false"
         show-icon
       >
-        <el-button text @click="syncPurchaseEditor">重新加载</el-button>
+        <el-button text @click="syncOrderEditor">重新加载</el-button>
       </el-alert>
       <template v-else>
         <el-alert
@@ -1863,36 +1837,24 @@ function onKeywordInput(): void {
         show-icon
         class="purchase-result"
       />
-      <section v-if="isPurchase && (optionsError || (!optionsLoading && (!parties.length || !picks.length)))" class="purchase-entry-status" aria-label="采购资料状态">
-        <el-alert v-if="optionsError" type="error" :closable="false" show-icon title="资料加载失败，请刷新后再选择供应商和商品。" />
+      <section v-if="optionsError || (!optionsLoading && (!parties.length || !picks.length))" class="purchase-entry-status" aria-label="单据资料状态">
+        <el-alert v-if="optionsError" type="error" :closable="false" show-icon title="资料加载失败，请刷新后再选择往来单位和商品。" />
         <el-alert v-else type="info" :closable="false" show-icon>
-          <template #title>{{ !parties.length ? '暂无可选供应商。' : '' }}{{ !picks.length ? '暂无可选商品规格与单位。' : '' }}请先维护缺少的资料；没有维护权限时，请联系管理员。</template>
+          <template #title>{{ !parties.length ? `暂无可选${partyLabel}。` : '' }}{{ !picks.length ? '暂无可选商品规格与单位。' : '' }}请先维护缺少的资料；没有维护权限时，请联系管理员。</template>
         </el-alert>
       </section>
       <el-form
         ref="formRef"
         :model="form"
         :rules="rules"
-        :label-width="isPurchase ? 'auto' : '88px'"
-        :label-position="isPurchase ? 'top' : 'right'"
-        :class="{ 'purchase-entry-form': isPurchase }"
+        label-position="top"
+        class="purchase-entry-form"
         novalidate
       >
-        <div :class="isPurchase ? 'purchase-entry-card' : 'sales-entry-section'">
-          <h2 v-if="isPurchase" class="purchase-section-title purchase-basics-title">基本信息</h2>
-          <el-row :gutter="16" :class="{ 'purchase-basics': isPurchase }">
-            <el-col v-if="!isPurchase" :xs="24" :sm="12" :lg="6" class="order-number-field">
-              <el-form-item label="单据编号">
-                <el-input
-                  v-model="form.orderNo"
-                  :disabled="dialogMode === 'edit'"
-                  placeholder="留空自动生成"
-                  clearable
-                  maxlength="32"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :xs="24" :sm="12" :lg="isPurchase ? 8 : 6" class="order-party-field">
+        <div class="purchase-entry-card">
+          <h2 class="purchase-section-title purchase-basics-title">基本信息</h2>
+          <el-row :gutter="16" class="purchase-basics">
+            <el-col :xs="24" :sm="12" :lg="8" class="order-party-field">
               <el-form-item :label="partyLabel" prop="partyId" data-purchase-tour="party">
                 <el-select
                   v-model="form.partyId"
@@ -1937,7 +1899,7 @@ function onKeywordInput(): void {
                 />
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :sm="12" :lg="isPurchase ? 4 : 6" class="order-salesman-field">
+            <el-col :xs="24" :sm="12" :lg="4" class="order-salesman-field">
               <!-- 业务员是自由文本而不是人员下拉：跑业务的常常没有后台账号
                    （门店、外包、已离职但历史单据还要能查），挂账号后这些人就录不进单 -->
               <el-form-item label="业务员">
@@ -1951,10 +1913,10 @@ function onKeywordInput(): void {
           </el-row>
         </div>
 
-        <div :class="isPurchase ? 'purchase-entry-card' : 'sales-entry-section'">
-          <el-form-item :label="isPurchase ? '' : '明细'">
-            <div v-if="isPurchase" class="purchase-lines-toolbar">
-              <h2 class="purchase-section-title">采购明细 <span>{{ form.items.length }} 行</span></h2>
+        <div class="purchase-entry-card">
+          <el-form-item>
+            <div class="purchase-lines-toolbar">
+              <h2 class="purchase-section-title">{{ isPurchase ? '采购明细' : '销售明细' }} <span>{{ form.items.length }} 行</span></h2>
               <div class="purchase-resource-tools">
                 <router-link v-if="userStore.hasAnyPerm(['inv:product:create']) && router.hasRoute('InvProduct')" to="/inv/product" target="_blank" rel="noopener" aria-label="维护商品（新标签页）" title="在新标签页维护商品">维护商品</router-link>
                 <el-button text size="small" :loading="optionsLoading" @click="refreshOptions">刷新可选资料</el-button>
@@ -1970,7 +1932,6 @@ function onKeywordInput(): void {
                 <span class="col-spec">规格</span>
                 <span class="col-unit">单位</span>
                 <span class="col-num">数量</span>
-                <span v-if="!isPurchase" class="col-base">折算</span>
                 <span class="col-num">单价</span>
                 <span class="col-num">金额</span>
                 <span class="col-act" />
@@ -2033,12 +1994,8 @@ function onKeywordInput(): void {
                     :controls="false"
                     style="width: 100%"
                   />
-                  <span v-if="isPurchase" class="quantity-base">{{ item.unitId ? `折算 ${formatQty(qtyBase(item))} ${unitOptions(item).find((u) => u.isBase)?.unit || ''}` : '—' }}</span>
+                  <span class="quantity-base">{{ item.unitId ? `折算 ${formatQty(qtyBase(item))} ${unitOptions(item).find((u) => u.isBase)?.unit || ''}` : '—' }}</span>
                 </div>
-                <span v-if="!isPurchase" class="col-base">
-                  {{ formatQty(qtyBase(item)) }}
-                  {{ unitOptions(item).find((u) => u.isBase)?.unit || '' }}
-                </span>
                 <el-input-number
                   v-model="item.price"
                   class="col-num"
@@ -2062,9 +2019,6 @@ function onKeywordInput(): void {
                   <AppIcon name="Plus" />
                   <span>添加明细</span>
                 </el-button>
-                <span v-if="!isPurchase" class="item-editor__total">
-                  合计：<strong>{{ formatMoney(formTotal) }}</strong>
-                </span>
               </div>
             </div>
           </el-form-item>
@@ -2076,16 +2030,10 @@ function onKeywordInput(): void {
       </el-form>
       </template>
       <template #footer>
-        <div v-if="isPurchase && !editorLoading && !editorError" class="editor-footer-summary">
+        <div v-if="!editorLoading && !editorError" class="editor-footer-summary">
           <span class="editor-total">合计 <strong>{{ formatMoney(formTotal) }}</strong></span>
-          <span class="editor-save-note">保存只记录单据，不会增加库存或登记付款。</span>
+          <span class="editor-save-note">保存只记录单据，不会{{ isPurchase ? '增加库存或登记付款' : '扣减库存或登记收款' }}。</span>
         </div>
-        <el-button
-          v-if="!isPurchase"
-          :disabled="submitting || validating"
-          @click="requestCloseForm"
-          >取消</el-button
-        >
         <el-button data-purchase-tour="save" type="primary"
           :disabled="editorLoading || !!editorError"
           :loading="submitting"
@@ -2388,9 +2336,6 @@ function onKeywordInput(): void {
     outline-offset: 3px;
   }
 }
-.sales-entry-section {
-  display: contents;
-}
 .purchase-entry-card {
   min-width: 0;
   padding: 20px;
@@ -2413,9 +2358,6 @@ function onKeywordInput(): void {
   }
   .order-salesman-field {
     order: 4;
-  }
-  .order-number-field {
-    order: 5;
   }
 }
 .purchase-field-tools {
@@ -2760,11 +2702,6 @@ function onKeywordInput(): void {
     margin-top: 4px;
   }
 
-  &__total {
-    font-size: 13px;
-    color: var(--app-text-secondary);
-  }
-
   // 商品列要给足宽度：下拉里是「名称（编码）· N 个规格」，被压到一百多像素时
   // 只能看到「热轧钢…」，用户根本分不清选的是哪一个。
   // 其余列都压到「刚好放下内容」的量级，把省下的空间全给商品列。
@@ -2787,15 +2724,6 @@ function onKeywordInput(): void {
     width: 94px;
     flex: none;
     text-align: right;
-  }
-
-  // 折算列是计算结果而非输入，用居中 + 次要色和可编辑列区分开
-  .col-base {
-    width: 100px;
-    flex: none;
-    text-align: center;
-    font-size: 12px;
-    color: var(--app-text-secondary);
   }
 
   .col-act {

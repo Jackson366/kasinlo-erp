@@ -218,6 +218,100 @@ try {
     await page.setViewportSize({ width: 1440, height: 1000 })
     await page.getByRole('button', { name: '切换到亮色主题' }).click()
   })
+  await check('销售页内编辑支持返回、后退确认、筛选和焦点恢复', async () => {
+    await page.goto(app + '/#/inv/sales?q=XS&size=20')
+    const create = page.getByRole('button', { name: '新增销售单', exact: true })
+    await create.click()
+    const sales = page.getByRole('region', { name: '新增销售单', exact: true })
+    await expect(sales.getByRole('heading', { name: '销售明细' })).toBeVisible()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page).toHaveURL(/action=create/)
+    await field(sales, '备注').fill('销售未保存')
+    await page.evaluate(() => history.back())
+    await keepEditing()
+    await expect(field(sales, '备注')).toHaveValue('销售未保存')
+    await page.setViewportSize({ width: 390, height: 740 })
+    await page.getByRole('button', { name: '切换到暗色主题' }).click()
+    for (let n = 0; n < 8; n++) await sales.getByRole('button', { name: '添加明细' }).click()
+    await expect(sales.getByRole('button', { name: '保存销售单' })).toBeInViewport()
+    const box = await sales.boundingBox()
+    expect(box.x + box.width).toBeLessThanOrEqual(391)
+    await page.screenshot({ path: out + '/sales-editor-narrow.png', fullPage: true })
+    await sales.getByRole('button', { name: '返回销售单据' }).click()
+    await discardChanges()
+    await expect(sales).toHaveCount(0)
+    await expect(page).toHaveURL(/q=XS/)
+    await expect(page).toHaveURL(/size=20/)
+    await expect(create).toBeFocused()
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.getByRole('button', { name: '切换到亮色主题' }).click()
+  })
+  await check('销售编辑深链、权限与错误目标仍受校验', async () => {
+    await page.goto(app + '/#/inv/sales?action=edit&editId=17')
+    const sales = page.getByRole('region', { name: '编辑销售单', exact: true })
+    await expect(field(sales, '备注')).toHaveValue('Mock 演示单据')
+    await page.reload()
+    await expect(field(sales, '备注')).toHaveValue('Mock 演示单据')
+    await sales.getByRole('button', { name: '返回销售单据' }).click()
+    await page.evaluate(() => { location.hash = '#/inv/sales?action=edit&editId=1' })
+    await expect(sales).toContainText('此单据当前不可编辑')
+    await expect(sales.getByRole('button', { name: '保存销售单' })).toBeDisabled()
+    await sales.getByRole('button', { name: '返回销售单据' }).click()
+    await page.evaluate(async () => {
+      const { useUserStore } = await import('/src/store/user.ts')
+      const store = useUserStore()
+      window.salesOriginalProfile = store.profile
+      store.profile = { ...store.profile, isSuper: false, permissions: ['inv:sales:list'] }
+      location.hash = '#/inv/sales?action=create'
+    })
+    const create = page.getByRole('region', { name: '新增销售单', exact: true })
+    await expect(create).toContainText('当前账号没有办理此操作的权限')
+    await expect(create.locator('.el-form')).toHaveCount(0)
+    await create.getByRole('button', { name: '返回销售单据' }).click()
+    await page.evaluate(async () => {
+      const { useUserStore } = await import('/src/store/user.ts')
+      useUserStore().profile = window.salesOriginalProfile
+    })
+  })
+  await check('销售保存失败保留录入，成功后返回列表且不直接出库', async () => {
+    await page.goto(app + '/#/inv/sales?action=create')
+    const sales = page.getByRole('region', { name: '新增销售单', exact: true })
+    await sales.locator('.order-party-field .el-select').click()
+    await page.getByRole('option', { name: '上海远航制造', exact: true }).click()
+    await sales.locator('.item-editor__row .el-select.col-product').click()
+    await page.getByRole('option', { name: /工业连接器/ }).click()
+    const inputs = sales.locator('.item-editor__row .el-input-number input')
+    await inputs.nth(0).fill('2')
+    await inputs.nth(1).fill('12.50')
+    await field(sales, '备注').fill('销售录入回归')
+    await expect(sales.locator('.editor-total')).toContainText('¥25.00')
+    await page.evaluate(async () => {
+      const { invApi } = await import('/src/api/inv.ts')
+      window.originalSalesCreate = invApi.createOrder
+      invApi.createOrder = async () => { throw new Error('模拟销售保存失败') }
+    })
+    await sales.getByRole('button', { name: '保存销售单' }).click()
+    await expect(sales).toContainText('保存失败，本次输入已保留')
+    await expect(field(sales, '备注')).toHaveValue('销售录入回归')
+    await page.evaluate(async () => {
+      const { invApi } = await import('/src/api/inv.ts')
+      invApi.createOrder = async (payload) => {
+        window.lastSalesPayload = payload
+        return window.originalSalesCreate(payload)
+      }
+    })
+    await sales.getByRole('button', { name: '保存销售单' }).click()
+    await expect(sales).toHaveCount(0)
+    await expect(page).not.toHaveURL(/action=create/)
+    const payload = await page.evaluate(() => window.lastSalesPayload)
+    expect(payload.bizType).toBe('sales')
+    expect(payload.items[0]).toMatchObject({ qty: 2, price: 12.5 })
+    await expect(page.getByRole('dialog', { name: '放弃本次修改？' })).toHaveCount(0)
+    await page.evaluate(async () => {
+      const { invApi } = await import('/src/api/inv.ts')
+      invApi.createOrder = window.originalSalesCreate
+    })
+  })
   await check('商品关闭、Esc 与导航保护未保存修改', async () => {
     await page.goto(app + '/#/inv/product')
     await page.getByRole('button', { name: '新增商品', exact: true }).click()
@@ -273,6 +367,48 @@ try {
     // Back out to keep the original contract unchanged.
     await dialog.getByRole('button', { name: '取消', exact: true }).click()
     await discardChanges()
+  })
+  await check('合同模板取消保留期次，确认才替换，已收付计划禁止覆盖', async () => {
+    await page.getByRole('button', { name: '新增合同', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '新增合同', exact: true })
+    await expect(dialog.getByText('请选择', { exact: true })).toBeVisible()
+    await dialog.getByRole('button', { name: '保存合同' }).click()
+    await expect(dialog.locator('.el-form-item__error').filter({ hasText: '请选择往来单位' })).toBeVisible()
+    await dialog.getByRole('button', { name: '添加一期' }).click()
+    const name = dialog.getByRole('textbox', { name: '第 1 期名称', exact: true })
+    await name.fill('自定义尾款')
+    await dialog.getByRole('button', { name: '按 30/40/20/10 生成' }).click()
+    const replacement = page.getByRole('dialog', { name: '替换付款计划？', exact: true })
+    await replacement.getByRole('button', { name: '保留当前计划' }).click()
+    await expect(name).toHaveValue('自定义尾款')
+    await dialog.getByRole('button', { name: '按 30/40/20/10 生成' }).click()
+    await replacement.getByRole('button', { name: '替换计划', exact: true }).click()
+    await expect(replacement).toBeHidden()
+    await expect(dialog.locator('.el-table__body tr')).toHaveCount(4)
+    await expect(dialog.getByRole('textbox', { name: '第 1 期名称', exact: true })).toHaveValue('预付款')
+    await page.setViewportSize({ width: 390, height: 740 })
+    await expect(dialog.getByRole('button', { name: '保存合同' })).toBeInViewport()
+    expect((await dialog.locator('.el-dialog').boundingBox()).width).toBeLessThanOrEqual(359)
+    await dialog.getByRole('button', { name: '取消', exact: true }).click()
+    await discardChanges()
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.evaluate(async () => {
+      const { invApi } = await import('/src/api/inv.ts')
+      window.originalSettledContractDetail = invApi.contractDetail
+      invApi.contractDetail = async (...args) => {
+        const detail = await window.originalSettledContractDetail(...args)
+        return { ...detail, plans: detail.plans.map((plan, index) => index ? plan : { ...plan, settledAmount: 100 }) }
+      }
+    })
+    await page.getByRole('row').filter({ hasText: '设备销售合同' }).getByRole('button', { name: '编辑', exact: true }).click()
+    const edit = page.getByRole('dialog', { name: '编辑合同', exact: true })
+    await expect(edit.getByRole('button', { name: '按 30/40/20/10 生成' })).toBeDisabled()
+    await expect(edit).toContainText('已有期次发生收付款')
+    await edit.getByRole('button', { name: '取消', exact: true }).click()
+    await page.evaluate(async () => {
+      const { invApi } = await import('/src/api/inv.ts')
+      invApi.contractDetail = window.originalSettledContractDetail
+    })
   })
   await page.evaluate(async () => {
     const { invApi } = await import('/src/api/inv.ts')
