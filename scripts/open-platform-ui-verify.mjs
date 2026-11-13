@@ -16,6 +16,7 @@ const errors = []
 const requests = []
 let grants = [{ id: 'grant-a-123456789012345678901234567890', clientId: 'kas', expiresAt: new Date(Date.now() + 3600000).toISOString() }]
 let inspectFail = false, decisionFail = false, grantsFail = false, revokeFail = false, expired = false, deny = false
+let requestedScope = 'inventory.read'
 let revokeCount = 0
 async function check(name, fn) { await fn(); console.log(`PASS ${name}`) }
 try {
@@ -37,11 +38,12 @@ try {
         if (inspectFail) { status = 400; message = '验证码不存在或已过期，请在终端重新发起登录' }
         else {
           expect(body.userCode).toBe('A1B2C3D4E5F6')
-          data = { clientId: 'kas', scope: 'inventory.read', accessLifetimeSeconds: 28800, expiresAt: new Date(Date.now() + (expired ? -1000 : 600000)).toISOString() }
+          data = { clientId: 'kas', scope: requestedScope, accessLifetimeSeconds: 28800, expiresAt: new Date(Date.now() + (expired ? -1000 : 600000)).toISOString() }
         }
         break
       case '/open-platform/device/decision':
         expect(body.approve).toBe(!deny)
+        expect(body.scope).toBe(requestedScope)
         if (decisionFail) { status = 503; message = '暂时无法提交授权，请重试' }
         break
       case '/open-platform/grants/grant-a-123456789012345678901234567890/revoke':
@@ -119,6 +121,19 @@ try {
     await page.getByRole('button', { name: '输入新的验证码' }).click()
     expired = false
     await expect(page.getByLabel('设备验证码', { exact: true })).toBeFocused()
+  })
+  await check('multiple scopes are displayed and approved explicitly', async () => {
+    requestedScope = 'product.read purchase.read sales.read'
+    await enter()
+    await expect(page.getByRole('heading', { name: '允许 kas CLI 查询 ERP 数据？' })).toBeFocused()
+    for (const title of ['查询商品档案', '查询采购单', '查询销售单']) {
+      await expect(page.getByRole('heading', { name: title })).toBeVisible()
+    }
+    await expect(page.locator('.authorize-permission')).toHaveCount(3)
+    await page.getByRole('button', { name: '允许查询', exact: true }).click()
+    await expect(page.getByRole('heading', { name: '已同意授权，请返回终端' })).toBeFocused()
+    await page.getByRole('button', { name: '连接另一个工具' }).click()
+    requestedScope = 'inventory.read'
   })
   await check('revocation requires confirmation; cancel sends no mutation', async () => {
     await page.getByRole('button', { name: /^撤销 kas CLI/ }).click()

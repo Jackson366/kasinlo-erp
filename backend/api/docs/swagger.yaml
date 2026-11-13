@@ -1735,6 +1735,124 @@ definitions:
         description: 基本单位名，用于把基本数量写清楚
         type: string
     type: object
+  inv.platformOrderDetail:
+    properties:
+      bizType:
+        type: string
+      dueDate:
+        type: string
+      id:
+        type: integer
+      itemCount:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/inv.OrderItemVO'
+        type: array
+      orderDate:
+        type: string
+      orderNo:
+        type: string
+      partyName:
+        type: string
+      settleStatus:
+        type: string
+      settledAmount:
+        type: number
+      status:
+        type: integer
+      totalAmount:
+        type: number
+    type: object
+  inv.platformOrderRow:
+    properties:
+      bizType:
+        type: string
+      dueDate:
+        type: string
+      id:
+        type: integer
+      itemCount:
+        type: integer
+      orderDate:
+        type: string
+      orderNo:
+        type: string
+      partyName:
+        type: string
+      settleStatus:
+        type: string
+      settledAmount:
+        type: number
+      status:
+        type: integer
+      totalAmount:
+        type: number
+    type: object
+  inv.platformProductDetail:
+    properties:
+      barcode:
+        type: string
+      categoryId:
+        type: integer
+      categoryName:
+        type: string
+      code:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      specs:
+        items:
+          $ref: '#/definitions/inv.platformProductSpec'
+        type: array
+      status:
+        type: integer
+    type: object
+  inv.platformProductRow:
+    properties:
+      barcode:
+        type: string
+      categoryId:
+        type: integer
+      categoryName:
+        type: string
+      code:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      status:
+        type: integer
+    type: object
+  inv.platformProductSpec:
+    properties:
+      id:
+        type: integer
+      spec:
+        type: string
+      status:
+        type: integer
+      units:
+        items:
+          $ref: '#/definitions/inv.platformProductUnit'
+        type: array
+    type: object
+  inv.platformProductUnit:
+    properties:
+      id:
+        type: integer
+      isBase:
+        type: boolean
+      rate:
+        type: number
+      status:
+        type: integer
+      unit:
+        type: string
+    type: object
   log.ClearReq:
     properties:
       before:
@@ -2744,6 +2862,238 @@ paths:
       summary: 刷新访问令牌
       tags:
       - 认证
+  /internal/open-platform/products:
+    get:
+      parameters:
+      - description: 编码、名称、条码或规格
+        in: query
+        name: keyword
+        type: string
+      - description: 商品状态
+        in: query
+        name: status
+        type: integer
+      - description: 分类 ID
+        in: query
+        name: categoryId
+        type: integer
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.platformProductRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询商品档案
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/products/{id}:
+    get:
+      parameters:
+      - description: 商品 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformProductDetail'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询商品详情
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/purchase-orders:
+    get:
+      parameters:
+      - description: 单号、往来单位或业务员
+        in: query
+        name: keyword
+        type: string
+      - description: 单据状态
+        in: query
+        name: status
+        type: integer
+      - description: 结算状态
+        in: query
+        name: settleStatus
+        type: string
+      - description: 起始单据日期
+        in: query
+        name: startDate
+        type: string
+      - description: 结束单据日期
+        in: query
+        name: endDate
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.platformOrderRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询采购或销售单据
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/purchase-orders/{id}:
+    get:
+      parameters:
+      - description: 单据 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformOrderDetail'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询采购或销售单据详情
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/sales-orders:
+    get:
+      parameters:
+      - description: 单号、往来单位或业务员
+        in: query
+        name: keyword
+        type: string
+      - description: 单据状态
+        in: query
+        name: status
+        type: integer
+      - description: 结算状态
+        in: query
+        name: settleStatus
+        type: string
+      - description: 起始单据日期
+        in: query
+        name: startDate
+        type: string
+      - description: 结束单据日期
+        in: query
+        name: endDate
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.platformOrderRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询采购或销售单据
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/sales-orders/{id}:
+    get:
+      parameters:
+      - description: 单据 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformOrderDetail'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询采购或销售单据详情
+      tags:
+      - 开放平台内部接口
   /inv/attachments:
     get:
       parameters:

@@ -157,14 +157,26 @@ func toOrderRow(o model.InvOrder, itemCount int64, operator string) OrderRow {
 	}
 }
 
+func (s *Service) orderForDetail(id int64, actor *authz.Identity, bizType string) (model.InvOrder, error) {
+	var order model.InvOrder
+	query := s.applyCreator(s.db.Where("id = ?", id), actor)
+	if bizType != "" {
+		query = query.Where("biz_type = ?", bizType)
+	}
+	if err := query.First(&order).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return order, errcode.New(errcode.ErrNotFound, "单据不存在")
+		}
+		return order, errcode.Wrap(errcode.ErrDatabase, err)
+	}
+	return order, nil
+}
+
 // OrderDetail 单据详情。
 func (s *Service) OrderDetail(id int64, actor *authz.Identity) (*OrderDetail, error) {
-	var o model.InvOrder
-	if err := s.applyCreator(s.db.Where("id = ?", id), actor).First(&o).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errcode.New(errcode.ErrNotFound, "单据不存在")
-		}
-		return nil, errcode.Wrap(errcode.ErrDatabase, err)
+	o, err := s.orderForDetail(id, actor, "")
+	if err != nil {
+		return nil, err
 	}
 	items, err := s.orderItems(id)
 	if err != nil {

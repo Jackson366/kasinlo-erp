@@ -2,6 +2,7 @@ package openplatform
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -20,7 +21,8 @@ type deviceRequest struct {
 
 type decisionRequest struct {
 	UserCode string `json:"userCode" binding:"required,len=12" label:"设备验证码"`
-	Approve  *bool `json:"approve" binding:"required" label:"授权决定"`
+	Approve  *bool  `json:"approve" binding:"required" label:"授权决定"`
+	Scope    string `json:"scope" label:"授权范围"`
 }
 
 func (h handler) inspect(c *gin.Context) {
@@ -50,13 +52,34 @@ func (h handler) decide(c *gin.Context) {
 		return
 	}
 	actor := middleware.CurrentIdentity(c)
-	if *in.Approve && !actor.HasAnyPerm("inv:stock:list") {
-		response.FailWith(c, errcode.ErrForbidden, "当前账号没有库存查询权限")
-		return
+	if in.Scope == "" {
+		in.Scope = "inventory.read"
+	}
+	if *in.Approve {
+		for _, scope := range strings.Split(in.Scope, " ") {
+			var permission string
+			switch scope {
+			case "inventory.read":
+				permission = "inv:stock:list"
+			case "product.read":
+				permission = "inv:product:list"
+			case "purchase.read":
+				permission = "inv:purchase:list"
+			case "sales.read":
+				permission = "inv:sales:list"
+			default:
+				response.FailWith(c, errcode.ErrBadRequest, "授权范围无效")
+				return
+			}
+			if !actor.HasAnyPerm(permission) {
+				response.FailWith(c, errcode.ErrForbidden, "当前账号没有所申请的查询权限")
+				return
+			}
+		}
 	}
 	var result map[string]bool
 	if err := h.bridge.call(c.Request.Context(), "device/decision",
-		request{UserID: actor.UserID, Epoch: actor.TokenEpoch, UserCode: in.UserCode, Approve: in.Approve}, &result); err != nil {
+		request{UserID: actor.UserID, Epoch: actor.TokenEpoch, UserCode: in.UserCode, Approve: in.Approve, Scope: in.Scope}, &result); err != nil {
 		response.Fail(c, err)
 		return
 	}

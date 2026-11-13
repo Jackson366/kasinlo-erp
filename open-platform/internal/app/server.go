@@ -21,10 +21,10 @@ import (
 const deviceGrant = "urn:ietf:params:oauth:grant-type:device_code"
 
 type Server struct {
-	Store oauth.Store
-	ERP erpclient.Client
+	Store           oauth.Store
+	ERP             erpclient.Client
 	VerificationURI string
-	BridgeSecret string
+	BridgeSecret    string
 }
 
 func (s Server) Handler() http.Handler {
@@ -34,7 +34,13 @@ func (s Server) Handler() http.Handler {
 	mux.HandleFunc("POST /oauth/token", s.token)
 	mux.HandleFunc("POST /oauth/revoke", s.revoke)
 	mux.HandleFunc("GET /oauth/status", s.status)
-	mux.HandleFunc("GET /openapi/v1/inventory", s.inventory)
+	mux.HandleFunc("GET /openapi/v1/inventory", s.read(erpclient.Inventory))
+	mux.HandleFunc("GET /openapi/v1/products", s.read(erpclient.Products))
+	mux.HandleFunc("GET /openapi/v1/products/{id}", s.read(erpclient.Product))
+	mux.HandleFunc("GET /openapi/v1/purchase-orders", s.read(erpclient.PurchaseOrders))
+	mux.HandleFunc("GET /openapi/v1/purchase-orders/{id}", s.read(erpclient.PurchaseOrder))
+	mux.HandleFunc("GET /openapi/v1/sales-orders", s.read(erpclient.SalesOrders))
+	mux.HandleFunc("GET /openapi/v1/sales-orders/{id}", s.read(erpclient.SalesOrder))
 	mux.HandleFunc("POST /internal/erp/device/inspect", s.bridge(s.inspect))
 	mux.HandleFunc("POST /internal/erp/device/decision", s.bridge(s.decide))
 	mux.HandleFunc("POST /internal/erp/grants/list", s.bridge(s.list))
@@ -88,11 +94,12 @@ func (s Server) start(w http.ResponseWriter, r *http.Request) {
 		reject(w, http.StatusBadRequest, "invalid_client")
 		return
 	}
-	if scope := r.PostForm.Get("scope"); scope != "" && scope != oauth.Scope {
+	scope, valid := oauth.NormalizeScope(r.PostForm.Get("scope"))
+	if !valid {
 		reject(w, http.StatusBadRequest, "invalid_scope")
 		return
 	}
-	device, code, err := s.Store.Start(r.Context())
+	device, code, err := s.Store.Start(r.Context(), scope)
 	if err != nil {
 		failure(w, "start_device_authorization", err)
 		return
@@ -120,7 +127,7 @@ func (s Server) token(w http.ResponseWriter, r *http.Request) {
 		reject(w, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	token, oauthError, err := s.Store.Poll(r.Context(), device)
+	token, scope, oauthError, err := s.Store.Poll(r.Context(), device)
 	if err != nil {
 		failure(w, "poll_device_authorization", err)
 		return
@@ -130,7 +137,7 @@ func (s Server) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token": token, "token_type": "Bearer", "scope": oauth.Scope,
+		"access_token": token, "token_type": "Bearer", "scope": scope,
 		"expires_in": int(oauth.AccessLifetime.Seconds()),
 	})
 }
@@ -186,38 +193,50 @@ func (s Server) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"clientId": grant.ClientID, "scope": oauth.Scope, "expiresAt": grant.ExpiresAt,
+		"clientId": grant.ClientID, "scope": grant.Scope, "expiresAt": grant.ExpiresAt,
 	})
 }
 
-func (s Server) inventory(w http.ResponseWriter, r *http.Request) {
-	grant, ok := s.activeGrant(w, r)
-	if !ok {
-		return
-	}
-	page, status, err := s.ERP.Inventory(r.Context(), grant, r.URL.Query())
-	if err != nil {
-		slog.Warn("ERP inventory request failed", "grant_id", grant.ID)
-		reject(w, http.StatusBadGateway, "erp_unavailable")
-		return
-	}
-	slog.Info("inventory requested", "grant_id", grant.ID, "user_id", grant.UserID, "status", status)
-	switch status {
-	case http.StatusUnauthorized:
-		reject(w, status, "erp_identity_invalid")
-	case http.StatusForbidden:
-		reject(w, status, "insufficient_permission")
-	default:
-		writeJSON(w, http.StatusOK, page)
+func (s Server) read(resource erpclient.Resource) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		grant, ok := s.activeGrant(w, r)
+		if !ok {
+			return
+		}
+		if !oauth.HasScope(grant.Scope, resource.Scope) {
+			reject(w, http.StatusForbidden, "insufficient_scope")
+			return
+		}
+
+		data, status, err := s.ERP.Read(r.Context(), grant, resource, r.PathValue("id"), r.URL.Query())
+		if err != nil {
+			slog.Warn("ERP read failed", "resource", resource.Path, "grant_id", grant.ID)
+			reject(w, http.StatusBadGateway, "erp_unavailable")
+			return
+		}
+		slog.Info("ERP read requested", "resource", resource.Path, "grant_id", grant.ID, "user_id", grant.UserID, "status", status)
+		switch status {
+		case http.StatusUnauthorized:
+			reject(w, status, "erp_identity_invalid")
+		case http.StatusForbidden:
+			reject(w, status, "insufficient_permission")
+		case http.StatusBadRequest:
+			reject(w, status, "invalid_request")
+		case http.StatusNotFound:
+			reject(w, status, "not_found")
+		default:
+			writeJSON(w, http.StatusOK, data)
+		}
 	}
 }
 
 type bridgeRequest struct {
-	UserID int64 `json:"userId"`
-	Epoch int64 `json:"epoch"`
+	UserID   int64  `json:"userId"`
+	Epoch    int64  `json:"epoch"`
 	UserCode string `json:"userCode"`
-	Approve *bool `json:"approve,omitempty"`
-	GrantID string `json:"grantId"`
+	Approve  *bool  `json:"approve,omitempty"`
+	Scope    string `json:"scope"`
+	GrantID  string `json:"grantId"`
 }
 
 func (s Server) bridge(next func(http.ResponseWriter, *http.Request, bridgeRequest)) http.HandlerFunc {
@@ -244,7 +263,7 @@ func (s Server) inspect(w http.ResponseWriter, r *http.Request, req bridgeReques
 		reject(w, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	expiry, err := s.Store.Pending(r.Context(), req.UserCode)
+	expiry, scope, err := s.Store.Pending(r.Context(), req.UserCode)
 	if errors.Is(err, sql.ErrNoRows) {
 		reject(w, http.StatusNotFound, "device_request_unavailable")
 		return
@@ -254,7 +273,7 @@ func (s Server) inspect(w http.ResponseWriter, r *http.Request, req bridgeReques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"clientId": oauth.ClientID, "scope": oauth.Scope, "expiresAt": expiry,
+		"clientId": oauth.ClientID, "scope": scope, "expiresAt": expiry,
 		"accessLifetimeSeconds": int(oauth.AccessLifetime.Seconds()),
 	})
 }
@@ -264,7 +283,12 @@ func (s Server) decide(w http.ResponseWriter, r *http.Request, req bridgeRequest
 		reject(w, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	ok, err := s.Store.Decide(r.Context(), req.UserCode, req.UserID, req.Epoch, *req.Approve)
+	scope, valid := oauth.NormalizeScope(req.Scope)
+	if !valid {
+		reject(w, http.StatusBadRequest, "invalid_scope")
+		return
+	}
+	ok, err := s.Store.Decide(r.Context(), req.UserCode, req.UserID, req.Epoch, *req.Approve, scope)
 	if err != nil {
 		failure(w, "decide_device_authorization", err)
 		return
