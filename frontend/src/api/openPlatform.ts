@@ -10,6 +10,7 @@ export interface DeviceAuthorization {
 export interface OpenPlatformGrant {
   id: string
   clientId: string
+  scope?: string
   expiresAt: string
 }
 
@@ -17,8 +18,8 @@ export const openPlatformApi = {
   inspect(userCode: string) {
     return http.post<DeviceAuthorization>('/open-platform/device/inspect', { userCode }, { silent: true })
   },
-  decide(userCode: string, approve: boolean) {
-    return http.post<void>('/open-platform/device/decision', { userCode, approve }, { silent: true })
+  decide(userCode: string, approve: boolean, scope: string) {
+    return http.post<void>('/open-platform/device/decision', { userCode, approve, scope }, { silent: true })
   },
   grants() {
     return http.get<OpenPlatformGrant[]>('/open-platform/grants', undefined, { silent: true })

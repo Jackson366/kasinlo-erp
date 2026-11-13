@@ -21,29 +21,29 @@ type Client struct {
 
 type APIError struct {
 	Status int
-	Code string
+	Code   string
 }
 
 func (e *APIError) Error() string { return e.Code }
 
 type Device struct {
-	DeviceCode string `json:"device_code"`
-	UserCode string `json:"user_code"`
+	DeviceCode      string `json:"device_code"`
+	UserCode        string `json:"user_code"`
 	VerificationURI string `json:"verification_uri"`
-	ExpiresIn int `json:"expires_in"`
-	Interval int `json:"interval"`
+	ExpiresIn       int    `json:"expires_in"`
+	Interval        int    `json:"interval"`
 }
 
 type Token struct {
 	AccessToken string `json:"access_token"`
-	TokenType string `json:"token_type"`
-	ExpiresIn int `json:"expires_in"`
-	Scope string `json:"scope"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int    `json:"expires_in"`
+	Scope       string `json:"scope"`
 }
 
 type Status struct {
-	ClientID string `json:"clientId"`
-	Scope string `json:"scope"`
+	ClientID  string    `json:"clientId"`
+	Scope     string    `json:"scope"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
@@ -67,7 +67,7 @@ func New(raw string) (*Client, error) {
 	return &Client{
 		base: strings.TrimRight(u.String(), "/"),
 		http: &http.Client{
-			Timeout: 20 * time.Second,
+			Timeout:       20 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}, nil
@@ -80,9 +80,9 @@ func isHex(s string, size int) bool {
 	return len(s) == size*2 && err == nil
 }
 
-func (c *Client) Start(ctx context.Context) (Device, error) {
+func (c *Client) Start(ctx context.Context, scope string) (Device, error) {
 	var out Device
-	err := c.form(ctx, "/oauth/device_authorization", url.Values{"scope": {"inventory.read"}}, &out)
+	err := c.form(ctx, "/oauth/device_authorization", url.Values{"scope": {scope}}, &out)
 	if err != nil {
 		return out, err
 	}
@@ -101,7 +101,7 @@ func (c *Client) Poll(ctx context.Context, deviceCode string) (Token, error) {
 		return out, err
 	}
 	if !isHex(out.AccessToken, 32) || !strings.EqualFold(out.TokenType, "Bearer") ||
-		out.Scope != "inventory.read" || out.ExpiresIn < 1 || out.ExpiresIn > 86400 {
+		!ValidScope(out.Scope) || out.ExpiresIn < 1 || out.ExpiresIn > 86400 {
 		return Token{}, errors.New("invalid access token response")
 	}
 	return out, nil
@@ -114,15 +114,29 @@ func (c *Client) Revoke(ctx context.Context, token string) error {
 func (c *Client) Status(ctx context.Context, token string) (Status, error) {
 	var out Status
 	err := c.request(ctx, http.MethodGet, "/oauth/status", token, nil, &out)
-	if err == nil && (out.ClientID != "kas" || out.Scope != "inventory.read" || out.ExpiresAt.IsZero()) {
+	if err == nil && (out.ClientID != "kas" || !ValidScope(out.Scope) || out.ExpiresAt.IsZero()) {
 		err = errors.New("invalid authorization status response")
 	}
 	return out, err
 }
 
-func (c *Client) Inventory(ctx context.Context, token string, query url.Values) (json.RawMessage, error) {
+func ValidScope(value string) bool {
+	for _, scope := range strings.Split(value, " ") {
+		switch scope {
+		case "inventory.read", "product.read", "purchase.read", "sales.read":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func (c *Client) Read(ctx context.Context, token, path string, query url.Values) (json.RawMessage, error) {
 	var out json.RawMessage
-	err := c.request(ctx, http.MethodGet, "/openapi/v1/inventory?"+query.Encode(), token, nil, &out)
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+	err := c.request(ctx, http.MethodGet, "/openapi/v1/"+path, token, nil, &out)
 	return out, err
 }
 
@@ -152,7 +166,9 @@ func (c *Client) request(ctx context.Context, method, path, token string, body i
 	defer resp.Body.Close()
 	limited := io.LimitReader(resp.Body, 2<<20)
 	if resp.StatusCode != http.StatusOK {
-		var envelope struct { Error string `json:"error"` }
+		var envelope struct {
+			Error string `json:"error"`
+		}
 		_ = json.NewDecoder(limited).Decode(&envelope)
 		switch envelope.Error {
 		case "authorization_pending", "slow_down", "access_denied", "expired_token", "invalid_token",

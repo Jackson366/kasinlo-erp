@@ -29,6 +29,20 @@ const expired = computed(() => !!pending.value && new Date(pending.value.details
 const activeGrants = computed(() => grants.value.filter((grant) => new Date(grant.expiresAt).getTime() > now.value))
 const accountName = computed(() => userStore.profile?.username || userStore.displayName)
 
+const scopeDetails: Record<string, { title: string; description: string }> = {
+  'inventory.read': { title: '查询库存', description: '查看商品、规格、基本单位和库存量。' },
+  'product.read': { title: '查询商品档案', description: '查看商品编码、名称、分类、规格和计量单位。' },
+  'purchase.read': { title: '查询采购单', description: '查看采购单状态、金额和商品明细。' },
+  'sales.read': { title: '查询销售单', description: '查看销售单状态、金额和商品明细。' },
+}
+
+const requestedScopes = computed(() => pending.value?.details.scope.split(' ') ?? [])
+const inventoryOnly = computed(() => pending.value?.details.scope === 'inventory.read')
+
+function scopeTitles(scope?: string) {
+  return (scope || 'inventory.read').split(' ').map((name) => scopeDetails[name]?.title ?? name).join('、')
+}
+
 function clientName(id: string) {
   return id === 'kas' ? 'kas CLI' : id
 }
@@ -93,7 +107,7 @@ async function decide(approve: boolean) {
   action.value = approve ? 'approve' : 'deny'
   error.value = ''
   try {
-    await openPlatformApi.decide(pending.value.code, approve)
+    await openPlatformApi.decide(pending.value.code, approve, pending.value.details.scope)
     pending.value = undefined
     code.value = ''
     result.value = approve ? 'approved' : 'denied'
@@ -185,17 +199,17 @@ onUnmounted(() => { if (clock) clearInterval(clock) })
 
             <template v-else-if="pending">
               <div class="authorize-symbol" aria-hidden="true"><AppIcon name="Key" /></div>
-              <h2 ref="stageHeading" tabindex="-1">允许 {{ clientName(pending.details.clientId) }} 访问库存？</h2>
+              <h2 ref="stageHeading" tabindex="-1">允许 {{ clientName(pending.details.clientId) }} {{ inventoryOnly ? '访问库存' : '查询 ERP 数据' }}？</h2>
               <p class="authorize-description">工具将代表账号 <strong>{{ accountName }}</strong> 执行以下操作。</p>
-              <div class="authorize-permission">
+              <div v-for="scope in requestedScopes" :key="scope" class="authorize-permission">
                 <AppIcon name="View" aria-hidden="true" />
                 <div>
-                  <h3>{{ pending.details.scope === 'inventory.read' ? '查询库存' : pending.details.scope }}</h3>
-                  <p v-if="pending.details.scope === 'inventory.read'">查看商品、规格、基本单位和库存量。</p>
-                  <p>访问范围受当前 ERP 账号的权限限制。</p>
+                  <h3>{{ scopeDetails[scope]?.title ?? scope }}</h3>
+                  <p v-if="scopeDetails[scope]">{{ scopeDetails[scope].description }}</p>
                 </div>
-                <span class="authorize-badge">{{ pending.details.scope === 'inventory.read' ? '只读' : '申请权限' }}</span>
+                <span class="authorize-badge">只读</span>
               </div>
+              <p class="authorize-hint">访问范围受当前 ERP 账号的权限限制。</p>
               <dl class="authorize-facts">
                 <div><dt>凭据有效期</dt><dd>领取后 {{ lifetime(pending.details.accessLifetimeSeconds) }}</dd></div>
                 <div><dt>请求截止时间</dt><dd>{{ formatDate(pending.details.expiresAt) }}</dd></div>
@@ -205,7 +219,7 @@ onUnmounted(() => { if (clock) clearInterval(clock) })
               <div v-if="expired" class="authorize-notice authorize-notice--warning" role="alert"><AppIcon name="WarningFilled" aria-hidden="true" /><div><strong>这次授权请求已过期</strong><p>请在终端重新发起登录，获取新的验证码。</p></div></div>
               <p v-else-if="error" class="authorize-error" role="alert"><AppIcon name="WarningFilled" aria-hidden="true" />{{ error }}</p>
               <div v-if="!expired" class="authorize-decisions">
-                <el-button type="primary" :loading="action === 'approve'" :disabled="action === 'deny'" @click="decide(true)">{{ pending.details.scope === 'inventory.read' ? '允许查询库存' : '允许授权' }}</el-button>
+                <el-button type="primary" :loading="action === 'approve'" :disabled="action === 'deny'" @click="decide(true)">{{ inventoryOnly ? '允许查询库存' : '允许查询' }}</el-button>
                 <el-button :loading="action === 'deny'" :disabled="action === 'approve'" @click="decide(false)">拒绝授权</el-button>
               </div>
               <el-button v-else @click="restart">输入新的验证码</el-button>
@@ -242,7 +256,7 @@ onUnmounted(() => { if (clock) clearInterval(clock) })
           <ul v-if="activeGrants.length" class="authorize-grant-list">
             <li v-for="grant in activeGrants" :key="grant.id">
               <div class="authorize-grant-icon" aria-hidden="true"><AppIcon name="Monitor" /></div>
-              <div class="authorize-grant-info"><h3>{{ clientName(grant.clientId) }}<span class="authorize-badge">已授权</span></h3><p>到期时间：{{ formatDate(grant.expiresAt) }}</p><details><summary>授权标识</summary><code>{{ grant.id }}</code></details></div>
+              <div class="authorize-grant-info"><h3>{{ clientName(grant.clientId) }}<span class="authorize-badge">已授权</span></h3><p>{{ scopeTitles(grant.scope) }}</p><p>到期时间：{{ formatDate(grant.expiresAt) }}</p><details><summary>授权标识</summary><code>{{ grant.id }}</code></details></div>
               <el-button class="authorize-revoke" :aria-label="`撤销 ${clientName(grant.clientId)} 的授权 ${grant.id.slice(0, 8)}`" @click="revokeTarget = grant">撤销授权</el-button>
             </li>
           </ul>

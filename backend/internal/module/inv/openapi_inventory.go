@@ -5,12 +5,13 @@ import (
 
 	"nova-erp/internal/config"
 	"nova-erp/internal/middleware"
+	"nova-erp/internal/model"
 	"nova-erp/internal/module"
 	"nova-erp/internal/pkg/page"
 	"nova-erp/internal/pkg/response"
 )
 
-// PlatformInventoryModule exposes the read-only inventory integration when configured.
+// PlatformInventoryModule exposes the read-only ERP integration when configured.
 func PlatformInventoryModule(cfg config.OpenPlatformConfig) (module.Module, bool) {
 	if cfg.Secret == "" {
 		return module.Module{}, false
@@ -19,11 +20,24 @@ func PlatformInventoryModule(cfg config.OpenPlatformConfig) (module.Module, bool
 		Namespace: "inv",
 		Register: func(rg *gin.RouterGroup) {
 			h := NewHandler(NewService())
-			rg.GET("/internal/open-platform/inventory",
-				middleware.PlatformAuth([]byte(cfg.Secret), cfg.Issuer, cfg.Audience, "inventory.read"),
-				middleware.RequirePerm("inv:stock:list"),
-				h.platformInventory,
-			)
+			register := func(scope, permission string) *gin.RouterGroup {
+				return rg.Group("/internal/open-platform",
+					middleware.PlatformAuth([]byte(cfg.Secret), cfg.Issuer, cfg.Audience, scope),
+					middleware.RequirePerm(permission))
+			}
+			register("inventory.read", "inv:stock:list").GET("/inventory", h.platformInventory)
+
+			products := register("product.read", "inv:product:list")
+			products.GET("/products", h.platformProducts)
+			products.GET("/products/:id", h.platformProduct)
+
+			purchase := register("purchase.read", "inv:purchase:list")
+			purchase.GET("/purchase-orders", h.platformOrders(model.InvBizPurchase))
+			purchase.GET("/purchase-orders/:id", h.platformOrder(model.InvBizPurchase))
+
+			sales := register("sales.read", "inv:sales:list")
+			sales.GET("/sales-orders", h.platformOrders(model.InvBizSales))
+			sales.GET("/sales-orders/:id", h.platformOrder(model.InvBizSales))
 		},
 	}, true
 }

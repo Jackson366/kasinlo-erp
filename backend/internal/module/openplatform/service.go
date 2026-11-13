@@ -12,29 +12,31 @@ import (
 )
 
 type bridge struct {
-	url string
+	url    string
 	secret string
 	client *http.Client
 }
 
 type request struct {
-	UserID int64 `json:"userId"`
-	Epoch int64 `json:"epoch"`
+	UserID   int64  `json:"userId"`
+	Epoch    int64  `json:"epoch"`
 	UserCode string `json:"userCode,omitempty"`
-	Approve *bool `json:"approve,omitempty"`
-	GrantID string `json:"grantId,omitempty"`
+	Approve  *bool  `json:"approve,omitempty"`
+	Scope    string `json:"scope,omitempty"`
+	GrantID  string `json:"grantId,omitempty"`
 }
 
 type deviceDetails struct {
-	ClientID string `json:"clientId"`
-	Scope string `json:"scope"`
-	ExpiresAt time.Time `json:"expiresAt"`
-	AccessLifetimeSeconds int `json:"accessLifetimeSeconds"`
+	ClientID              string    `json:"clientId"`
+	Scope                 string    `json:"scope"`
+	ExpiresAt             time.Time `json:"expiresAt"`
+	AccessLifetimeSeconds int       `json:"accessLifetimeSeconds"`
 }
 
 type grant struct {
-	ID string `json:"id"`
-	ClientID string `json:"clientId"`
+	ID        string    `json:"id"`
+	ClientID  string    `json:"clientId"`
+	Scope     string    `json:"scope"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 

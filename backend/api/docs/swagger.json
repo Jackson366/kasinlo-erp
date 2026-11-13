@@ -183,6 +183,414 @@
                 }
             }
         },
+        "/internal/open-platform/products": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询商品档案",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "编码、名称、条码或规格",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "商品状态",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "分类 ID",
+                        "name": "categoryId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.platformProductRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/open-platform/products/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询商品详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "商品 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.platformProductDetail"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/open-platform/purchase-orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询采购或销售单据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "单号、往来单位或业务员",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "单据状态",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结算状态",
+                        "name": "settleStatus",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "起始单据日期",
+                        "name": "startDate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束单据日期",
+                        "name": "endDate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.platformOrderRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/open-platform/purchase-orders/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询采购或销售单据详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "单据 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.platformOrderDetail"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/open-platform/sales-orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询采购或销售单据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "单号、往来单位或业务员",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "单据状态",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结算状态",
+                        "name": "settleStatus",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "起始单据日期",
+                        "name": "startDate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束单据日期",
+                        "name": "endDate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.platformOrderRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/open-platform/sales-orders/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询采购或销售单据详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "单据 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.platformOrderDetail"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/inv/attachments": {
             "get": {
                 "security": [
@@ -9682,6 +10090,186 @@
                 },
                 "unitBase": {
                     "description": "基本单位名，用于把基本数量写清楚",
+                    "type": "string"
+                }
+            }
+        },
+        "inv.platformOrderDetail": {
+            "type": "object",
+            "properties": {
+                "bizType": {
+                    "type": "string"
+                },
+                "dueDate": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "itemCount": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.OrderItemVO"
+                    }
+                },
+                "orderDate": {
+                    "type": "string"
+                },
+                "orderNo": {
+                    "type": "string"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "settleStatus": {
+                    "type": "string"
+                },
+                "settledAmount": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "totalAmount": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.platformOrderRow": {
+            "type": "object",
+            "properties": {
+                "bizType": {
+                    "type": "string"
+                },
+                "dueDate": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "itemCount": {
+                    "type": "integer"
+                },
+                "orderDate": {
+                    "type": "string"
+                },
+                "orderNo": {
+                    "type": "string"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "settleStatus": {
+                    "type": "string"
+                },
+                "settledAmount": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "totalAmount": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.platformProductDetail": {
+            "type": "object",
+            "properties": {
+                "barcode": {
+                    "type": "string"
+                },
+                "categoryId": {
+                    "type": "integer"
+                },
+                "categoryName": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "specs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.platformProductSpec"
+                    }
+                },
+                "status": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.platformProductRow": {
+            "type": "object",
+            "properties": {
+                "barcode": {
+                    "type": "string"
+                },
+                "categoryId": {
+                    "type": "integer"
+                },
+                "categoryName": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.platformProductSpec": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "spec": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "units": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.platformProductUnit"
+                    }
+                }
+            }
+        },
+        "inv.platformProductUnit": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "isBase": {
+                    "type": "boolean"
+                },
+                "rate": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "unit": {
                     "type": "string"
                 }
             }

@@ -19,16 +19,22 @@ import (
 	"kasinlo-cli/internal/credential"
 )
 
-const usage = `kas [--server URL] [--profile NAME] auth login [--no-wait | --session ID]
+const usage = `kas [--server URL] [--profile NAME] auth login [--scope "inventory.read product.read purchase.read sales.read"] [--no-wait | --session ID]
 kas [--server URL] [--profile NAME] auth status
 kas [--server URL] [--profile NAME] auth logout
 kas [--server URL] [--profile NAME] inventory list [--keyword TEXT] [--page N] [--page-size N]
+kas [--server URL] [--profile NAME] product list [--keyword TEXT] [--status 0|1] [--category-id ID] [--page N] [--page-size N]
+kas [--server URL] [--profile NAME] product get --id ID
+kas [--server URL] [--profile NAME] purchase list [--keyword TEXT] [--status 1..5] [--settle-status STATUS] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--page N] [--page-size N]
+kas [--server URL] [--profile NAME] purchase get --id ID
+kas [--server URL] [--profile NAME] sales list [--keyword TEXT] [--status 1..5] [--settle-status STATUS] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--page N] [--page-size N]
+kas [--server URL] [--profile NAME] sales get --id ID
 `
 
 type problem struct {
-	code string
+	code    string
 	message string
-	exit int
+	exit    int
 }
 
 func (p *problem) Error() string { return p.message }
@@ -57,6 +63,12 @@ func classify(err error) *problem {
 		switch {
 		case api.Code == "access_denied" || api.Code == "expired_token" || api.Status == http.StatusUnauthorized:
 			return &problem{api.Code, "authorization is unavailable; run kas auth login", 3}
+		case api.Code == "insufficient_scope":
+			return &problem{api.Code, "this grant lacks the required scope; use a separately authorized profile or log out and request the scope", 4}
+		case api.Status == http.StatusBadRequest:
+			return &problem{api.Code, "invalid request parameters; check kas --help", 2}
+		case api.Status == http.StatusNotFound:
+			return &problem{api.Code, "record not found in the accessible data", 1}
 		case api.Status == http.StatusForbidden:
 			return &problem{api.Code, "the ERP user cannot perform this action", 4}
 		default:
@@ -88,7 +100,7 @@ func execute(ctx context.Context, args []string, out, diag io.Writer) error {
 		return usageError("expected a command; run kas --help")
 	}
 	switch args[0] + " " + args[1] {
-	case "auth login", "auth status", "auth logout", "inventory list":
+	case "auth login", "auth status", "auth logout", "inventory list", "product list", "product get", "purchase list", "purchase get", "sales list", "sales get":
 	default:
 		return usageError("unknown command; run kas --help")
 	}
@@ -125,15 +137,16 @@ func execute(ctx context.Context, args []string, out, diag io.Writer) error {
 		}
 		return logout(ctx, api, store, out)
 	default:
-		return inventory(ctx, api, store, args[2:], out)
+		return read(ctx, api, store, args, out)
 	}
 }
 
 type loginSession struct {
-	VerificationURI string `json:"verification_uri"`
-	UserCode string `json:"user_code"`
-	SessionID string `json:"session_id"`
-	ExpiresAt time.Time `json:"expires_at"`
+	VerificationURI string    `json:"verification_uri"`
+	UserCode        string    `json:"user_code"`
+	SessionID       string    `json:"session_id"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	Scope           string    `json:"scope"`
 }
 
 func login(ctx context.Context, api *client.Client, store credential.Store, args []string, out, diag io.Writer) error {
@@ -141,11 +154,19 @@ func login(ctx context.Context, api *client.Client, store credential.Store, args
 	flags.SetOutput(io.Discard)
 	noWait := flags.Bool("no-wait", false, "return a local session ID")
 	session := flags.String("session", "", "resume a pending authorization")
+	scope := flags.String("scope", "", "space-separated read scopes")
 	if err := flags.Parse(args); err != nil {
 		return usageError(err.Error())
 	}
-	if flags.NArg() != 0 || *noWait && *session != "" {
-		return usageError("use auth login with --no-wait or --session ID")
+	if flags.NArg() != 0 || *session != "" && (*noWait || *scope != "") {
+		return usageError("use auth login with --scope and/or --no-wait, or resume with --session ID")
+	}
+	*scope = strings.Join(strings.Fields(*scope), " ")
+	if *scope == "" {
+		*scope = "inventory.read"
+	}
+	if !client.ValidScope(*scope) {
+		return usageError("unknown authorization scope; run kas --help")
 	}
 
 	current, err := store.Credential()
@@ -162,21 +183,21 @@ func login(ctx context.Context, api *client.Client, store credential.Store, args
 
 	var pending credential.Pending
 	if *session == "" {
-		device, err := api.Start(ctx)
+		device, err := api.Start(ctx, *scope)
 		if err != nil {
 			return err
 		}
 		pending = credential.Pending{
 			DeviceCode: device.DeviceCode,
-			ExpiresAt: time.Now().Add(time.Duration(device.ExpiresIn) * time.Second),
-			Interval: device.Interval,
+			ExpiresAt:  time.Now().Add(time.Duration(device.ExpiresIn) * time.Second),
+			Interval:   device.Interval,
 		}
 		id, err := store.SavePending(pending)
 		if err != nil {
 			return err
 		}
 		*session = id
-		info := loginSession{device.VerificationURI, device.UserCode, id, pending.ExpiresAt}
+		info := loginSession{device.VerificationURI, device.UserCode, id, pending.ExpiresAt, *scope}
 		if *noWait {
 			return json.NewEncoder(out).Encode(info)
 		}
@@ -298,30 +319,79 @@ func logout(ctx context.Context, api *client.Client, store credential.Store, out
 	return json.NewEncoder(out).Encode(map[string]bool{"logged_out": true})
 }
 
-func inventory(ctx context.Context, api *client.Client, store credential.Store, args []string, out io.Writer) error {
-	flags := flag.NewFlagSet("inventory list", flag.ContinueOnError)
+func read(ctx context.Context, api *client.Client, store credential.Store, args []string, out io.Writer) error {
+	var path string
+	switch args[0] {
+	case "inventory":
+		path = "inventory"
+	case "product":
+		path = "products"
+	case "purchase":
+		path = "purchase-orders"
+	case "sales":
+		path = "sales-orders"
+	}
+
+	flags := flag.NewFlagSet(args[0]+" "+args[1], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	keyword := flags.String("keyword", "", "product code, name or spec")
-	page := flags.Int("page", 1, "page number")
-	size := flags.Int("page-size", 10, "page size")
-	if err := flags.Parse(args); err != nil {
-		return usageError(err.Error())
+	var query url.Values
+	if args[1] == "get" {
+		id := flags.Int64("id", 0, "record ID")
+		if err := flags.Parse(args[2:]); err != nil {
+			return usageError(err.Error())
+		}
+		if flags.NArg() != 0 || *id <= 0 {
+			return usageError("use --id with a positive record ID")
+		}
+		path += "/" + strconv.FormatInt(*id, 10)
+	} else {
+		var err error
+		query, err = listQuery(flags, args[0], args[2:])
+		if err != nil {
+			return err
+		}
 	}
-	if flags.NArg() != 0 || *page < 1 || *size < 1 || *size > 200 || len(*keyword) > 500 {
-		return usageError("use a positive page, page-size between 1 and 200, and keyword up to 500 bytes")
-	}
+
 	current, err := store.Credential()
 	if errors.Is(err, os.ErrNotExist) || err == nil && !time.Now().Before(current.ExpiresAt) {
-		return &problem{"not_logged_in", "run kas auth login before querying inventory", 3}
+		return &problem{"not_logged_in", "run kas auth login before querying " + path, 3}
 	}
 	if err != nil {
 		return err
 	}
-	data, err := api.Inventory(ctx, current.Token, url.Values{
-		"page": {strconv.Itoa(*page)}, "pageSize": {strconv.Itoa(*size)}, "keyword": {*keyword},
-	})
+	data, err := api.Read(ctx, current.Token, path, query)
 	if err != nil {
 		return err
 	}
 	return json.NewEncoder(out).Encode(data)
+}
+
+func listQuery(flags *flag.FlagSet, resource string, args []string) (url.Values, error) {
+	keyword := flags.String("keyword", "", "search term")
+	page := flags.Int("page", 1, "page number")
+	size := flags.Int("page-size", 10, "page size")
+	filters := map[string]*string{}
+	switch resource {
+	case "product":
+		filters["status"] = flags.String("status", "", "product status")
+		filters["categoryId"] = flags.String("category-id", "", "product category ID")
+	case "purchase", "sales":
+		filters["status"] = flags.String("status", "", "order status")
+		filters["settleStatus"] = flags.String("settle-status", "", "unpaid, partial or paid")
+		filters["startDate"] = flags.String("start-date", "", "start date, inclusive")
+		filters["endDate"] = flags.String("end-date", "", "end date, inclusive")
+	}
+	if err := flags.Parse(args); err != nil {
+		return nil, usageError(err.Error())
+	}
+	if flags.NArg() != 0 || *page < 1 || *size < 1 || *size > 200 || len(*keyword) > 500 {
+		return nil, usageError("use a positive page, page-size between 1 and 200, and keyword up to 500 bytes")
+	}
+	query := url.Values{"page": {strconv.Itoa(*page)}, "pageSize": {strconv.Itoa(*size)}, "keyword": {*keyword}}
+	for name, value := range filters {
+		if *value != "" {
+			query.Set(name, *value)
+		}
+	}
+	return query, nil
 }

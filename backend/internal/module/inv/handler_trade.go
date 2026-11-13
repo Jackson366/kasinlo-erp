@@ -31,28 +31,34 @@ func (h *Handler) OrderList(c *gin.Context) {
 		return
 	}
 	q := page.FromContext(c)
-	status, err := orderStatusQuery(c)
+	filter, err := readOrderFilter(c, bizType)
 	if err != nil {
 		response.Fail(c, err)
 		return
 	}
-	settle, err := settleQuery(c)
-	if err != nil {
-		response.Fail(c, err)
-		return
-	}
-	start, end, err := orderRangeQuery(c)
-	if err != nil {
-		response.Fail(c, err)
-		return
-	}
-	filter := OrderFilter{BizType: bizType, Status: status, Settle: settle, Start: start, End: end, Handoff: c.Query("handoff")}
+	filter.Handoff = c.Query("handoff")
 	list, total, err := h.svc.OrderList(filter, q, middleware.CurrentIdentity(c))
 	if err != nil {
 		response.Fail(c, err)
 		return
 	}
 	response.OKPage(c, list, total, q.Page, q.PageSize)
+}
+
+func readOrderFilter(c *gin.Context, bizType string) (OrderFilter, error) {
+	status, err := orderStatusQuery(c)
+	if err != nil {
+		return OrderFilter{}, err
+	}
+	settle, err := settleQuery(c)
+	if err != nil {
+		return OrderFilter{}, err
+	}
+	start, end, err := orderRangeQuery(c)
+	if err != nil {
+		return OrderFilter{}, err
+	}
+	return OrderFilter{BizType: bizType, Status: status, Settle: settle, Start: start, End: end}, nil
 }
 
 // OrderDetail 单据详情
