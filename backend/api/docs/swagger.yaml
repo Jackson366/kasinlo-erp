@@ -601,6 +601,8 @@ definitions:
         items:
           $ref: '#/definitions/inv.OrderItemVO'
         type: array
+      linkedOrder:
+        $ref: '#/definitions/inv.RedReversalOrderLink'
       operator:
         description: Operator 制单人显示名（昵称优先，回落用户名）。列表直接用，省得前端再查一次人。
         type: string
@@ -783,6 +785,8 @@ definitions:
     type: object
   inv.OrderStockLink:
     properties:
+      direction:
+        type: string
       id:
         type: integer
       orderNo:
@@ -1166,6 +1170,50 @@ definitions:
         type: number
       status:
         type: integer
+      unit:
+        type: string
+    type: object
+  inv.RedReversalOrderLink:
+    properties:
+      id:
+        type: integer
+      orderNo:
+        type: string
+    type: object
+  inv.RedReversalPreview:
+    properties:
+      blockReason:
+        type: string
+      direction:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/inv.RedReversalStockLine'
+        type: array
+      outstanding:
+        type: number
+      stockOrderId:
+        type: integer
+    type: object
+  inv.RedReversalRequest:
+    properties:
+      reason:
+        maxLength: 255
+        type: string
+      stockOrderId:
+        type: integer
+    required:
+    - reason
+    - stockOrderId
+    type: object
+  inv.RedReversalStockLine:
+    properties:
+      productName:
+        type: string
+      qty:
+        type: number
+      spec:
+        type: string
       unit:
         type: string
     type: object
@@ -1557,6 +1605,8 @@ definitions:
         type: string
       id:
         type: integer
+      isReversal:
+        type: boolean
       itemCount:
         type: integer
       operator:
@@ -1565,6 +1615,8 @@ definitions:
       orderDate:
         type: string
       orderNo:
+        type: string
+      originalStockNo:
         type: string
       remark:
         type: string
@@ -3551,7 +3603,7 @@ paths:
         in: query
         name: keyword
         type: string
-      - description: 1 待处理 2 已审核 3 已取消
+      - description: 1 待处理 2 已审核 3 已取消 4 已红冲 5 红冲单
         in: query
         name: status
         type: integer
@@ -3679,6 +3731,71 @@ paths:
       security:
       - BearerAuth: []
       summary: 修改单据
+      tags:
+      - 进销存-单据
+  /inv/orders/{id}/red-reversal:
+    get:
+      parameters:
+      - description: 原单 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.RedReversalPreview'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 预览整单红冲影响
+      tags:
+      - 进销存-单据
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 原单 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 原出入库单和红冲原因
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.RedReversalRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.RedReversalOrderLink'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 整单红冲
       tags:
       - 进销存-单据
   /inv/orders/{id}/reverse:

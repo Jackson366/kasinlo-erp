@@ -123,6 +123,7 @@ const visibleHistory = computed(() =>
           · 请由财务核查并登记实际付款</span
         >
       </div>
+      <div v-else-if="order.status === 4">应付已冲销 · 未付款 {{ formatMoney(0) }}</div>
       <div v-else>尚未形成应付</div>
     </div>
     <el-collapse v-model="expanded" class="order-audit-history">
@@ -132,7 +133,7 @@ const visibleHistory = computed(() =>
       >
         <p v-if="!history.length">
           {{
-            order.status === 2 || order.reversedAt
+            order.status === 2 || order.status === 4 || order.reversedAt
               ? '历史数据未记录'
               : '暂无审核记录；历史数据如有缺失，不作补录推断。'
           }}
@@ -140,7 +141,7 @@ const visibleHistory = computed(() =>
         <el-table v-else :data="visibleHistory" size="small">
           <el-table-column label="操作" width="100"
             ><template #default="{ row }">{{
-              row.action === 'audit' ? '审核' : '反审核'
+              row.action === 'audit' ? '审核' : row.action === 'red-reverse' ? '整单红冲' : '反审核'
             }}</template></el-table-column
           >
           <el-table-column label="操作人" min-width="120"

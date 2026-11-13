@@ -60,6 +60,8 @@ func Register(rg *gin.RouterGroup) {
 		g.DELETE("/orders/:id", middleware.RequirePerm("inv:purchase:delete", "inv:sales:delete"), h.OrderDelete)
 		g.PUT("/orders/:id/status", middleware.RequirePerm("inv:purchase:finish", "inv:sales:finish"), h.OrderChangeStatus)
 		g.PUT("/orders/:id/reverse", middleware.RequirePerm("inv:purchase:finish", "inv:sales:finish"), h.OrderReverse)
+		g.GET("/orders/:id/red-reversal", middleware.RequirePerm("inv:purchase:reverse", "inv:sales:reverse"), h.OrderRedReversalPreview)
+		g.POST("/orders/:id/red-reversal", middleware.RequirePerm("inv:purchase:reverse", "inv:sales:reverse"), h.OrderRedReversal)
 
 		// 合同台账
 		//

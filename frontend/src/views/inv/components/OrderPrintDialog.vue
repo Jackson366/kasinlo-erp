@@ -63,6 +63,7 @@ const missingStamp = computed(
  * 不必让用户为了一个抬头再去改标题。
  */
 const title = computed(() => {
+  if (detail.value?.status === 5) return props.bizType === 'purchase' ? '采购红冲单' : '销售红冲单'
   if (cfg.value.title) return cfg.value.title
   const dt = currentTemplate.value?.docType || ''
   if (/采购|销售/.test(dt)) return dt

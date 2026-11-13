@@ -32,6 +32,7 @@ import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import AttachmentDrawer from './AttachmentDrawer.vue'
 import PurchaseWorkbench from './PurchaseWorkbench.vue'
 import OrderDetailContent from './OrderDetailContent.vue'
+import OrderRedReversalDialog from './OrderRedReversalDialog.vue'
 import BatchResultDialog from '@/components/BatchResultDialog.vue'
 import { statusMeta, settleMeta, pendingAge } from './orderPresentation'
 import {
@@ -119,7 +120,7 @@ const {
         : '',
     status: isWorkbench.value
       ? 1
-      : [1, 2, 3].includes(Number(route.query.status))
+      : [1, 2, 3, 4, 5].includes(Number(route.query.status))
         ? Number(route.query.status)
         : undefined,
     settleStatus:
@@ -487,6 +488,17 @@ const listDetailPanel = ref<HTMLElement>()
 const listDetailTrigger = ref<HTMLElement | null>(null)
 const listDetailScroll = ref(0)
 const detail = ref<{ row: InvOrderDetail; items: InvOrderItem[] } | null>(null)
+const redReversalDialog = ref<InstanceType<typeof OrderRedReversalDialog>>()
+const canRedReverse = computed(() => userStore.hasAnyPerm([`inv:${props.bizType}:reverse`]))
+
+function openRedReversal(order: InvOrderDetail): void {
+  redReversalDialog.value?.open(order)
+}
+
+async function refreshAfterRedReversal(id: number): Promise<void> {
+  if (detailTarget.value?.id === id) await openDetail({ id })
+  await load()
+}
 
 const printRef = ref<InstanceType<typeof OrderPrintDialog> | null>(null)
 
@@ -876,7 +888,7 @@ async function confirmApprove(): Promise<void> {
 
 async function changeStatus(
   row: InvOrderRow,
-  status: InvOrderStatus,
+  status: Extract<InvOrderStatus, 1 | 2 | 3>,
 ): Promise<void> {
   if (status === 2) {
     openApprove(row)
@@ -1069,7 +1081,7 @@ const printColumns = computed<ListPrintColumn<InvOrderRow>[]>(() => [
   {
     label: isPurchase.value ? '付款状态' : '结算',
     value: (r) =>
-      isPurchase.value && r.status !== 2
+      isPurchase.value && r.status < 4 && r.status !== 2
         ? r.status === 1
           ? '审核后形成应付'
           : '—'
@@ -1182,7 +1194,7 @@ async function consumeLinkedOrder(): Promise<void> {
         : [],
     status: isWorkbench.value
       ? 1
-      : [1, 2, 3].includes(Number(route.query.status))
+      : [1, 2, 3, 4, 5].includes(Number(route.query.status))
         ? Number(route.query.status)
         : undefined,
     settleStatus:
@@ -1333,6 +1345,9 @@ function onKeywordInput(): void {
               :party-label="partyLabel"
               :is-purchase="true"
               :picks="picks"
+              :can-red-reverse="canRedReverse"
+              @red-reverse="openRedReversal"
+              @open-linked="openDetail"
             />
             <p v-if="detail.row.status === 1" class="purchase-impact">
               审核后增加库存并形成应付，请确认货物已实际到达。
@@ -1431,6 +1446,8 @@ function onKeywordInput(): void {
                 <el-option label="待处理" :value="1" />
                 <el-option label="已审核" :value="2" />
                 <el-option label="已取消" :value="3" />
+                <el-option label="已红冲" :value="4" />
+                <el-option label="红冲单" :value="5" />
               </el-select>
             </el-form-item>
             <el-form-item v-if="!isWorkbench" :label="isPurchase ? '付款状态' : '结算状态'">
@@ -1533,6 +1550,9 @@ function onKeywordInput(): void {
               :party-label="partyLabel"
               :is-purchase="true"
               :picks="picks"
+              :can-red-reverse="canRedReverse"
+              @red-reverse="openRedReversal"
+              @open-linked="openDetail"
             />
             <p v-if="detail.row.status === 1" class="purchase-impact">
               审核后增加库存并形成应付，请确认货物已实际到达。
@@ -1677,7 +1697,7 @@ function onKeywordInput(): void {
       >
         <template #default="{ row }">
           <span
-            v-if="isPurchase && row.status !== 2"
+            v-if="isPurchase && row.status < 4 && row.status !== 2"
             class="text-secondary"
             >{{ row.status === 1 ? '审核后形成应付' : '—' }}</span
           >
@@ -2064,6 +2084,9 @@ function onKeywordInput(): void {
           :party-label="partyLabel"
           :is-purchase="false"
           :picks="picks"
+          :can-red-reverse="canRedReverse"
+          @red-reverse="openRedReversal"
+          @open-linked="openDetail"
         />
       </template>
 
@@ -2083,6 +2106,8 @@ function onKeywordInput(): void {
         >
       </template>
     </el-dialog>
+
+    <OrderRedReversalDialog ref="redReversalDialog" @completed="refreshAfterRedReversal" />
 
     <!-- 打印 -->
     <OrderPrintDialog

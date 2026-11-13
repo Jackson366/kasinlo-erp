@@ -342,11 +342,38 @@ type OrderDetail struct {
 	Items        []OrderItemVO         `json:"items"`
 	AuditHistory []model.InvOrderAudit `json:"auditHistory"`
 	Downstream   OrderDownstream       `json:"downstream"`
+	LinkedOrder  *RedReversalOrderLink `json:"linkedOrder,omitempty"`
 }
-type OrderStockLink struct {
+
+type RedReversalOrderLink struct {
 	ID      int64  `json:"id"`
 	OrderNo string `json:"orderNo"`
-	Status  int16  `json:"status"`
+}
+
+type RedReversalRequest struct {
+	StockOrderID int64  `json:"stockOrderId" binding:"required,gt=0" label:"原出入库单"`
+	Reason       string `json:"reason" binding:"required,max=255" label:"红冲原因"`
+}
+
+type RedReversalStockLine struct {
+	ProductName string  `json:"productName"`
+	Spec        string  `json:"spec"`
+	Qty         float64 `json:"qty"`
+	Unit        string  `json:"unit"`
+}
+
+type RedReversalPreview struct {
+	StockOrderID int64                  `json:"stockOrderId"`
+	Direction    string                 `json:"direction"`
+	Outstanding  float64                `json:"outstanding"`
+	Items        []RedReversalStockLine `json:"items"`
+	BlockReason  string                 `json:"blockReason,omitempty"`
+}
+type OrderStockLink struct {
+	ID        int64  `json:"id"`
+	OrderNo   string `json:"orderNo"`
+	Status    int16  `json:"status"`
+	Direction string `json:"direction"`
 }
 type OrderDownstream struct {
 	Visibility  string           `json:"visibility"`
@@ -387,17 +414,19 @@ type StockOrderReq struct {
 
 // StockOrderRow 出入库单据列表行。
 type StockOrderRow struct {
-	ID         int64     `json:"id"`
-	OrderNo    string    `json:"orderNo"`
-	Direction  string    `json:"direction"`
-	SourceType string    `json:"sourceType"`
-	SourceID   int64     `json:"sourceId"`
-	OrderDate  time.Time `json:"orderDate"`
-	Status     int16     `json:"status"`
-	ItemCount  int64     `json:"itemCount"`
-	TotalQty   float64   `json:"totalQty"`
-	Remark     string    `json:"remark"`
-	Salesman   string    `json:"salesman"`
+	ID              int64     `json:"id"`
+	OrderNo         string    `json:"orderNo"`
+	Direction       string    `json:"direction"`
+	SourceType      string    `json:"sourceType"`
+	SourceID        int64     `json:"sourceId"`
+	OriginalStockNo string    `json:"originalStockNo,omitempty"`
+	IsReversal      bool      `json:"isReversal"`
+	OrderDate       time.Time `json:"orderDate"`
+	Status          int16     `json:"status"`
+	ItemCount       int64     `json:"itemCount"`
+	TotalQty        float64   `json:"totalQty"`
+	Remark          string    `json:"remark"`
+	Salesman        string    `json:"salesman"`
 	// Operator 制单人显示名（昵称优先，回落用户名）
 	Operator  string    `json:"operator"`
 	CreatedAt time.Time `json:"createdAt"`

@@ -16,7 +16,7 @@ import (
 // @Security     BearerAuth
 // @Param        bizType  query  string  true   "purchase | sales"
 // @Param        keyword  query  string  false  "单号 / 往来单位"
-// @Param        status   query  int     false  "1 待处理 2 已审核 3 已取消"
+// @Param        status   query  int     false  "1 待处理 2 已审核 3 已取消 4 已红冲 5 红冲单"
 // @Param        handoff  query  string  false  "auditable 我可审核 / created 我发起的 / reversed 反审核后待处理"
 // @Success      200  {object}  response.Body{data=response.PageData{list=[]inv.OrderRow}}
 // @Router       /inv/orders [get]
@@ -205,6 +205,60 @@ func (h *Handler) OrderReverse(c *gin.Context) {
 		return
 	}
 	response.OKMsg(c, "已反审核")
+}
+
+// OrderRedReversalPreview 预览整单红冲影响
+// @Summary      预览整单红冲影响
+// @Tags         进销存-单据
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "原单 ID"
+// @Success      200 {object} response.Body{data=inv.RedReversalPreview}
+// @Failure      404 {object} response.Body
+// @Router       /inv/orders/{id}/red-reversal [get]
+func (h *Handler) OrderRedReversalPreview(c *gin.Context) {
+	id, err := bind.PathID(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	preview, err := h.svc.OrderRedReversalPreview(id, middleware.CurrentIdentity(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, preview)
+}
+
+// OrderRedReversal 红冲已过账未收付款的原单
+// @Summary      整单红冲
+// @Tags         进销存-单据
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "原单 ID"
+// @Param        body body RedReversalRequest true "原出入库单和红冲原因"
+// @Success      200 {object} response.Body{data=inv.RedReversalOrderLink}
+// @Failure      409 {object} response.Body
+// @Router       /inv/orders/{id}/red-reversal [post]
+func (h *Handler) OrderRedReversal(c *gin.Context) {
+	id, err := bind.PathID(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	var req RedReversalRequest
+	if err := bind.JSON(c, &req); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	c.Set("opAction", "整单红冲")
+	red, err := h.svc.OrderRedReversal(id, req, middleware.CurrentIdentity(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, red)
 }
 
 // OrderChangeStatus 流转单据状态

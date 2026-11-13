@@ -16,6 +16,8 @@ import type {
   InvOrderPayload,
   InvOrderRow,
   InvOrderStatus,
+  InvRedReversalOrderLink,
+  InvRedReversalPreview,
   InvOverview,
   InvPartyPayload,
   InvPartyRow,
@@ -206,7 +208,7 @@ export const invApi = {
   /** 审核并可选直接结清（settleNow 仅在 status=2 时生效） */
   changeOrderStatus(
     id: number,
-    status: InvOrderStatus,
+    status: Extract<InvOrderStatus, 1 | 2 | 3>,
     settleNow = false,
     silent = false,
   ) {
@@ -218,6 +220,14 @@ export const invApi = {
   },
   reverseOrder(id: number, silent = false) {
     return http.put<string>(`/inv/orders/${id}/reverse`, undefined, { silent })
+  },
+  redReversalPreview(id: number) {
+    return http.get<InvRedReversalPreview>(`/inv/orders/${id}/red-reversal`, undefined, { silent: true })
+  },
+  redReverseOrder(id: number, stockOrderId: number, reason: string) {
+    return http.post<InvRedReversalOrderLink>(
+      `/inv/orders/${id}/red-reversal`, { stockOrderId, reason }, { silent: true },
+    )
   },
 
   // ---------------- 出入库 ----------------

@@ -11,8 +11,9 @@ import (
 	"nova-erp/internal/pkg/errcode"
 )
 
-// doneCond 是「已审核单据」状态值（= model.InvStatusDone）的 SQL 片段。
-const doneCond = "status = 2"
+// 经营报表保留原交易及其红冲，按各自的单据日期汇总。
+var postedOrderStatuses = []int16{model.InvStatusDone, model.InvStatusRedReversed, model.InvStatusRedReversal}
+var originalPostedOrderStatuses = []int16{model.InvStatusDone, model.InvStatusRedReversed}
 
 // Overview 数据概览：概览页与报表页共用的核心指标。
 //
@@ -59,7 +60,7 @@ func (s *Service) Overview(actor *authz.Identity) (*OverviewVO, error) {
 	}
 
 	if err := s.applyCreator(s.db.Model(&model.InvOrder{}), actor).
-		Where("biz_type = ? AND status = ? AND order_date >= ?", model.InvBizSales, model.InvStatusDone, activeFrom).
+		Where("biz_type = ? AND status IN ? AND order_date >= ?", model.InvBizSales, originalPostedOrderStatuses, activeFrom).
 		Distinct("party_id").Count(&out.ActiveCustomer).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
@@ -76,9 +77,14 @@ func (s *Service) Overview(actor *authz.Identity) (*OverviewVO, error) {
 		{&out.MonthPurchase, model.InvBizPurchase, "total_amount", []any{monthFrom}},
 	}
 	for _, q := range sums {
+		statuses := postedOrderStatuses
+		if len(q.args) == 0 {
+			// 当前往来余额与应收应付列表同口径。
+			statuses = []int16{model.InvStatusDone}
+		}
 		tx := s.db.Model(&model.InvOrder{}).
 			Select("COALESCE(SUM("+q.extra+"),0)").
-			Where("biz_type = ? AND status = ?", q.biz, model.InvStatusDone)
+			Where("biz_type = ? AND status IN ?", q.biz, statuses)
 		tx = s.applyCreator(tx, actor)
 		if len(q.args) > 0 {
 			tx = tx.Where("order_date >= ?", q.args...)
@@ -108,9 +114,9 @@ func (s *Service) ReportSummary(f ReportFilter, actor *authz.Identity) (*ReportS
 	}
 
 	salesTx := s.db.Model(&model.InvOrder{}).
-		Where("biz_type = ? AND "+doneCond+" AND order_date >= ?", model.InvBizSales, start)
+		Where("biz_type = ? AND status IN ? AND order_date >= ?", model.InvBizSales, postedOrderStatuses, start)
 	purchTx := s.db.Model(&model.InvOrder{}).
-		Where("biz_type = ? AND "+doneCond+" AND order_date >= ?", model.InvBizPurchase, start)
+		Where("biz_type = ? AND status IN ? AND order_date >= ?", model.InvBizPurchase, postedOrderStatuses, start)
 	salesTx = s.applyCreator(salesTx, actor)
 	purchTx = s.applyCreator(purchTx, actor)
 	if end != nil {
@@ -133,10 +139,10 @@ func (s *Service) ReportSummary(f ReportFilter, actor *authz.Identity) (*ReportS
 	if err := salesTx.Select("COALESCE(SUM(total_amount),0)").Scan(&out.SalesAmount).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
-	if err := salesTx.Count(&out.SalesOrders).Error; err != nil {
+	if err := salesTx.Session(&gorm.Session{}).Where("reversal_of IS NULL").Count(&out.SalesOrders).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
-	if err := purchTx.Count(&out.PurchaseOrders).Error; err != nil {
+	if err := purchTx.Session(&gorm.Session{}).Where("reversal_of IS NULL").Count(&out.PurchaseOrders).Error; err != nil {
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	if err := purchTx.Select("COALESCE(SUM(total_amount),0)").Scan(&out.Purchases).Error; err != nil {
@@ -150,8 +156,8 @@ func (s *Service) ReportSummary(f ReportFilter, actor *authz.Identity) (*ReportS
 		Joins("JOIN inv_product_specs AS sp ON sp.id = i.spec_id AND sp.deleted_at IS NULL").
 		Joins("JOIN inv_product_units AS u ON u.spec_id = sp.id AND u.is_base AND u.deleted_at IS NULL").
 		Joins("JOIN inv_products AS p ON p.id = i.product_id AND p.deleted_at IS NULL").
-		Where("i.deleted_at IS NULL AND o.biz_type = ? AND o.status = ? AND o.order_date >= ?",
-			model.InvBizSales, model.InvStatusDone, start)
+		Where("i.deleted_at IS NULL AND o.biz_type = ? AND o.status IN ? AND o.order_date >= ?",
+			model.InvBizSales, postedOrderStatuses, start)
 	costTx = s.applyCreatorAs(costTx, actor, "o")
 	if end != nil {
 		costTx = costTx.Where("o.order_date <= ?", *end)
@@ -229,7 +235,7 @@ func (s *Service) ReportTrend(days int, f ReportFilter, actor *authz.Identity) (
 	byDay := func(biz string) (map[string]float64, error) {
 		tx := s.db.Model(&model.InvOrder{}).
 			Select("TO_CHAR(order_date, 'YYYY-MM-DD') AS day, COALESCE(SUM(total_amount),0) AS amt").
-			Where("biz_type = ? AND "+doneCond+" AND order_date >= ?", biz, startDate)
+			Where("biz_type = ? AND status IN ? AND order_date >= ?", biz, postedOrderStatuses, startDate)
 		tx = s.applyCreator(tx, actor)
 		if endPtr != nil {
 			tx = tx.Where("order_date <= ?", *endPtr)
@@ -314,8 +320,8 @@ func (s *Service) reportPartyRanking(f ReportFilter, biz string, start time.Time
 	}
 	var rows []row
 	tx := s.db.Model(&model.InvOrder{}).
-		Select("party_id, party_name, COALESCE(SUM(total_amount),0) AS amount, COUNT(*) AS cnt").
-		Where("biz_type = ? AND "+doneCond+" AND order_date >= ?", biz, start)
+		Select("party_id, party_name, COALESCE(SUM(total_amount),0) AS amount, COUNT(*) FILTER (WHERE reversal_of IS NULL) AS cnt").
+		Where("biz_type = ? AND status IN ? AND order_date >= ?", biz, postedOrderStatuses, start)
 	tx = s.applyCreator(tx, actor)
 	if end != nil {
 		tx = tx.Where("order_date <= ?", *end)
@@ -371,10 +377,10 @@ func (s *Service) reportProductRanking(f ReportFilter, biz string, start time.Ti
 	var rows []row
 	tx := s.db.Table("inv_order_items AS i").
 		Joins("JOIN inv_orders AS o ON o.id = i.order_id AND o.deleted_at IS NULL").
-		Where("i.deleted_at IS NULL AND o.biz_type = ? AND o.status = ? AND o.order_date >= ?",
-			biz, model.InvStatusDone, start).
+		Where("i.deleted_at IS NULL AND o.biz_type = ? AND o.status IN ? AND o.order_date >= ?",
+			biz, postedOrderStatuses, start).
 		Select("i.product_id AS product_id, i.product_name AS product_name, " +
-			"COALESCE(SUM(i.amount),0) AS amount, COUNT(DISTINCT i.order_id) AS cnt, " +
+			"COALESCE(SUM(i.amount),0) AS amount, COUNT(DISTINCT i.order_id) FILTER (WHERE o.reversal_of IS NULL) AS cnt, " +
 			"COALESCE(SUM(i.qty_base),0) AS qty")
 	tx = s.applyCreatorAs(tx, actor, "o")
 	if end != nil {
@@ -432,8 +438,8 @@ func (s *Service) ReportCategory(f ReportFilter, actor *authz.Identity) ([]Repor
 		Joins("JOIN inv_orders AS o ON o.id = i.order_id AND o.deleted_at IS NULL").
 		Joins("JOIN inv_products AS p ON p.id = i.product_id AND p.deleted_at IS NULL").
 		Joins("LEFT JOIN inv_categories AS c ON c.id = p.category_id AND c.deleted_at IS NULL").
-		Where("i.deleted_at IS NULL AND o.biz_type = ? AND o.status = ? AND o.order_date >= ?",
-			model.InvBizSales, model.InvStatusDone, start)
+		Where("i.deleted_at IS NULL AND o.biz_type = ? AND o.status IN ? AND o.order_date >= ?",
+			model.InvBizSales, postedOrderStatuses, start)
 	tx = s.applyCreatorAs(tx, actor, "o")
 	if end != nil {
 		tx = tx.Where("o.order_date <= ?", *end)
@@ -631,8 +637,8 @@ func (s *Service) ReportDetail(f ReportFilter, biz string, limit int, actor *aut
 	build := func() (*gorm.DB, error) {
 		tx := s.db.Table("inv_order_items AS i").
 			Joins("JOIN inv_orders AS o ON o.id = i.order_id AND o.deleted_at IS NULL").
-			Where("i.deleted_at IS NULL AND o.biz_type = ? AND o.status = ? AND o.order_date >= ?",
-				biz, model.InvStatusDone, start)
+			Where("i.deleted_at IS NULL AND o.biz_type = ? AND o.status IN ? AND o.order_date >= ?",
+				biz, postedOrderStatuses, start)
 		tx = s.applyCreatorAs(tx, actor, "o")
 		if end != nil {
 			tx = tx.Where("o.order_date <= ?", *end)

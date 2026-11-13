@@ -36,6 +36,7 @@ func Module() module.Module {
 							{Name: "InvPurchaseUpdate", Title: "修改采购单", Type: module.TypeButton, Permission: "inv:purchase:update"},
 							{Name: "InvPurchaseDelete", Title: "删除采购单", Type: module.TypeButton, Permission: "inv:purchase:delete"},
 							{Name: "InvPurchaseFinish", Title: "采购审核", Type: module.TypeButton, Permission: "inv:purchase:finish"},
+							{Name: "InvPurchaseReverse", Title: "采购红冲", Type: module.TypeButton, Permission: "inv:purchase:reverse"},
 						},
 					},
 					{
@@ -47,6 +48,7 @@ func Module() module.Module {
 							{Name: "InvSalesUpdate", Title: "修改销售单", Type: module.TypeButton, Permission: "inv:sales:update"},
 							{Name: "InvSalesDelete", Title: "删除销售单", Type: module.TypeButton, Permission: "inv:sales:delete"},
 							{Name: "InvSalesFinish", Title: "销售审核", Type: module.TypeButton, Permission: "inv:sales:finish"},
+							{Name: "InvSalesReverse", Title: "销售红冲", Type: module.TypeButton, Permission: "inv:sales:reverse"},
 						},
 					},
 					{
