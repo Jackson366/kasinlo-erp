@@ -30,16 +30,19 @@ const (
 
 // 单据状态
 const (
-	InvStatusPending  int16 = 1 // 待处理（待入库 / 待出库）
-	InvStatusDone     int16 = 2 // 已审核（已入库 / 已出库）
-	InvStatusCanceled int16 = 3 // 已取消
+	InvStatusPending     int16 = 1 // 待处理（待入库 / 待出库）
+	InvStatusDone        int16 = 2 // 已审核（已入库 / 已出库）
+	InvStatusCanceled    int16 = 3 // 已取消
+	InvStatusRedReversed int16 = 4 // 已红冲的原单，保留原过账
+	InvStatusRedReversal int16 = 5 // 已过账的红冲单
 )
 
 // 结算状态（由「单据金额 - 已结算金额」推导，不入库）
 const (
-	InvSettleUnpaid  = "unpaid"  // 未结清
-	InvSettlePartial = "partial" // 部分结算
-	InvSettlePaid    = "paid"    // 已结清
+	InvSettleUnpaid   = "unpaid"   // 未结清
+	InvSettlePartial  = "partial"  // 部分结算
+	InvSettlePaid     = "paid"     // 已结清
+	InvSettleReversed = "reversed" // 已冲销
 )
 
 // 合同状态
@@ -249,6 +252,7 @@ type InvOrder struct {
 	ReversedBy   *int64     `json:"reversedBy"`
 	ReversedAt   *time.Time `json:"reversedAt"`
 	PendingSince *time.Time `json:"pendingSince"`
+	ReversalOf   *int64     `gorm:"uniqueIndex" json:"reversalOf"` // 红冲单对应的原采购/销售单
 }
 
 // TableName 指定表名。
@@ -311,8 +315,10 @@ type InvStockOrder struct {
 	Status     int16     `gorm:"not null" json:"status"` // 1 已过账 2 已作废
 	Remark     string    `gorm:"size:255" json:"remark"`
 	// Salesman 业务员：手工单由填单人选，审核自动生成的单据沿用来单的业务员。
-	Salesman  string `gorm:"size:64" json:"salesman"`
-	CreatedBy int64  `json:"createdBy"`
+	Salesman   string `gorm:"size:64" json:"salesman"`
+	CreatedBy  int64  `json:"createdBy"`
+	ReversalOf *int64 `gorm:"uniqueIndex" json:"reversalOf"` // 反向库存单对应的原出入库单
+	ReversalBy *int64 `json:"reversalBy"`
 }
 
 // TableName 指定表名。

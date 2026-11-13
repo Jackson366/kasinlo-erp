@@ -78,6 +78,9 @@ func (s *Service) OrderList(f OrderFilter, q page.Query, actor *authz.Identity) 
 	}
 	// 结算状态在 SQL 侧复刻 settleStatus() 的三分支，容差统一取 settleEpsilon，
 	// 口径必须一模一样：否则「筛已结清」会混进 settled 还差几分钱的单子。
+	if f.Settle != "" {
+		tx = tx.Where("status NOT IN ?", []int16{model.InvStatusRedReversed, model.InvStatusRedReversal})
+	}
 	switch f.Settle {
 	case model.InvSettleUnpaid:
 		tx = tx.Where("settled_amount <= ?", settleEpsilon)
@@ -137,6 +140,10 @@ func (s *Service) OrderList(f OrderFilter, q page.Query, actor *authz.Identity) 
 }
 
 func toOrderRow(o model.InvOrder, itemCount int64, operator string) OrderRow {
+	settlement := settleStatus(o.TotalAmount, o.SettledAmount)
+	if o.Status == model.InvStatusRedReversed || o.Status == model.InvStatusRedReversal {
+		settlement = model.InvSettleReversed
+	}
 	return OrderRow{
 		CreatedBy: o.CreatedBy, AuditorID: o.AuditorID, AuditedAt: o.AuditedAt,
 		ReversedBy: o.ReversedBy, ReversedAt: o.ReversedAt, PendingSince: o.PendingSince,
@@ -144,7 +151,7 @@ func toOrderRow(o model.InvOrder, itemCount int64, operator string) OrderRow {
 		ID:        o.ID, OrderNo: o.OrderNo, BizType: o.BizType, PartyID: o.PartyID, PartyName: o.PartyName,
 		OrderDate: o.OrderDate, DueDate: o.DueDate, Status: o.Status,
 		TotalAmount: o.TotalAmount, SettledAmount: o.SettledAmount,
-		SettleStatus: settleStatus(o.TotalAmount, o.SettledAmount),
+		SettleStatus: settlement,
 		ItemCount:    itemCount, Remark: o.Remark, Salesman: o.Salesman, Operator: operator,
 		CreatedAt: o.CreatedAt,
 	}
@@ -178,12 +185,25 @@ func (s *Service) OrderDetail(id int64, actor *authz.Identity) (*OrderDetail, er
 	if actor.HasAnyPerm("inv:stock:list") {
 		downstream.Visibility = "visible"
 		if err := s.applyCreator(s.db.Model(&model.InvStockOrder{}), actor).
-			Select("id, order_no, status").Where("source_type = ? AND source_id = ?", o.BizType, id).
+			Select("id, order_no, status, direction").Where("source_type = ? AND source_id = ?", o.BizType, id).
 			Order("id DESC").Scan(&downstream.StockOrders).Error; err != nil {
 			return nil, errcode.Wrap(errcode.ErrDatabase, err)
 		}
 	}
-	return &OrderDetail{OrderRow: row, Items: items, AuditHistory: history, Downstream: downstream}, nil
+	detail := &OrderDetail{OrderRow: row, Items: items, AuditHistory: history, Downstream: downstream}
+	if o.Status == model.InvStatusRedReversed || o.ReversalOf != nil {
+		q := s.applyCreator(s.db.Model(&model.InvOrder{}), actor).Where("reversal_of = ?", o.ID)
+		if o.ReversalOf != nil {
+			q = s.applyCreator(s.db.Model(&model.InvOrder{}), actor).Where("id = ?", *o.ReversalOf)
+		}
+		var linked RedReversalOrderLink
+		if err := q.Take(&linked).Error; err == nil {
+			detail.LinkedOrder = &linked
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, saveErr(err)
+		}
+	}
+	return detail, nil
 }
 
 func (s *Service) orderItems(orderID int64) ([]OrderItemVO, error) {
@@ -375,6 +395,9 @@ func (s *Service) OrderDelete(id int64, actor *authz.Identity) error {
 	if err := s.ensureCreatorVisible(o.CreatedBy, actor); err != nil {
 		return err
 	}
+	if o.Status == model.InvStatusRedReversed || o.Status == model.InvStatusRedReversal {
+		return errcode.New(errcode.ErrConflict, "已红冲原单和红冲单不可删除")
+	}
 	if o.Status == model.InvStatusDone {
 		return errcode.New(errcode.ErrConflict, "已审核单据不可删除，请先反审核原单据")
 	}
@@ -383,9 +406,8 @@ func (s *Service) OrderDelete(id int64, actor *authz.Identity) error {
 		// 推进成「已审核」并扣了库存，此时删掉单据会留下 source_id 指向空单的
 		// 出入库记录 —— 库存没了、单据也没了，对账时无从追溯。
 		//
-		// 条件是「不是已审核」而不是「等于待处理」：已取消的单据没有任何库存
-		// 副作用，允许删掉（否则用户取消完就再也清不掉，列表里永远躺着一堆废单）。
-		res := tx.Where("id = ? AND status <> ?", id, model.InvStatusDone).
+		// 只允许删除尚未过账的状态，保留红冲凭据及原单。
+		res := tx.Where("id = ? AND status IN ?", id, []int16{model.InvStatusPending, model.InvStatusCanceled}).
 			Delete(&model.InvOrder{})
 		if res.Error != nil {
 			return res.Error
@@ -593,6 +615,12 @@ func (s *Service) OrderReverse(id int64, actor *authz.Identity) error {
 	}
 
 	return saveErr(s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&o, id).Error; err != nil {
+			return err
+		}
+		if o.Status != model.InvStatusDone || o.SettledAmount > 0 {
+			return errcode.New(errcode.ErrConflict, "单据状态或收付款已变化，请刷新后重试")
+		}
 		var so model.InvStockOrder
 		err := tx.Where("source_type = ? AND source_id = ? AND status = 1", sourceType, o.ID).
 			First(&so).Error
@@ -603,10 +631,7 @@ func (s *Service) OrderReverse(id int64, actor *authz.Identity) error {
 				return err
 			}
 			// 回滚方向与原方向相反
-			reverse := model.InvStockOut
-			if so.Direction == model.InvStockOut {
-				reverse = model.InvStockIn
-			}
+			reverse := oppositeStockDirection(so.Direction)
 			if err := s.applyStock(tx, reverse, items); err != nil {
 				return err
 			}
@@ -701,9 +726,13 @@ func (s *Service) applyStock(tx *gorm.DB, direction string, items []model.InvSto
 			}
 			continue
 		}
-		if err := tx.Model(&model.InvProductSpec{}).Where("id = ?", specID).
-			UpdateColumn("stock", gorm.Expr("stock + ?", d)).Error; err != nil {
-			return err
+		res := tx.Model(&model.InvProductSpec{}).Where("id = ?", specID).
+			UpdateColumn("stock", gorm.Expr("stock + ?", d))
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errcode.Newf(errcode.ErrConflict, "「%s」商品规格已不存在，无法更新库存", label[specID])
 		}
 	}
 	return nil

@@ -8,6 +8,7 @@ import {
 } from '@/utils/format'
 import OrderAuditTrail from './OrderAuditTrail.vue'
 import { statusMeta, settleMeta } from './orderPresentation'
+import AppIcon from '@/components/AppIcon.vue'
 
 const props = defineProps<{
   order: InvOrderDetail
@@ -15,6 +16,11 @@ const props = defineProps<{
   partyLabel: string
   isPurchase: boolean
   picks: InvProductPick[]
+  canRedReverse: boolean
+}>()
+const emit = defineEmits<{
+  redReverse: [order: InvOrderDetail]
+  openLinked: [order: Pick<InvOrderDetail, 'id'>]
 }>()
 
 function baseUnitNameOf(productId: number, specId: number): string {
@@ -49,7 +55,7 @@ function detailSummary(param: { columns: unknown[] }): string[] {
           {{ statusMeta[order.status]?.text }}
         </el-tag>
         <el-tag
-          v-if="!isPurchase || order.status === 2"
+          v-if="!isPurchase || order.status === 2 || order.status >= 4"
           :type="settleMeta[order.settleStatus]?.type"
           size="small"
           effect="light"
@@ -60,21 +66,58 @@ function detailSummary(param: { columns: unknown[] }): string[] {
       <div class="detail-head__amount">
         <span class="detail-head__label">单据金额</span>
         <strong>{{ formatMoney(order.totalAmount) }}</strong>
-        <span v-if="!isPurchase || order.status === 2" class="detail-head__sub">
+        <span v-if="order.status < 4 && (!isPurchase || order.status === 2)" class="detail-head__sub">
           已结算 {{ formatMoney(order.settledAmount) }} · 未结
           {{ formatMoney(order.totalAmount - order.settledAmount) }}
         </span>
+        <span v-else-if="order.status === 4" class="detail-head__sub">
+          未结 {{ formatMoney(0) }}
+        </span>
       </div>
+      <el-dropdown v-if="canRedReverse && order.status === 2 && order.settledAmount === 0" trigger="click">
+        <el-button :aria-label="`单据 ${order.orderNo} 的更多操作`">
+          更多 <AppIcon name="ArrowDown" />
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item @click="emit('redReverse', order)">整单红冲</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
 
-    <p v-if="isPurchase" class="audit-summary">
-      {{ order.status === 2 ? '审核' : '上次审核' }}：
+    <p v-if="canRedReverse && order.status === 2 && order.settledAmount > 0" class="audit-summary">
+      已登记收付款，无法整单红冲。请联系财务核对款项。
+    </p>
+    <section v-if="order.linkedOrder" class="form-section" aria-label="红冲关联">
+      <p class="reversal-link">
+        {{ order.status === 5 ? '原单' : '关联红冲单' }}
+        <el-button
+          link
+          type="primary"
+          :aria-label="`查看${order.status === 5 ? '原单' : '红冲单'} ${order.linkedOrder.orderNo}`"
+          @click="emit('openLinked', order.linkedOrder)"
+        >{{ order.linkedOrder.orderNo }}</el-button>
+      </p>
+      <p v-if="order.status === 5" class="reversal-link">
+        过账 {{ order.auditorName || `账号 #${order.auditorId}` }} · {{ formatDateTime(order.auditedAt) }}
+      </p>
+      <p v-for="stock in order.status === 5 ? order.downstream?.stockOrders : []" :key="stock.id" class="reversal-link">
+        反向{{ stock.direction === 'in' ? '入库' : '出库' }}单
+        <router-link
+          :to="{ path: '/inv/stock', query: { view: 'orders', q: stock.orderNo } }"
+        >{{ stock.orderNo }}</router-link>
+      </p>
+    </section>
+
+    <p v-if="isPurchase && order.status !== 5" class="audit-summary">
+      {{ order.status === 2 || order.status === 4 ? '审核' : '上次审核' }}：
       <template v-if="order.auditedAt"
         >{{ order.auditorName || `账号 #${order.auditorId}` }} ·
         {{ formatDateTime(order.auditedAt) }}（本地时间）</template
       >
       <template v-else>{{
-        order.status === 2 || order.reversedAt ? '历史数据未记录' : '尚未审核'
+        order.status === 2 || order.status === 4 || order.reversedAt ? '历史数据未记录' : '尚未审核'
       }}</template>
       <el-tag v-if="order.selfAudit" size="small" type="info">自审</el-tag>
       <span v-if="order.reversedAt"
@@ -118,7 +161,7 @@ function detailSummary(param: { columns: unknown[] }): string[] {
           <div class="detail-field__value">{{ order.operator || '-' }}</div>
         </div>
         <div class="detail-field">
-          <span class="detail-field__label">备注</span>
+          <span class="detail-field__label">{{ order.status === 5 ? '红冲原因' : '备注' }}</span>
           <div class="detail-field__value">{{ order.remark || '-' }}</div>
         </div>
       </div>
@@ -177,11 +220,21 @@ function detailSummary(param: { columns: unknown[] }): string[] {
         </el-table-column>
       </el-table>
     </section>
-    <OrderAuditTrail v-if="isPurchase" :order="order" />
+    <OrderAuditTrail v-if="isPurchase && order.status !== 5" :order="order" />
   </div>
 </template>
 
 <style scoped lang="scss">
+.reversal-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+
+  a { text-decoration: underline; }
+}
 .audit-summary {
   display: flex;
   gap: 8px;
@@ -195,6 +248,7 @@ function detailSummary(param: { columns: unknown[] }): string[] {
 .detail-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 16px;
   padding: 12px 16px;

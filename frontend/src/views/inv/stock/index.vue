@@ -10,7 +10,7 @@ import { KasTable, useKasTable, type KasTableHandle } from '@/components/KasTabl
  * 库存只有一个数（记在规格上的基本单位数量），单据上的折算是入口的换算，
  * 两者不是两套账，而是「输入」与「结果」。
  */
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -44,7 +44,7 @@ defineOptions({ name: 'InvStock' })
 // 单据是这个页面的历史记录，需要时再切过去。
 const router = useRouter()
 const route = useRoute()
-const { returnTo, follow } = usePurchaseHandoff()
+const { returnTo } = usePurchaseHandoff()
 const userStore = useUserStore()
 function openSource(row: InvStockOrderRow): void {
   const biz = row.sourceType
@@ -383,8 +383,9 @@ function onTabChange(name: string | number): void {
 }
 
 /** 来源文案（模板与打印共用一份，避免两处各写一遍映射） */
-function sourceLabel(t: string): string {
-  return { purchase: '采购', sales: '销售', manual: '手工' }[t] || '-'
+function sourceLabel(row: Pick<InvStockOrderRow, 'sourceType' | 'isReversal'>): string {
+  const source = { purchase: '采购', sales: '销售', manual: '手工' }[row.sourceType]
+  return row.isReversal ? `${source}红冲` : source
 }
 
 // ---------------- 导出 / 打印 / 批量（出入库单据） ----------------
@@ -396,7 +397,7 @@ const printRows = computed(() =>
 const printColumns = computed<ListPrintColumn<InvStockOrderRow>[]>(() => [
   { label: '单号', prop: 'orderNo' },
   { label: '方向', value: (r) => (r.direction === 'in' ? '入库' : '出库') },
-  { label: '来源', value: (r) => sourceLabel(r.sourceType) },
+  { label: '来源', value: sourceLabel },
   { label: '单据日期', value: (r) => formatDay(r.orderDate) },
   { label: '明细', value: (r) => `${r.itemCount} 行`, align: 'center' },
   { label: '总数量', value: (r) => formatQty(r.totalQty), align: 'right' },
@@ -443,18 +444,23 @@ onMounted(() => {
 })
 // 关键字录入即查询（防抖）：单据 tab 用 search，库存 tab 用 loadInventory
 const { searchSoon, searchNow, cancel: cancelSearch } = useDebouncedSearch(search)
-follow('/inv/stock', () => {
-  cancelSearch()
-  activeTab.value = 'orders'
-  Object.assign(query, {
-    page: 1, pageSize: 10,
-    keyword: typeof route.query.q === 'string' ? route.query.q : '',
-    direction: 'in',
-  })
-  clearSelection(tableRef.value)
-  rows.value = []
-  void load()
-})
+watch(
+  () => (route.path === '/inv/stock' ? route.fullPath : ''),
+  (value) => {
+    if (!value || route.query.view !== 'orders') return
+    cancelSearch()
+    activeTab.value = 'orders'
+    Object.assign(query, {
+      page: 1, pageSize: 10,
+      keyword: typeof route.query.q === 'string' ? route.query.q : '',
+      direction: returnTo.value ? 'in' : undefined,
+    })
+    clearSelection(tableRef.value)
+    rows.value = []
+    void load()
+  },
+  { immediate: true },
+)
 const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
 </script>
 
@@ -639,7 +645,7 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
             </ListFilters>
             </template>
             <el-table-column type="selection" width="44" />
-            <el-table-column prop="orderNo" label="单号" width="150" />
+            <el-table-column prop="orderNo" label="单号" min-width="190" show-overflow-tooltip />
             <el-table-column label="方向" width="90" align="center">
               <template #default="{ row }">
                 <el-tag
@@ -651,9 +657,15 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="来源" width="110">
+            <el-table-column label="来源" min-width="180">
               <template #default="{ row }">
-                {{ sourceLabel(row.sourceType) }}
+                {{ sourceLabel(row as InvStockOrderRow) }}
+                <div v-if="row.originalStockNo">
+                  <router-link
+                    :to="{ path: '/inv/stock', query: { view: 'orders', q: row.originalStockNo } }"
+                    :aria-label="`查看原出入库单 ${row.originalStockNo}`"
+                  >原库存单 {{ row.originalStockNo }}</router-link>
+                </div>
               </template>
             </el-table-column>
             <el-table-column label="状态" width="100"
@@ -712,7 +724,7 @@ const { searchSoon: searchInventorySoon } = useDebouncedSearch(loadInventory)
                   link
                   type="primary"
                   @click="openSource(row as InvStockOrderRow)"
-                  >原单反审核</el-button
+                  >{{ row.isReversal ? '查看红冲单' : '原单反审核' }}</el-button
                 >
                 <el-button
                   v-if="row.sourceType === 'manual' && row.status === 1"

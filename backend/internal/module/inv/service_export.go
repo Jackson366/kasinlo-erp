@@ -354,7 +354,7 @@ func (s *Service) exportStockRows(q page.Query, f ExportQuery, actor *authz.Iden
 			continue
 		}
 		out = append(out, []string{
-			it.OrderNo, directionText(it.Direction), sourceText(it.SourceType),
+			it.OrderNo, directionText(it.Direction), stockSourceText(it),
 			fmtDay(it.OrderDate), strconv.FormatInt(it.ItemCount, 10),
 			fmtQty(it.TotalQty), it.Salesman, it.Operator, it.Remark,
 		})
@@ -400,6 +400,10 @@ func orderStatusText(s int16) string {
 		return "已审核"
 	case model.InvStatusCanceled:
 		return "已取消"
+	case model.InvStatusRedReversed:
+		return "已红冲"
+	case model.InvStatusRedReversal:
+		return "红冲单"
 	default:
 		return strconv.Itoa(int(s))
 	}
@@ -413,6 +417,8 @@ func settleText(s string) string {
 		return "部分结算"
 	case model.InvSettlePaid:
 		return "已结清"
+	case model.InvSettleReversed:
+		return "已冲销"
 	default:
 		return s
 	}
@@ -434,6 +440,14 @@ func sourceText(s string) string {
 	default:
 		return "手工"
 	}
+}
+
+func stockSourceText(row StockOrderRow) string {
+	text := sourceText(row.SourceType)
+	if row.IsReversal {
+		text += "红冲"
+	}
+	return text
 }
 
 // specJoin 把商品的规格摘要拼成一行（「φ20 · φ25」），与页面上的「规格」列一致。

@@ -1791,7 +1791,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "1 待处理 2 已审核 3 已取消",
+                        "description": "1 待处理 2 已审核 3 已取消 4 已红冲 5 红冲单",
                         "name": "status",
                         "in": "query"
                     },
@@ -1999,6 +1999,118 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/orders/{id}/red-reversal": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-单据"
+                ],
+                "summary": "预览整单红冲影响",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "原单 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.RedReversalPreview"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-单据"
+                ],
+                "summary": "整单红冲",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "原单 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "原出入库单和红冲原因",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.RedReversalRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.RedReversalOrderLink"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/response.Body"
                         }
@@ -7738,6 +7850,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/inv.OrderItemVO"
                     }
                 },
+                "linkedOrder": {
+                    "$ref": "#/definitions/inv.RedReversalOrderLink"
+                },
                 "operator": {
                     "description": "Operator 制单人显示名（昵称优先，回落用户名）。列表直接用，省得前端再查一次人。",
                     "type": "string"
@@ -8006,6 +8121,9 @@ const docTemplate = `{
         "inv.OrderStockLink": {
             "type": "object",
             "properties": {
+                "direction": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -8566,6 +8684,73 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "integer"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "inv.RedReversalOrderLink": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "orderNo": {
+                    "type": "string"
+                }
+            }
+        },
+        "inv.RedReversalPreview": {
+            "type": "object",
+            "properties": {
+                "blockReason": {
+                    "type": "string"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.RedReversalStockLine"
+                    }
+                },
+                "outstanding": {
+                    "type": "number"
+                },
+                "stockOrderId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.RedReversalRequest": {
+            "type": "object",
+            "required": [
+                "reason",
+                "stockOrderId"
+            ],
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "stockOrderId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.RedReversalStockLine": {
+            "type": "object",
+            "properties": {
+                "productName": {
+                    "type": "string"
+                },
+                "qty": {
+                    "type": "number"
+                },
+                "spec": {
+                    "type": "string"
                 },
                 "unit": {
                     "type": "string"
@@ -9141,6 +9326,9 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "isReversal": {
+                    "type": "boolean"
+                },
                 "itemCount": {
                     "type": "integer"
                 },
@@ -9152,6 +9340,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "orderNo": {
+                    "type": "string"
+                },
+                "originalStockNo": {
                     "type": "string"
                 },
                 "remark": {

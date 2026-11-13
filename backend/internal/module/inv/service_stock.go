@@ -68,24 +68,51 @@ func (s *Service) StockOrderList(q page.Query, direction string, includeVoided b
 		return nil, 0, err
 	}
 	creators := make([]int64, 0, len(list))
+	originalIDs := make([]int64, 0)
 	for _, o := range list {
-		creators = append(creators, o.CreatedBy)
+		creators = append(creators, stockOperatorID(o))
+		if o.ReversalOf != nil {
+			originalIDs = append(originalIDs, *o.ReversalOf)
+		}
 	}
 	operators, err := s.operatorNames(creators)
 	if err != nil {
 		return nil, 0, err
 	}
+	originalNos := make(map[int64]string, len(originalIDs))
+	if len(originalIDs) > 0 {
+		var originals []model.InvStockOrder
+		if err := s.applyCreator(s.db.Model(&model.InvStockOrder{}), actor).
+			Select("id", "order_no").Where("id IN ?", originalIDs).Find(&originals).Error; err != nil {
+			return nil, 0, saveErr(err)
+		}
+		for _, original := range originals {
+			originalNos[original.ID] = original.OrderNo
+		}
+	}
 	rows := make([]StockOrderRow, 0, len(list))
 	for _, o := range list {
 		st := stats[o.ID]
-		rows = append(rows, StockOrderRow{
+		row := StockOrderRow{
 			ID: o.ID, OrderNo: o.OrderNo, Direction: o.Direction, SourceType: o.SourceType,
 			SourceID: o.SourceID, OrderDate: o.OrderDate, Status: o.Status,
 			ItemCount: int64(st[0]), TotalQty: st[1], Remark: o.Remark,
-			Salesman: o.Salesman, Operator: operators[o.CreatedBy], CreatedAt: o.CreatedAt,
-		})
+			Salesman: o.Salesman, Operator: operators[stockOperatorID(o)], CreatedAt: o.CreatedAt,
+			IsReversal: o.ReversalOf != nil,
+		}
+		if o.ReversalOf != nil {
+			row.OriginalStockNo = originalNos[*o.ReversalOf]
+		}
+		rows = append(rows, row)
 	}
 	return rows, total, nil
+}
+
+func stockOperatorID(o model.InvStockOrder) int64 {
+	if o.ReversalBy != nil {
+		return *o.ReversalBy
+	}
+	return o.CreatedBy
 }
 
 // StockOrderCreate 新增出入库单据并即时过账（调整库存）。
@@ -158,6 +185,9 @@ func (s *Service) StockOrderVoid(id int64, actor *authz.Identity) error {
 	if o.Status != 1 {
 		return errcode.New(errcode.ErrConflict, "单据已作废")
 	}
+	if o.ReversalOf != nil {
+		return errcode.New(errcode.ErrConflict, "红冲生成的出入库单不可作废")
+	}
 	// 采购/销售审核自动生成的出入库单不允许直接作废。
 	//
 	// 作废会反向回滚库存，但源单据的状态仍是「已审核」：它照样计入应收应付、
@@ -172,10 +202,7 @@ func (s *Service) StockOrderVoid(id int64, actor *authz.Identity) error {
 		return errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	// 回滚方向与原方向相反
-	reverse := model.InvStockOut
-	if o.Direction == model.InvStockOut {
-		reverse = model.InvStockIn
-	}
+	reverse := oppositeStockDirection(o.Direction)
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := s.applyStock(tx, reverse, items); err != nil {
 			return err
@@ -273,7 +300,7 @@ func (s *Service) StockOrderDetail(id int64, actor *authz.Identity) (*StockOrder
 		ID: o.ID, OrderNo: o.OrderNo, Direction: o.Direction, SourceType: o.SourceType,
 		SourceOrderNo: s.sourceOrderNo(o.SourceType, o.SourceID, actor),
 		OrderDate:     o.OrderDate, Remark: o.Remark, Salesman: o.Salesman,
-		Operator: s.operatorName(o.CreatedBy), TotalQty: round4(total), Items: printItems,
+		Operator: s.operatorName(stockOperatorID(o)), TotalQty: round4(total), Items: printItems,
 	}, nil
 }
 

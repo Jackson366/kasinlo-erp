@@ -78,7 +78,7 @@ func ensureBizPermAction(c *gin.Context, bizType, action string) error {
 	return errcode.Newf(errcode.ErrForbidden, "缺少 %s 业务线的 %s 权限", bizType, action)
 }
 
-// orderStatusQuery 解析单据状态过滤参数（1 待处理 / 2 已审核 / 3 已取消）。
+// orderStatusQuery 解析单据状态过滤参数。
 // 空串表示不过滤；非法值报 400 而不是静默忽略 —— 忽略会让「筛已审核」变成「全部」。
 func orderStatusQuery(c *gin.Context) (*int16, error) {
 	v := c.Query("status")
@@ -86,8 +86,8 @@ func orderStatusQuery(c *gin.Context) (*int16, error) {
 		return nil, nil
 	}
 	n, err := strconv.Atoi(v)
-	if err != nil || n < 1 || n > 3 {
-		return nil, errcode.Newf(errcode.ErrBadRequest, "查询参数 status 非法：%s（仅支持 1~3）", v)
+	if err != nil || n < 1 || n > int(model.InvStatusRedReversal) {
+		return nil, errcode.Newf(errcode.ErrBadRequest, "查询参数 status 非法：%s（仅支持 1~5）", v)
 	}
 	s := int16(n)
 	return &s, nil

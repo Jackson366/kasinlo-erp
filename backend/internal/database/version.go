@@ -22,10 +22,11 @@ import (
 // 版本号只用于「判断方向」，不做逐版本迁移脚本 —— 结构同步仍由 AutoMigrate
 // 完成。这样既拿到了「旧程序不能连新库」这道保护，又不必把 20 张表的 DDL
 // 抄成 20 个迁移文件（抄错一个就是事故）。
-const CurrentSchemaVersion int32 = 5
+const CurrentSchemaVersion int32 = 6
 
 // schemaChanges 是版本 → 说明，用于升级日志与运维排查。
 var schemaChanges = map[int32]string{
+	6: "整单红冲：采购销售及出入库新增 reversal_of，保留原过账和关联冲销记录",
 	5: "采购审核：新增审核摘要、待处理起点和 inv_order_audits 审核历史表",
 	1: "基线：框架 10 张表 + 进销存 12 张表（含幂等表 sys_idempotencies、结构版本表 sys_schema_versions）",
 	2: "新增 sys_upgrade_records：升级记录表（版本 / 升级前备份 / 动作清单 / 结果）",

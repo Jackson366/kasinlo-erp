@@ -331,8 +331,8 @@ export interface ModuleStat {
 export type InvBizType = 'purchase' | 'sales'
 /** 出入库方向 */
 export type InvStockDirection = 'in' | 'out'
-/** 单据状态：1 待处理 2 已完成 3 已取消 */
-export type InvOrderStatus = 1 | 2 | 3
+/** 单据状态：1 待处理 2 已审核 3 已取消 4 已红冲 5 红冲单 */
+export type InvOrderStatus = 1 | 2 | 3 | 4 | 5
 /** 结算状态 */
 export type InvSettleStatus = 'unpaid' | 'partial' | 'paid'
 
@@ -595,7 +595,7 @@ export interface InvOrderAudit {
   id: number
   orderId: number
   orderNo: string
-  action: 'audit' | 'reverse'
+  action: 'audit' | 'reverse' | 'red-reverse'
   actorId: number
   actorName: string
   occurredAt: string
@@ -603,7 +603,7 @@ export interface InvOrderAudit {
 }
 export interface InvOrderDownstream {
   visibility: 'visible' | 'restricted'
-  stockOrders: { id: number; orderNo: string; status: number }[]
+  stockOrders: { id: number; orderNo: string; status: number; direction?: InvStockDirection }[]
 }
 
 /** 单据列表行 */
@@ -628,7 +628,7 @@ export interface InvOrderRow {
   status: InvOrderStatus
   totalAmount: number
   settledAmount: number
-  settleStatus: InvSettleStatus
+  settleStatus: InvSettleStatus | 'reversed'
   itemCount: number
   remark: string
   /** 业务员 */
@@ -643,6 +643,20 @@ export interface InvOrderDetail extends InvOrderRow {
   auditHistory?: InvOrderAudit[]
   downstream?: InvOrderDownstream
   items: InvOrderItem[]
+  linkedOrder?: InvRedReversalOrderLink
+}
+
+export interface InvRedReversalOrderLink {
+  id: number
+  orderNo: string
+}
+
+export interface InvRedReversalPreview {
+  stockOrderId: number
+  direction: InvStockDirection | ''
+  outstanding: number
+  items: { productName: string; spec: string; qty: number; unit: string }[]
+  blockReason?: string
 }
 
 /** 出入库明细行（请求） */
@@ -672,6 +686,8 @@ export interface InvStockOrderRow {
   direction: InvStockDirection
   sourceType: 'purchase' | 'sales' | 'manual'
   sourceId: number
+  originalStockNo?: string
+  isReversal?: boolean
   orderDate: string
   status: number
   itemCount: number
