@@ -38,7 +38,7 @@ func redReversalBlock(order model.InvOrder) string {
 	case order.Status != model.InvStatusDone:
 		return "仅已审核的原单可红冲"
 	case order.SettledAmount != 0:
-		return "已登记收付款，无法整单红冲。请联系财务核对款项。"
+		return "本单仍有已结算金额，请先从收付款明细处理款项。"
 	default:
 		return ""
 	}

@@ -176,6 +176,7 @@ var partialUniqueIndexes = []struct {
 	{name: "uk_inv_product_specs_product_spec", table: "inv_product_specs", legacy: "", columns: "product_id, spec", where: "deleted_at IS NULL"},
 	{name: "uk_inv_product_units_spec_unit", table: "inv_product_units", legacy: "", columns: "spec_id, unit", where: "deleted_at IS NULL"},
 	{name: "uk_inv_orders_no", table: "inv_orders", legacy: "", columns: "order_no", where: "deleted_at IS NULL"},
+	{name: "uk_inv_orders_reopened_from", table: "inv_orders", columns: "reopened_from", where: "deleted_at IS NULL AND status <> 3 AND reopened_from IS NOT NULL"},
 	{name: "uk_inv_stock_orders_no", table: "inv_stock_orders", legacy: "", columns: "order_no", where: "deleted_at IS NULL"},
 	{name: "uk_inv_print_templates_code", table: "inv_print_templates", legacy: "", columns: "code", where: "deleted_at IS NULL"},
 	{name: "uk_inv_contracts_no", table: "inv_contracts", legacy: "", columns: "contract_no", where: "deleted_at IS NULL"},

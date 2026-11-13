@@ -472,13 +472,14 @@ const editorError = ref('')
 const orderEditing = computed(
   () =>
     route.path === pagePath &&
-    ['create', 'edit'].includes(String(route.query.action)),
+    ['create', 'edit', 'reopen'].includes(String(route.query.action)),
 )
 let originDetail = false
 let editorScroll = 0
 let editorTrigger: HTMLElement | null = null
 const editingId = ref<number | null>(null)
 const editingOrder = ref<GuideOrder | null>(null)
+const reopenSource = ref<InvOrderDetail | null>(null)
 const detailVisible = ref(false)
 // 「全部单据」的详情在列表页内展开；待处理有自己的队列 + 核对区，不用这个开关。
 const listDetailOpen = computed(
@@ -490,6 +491,7 @@ const listDetailScroll = ref(0)
 const detail = ref<{ row: InvOrderDetail; items: InvOrderItem[] } | null>(null)
 const redReversalDialog = ref<InstanceType<typeof OrderRedReversalDialog>>()
 const canRedReverse = computed(() => userStore.hasAnyPerm([`inv:${props.bizType}:reverse`]))
+const canReopen = computed(() => userStore.hasAnyPerm([`inv:${props.bizType}:create`]))
 
 function openRedReversal(order: InvOrderDetail): void {
   redReversalDialog.value?.open(order)
@@ -633,15 +635,42 @@ function initializeCreate(): void {
   loadOptions().catch(() => {})
 }
 
+async function initializeReopen(id: number, seq: number): Promise<void> {
+  try {
+    const data = await invApi.orderDetail(id)
+    if (seq !== editSeq.value || !orderEditing.value) return
+    if (data.bizType !== props.bizType || data.status !== 4) {
+      editorError.value = '仅已红冲的同类原单可重开。'
+      return
+    }
+    if (data.hasReopenedOrder) {
+      editorError.value = '已有重开单，请返回原单查看。'
+      return
+    }
+    initializeCreate()
+    reopenSource.value = data
+    Object.assign(form, {
+      partyId: data.partyId,
+      salesman: data.salesman,
+      remark: data.remark,
+      items: data.items.map(({ productId, specId, unitId, qty, price }) => ({
+        productId, specId, unitId, qty, price,
+      })),
+    })
+    markFormClean()
+  } catch {
+    if (seq === editSeq.value) editorError.value = '读取原单失败，请重新加载。'
+  }
+}
+
 /** 编辑 / 详情的请求序号：快速点开不同行时，慢响应不能覆盖后点的那一行 */
 const editSeq = ref(0)
 const detailViewSeq = ref(0)
 
-async function initializeEdit(row: Pick<InvOrderRow, 'id'>): Promise<void> {
-  const seq = ++editSeq.value
+async function initializeEdit(id: number, seq: number): Promise<void> {
   let data: Awaited<ReturnType<typeof invApi.orderDetail>>
   try {
-    data = await invApi.orderDetail(row.id)
+    data = await invApi.orderDetail(id)
   } catch {
     if (seq === editSeq.value)
       editorError.value = `${orderLabel.value}加载失败，请重新加载。`
@@ -673,7 +702,7 @@ async function initializeEdit(row: Pick<InvOrderRow, 'id'>): Promise<void> {
     })),
   })
   dialogMode.value = 'edit'
-  editingId.value = row.id
+  editingId.value = id
   markFormClean()
   saveError.value = false
   dialogVisible.value = true
@@ -681,8 +710,8 @@ async function initializeEdit(row: Pick<InvOrderRow, 'id'>): Promise<void> {
   loadOptions().catch(() => {})
 }
 
-function enterOrderEditor(action: 'create' | 'edit', id?: number): void {
-  originDetail = detailVisible.value
+function enterOrderEditor(action: 'create' | 'edit' | 'reopen', id?: number): void {
+  originDetail = detailVisible.value || (action === 'reopen' && Boolean(detail.value))
   editorTrigger =
     document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -705,11 +734,15 @@ function openCreate(): void {
 function openEdit(row: InvOrderRow): void {
   enterOrderEditor('edit', row.id)
 }
+function openReopen(row: InvOrderDetail): void {
+  enterOrderEditor('reopen', row.id)
+}
 async function syncOrderEditor(): Promise<void> {
   if (route.path !== pagePath) return
   ++editSeq.value
   editorLoading.value = false
   editorError.value = ''
+  reopenSource.value = null
   if (!orderEditing.value) {
     dialogVisible.value = false
     document.title = `${props.title} · ${import.meta.env.VITE_APP_TITLE || 'Kasinlo ERP'}`
@@ -724,6 +757,7 @@ async function syncOrderEditor(): Promise<void> {
   editingOrder.value = null
   showCustomNumber.value = false
   const action = route.query.action === 'edit' ? 'edit' : 'create'
+  const reopening = route.query.action === 'reopen'
   dialogMode.value = action
   document.title = `${action === 'edit' ? '编辑' : '新增'}${orderLabel.value} · ${import.meta.env.VITE_APP_TITLE || 'Kasinlo ERP'}`
   const permission = action === 'edit' ? 'update' : 'create'
@@ -732,7 +766,7 @@ async function syncOrderEditor(): Promise<void> {
     markFormClean()
     return
   }
-  if (action === 'create') initializeCreate()
+  if (action === 'create' && !reopening) initializeCreate()
   else {
     const id = Number(route.query.editId)
     if (!Number.isSafeInteger(id) || id <= 0) {
@@ -741,8 +775,9 @@ async function syncOrderEditor(): Promise<void> {
       return
     }
     editorLoading.value = true
-    const requestSeq = editSeq.value + 1
-    await initializeEdit({ id })
+    const requestSeq = editSeq.value
+    if (reopening) await initializeReopen(id, requestSeq)
+    else await initializeEdit(id, requestSeq)
     if (requestSeq === editSeq.value) {
       editorLoading.value = false
       markFormClean()
@@ -789,6 +824,7 @@ async function submitForm(): Promise<void> {
     dueDate: form.dueDate || undefined,
     salesman: form.salesman.trim() || undefined,
     remark: form.remark,
+    reopenedFrom: reopenSource.value?.id,
     items: items.map((it) => ({
       productId: it.productId as number,
       specId: it.specId as number,
@@ -800,6 +836,7 @@ async function submitForm(): Promise<void> {
   submitting.value = true
   saveError.value = false
   try {
+    const reopening = reopenSource.value !== null
     let createdId: number | null = null
     if (dialogMode.value === 'create') {
       const created = await invApi.createOrder(payload)
@@ -820,6 +857,8 @@ async function submitForm(): Promise<void> {
       reviewResult.value =
         '采购单已保存，尚未增加库存。'
       mobileDetail.value = true
+      await openDetail({ id: createdId })
+    } else if (reopening && createdId) {
       await openDetail({ id: createdId })
     } else if (
       isPurchase.value &&
@@ -1037,7 +1076,7 @@ const {
 })
 async function requestCloseForm(): Promise<void> {
   await returnFromEditor()
-  if (isPurchase.value && !orderEditing.value && originDetail && detailTarget.value)
+  if (!orderEditing.value && originDetail && detailTarget.value)
     await openDetail(detailTarget.value)
 }
 
@@ -1346,8 +1385,11 @@ function onKeywordInput(): void {
               :is-purchase="true"
               :picks="picks"
               :can-red-reverse="canRedReverse"
+              :can-reopen="canReopen"
               @red-reverse="openRedReversal"
+              @reopen="openReopen"
               @open-linked="openDetail"
+              @settlements-updated="refreshAfterRedReversal"
             />
             <p v-if="detail.row.status === 1" class="purchase-impact">
               审核后增加库存并形成应付，请确认货物已实际到达。
@@ -1551,8 +1593,11 @@ function onKeywordInput(): void {
               :is-purchase="true"
               :picks="picks"
               :can-red-reverse="canRedReverse"
+              :can-reopen="canReopen"
               @red-reverse="openRedReversal"
+              @reopen="openReopen"
               @open-linked="openDetail"
+              @settlements-updated="refreshAfterRedReversal"
             />
             <p v-if="detail.row.status === 1" class="purchase-impact">
               审核后增加库存并形成应付，请确认货物已实际到达。
@@ -1850,6 +1895,14 @@ function onKeywordInput(): void {
       </el-alert>
       <template v-else>
         <el-alert
+          v-if="reopenSource"
+          :title="`按原单 ${reopenSource.orderNo} 重开`"
+          description="已带入往来单位和明细。请核对内容与日期，保存后按正常流程审核。"
+          type="info"
+          :closable="false"
+          class="purchase-result"
+        />
+        <el-alert
         v-if="saveError"
         title="保存失败，本次输入已保留。请检查提示后重新保存。"
         type="error"
@@ -2085,8 +2138,11 @@ function onKeywordInput(): void {
           :is-purchase="false"
           :picks="picks"
           :can-red-reverse="canRedReverse"
+          :can-reopen="canReopen"
           @red-reverse="openRedReversal"
+          @reopen="openReopen"
           @open-linked="openDetail"
+          @settlements-updated="refreshAfterRedReversal"
         />
       </template>
 

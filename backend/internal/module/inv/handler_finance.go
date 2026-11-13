@@ -1,10 +1,13 @@
 package inv
 
 import (
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 
 	"nova-erp/internal/middleware"
 	"nova-erp/internal/pkg/bind"
+	"nova-erp/internal/pkg/errcode"
 	"nova-erp/internal/pkg/page"
 	"nova-erp/internal/pkg/response"
 )
@@ -104,4 +107,86 @@ func (h *Handler) SettleBatch(c *gin.Context) {
 		return
 	}
 	response.OK(c, res)
+}
+
+// OrderSettlementHistory 查看原单收付款与处理记录
+// @Summary      查看单据收付款记录
+// @Tags         进销存-应收应付
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "单据 ID"
+// @Success      200 {object} response.Body{data=inv.OrderSettlements}
+// @Router       /inv/finance/orders/{id}/settlements [get]
+func (h *Handler) OrderSettlementHistory(c *gin.Context) {
+	id, err := bind.PathID(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	history, err := h.svc.OrderSettlementHistory(id, middleware.CurrentIdentity(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, history)
+}
+
+// SettlementOffsetTargets 查询同一往来单位的未结单据
+// @Summary      查询可抵扣单据
+// @Tags         进销存-应收应付
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "原单 ID"
+// @Param        keyword query string false "单据编号"
+// @Success      200 {object} response.Body{data=[]inv.SettlementOffsetTarget}
+// @Router       /inv/finance/orders/{id}/offset-targets [get]
+func (h *Handler) SettlementOffsetTargets(c *gin.Context) {
+	id, err := bind.PathID(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	rows, err := h.svc.SettlementOffsetTargets(id, c.Query("keyword"), middleware.CurrentIdentity(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, rows)
+}
+
+// AdjustOrderSettlement 追加收付款更正、退款或往来抵扣流水
+// @Summary      处理已登记收付款
+// @Tags         进销存-应收应付
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "原单 ID"
+// @Param        settlementId path int true "原收付款记录 ID"
+// @Param        body body SettlementAdjustmentReq true "处理信息"
+// @Success      200 {object} response.Body{data=response.IDData}
+// @Failure      409 {object} response.Body
+// @Router       /inv/finance/orders/{id}/settlements/{settlementId}/adjustments [post]
+func (h *Handler) AdjustOrderSettlement(c *gin.Context) {
+	id, err := bind.PathID(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	settlementID, err := strconv.ParseInt(c.Param("settlementId"), 10, 64)
+	if err != nil || settlementID <= 0 {
+		response.Fail(c, errcode.New(errcode.ErrBadRequest, "收付款记录编号非法"))
+		return
+	}
+	var req SettlementAdjustmentReq
+	if err := bind.JSON(c, &req); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	c.Set("opAction", "处理收付款")
+	adjustmentID, err := h.svc.AdjustOrderSettlement(id, settlementID, req, middleware.CurrentIdentity(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, response.IDData{ID: adjustmentID})
 }

@@ -569,6 +569,7 @@ export interface InvOrderPayload {
   /** 业务员（自由文本，可不填） */
   salesman?: string
   items: InvOrderItemPayload[]
+  reopenedFrom?: number
 }
 
 /** 单据明细行（响应） */
@@ -644,6 +645,47 @@ export interface InvOrderDetail extends InvOrderRow {
   downstream?: InvOrderDownstream
   items: InvOrderItem[]
   linkedOrder?: InvRedReversalOrderLink
+  reopenedOrder?: InvRedReversalOrderLink
+  hasReopenedOrder?: boolean
+  originalOrder?: InvRedReversalOrderLink
+  originalReversal?: InvRedReversalOrderLink
+}
+
+export type SettlementAdjustmentKind = 'correction' | 'refund' | 'offset'
+
+export interface InvOrderSettlementRow {
+  id: number
+  amount: number
+  available: number
+  kind: SettlementAdjustmentKind | 'offset_in' | ''
+  method: string
+  settledAt: string
+  remark: string
+  reference: string
+  operator: string
+  adjustsId: number | null
+  counterOrder?: InvRedReversalOrderLink
+}
+
+export interface InvOrderSettlements {
+  rows: InvOrderSettlementRow[]
+  settled: number
+  outstanding: number
+  canAdjust: boolean
+}
+
+export interface InvSettlementAdjustmentPayload {
+  kind: SettlementAdjustmentKind
+  key: string
+  amount: number
+  reason: string
+  settledAt?: string
+  reference?: string
+  targetOrderId?: number
+}
+
+export interface InvSettlementOffsetTarget extends InvRedReversalOrderLink {
+  outstanding: number
 }
 
 export interface InvRedReversalOrderLink {

@@ -15,6 +15,9 @@ import type {
   InvOrderDetail,
   InvOrderPayload,
   InvOrderRow,
+  InvOrderSettlements,
+  InvSettlementAdjustmentPayload,
+  InvSettlementOffsetTarget,
   InvOrderStatus,
   InvRedReversalOrderLink,
   InvRedReversalPreview,
@@ -227,6 +230,19 @@ export const invApi = {
   redReverseOrder(id: number, stockOrderId: number, reason: string) {
     return http.post<InvRedReversalOrderLink>(
       `/inv/orders/${id}/red-reversal`, { stockOrderId, reason }, { silent: true },
+    )
+  },
+  orderSettlements(id: number) {
+    return http.get<InvOrderSettlements>(`/inv/finance/orders/${id}/settlements`, undefined, { silent: true })
+  },
+  settlementOffsetTargets(id: number, keyword: string) {
+    return http.get<InvSettlementOffsetTarget[]>(
+      `/inv/finance/orders/${id}/offset-targets`, { keyword }, { silent: true },
+    )
+  },
+  adjustSettlement(id: number, settlementID: number, payload: InvSettlementAdjustmentPayload) {
+    return http.post<{ id: number }>(
+      `/inv/finance/orders/${id}/settlements/${settlementID}/adjustments`, payload, { silent: true },
     )
   },
 

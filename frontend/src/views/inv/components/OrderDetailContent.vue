@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import type { InvOrderDetail, InvOrderItem, InvProductPick } from '@/types/api'
 import {
   formatDay,
@@ -9,6 +10,8 @@ import {
 import OrderAuditTrail from './OrderAuditTrail.vue'
 import { statusMeta, settleMeta } from './orderPresentation'
 import AppIcon from '@/components/AppIcon.vue'
+import OrderSettlementDialog from './OrderSettlementDialog.vue'
+import { useUserStore } from '@/store'
 
 const props = defineProps<{
   order: InvOrderDetail
@@ -17,11 +20,23 @@ const props = defineProps<{
   isPurchase: boolean
   picks: InvProductPick[]
   canRedReverse: boolean
+  canReopen: boolean
 }>()
 const emit = defineEmits<{
   redReverse: [order: InvOrderDetail]
+  reopen: [order: InvOrderDetail]
   openLinked: [order: Pick<InvOrderDetail, 'id'>]
+  settlementsUpdated: [id: number]
 }>()
+const userStore = useUserStore()
+const canViewSettlements = computed(() => userStore.hasAnyPerm(['inv:finance:list']))
+const settlements = ref<InstanceType<typeof OrderSettlementDialog>>()
+const correctionLinks = computed(() => [
+  { label: props.order.status === 5 ? '原单' : '关联红冲单', order: props.order.linkedOrder },
+  { label: '重开单', order: props.order.reopenedOrder },
+  { label: '重开来源原单', order: props.order.originalOrder },
+  { label: '来源红冲单', order: props.order.originalReversal },
+].flatMap(({ label, order }) => order ? [{ label, order }] : []))
 
 function baseUnitNameOf(productId: number, specId: number): string {
   const spec = props.picks
@@ -86,18 +101,30 @@ function detailSummary(param: { columns: unknown[] }): string[] {
       </el-dropdown>
     </div>
 
-    <p v-if="canRedReverse && order.status === 2 && order.settledAmount > 0" class="audit-summary">
-      已登记收付款，无法整单红冲。请联系财务核对款项。
+    <div v-if="canViewSettlements && (order.status === 2 || order.status === 4)" class="reversal-link">
+      <el-button link type="primary" @click="settlements?.open()">查看收付款明细</el-button>
+      <span v-if="canRedReverse && order.status === 2 && order.settledAmount > 0">
+        处理已结算款项后可继续整单红冲。
+      </span>
+    </div>
+    <p v-else-if="canRedReverse && order.status === 2 && order.settledAmount > 0" class="audit-summary">
+      本单仍有已结算金额，请联系财务处理。
     </p>
-    <section v-if="order.linkedOrder" class="form-section" aria-label="红冲关联">
-      <p class="reversal-link">
-        {{ order.status === 5 ? '原单' : '关联红冲单' }}
+    <section v-if="correctionLinks.length || (order.status === 4 && canReopen)" class="form-section" aria-label="红冲关联">
+      <p v-for="{ label, order: linked } in correctionLinks" :key="label" class="reversal-link">
+        {{ label }}
         <el-button
           link
           type="primary"
-          :aria-label="`查看${order.status === 5 ? '原单' : '红冲单'} ${order.linkedOrder.orderNo}`"
-          @click="emit('openLinked', order.linkedOrder)"
-        >{{ order.linkedOrder.orderNo }}</el-button>
+          :aria-label="`查看${label === '关联红冲单' ? '红冲单' : label} ${linked.orderNo}`"
+          @click="emit('openLinked', linked)"
+        >{{ linked.orderNo }}</el-button>
+      </p>
+      <el-button v-if="order.status === 4 && canReopen && !order.hasReopenedOrder" @click="emit('reopen', order)">
+        按原单重开
+      </el-button>
+      <p v-if="order.hasReopenedOrder && !order.reopenedOrder" class="reversal-link">
+        已有重开单，当前账号无法查看。
       </p>
       <p v-if="order.status === 5" class="reversal-link">
         过账 {{ order.auditorName || `账号 #${order.auditorId}` }} · {{ formatDateTime(order.auditedAt) }}
@@ -221,6 +248,11 @@ function detailSummary(param: { columns: unknown[] }): string[] {
       </el-table>
     </section>
     <OrderAuditTrail v-if="isPurchase && order.status !== 5" :order="order" />
+    <OrderSettlementDialog
+      v-if="canViewSettlements" ref="settlements" :order="order" :can-open-linked="true"
+      @updated="emit('settlementsUpdated', order.id)"
+      @open-linked="emit('openLinked', $event)"
+    />
   </div>
 </template>
 
