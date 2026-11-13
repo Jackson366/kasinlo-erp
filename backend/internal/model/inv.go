@@ -253,6 +253,7 @@ type InvOrder struct {
 	ReversedAt   *time.Time `json:"reversedAt"`
 	PendingSince *time.Time `json:"pendingSince"`
 	ReversalOf   *int64     `gorm:"uniqueIndex" json:"reversalOf"` // 红冲单对应的原采购/销售单
+	ReopenedFrom *int64     `json:"reopenedFrom"`
 }
 
 // TableName 指定表名。
@@ -290,15 +291,20 @@ type InvSettlement struct {
 	// PlanID 合同付款期次 ID。合同收付款与单据结算共用这张表：
 	// 一笔记账行为的字段完全一致（金额、方式、日期、经办），
 	// 分表只会让账龄与台账各算两遍。Source 标明这行挂在谁身上。
-	PlanID    int64     `gorm:"index" json:"planId"`
-	Source    string    `gorm:"size:16;not null;default:order" json:"source"` // order | plan
-	BizType   string    `gorm:"size:16;index" json:"bizType"`
-	PartyID   int64     `gorm:"index" json:"partyId"`
-	Amount    float64   `gorm:"type:numeric(14,2);default:0" json:"amount"`
-	Method    string    `gorm:"size:32" json:"method"` // 现金 / 银行转账 / 承兑
-	SettledAt time.Time `gorm:"type:date" json:"settledAt"`
-	Remark    string    `gorm:"size:255" json:"remark"`
-	CreatedBy int64     `json:"createdBy"`
+	PlanID         int64     `gorm:"index" json:"planId"`
+	Source         string    `gorm:"size:16;not null;default:order" json:"source"` // order | plan
+	BizType        string    `gorm:"size:16;index" json:"bizType"`
+	PartyID        int64     `gorm:"index" json:"partyId"`
+	Amount         float64   `gorm:"type:numeric(14,2);default:0" json:"amount"`
+	Method         string    `gorm:"size:32" json:"method"` // 现金 / 银行转账 / 承兑
+	SettledAt      time.Time `gorm:"type:date" json:"settledAt"`
+	Remark         string    `gorm:"size:255" json:"remark"`
+	CreatedBy      int64     `json:"createdBy"`
+	AdjustsID      *int64    `gorm:"index" json:"adjustsId"`
+	AdjustmentKey  *string   `gorm:"size:64;uniqueIndex" json:"-"`
+	Kind           string    `gorm:"size:24;not null;default:''" json:"kind"`
+	Reference      string    `gorm:"size:128;not null;default:''" json:"reference"`
+	CounterOrderID *int64    `json:"counterOrderId"`
 }
 
 // TableName 指定表名。

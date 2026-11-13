@@ -593,6 +593,8 @@ definitions:
       dueDate:
         description: 选填：未填时为 null
         type: string
+      hasReopenedOrder:
+        type: boolean
       id:
         type: integer
       itemCount:
@@ -610,6 +612,10 @@ definitions:
         type: string
       orderNo:
         type: string
+      originalOrder:
+        $ref: '#/definitions/inv.RedReversalOrderLink'
+      originalReversal:
+        $ref: '#/definitions/inv.RedReversalOrderLink'
       partyId:
         type: integer
       partyName:
@@ -618,6 +624,8 @@ definitions:
         type: string
       remark:
         type: string
+      reopenedOrder:
+        $ref: '#/definitions/inv.RedReversalOrderLink'
       reversedAt:
         type: string
       reversedBy:
@@ -719,6 +727,8 @@ definitions:
       remark:
         maxLength: 255
         type: string
+      reopenedFrom:
+        type: integer
       salesman:
         maxLength: 64
         type: string
@@ -781,6 +791,44 @@ definitions:
       status:
         type: integer
       totalAmount:
+        type: number
+    type: object
+  inv.OrderSettlementRow:
+    properties:
+      adjustsId:
+        type: integer
+      amount:
+        type: number
+      available:
+        type: number
+      counterOrder:
+        $ref: '#/definitions/inv.RedReversalOrderLink'
+      id:
+        type: integer
+      kind:
+        type: string
+      method:
+        type: string
+      operator:
+        type: string
+      reference:
+        type: string
+      remark:
+        type: string
+      settledAt:
+        type: string
+    type: object
+  inv.OrderSettlements:
+    properties:
+      canAdjust:
+        type: boolean
+      outstanding:
+        type: number
+      rows:
+        items:
+          $ref: '#/definitions/inv.OrderSettlementRow'
+        type: array
+      settled:
         type: number
     type: object
   inv.OrderStockLink:
@@ -1499,6 +1547,42 @@ definitions:
     required:
     - amount
     - orderId
+    type: object
+  inv.SettlementAdjustmentReq:
+    properties:
+      amount:
+        type: number
+      key:
+        type: string
+      kind:
+        enum:
+        - correction
+        - refund
+        - offset
+        type: string
+      reason:
+        maxLength: 255
+        type: string
+      reference:
+        maxLength: 128
+        type: string
+      settledAt:
+        type: string
+      targetOrderId:
+        type: integer
+    required:
+    - key
+    - kind
+    - reason
+    type: object
+  inv.SettlementOffsetTarget:
+    properties:
+      id:
+        type: integer
+      orderNo:
+        type: string
+      outstanding:
+        type: number
     type: object
   inv.StatusReq:
     properties:
@@ -3440,6 +3524,104 @@ paths:
       summary: 导出进销存列表
       tags:
       - 进销存-通用
+  /inv/finance/orders/{id}/offset-targets:
+    get:
+      parameters:
+      - description: 原单 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 单据编号
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/inv.SettlementOffsetTarget'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询可抵扣单据
+      tags:
+      - 进销存-应收应付
+  /inv/finance/orders/{id}/settlements:
+    get:
+      parameters:
+      - description: 单据 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.OrderSettlements'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查看单据收付款记录
+      tags:
+      - 进销存-应收应付
+  /inv/finance/orders/{id}/settlements/{settlementId}/adjustments:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 原单 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 原收付款记录 ID
+        in: path
+        name: settlementId
+        required: true
+        type: integer
+      - description: 处理信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/inv.SettlementAdjustmentReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.IDData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 处理已登记收付款
+      tags:
+      - 进销存-应收应付
   /inv/finance/payables:
     get:
       parameters:

@@ -1490,6 +1490,175 @@ const docTemplate = `{
                 }
             }
         },
+        "/inv/finance/orders/{id}/offset-targets": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-应收应付"
+                ],
+                "summary": "查询可抵扣单据",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "原单 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "单据编号",
+                        "name": "keyword",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/inv.SettlementOffsetTarget"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/finance/orders/{id}/settlements": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-应收应付"
+                ],
+                "summary": "查看单据收付款记录",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "单据 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.OrderSettlements"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inv/finance/orders/{id}/settlements/{settlementId}/adjustments": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "进销存-应收应付"
+                ],
+                "summary": "处理已登记收付款",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "原单 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "原收付款记录 ID",
+                        "name": "settlementId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "处理信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inv.SettlementAdjustmentReq"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.IDData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/inv/finance/payables": {
             "get": {
                 "security": [
@@ -7838,6 +8007,9 @@ const docTemplate = `{
                     "description": "选填：未填时为 null",
                     "type": "string"
                 },
+                "hasReopenedOrder": {
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -7863,6 +8035,12 @@ const docTemplate = `{
                 "orderNo": {
                     "type": "string"
                 },
+                "originalOrder": {
+                    "$ref": "#/definitions/inv.RedReversalOrderLink"
+                },
+                "originalReversal": {
+                    "$ref": "#/definitions/inv.RedReversalOrderLink"
+                },
                 "partyId": {
                     "type": "integer"
                 },
@@ -7874,6 +8052,9 @@ const docTemplate = `{
                 },
                 "remark": {
                     "type": "string"
+                },
+                "reopenedOrder": {
+                    "$ref": "#/definitions/inv.RedReversalOrderLink"
                 },
                 "reversedAt": {
                     "type": "string"
@@ -8030,6 +8211,9 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 255
                 },
+                "reopenedFrom": {
+                    "type": "integer"
+                },
                 "salesman": {
                     "type": "string",
                     "maxLength": 64
@@ -8114,6 +8298,64 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "totalAmount": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.OrderSettlementRow": {
+            "type": "object",
+            "properties": {
+                "adjustsId": {
+                    "type": "integer"
+                },
+                "amount": {
+                    "type": "number"
+                },
+                "available": {
+                    "type": "number"
+                },
+                "counterOrder": {
+                    "$ref": "#/definitions/inv.RedReversalOrderLink"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "operator": {
+                    "type": "string"
+                },
+                "reference": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "settledAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "inv.OrderSettlements": {
+            "type": "object",
+            "properties": {
+                "canAdjust": {
+                    "type": "boolean"
+                },
+                "outstanding": {
+                    "type": "number"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.OrderSettlementRow"
+                    }
+                },
+                "settled": {
                     "type": "number"
                 }
             }
@@ -9176,6 +9418,58 @@ const docTemplate = `{
                 },
                 "settledAt": {
                     "type": "string"
+                }
+            }
+        },
+        "inv.SettlementAdjustmentReq": {
+            "type": "object",
+            "required": [
+                "key",
+                "kind",
+                "reason"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "correction",
+                        "refund",
+                        "offset"
+                    ]
+                },
+                "reason": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "reference": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "settledAt": {
+                    "type": "string"
+                },
+                "targetOrderId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.SettlementOffsetTarget": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "orderNo": {
+                    "type": "string"
+                },
+                "outstanding": {
+                    "type": "number"
                 }
             }
         },

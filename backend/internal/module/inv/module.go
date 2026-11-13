@@ -92,6 +92,7 @@ func Module() module.Module {
 						Permission: "inv:finance:list", KeepAlive: true,
 						Children: []module.MenuNode{
 							{Name: "InvFinanceSettle", Title: "登记收付款", Type: module.TypeButton, Permission: "inv:finance:settle"},
+							{Name: "InvFinanceAdjust", Title: "处理收付款", Type: module.TypeButton, Permission: "inv:finance:adjust"},
 						},
 					},
 					{

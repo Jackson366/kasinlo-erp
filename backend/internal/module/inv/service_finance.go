@@ -2,6 +2,7 @@ package inv
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -248,6 +249,8 @@ func (s *Service) SettleBatch(req SettleBatchReq, actor *authz.Identity) (Settle
 			ids = append(ids, id)
 		}
 	}
+	// 与往来抵扣按同一顺序锁定单据。
+	slices.Sort(ids)
 
 	err = saveErr(s.db.Transaction(func(tx *gorm.DB) error {
 		for _, id := range ids {
@@ -342,6 +345,9 @@ func (s *Service) Settle(req SettleReq, actor *authz.Identity) error {
 		method = "银行转账"
 	}
 	amount := round2(req.Amount)
+	if amount <= 0 {
+		return errcode.New(errcode.ErrBadRequest, "结算金额至少为 0.01 元")
+	}
 	return saveErr(s.db.Transaction(func(tx *gorm.DB) error {
 		rec := model.InvSettlement{
 			OrderID: o.ID, BizType: o.BizType, PartyID: o.PartyID,

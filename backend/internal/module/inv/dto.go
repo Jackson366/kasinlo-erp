@@ -260,13 +260,14 @@ type OrderItemReq struct {
 type OrderReq struct {
 	BizType string `json:"bizType" binding:"required,oneof=purchase sales" label:"单据类型"`
 	// OrderNo 单据编号。留空自动生成（CG/XS + 日期 + 流水）；填了用手工值（重复会 409）。
-	OrderNo   string         `json:"orderNo" binding:"omitempty,max=32" label:"单据编号"`
-	PartyID   int64          `json:"partyId" binding:"required,gt=0" label:"往来单位"`
-	OrderDate string         `json:"orderDate" binding:"required" label:"单据日期"`
-	DueDate   string         `json:"dueDate" binding:"omitempty" label:"到期日"`
-	Remark    string         `json:"remark" binding:"omitempty,max=255" label:"备注"`
-	Salesman  string         `json:"salesman" binding:"omitempty,max=64" label:"业务员"`
-	Items     []OrderItemReq `json:"items" binding:"required,min=1" label:"明细"`
+	OrderNo      string         `json:"orderNo" binding:"omitempty,max=32" label:"单据编号"`
+	PartyID      int64          `json:"partyId" binding:"required,gt=0" label:"往来单位"`
+	OrderDate    string         `json:"orderDate" binding:"required" label:"单据日期"`
+	DueDate      string         `json:"dueDate" binding:"omitempty" label:"到期日"`
+	Remark       string         `json:"remark" binding:"omitempty,max=255" label:"备注"`
+	Salesman     string         `json:"salesman" binding:"omitempty,max=64" label:"业务员"`
+	Items        []OrderItemReq `json:"items" binding:"required,min=1" label:"明细"`
+	ReopenedFrom *int64         `json:"reopenedFrom" binding:"omitempty,gt=0" label:"重开原单"`
 }
 
 // OrderItemVO 单据明细行。编码不在明细快照里，由商品档案补齐（商品已删则留空）。
@@ -339,10 +340,14 @@ type OrderRow struct {
 // OrderDetail 单据详情（主表 + 明细）。制单人显示名在 OrderRow.Operator 里。
 type OrderDetail struct {
 	OrderRow
-	Items        []OrderItemVO         `json:"items"`
-	AuditHistory []model.InvOrderAudit `json:"auditHistory"`
-	Downstream   OrderDownstream       `json:"downstream"`
-	LinkedOrder  *RedReversalOrderLink `json:"linkedOrder,omitempty"`
+	Items            []OrderItemVO         `json:"items"`
+	AuditHistory     []model.InvOrderAudit `json:"auditHistory"`
+	Downstream       OrderDownstream       `json:"downstream"`
+	LinkedOrder      *RedReversalOrderLink `json:"linkedOrder,omitempty"`
+	ReopenedOrder    *RedReversalOrderLink `json:"reopenedOrder,omitempty"`
+	HasReopenedOrder bool                  `json:"hasReopenedOrder,omitempty"`
+	OriginalOrder    *RedReversalOrderLink `json:"originalOrder,omitempty"`
+	OriginalReversal *RedReversalOrderLink `json:"originalReversal,omitempty"`
 }
 
 type RedReversalOrderLink struct {
@@ -510,6 +515,42 @@ type SettleReq struct {
 	Method    string  `json:"method" binding:"omitempty,max=32" label:"结算方式"`
 	SettledAt string  `json:"settledAt" binding:"omitempty" label:"结算日期"`
 	Remark    string  `json:"remark" binding:"omitempty,max=255" label:"备注"`
+}
+
+type SettlementAdjustmentReq struct {
+	Kind          string  `json:"kind" binding:"required,oneof=correction refund offset" label:"处理方式"`
+	Key           string  `json:"key" binding:"required,uuid" label:"请求编号"`
+	Amount        float64 `json:"amount" binding:"omitempty,gt=0" label:"处理金额"`
+	Reason        string  `json:"reason" binding:"required,max=255" label:"原因"`
+	Reference     string  `json:"reference" binding:"omitempty,max=128" label:"退款凭证号"`
+	SettledAt     string  `json:"settledAt" binding:"omitempty" label:"退款日期"`
+	TargetOrderID int64   `json:"targetOrderId" binding:"omitempty,gt=0" label:"抵扣单据"`
+}
+
+type OrderSettlementRow struct {
+	ID           int64                 `json:"id"`
+	Amount       float64               `json:"amount"`
+	Available    float64               `json:"available"`
+	Kind         string                `json:"kind"`
+	Method       string                `json:"method"`
+	SettledAt    time.Time             `json:"settledAt"`
+	Remark       string                `json:"remark"`
+	Reference    string                `json:"reference"`
+	Operator     string                `json:"operator"`
+	AdjustsID    *int64                `json:"adjustsId"`
+	CounterOrder *RedReversalOrderLink `json:"counterOrder,omitempty"`
+}
+
+type SettlementOffsetTarget struct {
+	RedReversalOrderLink
+	Outstanding float64 `json:"outstanding"`
+}
+
+type OrderSettlements struct {
+	Rows        []OrderSettlementRow `json:"rows"`
+	Settled     float64              `json:"settled"`
+	Outstanding float64              `json:"outstanding"`
+	CanAdjust   bool                 `json:"canAdjust"`
 }
 
 // SettleBatchReq 批量收付款。

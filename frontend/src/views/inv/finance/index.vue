@@ -8,24 +8,37 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import type { FormInstance, FormRules } from 'element-plus'
 import { invApi } from '@/api'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { usePurchaseHandoff } from '@/composables/usePurchaseHandoff'
 import PurchaseReturnLink from '../components/PurchaseReturnLink.vue'
-import type { InvFinanceRow, InvFinanceSummary, InvSettlePayload } from '@/types/api'
+import type { InvFinanceRow, InvFinanceSummary, InvRedReversalOrderLink, InvSettlePayload } from '@/types/api'
 import AppIcon from '@/components/AppIcon.vue'
 import ListFilters from '@/components/ListFilters.vue'
 import ListPrintDialog, { type ListPrintColumn } from '@/components/ListPrintDialog.vue'
 import { formatDay, formatMoney } from '@/utils/format'
 import { useLatestGuard } from '@/composables/useLatestGuard'
 import { useDebouncedSearch } from '@/composables/useDebouncedSearch'
+import OrderSettlementDialog from '../components/OrderSettlementDialog.vue'
 
 defineOptions({ name: 'InvFinance' })
 
 const route = useRoute()
+const router = useRouter()
 const { returnTo, follow } = usePurchaseHandoff()
 const loadError = ref(false)
 let applyingHandoff = false
 const activeTab = ref<'receivable' | 'payable'>('receivable')
+const historyOrder = ref<{ id: number; orderNo: string; partyName: string }>()
+const historyDialog = ref<InstanceType<typeof OrderSettlementDialog>>()
+async function openHistory(row: InvFinanceRow): Promise<void> {
+  historyOrder.value = { id: row.orderId, orderNo: row.orderNo, partyName: row.partyName }
+  await nextTick()
+  historyDialog.value?.open()
+}
+const historyOrderRoute = computed(() => activeTab.value === 'payable' ? 'InvPurchase' : 'InvSales')
+function openHistoryOrder(link: InvRedReversalOrderLink) {
+  void router.push({ name: historyOrderRoute.value, query: { view: 'all', order: String(link.id) } })
+}
 const loading = ref(false)
 const rows = ref<InvFinanceRow[]>([])
 const total = ref(0)
@@ -461,8 +474,11 @@ follow('/inv/finance', () => {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="110" fixed="right" align="center">
+      <el-table-column label="操作" width="180" fixed="right" align="center">
         <template #default="{ row }">
+          <el-button v-if="row.source === 'order'" type="primary" link @click="openHistory(row as InvFinanceRow)">
+            收付款明细
+          </el-button>
           <el-button
             v-perm="'inv:finance:settle'"
             link
@@ -475,6 +491,15 @@ follow('/inv/finance', () => {
         </template>
       </el-table-column>
     </KasTable>
+
+    <OrderSettlementDialog
+      v-if="historyOrder"
+      ref="historyDialog"
+      :order="historyOrder"
+      :can-open-linked="router.hasRoute(historyOrderRoute)"
+      @updated="load"
+      @open-linked="openHistoryOrder"
+    />
 
     <ListPrintDialog
       v-model="printVisible"

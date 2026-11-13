@@ -191,16 +191,49 @@ func (s *Service) OrderDetail(id int64, actor *authz.Identity) (*OrderDetail, er
 		}
 	}
 	detail := &OrderDetail{OrderRow: row, Items: items, AuditHistory: history, Downstream: downstream}
+	visibleOrders := s.applyCreator(s.db.Model(&model.InvOrder{}), actor).Select("id", "order_no")
+	if o.ReopenedFrom != nil {
+		var links []RedReversalOrderLink
+		if err := visibleOrders.Session(&gorm.Session{}).
+			Where("id = ? OR reversal_of = ?", *o.ReopenedFrom, *o.ReopenedFrom).Find(&links).Error; err != nil {
+			return nil, saveErr(err)
+		}
+		for _, link := range links {
+			if link.ID == *o.ReopenedFrom {
+				detail.OriginalOrder = &link
+			} else {
+				detail.OriginalReversal = &link
+			}
+		}
+	}
 	if o.Status == model.InvStatusRedReversed || o.ReversalOf != nil {
-		q := s.applyCreator(s.db.Model(&model.InvOrder{}), actor).Where("reversal_of = ?", o.ID)
+		originalID := o.ID
+		related := visibleOrders.Session(&gorm.Session{}).Where("reversal_of = ?", o.ID)
 		if o.ReversalOf != nil {
-			q = s.applyCreator(s.db.Model(&model.InvOrder{}), actor).Where("id = ?", *o.ReversalOf)
+			originalID = *o.ReversalOf
+			related = visibleOrders.Session(&gorm.Session{}).Where("id = ?", originalID)
 		}
 		var linked RedReversalOrderLink
-		if err := q.Take(&linked).Error; err == nil {
+		if err := related.Take(&linked).Error; err == nil {
 			detail.LinkedOrder = &linked
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, saveErr(err)
+		}
+		var links []model.InvOrder
+		if err := s.db.Select("id", "order_no", "created_by").
+			Where("reopened_from = ? AND status <> ?", originalID, model.InvStatusCanceled).
+			Limit(1).Find(&links).Error; err != nil {
+			return nil, saveErr(err)
+		}
+		if len(links) > 0 {
+			detail.HasReopenedOrder = true
+			visible, err := authz.ResolveScope(actor).CreatorVisible(links[0].CreatedBy)
+			if err != nil {
+				return nil, saveErr(err)
+			}
+			if visible {
+				detail.ReopenedOrder = &RedReversalOrderLink{ID: links[0].ID, OrderNo: links[0].OrderNo}
+			}
 		}
 	}
 	return detail, nil
@@ -275,6 +308,19 @@ func (s *Service) buildItems(bizType string, req []OrderItemReq) ([]model.InvOrd
 
 // OrderCreate 新增单据。
 func (s *Service) OrderCreate(req OrderReq, actor *authz.Identity) (int64, error) {
+	if req.ReopenedFrom != nil {
+		var original model.InvOrder
+		err := s.applyCreator(s.db, actor).Select("id", "status", "biz_type").First(&original, *req.ReopenedFrom).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, errcode.New(errcode.ErrNotFound, "重开原单不存在")
+		}
+		if err != nil {
+			return 0, saveErr(err)
+		}
+		if original.BizType != req.BizType || original.Status != model.InvStatusRedReversed {
+			return 0, errcode.New(errcode.ErrConflict, "仅可按同业务类型的已红冲原单重开")
+		}
+	}
 	partyName, err := s.findParty(req.BizType, req.PartyID)
 	if err != nil {
 		return 0, err
@@ -304,8 +350,22 @@ func (s *Service) OrderCreate(req OrderReq, actor *authz.Identity) (int64, error
 		OrderNo: no, BizType: req.BizType, PartyID: req.PartyID, PartyName: partyName,
 		OrderDate: orderDate, DueDate: dueDate, Status: model.InvStatusPending, PendingSince: &now,
 		TotalAmount: total, Remark: req.Remark, Salesman: req.Salesman, CreatedBy: actorUID(actor),
+		ReopenedFrom: req.ReopenedFrom,
 	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if req.ReopenedFrom != nil {
+			var original model.InvOrder
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&original, *req.ReopenedFrom).Error; err != nil {
+				return err
+			}
+			var count int64
+			if err := tx.Model(&model.InvOrder{}).Where("reopened_from = ? AND status <> ?", original.ID, model.InvStatusCanceled).Count(&count).Error; err != nil {
+				return err
+			}
+			if count > 0 {
+				return errcode.New(errcode.ErrConflict, "已有重开单，请返回原单查看")
+			}
+		}
 		if err := tx.Create(&order).Error; err != nil {
 			return err
 		}
