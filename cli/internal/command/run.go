@@ -19,7 +19,7 @@ import (
 	"kasinlo-cli/internal/credential"
 )
 
-const usage = `kas [--server URL] [--profile NAME] auth login [--scope "inventory.read product.read purchase.read sales.read"] [--no-wait | --session ID]
+const usage = `kas [--server URL] [--profile NAME] auth login [--scope "inventory.read product.read purchase.read sales.read stock.read finance.read"] [--no-wait | --session ID]
 kas [--server URL] [--profile NAME] auth status
 kas [--server URL] [--profile NAME] auth logout
 kas [--server URL] [--profile NAME] inventory list [--keyword TEXT] [--page N] [--page-size N]
@@ -29,6 +29,10 @@ kas [--server URL] [--profile NAME] purchase list [--keyword TEXT] [--status 1..
 kas [--server URL] [--profile NAME] purchase get --id ID
 kas [--server URL] [--profile NAME] sales list [--keyword TEXT] [--status 1..5] [--settle-status STATUS] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--page N] [--page-size N]
 kas [--server URL] [--profile NAME] sales get --id ID
+kas [--server URL] [--profile NAME] stock list [--direction in|out] [--source-type purchase|sales --source-id ID] [--include-voided] [--keyword TEXT] [--page N] [--page-size N]
+kas [--server URL] [--profile NAME] stock get --id ID
+kas [--server URL] [--profile NAME] finance receivables|payables [--settle-status STATUS] [--source order|plan] [--keyword TEXT] [--page N] [--page-size N]
+kas [--server URL] [--profile NAME] finance settlements --order-id ID
 `
 
 type problem struct {
@@ -100,7 +104,7 @@ func execute(ctx context.Context, args []string, out, diag io.Writer) error {
 		return usageError("expected a command; run kas --help")
 	}
 	switch args[0] + " " + args[1] {
-	case "auth login", "auth status", "auth logout", "inventory list", "product list", "product get", "purchase list", "purchase get", "sales list", "sales get":
+	case "auth login", "auth status", "auth logout", "inventory list", "product list", "product get", "purchase list", "purchase get", "sales list", "sales get", "stock list", "stock get", "finance receivables", "finance payables", "finance settlements":
 	default:
 		return usageError("unknown command; run kas --help")
 	}
@@ -330,18 +334,29 @@ func read(ctx context.Context, api *client.Client, store credential.Store, args 
 		path = "purchase-orders"
 	case "sales":
 		path = "sales-orders"
+	case "stock":
+		path = "stock-orders"
+	case "finance":
+		path = args[1]
+		if args[1] == "settlements" {
+			path = "order-settlements"
+		}
 	}
 
 	flags := flag.NewFlagSet(args[0]+" "+args[1], flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	var query url.Values
-	if args[1] == "get" {
-		id := flags.Int64("id", 0, "record ID")
+	if args[1] == "get" || args[1] == "settlements" {
+		idFlag := "id"
+		if args[1] == "settlements" {
+			idFlag = "order-id"
+		}
+		id := flags.Int64(idFlag, 0, "record ID")
 		if err := flags.Parse(args[2:]); err != nil {
 			return usageError(err.Error())
 		}
 		if flags.NArg() != 0 || *id <= 0 {
-			return usageError("use --id with a positive record ID")
+			return usageError("use --" + idFlag + " with a positive record ID")
 		}
 		path += "/" + strconv.FormatInt(*id, 10)
 	} else {
@@ -371,10 +386,19 @@ func listQuery(flags *flag.FlagSet, resource string, args []string) (url.Values,
 	page := flags.Int("page", 1, "page number")
 	size := flags.Int("page-size", 10, "page size")
 	filters := map[string]*string{}
+	var includeVoided *bool
 	switch resource {
 	case "product":
 		filters["status"] = flags.String("status", "", "product status")
 		filters["categoryId"] = flags.String("category-id", "", "product category ID")
+	case "stock":
+		filters["direction"] = flags.String("direction", "", "in or out")
+		filters["sourceType"] = flags.String("source-type", "", "purchase or sales")
+		filters["sourceId"] = flags.String("source-id", "", "source order ID")
+		includeVoided = flags.Bool("include-voided", false, "include voided stock orders")
+	case "finance":
+		filters["settle"] = flags.String("settle-status", "", "unpaid, partial, paid or overdue")
+		filters["source"] = flags.String("source", "", "order or plan")
 	case "purchase", "sales":
 		filters["status"] = flags.String("status", "", "order status")
 		filters["settleStatus"] = flags.String("settle-status", "", "unpaid, partial or paid")
@@ -392,6 +416,9 @@ func listQuery(flags *flag.FlagSet, resource string, args []string) (url.Values,
 		if *value != "" {
 			query.Set(name, *value)
 		}
+	}
+	if includeVoided != nil && *includeVoided {
+		query.Set("includeVoided", "true")
 	}
 	return query, nil
 }

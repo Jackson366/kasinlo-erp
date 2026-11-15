@@ -40,7 +40,16 @@ func (s *Service) stockStats(ids []int64) (map[int64][2]float64, error) {
 
 // StockOrderList 出入库单据列表。direction 为空表示全部。
 func (s *Service) StockOrderList(q page.Query, direction string, includeVoided bool, actor *authz.Identity) ([]StockOrderRow, int64, error) {
+	return s.stockOrderList(q, direction, includeVoided, actor, "", 0)
+}
+
+func (s *Service) stockOrderList(q page.Query, direction string, includeVoided bool, actor *authz.Identity, sourceType string, sourceID int64) ([]StockOrderRow, int64, error) {
 	tx := s.db.Model(&model.InvStockOrder{})
+	if sourceID > 0 {
+		source := s.applyCreator(s.db.Model(&model.InvOrder{}), actor).
+			Select("id").Where("id = ? AND biz_type = ?", sourceID, sourceType)
+		tx = tx.Where("source_type = ? AND source_id IN (?)", sourceType, source)
+	}
 	if !includeVoided {
 		tx = tx.Where("status = 1")
 	}
@@ -235,6 +244,10 @@ func stockRefs(items []StockItemReq) []specUnitRef {
 // StockOrderDetail 出入库单打印详情。
 // 已作废单据不可打印——单据已回滚库存，再打出来就是一张与实物对不上的凭证。
 func (s *Service) StockOrderDetail(id int64, actor *authz.Identity) (*StockOrderDetail, error) {
+	return s.stockOrderDetail(id, actor, false)
+}
+
+func (s *Service) stockOrderDetail(id int64, actor *authz.Identity, includeVoided bool) (*StockOrderDetail, error) {
 	var o model.InvStockOrder
 	if err := s.applyCreator(s.db.Where("id = ?", id), actor).First(&o).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -242,7 +255,7 @@ func (s *Service) StockOrderDetail(id int64, actor *authz.Identity) (*StockOrder
 		}
 		return nil, saveErr(err)
 	}
-	if o.Status == 2 {
+	if o.Status == 2 && !includeVoided {
 		return nil, errcode.New(errcode.ErrConflict, "已作废单据不可打印")
 	}
 
@@ -299,7 +312,8 @@ func (s *Service) StockOrderDetail(id int64, actor *authz.Identity) (*StockOrder
 	return &StockOrderDetail{
 		ID: o.ID, OrderNo: o.OrderNo, Direction: o.Direction, SourceType: o.SourceType,
 		SourceOrderNo: s.sourceOrderNo(o.SourceType, o.SourceID, actor),
-		OrderDate:     o.OrderDate, Remark: o.Remark, Salesman: o.Salesman,
+		Status:        o.Status, IsReversal: o.ReversalOf != nil,
+		OrderDate: o.OrderDate, Remark: o.Remark, Salesman: o.Salesman,
 		Operator: s.operatorName(stockOperatorID(o)), TotalQty: round4(total), Items: printItems,
 	}, nil
 }

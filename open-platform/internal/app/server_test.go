@@ -82,6 +82,10 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			}
 		case "/internal/open-platform/purchase-orders/10":
 			scope = oauth.PurchaseRead
+		case "/internal/open-platform/stock-orders", "/internal/open-platform/stock-orders/11":
+			scope = oauth.StockRead
+		case "/internal/open-platform/payables", "/internal/open-platform/receivables", "/internal/open-platform/order-settlements/10":
+			scope = oauth.FinanceRead
 		default:
 			t.Errorf("unexpected ERP request: %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -99,6 +103,26 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 		}
 		if r.URL.Path == "/internal/open-platform/purchase-orders/10" {
 			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		switch r.URL.Path {
+		case "/internal/open-platform/stock-orders":
+			if r.URL.Query().Get("sourceType") != "purchase" || r.URL.Query().Get("sourceId") != "10" {
+				t.Errorf("source filters not forwarded: %v", r.URL.Query())
+			}
+			_, _ = io.WriteString(w, `{"code":0,"data":{"list":[{"id":11,"sourceId":10}]}}`)
+			return
+		case "/internal/open-platform/stock-orders/11":
+			_, _ = io.WriteString(w, `{"code":0,"data":{"id":11,"items":[]}}`)
+			return
+		case "/internal/open-platform/payables", "/internal/open-platform/receivables":
+			if r.URL.Query().Get("settle") != "overdue" || r.URL.Query().Get("source") != "order" {
+				t.Errorf("finance filters not forwarded: %v", r.URL.Query())
+			}
+			_, _ = io.WriteString(w, `{"code":0,"data":{"list":[],"summary":{"outstanding":70}}}`)
+			return
+		case "/internal/open-platform/order-settlements/10":
+			_, _ = io.WriteString(w, `{"code":0,"data":{"orderId":10,"outstanding":70,"rows":[]}}`)
 			return
 		}
 		if scope == oauth.PurchaseRead {
@@ -254,7 +278,7 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		SessionID string `json:"session_id"`
 		UserCode  string `json:"user_code"`
 	}
-	const scope = "inventory.read product.read purchase.read"
+	const scope = "inventory.read product.read purchase.read stock.read finance.read"
 	pending := run(0, "auth", "login", "--no-wait", "--scope", scope)
 	if json.Unmarshal(pending, &session) != nil || session.SessionID == "" || session.UserCode == "" ||
 		strings.Contains(string(pending), "device_code") {
@@ -296,6 +320,18 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 	}
 	run(1, "purchase", "get", "--id", "10")
 	run(4, "sales", "list")
+
+	if out := run(0, "stock", "list", "--source-type", "purchase", "--source-id", "10"); !strings.Contains(string(out), `"sourceId":10`) {
+		t.Fatal("could not correlate a stock order")
+	}
+	run(4, "stock", "list", "--source-type", "sales", "--source-id", "10")
+	run(0, "stock", "get", "--id", "11")
+	for _, command := range []string{"payables", "receivables"} {
+		run(0, "finance", command, "--settle-status", "overdue", "--source", "order")
+	}
+	if out := run(0, "finance", "settlements", "--order-id", "10"); !strings.Contains(string(out), `"outstanding":70`) {
+		t.Fatal("could not query settlement history")
+	}
 
 	// Save the current token only for verifying the server revoked it.
 	configs, err := os.ReadDir(configDir)
