@@ -39,3 +39,14 @@
 响应错误为 `{"error":"..."}`。授权缺少所需范围返回 403 `insufficient_scope`，ERP 账号缺少对应功能权限返回 403 `insufficient_permission`，不存在或超出数据范围的单据详情返回 404 `not_found`。
 
 设置 `PLATFORM_TEST_DATABASE_URL` 后执行 `go test ./...` 可运行 PostgreSQL 联调测试。测试使用独立 schema。
+
+### 出入库和往来款
+
+| GET 路径（前缀 `/openapi/v1`） | 授权范围 | ERP 功能权限 |
+| --- | --- | --- |
+| `/stock-orders`、`/stock-orders/{id}` | `stock.read` | `inv:stock:list` |
+| `/receivables`、`/payables`、`/order-settlements/{id}` | `finance.read` | `inv:finance:list` |
+
+出入库列表支持 `direction=in|out`、`includeVoided=true` 和单号关键词。用 `sourceType=purchase|sales` 与 `sourceId` 成对查询关联单据，该查询同时需要对应采购或销售授权及 ERP 查看权限；列表只在来源筛选生效时返回来源标识。详情返回状态、红冲标记及带计量单位的数量明细，支持查看作废历史。
+
+应收应付列表支持 `settle=unpaid|partial|paid|overdue`、`source=order|plan` 和关键词，返回同一数据范围下的分页结果与汇总。流水接口的 ID 对应采购或销售单 ID，返回同一查看范围内的带符号流水、已结算金额与未结金额。金额沿用 ERP 口径，已经红冲的原单不计入待结算余额。所有这些接口均为只读。

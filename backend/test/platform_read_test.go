@@ -35,7 +35,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { testDB.Unscoped().Delete(&role) })
-	for _, perm := range []string{"inv:purchase:list", "inv:product:list"} {
+	for _, perm := range []string{"inv:purchase:list", "inv:product:list", "inv:stock:list", "inv:finance:list"} {
 		link := model.RoleMenu{RoleID: role.ID, MenuID: menuID(t, perm)}
 		if err := testDB.Create(&link).Error; err != nil {
 			t.Fatal(err)
@@ -115,6 +115,49 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	read("purchase.read", "/sales-orders", http.StatusForbidden)
 	read("sales.read", "/sales-orders", http.StatusForbidden)
 	read("product.read", "/inventory", http.StatusForbidden)
+	for _, order := range []model.InvOrder{purchase, hidden} {
+		if err := testDB.Model(&order).Updates(map[string]any{"status": model.InvStatusDone, "total_amount": 100, "settled_amount": 30}).Error; err != nil {
+			t.Fatal(err)
+		}
+		// The stock order can be visible while its source order is outside scope.
+		stock := model.InvStockOrder{OrderNo: order.OrderNo + "IN", Direction: model.InvStockIn, SourceType: model.InvBizPurchase,
+			SourceID: order.ID, CreatedBy: actor.ID, OrderDate: time.Now(), Status: 1}
+		if err := testDB.Create(&stock).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { testDB.Unscoped().Delete(&stock) })
+		if order.ID == purchase.ID {
+			read("stock.read", fmt.Sprintf("/stock-orders/%d", stock.ID), http.StatusOK)
+		}
+	}
+	stockPath := "/stock-orders?sourceType=purchase&sourceId="
+	for _, tc := range []struct {
+		id    int64
+		total string
+	}{{purchase.ID, "1"}, {hidden.ID, "0"}} {
+		path := stockPath + strconv.FormatInt(tc.id, 10)
+		if data := read("stock.read", path, http.StatusOK); !strings.Contains(string(data), `"total":`+tc.total) {
+			t.Fatalf("stock source scope mismatch: %s", data)
+		}
+	}
+	read("stock.read", "/stock-orders?sourceType=sales&sourceId="+strconv.FormatInt(sale.ID, 10), http.StatusForbidden)
+	read("inventory.read", "/stock-orders", http.StatusForbidden)
+	read("finance.read", "/receivables?source=invalid", http.StatusBadRequest)
+	if data := read("finance.read", "/payables?source=order&keyword="+marker, http.StatusOK); !strings.Contains(string(data), `"total":1`) ||
+		!strings.Contains(string(data), `"outstanding":70`) || strings.Contains(string(data), hidden.OrderNo) {
+		t.Fatalf("payables list or total crossed its scope: %s", data)
+	}
+	settlement := model.InvSettlement{OrderID: purchase.ID, Source: "order", Amount: 30, SettledAt: time.Now(), Reference: "private-reference"}
+	if err := testDB.Create(&settlement).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testDB.Unscoped().Delete(&settlement) })
+	if data := read("finance.read", fmt.Sprintf("/order-settlements/%d", purchase.ID), http.StatusOK); !strings.Contains(string(data), `"amount":30`) ||
+		!strings.Contains(string(data), `"outstanding":70`) || strings.Contains(string(data), settlement.Reference) {
+		t.Fatalf("unexpected settlement response: %s", data)
+	}
+	read("finance.read", fmt.Sprintf("/order-settlements/%d", hidden.ID), http.StatusNotFound)
+
 	detail := string(read("product.read", fmt.Sprintf("/products/%d", product.ID), http.StatusOK))
 	for _, field := range []string{"refPurchasePrice", "refSalePrice", "purchasePrice", "salePrice", "totalStock", "stock"} {
 		if strings.Contains(detail, `"`+field+`"`) {

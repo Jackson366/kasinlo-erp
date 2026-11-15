@@ -67,6 +67,10 @@ func (h handler) decide(c *gin.Context) {
 				permission = "inv:purchase:list"
 			case "sales.read":
 				permission = "inv:sales:list"
+			case "stock.read":
+				permission = "inv:stock:list"
+			case "finance.read":
+				permission = "inv:finance:list"
 			default:
 				response.FailWith(c, errcode.ErrBadRequest, "授权范围无效")
 				return

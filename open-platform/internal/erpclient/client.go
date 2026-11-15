@@ -38,7 +38,14 @@ var (
 	PurchaseOrder  = Resource{Path: "purchase-orders", Scope: oauth.PurchaseRead, detail: true}
 	SalesOrders    = Resource{Path: "sales-orders", Scope: oauth.SalesRead, filters: orderFilters}
 	SalesOrder     = Resource{Path: "sales-orders", Scope: oauth.SalesRead, detail: true}
+	StockOrders    = Resource{Path: "stock-orders", Scope: oauth.StockRead, filters: []string{"direction", "includeVoided", "sourceType", "sourceId"}}
+	StockOrder     = Resource{Path: "stock-orders", Scope: oauth.StockRead, detail: true}
+	Receivables    = Resource{Path: "receivables", Scope: oauth.FinanceRead, filters: financeFilters}
+	Payables       = Resource{Path: "payables", Scope: oauth.FinanceRead, filters: financeFilters}
+	Settlements    = Resource{Path: "order-settlements", Scope: oauth.FinanceRead, detail: true}
 )
+
+var financeFilters = []string{"settle", "source"}
 
 var orderFilters = []string{"status", "settleStatus", "startDate", "endDate"}
 

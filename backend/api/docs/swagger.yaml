@@ -511,6 +511,21 @@ definitions:
       totalAmount:
         type: number
     type: object
+  inv.FinanceSummary:
+    properties:
+      orderTotal:
+        type: number
+      outstanding:
+        type: number
+      overdue:
+        type: number
+      planTotal:
+        type: number
+      settled:
+        type: number
+      total:
+        type: number
+    type: object
   inv.InvCategoryValueRow:
     properties:
       category:
@@ -1735,6 +1750,21 @@ definitions:
         description: 基本单位名，用于把基本数量写清楚
         type: string
     type: object
+  inv.platformFinancePage:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/inv.FinanceRow'
+        type: array
+      page:
+        type: integer
+      pageSize:
+        type: integer
+      summary:
+        $ref: '#/definitions/inv.FinanceSummary'
+      total:
+        type: integer
+    type: object
   inv.platformOrderDetail:
     properties:
       bizType:
@@ -1852,6 +1882,76 @@ definitions:
         type: integer
       unit:
         type: string
+    type: object
+  inv.platformSettlementRow:
+    properties:
+      adjustsId:
+        type: integer
+      amount:
+        type: number
+      id:
+        type: integer
+      kind:
+        type: string
+      method:
+        type: string
+      settledAt:
+        type: string
+    type: object
+  inv.platformSettlements:
+    properties:
+      orderId:
+        type: integer
+      outstanding:
+        type: number
+      rows:
+        items:
+          $ref: '#/definitions/inv.platformSettlementRow'
+        type: array
+      settled:
+        type: number
+    type: object
+  inv.platformStockDetail:
+    properties:
+      direction:
+        type: string
+      id:
+        type: integer
+      isReversal:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/inv.StockPrintItem'
+        type: array
+      orderDate:
+        type: string
+      orderNo:
+        type: string
+      sourceId:
+        type: integer
+      sourceType:
+        type: string
+      status:
+        type: integer
+    type: object
+  inv.platformStockRow:
+    properties:
+      direction:
+        type: string
+      id:
+        type: integer
+      isReversal:
+        type: boolean
+      orderDate:
+        type: string
+      orderNo:
+        type: string
+      sourceId:
+        type: integer
+      sourceType:
+        type: string
+      status:
+        type: integer
     type: object
   log.ClearReq:
     properties:
@@ -2862,6 +2962,71 @@ paths:
       summary: 刷新访问令牌
       tags:
       - 认证
+  /internal/open-platform/order-settlements/{id}:
+    get:
+      parameters:
+      - description: 采购或销售单据 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformSettlements'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询单据收付款流水
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/payables:
+    get:
+      parameters:
+      - description: unpaid、partial、paid 或 overdue
+        in: query
+        name: settle
+        type: string
+      - description: order 或 plan
+        in: query
+        name: source
+        type: string
+      - description: 单号、往来单位、合同号或期次名
+        in: query
+        name: keyword
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformFinancePage'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询应收或应付
+      tags:
+      - 开放平台内部接口
   /internal/open-platform/products:
     get:
       parameters:
@@ -3014,6 +3179,46 @@ paths:
       summary: 查询采购或销售单据详情
       tags:
       - 开放平台内部接口
+  /internal/open-platform/receivables:
+    get:
+      parameters:
+      - description: unpaid、partial、paid 或 overdue
+        in: query
+        name: settle
+        type: string
+      - description: order 或 plan
+        in: query
+        name: source
+        type: string
+      - description: 单号、往来单位、合同号或期次名
+        in: query
+        name: keyword
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformFinancePage'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询应收或应付
+      tags:
+      - 开放平台内部接口
   /internal/open-platform/sales-orders:
     get:
       parameters:
@@ -3092,6 +3297,86 @@ paths:
       security:
       - BearerAuth: []
       summary: 查询采购或销售单据详情
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/stock-orders:
+    get:
+      parameters:
+      - description: in 或 out
+        in: query
+        name: direction
+        type: string
+      - description: purchase 或 sales，与 sourceId 搭配
+        in: query
+        name: sourceType
+        type: string
+      - description: 来源单据 ID
+        in: query
+        name: sourceId
+        type: integer
+      - description: 包含作废单据
+        in: query
+        name: includeVoided
+        type: boolean
+      - description: 出入库单号
+        in: query
+        name: keyword
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.platformStockRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询出入库单据
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/stock-orders/{id}:
+    get:
+      parameters:
+      - description: 出入库单 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformStockDetail'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询出入库明细
       tags:
       - 开放平台内部接口
   /inv/attachments:

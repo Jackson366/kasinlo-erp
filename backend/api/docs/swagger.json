@@ -183,6 +183,119 @@
                 }
             }
         },
+        "/internal/open-platform/order-settlements/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询单据收付款流水",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "采购或销售单据 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.platformSettlements"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/open-platform/payables": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询应收或应付",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "unpaid、partial、paid 或 overdue",
+                        "name": "settle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "order 或 plan",
+                        "name": "source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "单号、往来单位、合同号或期次名",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.platformFinancePage"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/internal/open-platform/products": {
             "get": {
                 "security": [
@@ -451,6 +564,74 @@
                 }
             }
         },
+        "/internal/open-platform/receivables": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询应收或应付",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "unpaid、partial、paid 或 overdue",
+                        "name": "settle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "order 或 plan",
+                        "name": "source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "单号、往来单位、合同号或期次名",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.platformFinancePage"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/internal/open-platform/sales-orders": {
             "get": {
                 "security": [
@@ -582,6 +763,146 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/definitions/inv.platformOrderDetail"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/open-platform/stock-orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询出入库单据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "in 或 out",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "purchase 或 sales，与 sourceId 搭配",
+                        "name": "sourceType",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "来源单据 ID",
+                        "name": "sourceId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "包含作废单据",
+                        "name": "includeVoided",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "出入库单号",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.platformStockRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/open-platform/stock-orders/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询出入库明细",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "出入库单 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.platformStockDetail"
                                         }
                                     }
                                 }
@@ -8290,6 +8611,29 @@
                 }
             }
         },
+        "inv.FinanceSummary": {
+            "type": "object",
+            "properties": {
+                "orderTotal": {
+                    "type": "number"
+                },
+                "outstanding": {
+                    "type": "number"
+                },
+                "overdue": {
+                    "type": "number"
+                },
+                "planTotal": {
+                    "type": "number"
+                },
+                "settled": {
+                    "type": "number"
+                },
+                "total": {
+                    "type": "number"
+                }
+            }
+        },
         "inv.InvCategoryValueRow": {
             "type": "object",
             "properties": {
@@ -10094,6 +10438,29 @@
                 }
             }
         },
+        "inv.platformFinancePage": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.FinanceRow"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "pageSize": {
+                    "type": "integer"
+                },
+                "summary": {
+                    "$ref": "#/definitions/inv.FinanceSummary"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "inv.platformOrderDetail": {
             "type": "object",
             "properties": {
@@ -10271,6 +10638,113 @@
                 },
                 "unit": {
                     "type": "string"
+                }
+            }
+        },
+        "inv.platformSettlementRow": {
+            "type": "object",
+            "properties": {
+                "adjustsId": {
+                    "type": "integer"
+                },
+                "amount": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "settledAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "inv.platformSettlements": {
+            "type": "object",
+            "properties": {
+                "orderId": {
+                    "type": "integer"
+                },
+                "outstanding": {
+                    "type": "number"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.platformSettlementRow"
+                    }
+                },
+                "settled": {
+                    "type": "number"
+                }
+            }
+        },
+        "inv.platformStockDetail": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isReversal": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.StockPrintItem"
+                    }
+                },
+                "orderDate": {
+                    "type": "string"
+                },
+                "orderNo": {
+                    "type": "string"
+                },
+                "sourceId": {
+                    "type": "integer"
+                },
+                "sourceType": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.platformStockRow": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isReversal": {
+                    "type": "boolean"
+                },
+                "orderDate": {
+                    "type": "string"
+                },
+                "orderNo": {
+                    "type": "string"
+                },
+                "sourceId": {
+                    "type": "integer"
+                },
+                "sourceType": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
                 }
             }
         },

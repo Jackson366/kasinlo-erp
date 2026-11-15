@@ -35,6 +35,11 @@ func (s Server) Handler() http.Handler {
 	mux.HandleFunc("POST /oauth/revoke", s.revoke)
 	mux.HandleFunc("GET /oauth/status", s.status)
 	mux.HandleFunc("GET /openapi/v1/inventory", s.read(erpclient.Inventory))
+	mux.HandleFunc("GET /openapi/v1/stock-orders", s.read(erpclient.StockOrders))
+	mux.HandleFunc("GET /openapi/v1/stock-orders/{id}", s.read(erpclient.StockOrder))
+	mux.HandleFunc("GET /openapi/v1/receivables", s.read(erpclient.Receivables))
+	mux.HandleFunc("GET /openapi/v1/payables", s.read(erpclient.Payables))
+	mux.HandleFunc("GET /openapi/v1/order-settlements/{id}", s.read(erpclient.Settlements))
 	mux.HandleFunc("GET /openapi/v1/products", s.read(erpclient.Products))
 	mux.HandleFunc("GET /openapi/v1/products/{id}", s.read(erpclient.Product))
 	mux.HandleFunc("GET /openapi/v1/purchase-orders", s.read(erpclient.PurchaseOrders))
@@ -206,6 +211,21 @@ func (s Server) read(resource erpclient.Resource) http.HandlerFunc {
 		if !oauth.HasScope(grant.Scope, resource.Scope) {
 			reject(w, http.StatusForbidden, "insufficient_scope")
 			return
+		}
+
+		if resource.Path == "stock-orders" && r.PathValue("id") == "" {
+			switch r.URL.Query().Get("sourceType") {
+			case "purchase":
+				if !oauth.HasScope(grant.Scope, oauth.PurchaseRead) {
+					reject(w, http.StatusForbidden, "insufficient_scope")
+					return
+				}
+			case "sales":
+				if !oauth.HasScope(grant.Scope, oauth.SalesRead) {
+					reject(w, http.StatusForbidden, "insufficient_scope")
+					return
+				}
+			}
 		}
 
 		data, status, err := s.ERP.Read(r.Context(), grant, resource, r.PathValue("id"), r.URL.Query())

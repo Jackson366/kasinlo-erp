@@ -43,3 +43,19 @@ kas sales get --id 789
 同一操作系统账号下，使用相同平台 URL、配置目录和 profile 的进程共用凭据。profile 默认为 `default`，可用全局参数 `--profile NAME` 或 `KAS_PROFILE` 区分不同 ERP 用户。全局参数放在子命令之前。凭据保存在系统用户配置目录的 `kas` 子目录，可用 `KAS_CONFIG_DIR` 指定目录；Linux 和 macOS 的凭据文件权限为 `0600`，Windows 使用用户目录的访问控制。凭据及设备码不出现在命令输出中。平台凭据有效期为 8 小时，到期后重新授权。
 
 `auth logout` 会先在平台撤销，再清理本地凭据。浏览器也可以撤销同一份授权，共用凭据的进程随后会收到未授权响应。若客户端在保存凭据时异常退出，可能留下配置目录中的 `credential.lock` 空目录。确认没有 `kas` 进程在更新登录后，可删除该空目录再重试。
+
+## 查询出入库和往来款
+
+```sh
+kas --profile fulfillment auth login --scope "sales.read stock.read finance.read"
+kas --profile fulfillment sales list --keyword "XS-001"
+# 把 456 替换成销售单列表返回的 id。
+kas --profile fulfillment stock list --source-type sales --source-id 456
+# 把 789 替换成出入库单列表返回的 id。
+kas --profile fulfillment stock get --id 789
+kas --profile fulfillment finance settlements --order-id 456
+kas --profile fulfillment finance receivables --settle-status overdue --source order
+kas --profile fulfillment finance payables --settle-status overdue
+```
+
+采购单关联查询使用 `--source-type purchase` 和 `purchase.read`。出入库列表默认显示已过账单据，可用 `--include-voided` 查看作废历史。汇总商品数量时按明细的商品、规格和单位分别汇总。流水的调整记录保留带符号金额以及 `adjustsId`。

@@ -453,6 +453,8 @@ type StockPrintItem struct {
 // StockOrderDetail 出入库单打印详情：表头 + 明细 + 打印所需的关联信息。
 // 与列表行分离——列表不查商品档案与来源单号，打印才值得多花两次查询。
 type StockOrderDetail struct {
+	Status        int16            `json:"-"`
+	IsReversal    bool             `json:"-"`
 	ID            int64            `json:"id"`
 	OrderNo       string           `json:"orderNo"`
 	Direction     string           `json:"direction"`

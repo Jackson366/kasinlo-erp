@@ -38,6 +38,15 @@ func PlatformInventoryModule(cfg config.OpenPlatformConfig) (module.Module, bool
 			sales := register("sales.read", "inv:sales:list")
 			sales.GET("/sales-orders", h.platformOrders(model.InvBizSales))
 			sales.GET("/sales-orders/:id", h.platformOrder(model.InvBizSales))
+
+			stock := register("stock.read", "inv:stock:list")
+			stock.GET("/stock-orders", h.platformStockOrders)
+			stock.GET("/stock-orders/:id", h.platformStockOrder)
+
+			finance := register("finance.read", "inv:finance:list")
+			finance.GET("/receivables", h.platformFinanceList(true))
+			finance.GET("/payables", h.platformFinanceList(false))
+			finance.GET("/order-settlements/:id", h.platformOrderSettlements)
 		},
 	}, true
 }
