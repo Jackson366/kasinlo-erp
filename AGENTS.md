@@ -44,7 +44,11 @@
 `domain` 业务包，例如 `domain.trade.TradeOrderStatus` 和
 `domain.inventory.StockMovementType`。有唯一稳定编码的枚举实现 `CodeEnum<T>`，
 并使用 `common` 中的 `EnumUtils` 查询。通用错误在 `common.error` 定义，
-业务错误在对应领域定义并实现 `ErpError`。
+业务错误在对应领域定义并实现 `ErpError`。错误契约保存应用错误码和文案模板，
+HTTP 状态映射由 `adapter` 的异常处理器负责。
+
+参数格式和必填约束使用 Jakarta Bean Validation。Web 请求对象通过 `@Valid` 触发校验，
+应用服务通过 `@Validated` 启用方法参数校验，嵌套参数使用 `@Valid`。领域层负责业务规则。
 
 以下 Go 目录和框架约定适用于 `backend/`。
 

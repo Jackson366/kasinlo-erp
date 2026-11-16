@@ -12,8 +12,12 @@ import com.kasinlo.erp.domain.trade.TradeErrorType;
 import com.kasinlo.erp.domain.trade.TradeOrder;
 import com.kasinlo.erp.domain.trade.TradeOrderGateway;
 import com.kasinlo.erp.domain.trade.TradeOrderType;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -21,6 +25,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 @Service
+@Validated
 public class ApproveTradeOrder {
     private final TradeOrderGateway trade;
     private final StockGateway stock;
@@ -38,7 +43,7 @@ public class ApproveTradeOrder {
     }
 
     @Transactional
-    public void execute(long orderId, Actor actor, boolean settleNow) {
+    public void execute(@Positive long orderId, @NotNull @Valid Actor actor, boolean settleNow) {
         TradeOrder order = trade.lock(orderId);
         if (order == null) {
             throw new ErpException(TradeErrorType.ORDER_NOT_FOUND);
@@ -84,11 +89,5 @@ public class ApproveTradeOrder {
                 change.label(), available.stripTrailingZeros().toPlainString());
     }
 
-    public record Actor(long id, String name) {
-        public Actor {
-            if (id <= 0 || name == null) {
-                throw new IllegalArgumentException(TradeErrorType.APPROVAL_ACTOR_INVALID.message());
-            }
-        }
-    }
+    public record Actor(@Positive long id, @NotNull String name) {}
 }

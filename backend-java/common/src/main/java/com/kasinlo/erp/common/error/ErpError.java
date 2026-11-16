@@ -1,6 +1,6 @@
 package com.kasinlo.erp.common.error;
 
-/** API-compatible error details. Distinct error reasons may share the same legacy response code. */
+/** Application error contract. Distinct error reasons may share the same legacy code. */
 public interface ErpError {
     Details details();
 
@@ -8,13 +8,9 @@ public interface ErpError {
         return details().code();
     }
 
-    default int httpStatus() {
-        return details().httpStatus();
-    }
-
     default String message(Object... arguments) {
         return details().template().formatted(arguments);
     }
 
-    record Details(int code, int httpStatus, String template) {}
+    record Details(int code, String template) {}
 }

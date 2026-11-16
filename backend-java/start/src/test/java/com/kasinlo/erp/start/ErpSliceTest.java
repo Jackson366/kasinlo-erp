@@ -11,6 +11,7 @@ import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import jakarta.validation.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,6 +66,21 @@ class ErpSliceTest {
             jdbc.update("DELETE FROM " + table);
         }
         userId = insert("INSERT INTO sys_users (username, status, token_epoch) VALUES ('operator', 1, 2)");
+    }
+
+    @Test
+    void approvalValidatesIncomingParametersBeforeLookingUpTheOrder() {
+        assertThatThrownBy(() -> approve.execute(0, new Actor(userId, "采购员"), true))
+                .isInstanceOfSatisfying(ConstraintViolationException.class, error ->
+                        assertThat(error.getConstraintViolations())
+                                .extracting(violation -> violation.getPropertyPath().toString())
+                                .containsExactly("execute.orderId"));
+
+        assertThatThrownBy(() -> approve.execute(123L, new Actor(0, null), true))
+                .isInstanceOfSatisfying(ConstraintViolationException.class, error ->
+                        assertThat(error.getConstraintViolations())
+                                .extracting(violation -> violation.getPropertyPath().toString())
+                                .containsExactlyInAnyOrder("execute.actor.id", "execute.actor.name"));
     }
 
     @Test
