@@ -7,7 +7,8 @@
     </sql>
 
     <sql id="filters">
-        WHERE sp.deleted_at IS NULL AND p.status = 1 AND sp.status = 1
+        <bind name="enabled" value="@com.kasinlo.erp.common.enums.EnablementStatus@ENABLED.getCode()"/>
+        WHERE sp.deleted_at IS NULL AND p.status = #{enabled} AND sp.status = #{enabled}
         <if test="pattern != null">
             AND (p.code ILIKE #{pattern} ESCAPE '\'
                 OR p.name ILIKE #{pattern} ESCAPE '\'

@@ -12,8 +12,9 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.alibaba.cola</groupId>
-            <artifactId>cola-component-exception</artifactId>
+            <groupId>com.kasinlo.erp</groupId>
+            <artifactId>erp-common</artifactId>
+            <version>${project.version}</version>
         </dependency>
     </dependencies>
 </project>

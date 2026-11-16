@@ -1,5 +1,8 @@
 package com.kasinlo.erp.adapter;
 
+import com.kasinlo.erp.common.error.CommonErrorType;
+import com.kasinlo.erp.common.error.ErpError;
+import com.kasinlo.erp.common.error.ErpException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
@@ -12,16 +15,19 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 class ApiErrorHandler {
     private static final Logger LOG = LoggerFactory.getLogger(ApiErrorHandler.class);
 
-    @ExceptionHandler(ApiFailure.class)
-    ResponseEntity<ApiResponse> clientError(ApiFailure error) {
-        return ResponseEntity.status(error.code() / 100).cacheControl(CacheControl.noStore())
-                .body(new ApiResponse(error.code(), error.getMessage(), null));
+    @ExceptionHandler(ErpException.class)
+    ResponseEntity<Result<Void>> businessError(ErpException exception) {
+        return errorResponse(exception.error(), exception.getMessage());
     }
 
     @ExceptionHandler(DataAccessException.class)
-    ResponseEntity<ApiResponse> databaseError(DataAccessException error) {
+    ResponseEntity<Result<Void>> databaseError(DataAccessException error) {
         LOG.error("库存查询数据库操作失败", error);
-        return ResponseEntity.internalServerError().cacheControl(CacheControl.noStore())
-                .body(new ApiResponse(50100, "数据库操作失败", null));
+        return errorResponse(CommonErrorType.DATABASE_FAILURE, CommonErrorType.DATABASE_FAILURE.message());
+    }
+
+    private ResponseEntity<Result<Void>> errorResponse(ErpError error, String message) {
+        return ResponseEntity.status(error.httpStatus()).cacheControl(CacheControl.noStore())
+                .body(new Result<>(error.code(), message, null));
     }
 }

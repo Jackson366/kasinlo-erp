@@ -38,16 +38,23 @@ public interface TradeOrderMapper extends TradeOrderGateway {
 
     @Override
     @Update("""
+            <script>
+            <bind name="approved" value="@com.kasinlo.erp.domain.trade.TradeOrderStatus@APPROVED.getCode()"/>
+            <bind name="pending" value="@com.kasinlo.erp.domain.trade.TradeOrderStatus@PENDING.getCode()"/>
             UPDATE inv_orders
-            SET status = 2, auditor_id = #{userId}, audited_at = #{at}, pending_since = NULL, updated_at = #{at}
-            WHERE id = #{orderId} AND status = 1 AND deleted_at IS NULL
+            SET status = #{approved}, auditor_id = #{userId}, audited_at = #{at}, pending_since = NULL, updated_at = #{at}
+            WHERE id = #{orderId} AND status = #{pending} AND deleted_at IS NULL
+            </script>
             """)
     boolean approve(@Param("orderId") long orderId, @Param("userId") long userId, @Param("at") OffsetDateTime at);
 
     @Override
     @Insert("""
+            <script>
+            <bind name="action" value="@com.kasinlo.erp.domain.trade.TradeAuditActionType@AUDIT.getCode()"/>
             INSERT INTO inv_order_audits (order_id, order_no, action, actor_id, actor_name, occurred_at, stock_order_id)
-            VALUES (#{orderId}, #{orderNo}, 'audit', #{userId}, #{actorName}, #{at}, #{stockOrderId})
+            VALUES (#{orderId}, #{orderNo}, #{action}, #{userId}, #{actorName}, #{at}, #{stockOrderId})
+            </script>
             """)
     void recordApproval(@Param("orderId") long orderId, @Param("orderNo") String orderNo,
                         @Param("userId") long userId, @Param("actorName") String actorName,

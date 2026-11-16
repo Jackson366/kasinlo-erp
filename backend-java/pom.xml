@@ -15,6 +15,7 @@
     <packaging>pom</packaging>
 
     <modules>
+        <module>common</module>
         <module>client</module>
         <module>domain</module>
         <module>app</module>
@@ -27,10 +28,16 @@
         <java.version>21</java.version>
         <cola.version>5.0.0</cola.version>
         <mybatis-plus.version>3.5.18</mybatis-plus.version>
+        <mapstruct.version>1.6.3</mapstruct.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.alibaba.cola</groupId>
                 <artifactId>cola-component-exception</artifactId>

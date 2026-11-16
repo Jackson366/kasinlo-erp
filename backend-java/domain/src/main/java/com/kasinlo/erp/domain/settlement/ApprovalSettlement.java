@@ -1,6 +1,6 @@
 package com.kasinlo.erp.domain.settlement;
 
-import com.alibaba.cola.exception.BizException;
+import com.kasinlo.erp.common.error.ErpException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -15,12 +15,8 @@ public final class ApprovalSettlement {
         }
         BigDecimal amount = total.setScale(2, RoundingMode.HALF_UP);
         if (settled.add(amount).compareTo(total) > 0) {
-            throw overpaid();
+            throw new ErpException(SettlementErrorType.SETTLEMENT_OVERPAID);
         }
         return Optional.of(amount);
-    }
-
-    public static BizException overpaid() {
-        return new BizException("40900", "结算金额超出未结余额，审核已一并回滚");
     }
 }

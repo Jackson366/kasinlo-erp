@@ -1,8 +1,10 @@
 package com.kasinlo.erp.start;
 
 import com.alibaba.cola.exception.BizException;
-import com.kasinlo.erp.app.trade.ApproveTradeOrder;
 import com.kasinlo.erp.app.trade.ApproveTradeOrder.Actor;
+import com.kasinlo.erp.app.trade.ApproveTradeOrder;
+import com.kasinlo.erp.common.error.ErpException;
+import com.kasinlo.erp.domain.trade.TradeErrorType;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -100,11 +102,16 @@ class ErpSliceTest {
     @Test
     void platformInventoryRequiresScopePermissionAndCurrentToken() throws Exception {
         mvc.perform(get(INVENTORY)).andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value(40100));
+                .andExpect(jsonPath("$.code").value(40100))
+                .andExpect(jsonPath("$.message").value("登录状态已失效，请重新登录"));
         mvc.perform(get(INVENTORY).header("Authorization", token(userId, 2, "sales.read")))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40300))
+                .andExpect(jsonPath("$.message").value("没有操作权限"));
         mvc.perform(get(INVENTORY).header("Authorization", token(userId, 2, "inventory.read")))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40300))
+                .andExpect(jsonPath("$.message").value("缺少权限: inv:stock:list"));
 
         grantInventory();
         mvc.perform(get(INVENTORY).header("Authorization", token(userId, 1, "inventory.read")))
@@ -179,6 +186,22 @@ class ErpSliceTest {
         assertThat(stock(first)).isEqualByComparingTo("10");
         assertThat(stock(scarce)).isEqualByComparingTo("3");
         assertPendingWithoutPosting(order);
+    }
+
+    @Test
+    void rejectedLegacyCodesDoNotTriggerPosting() {
+        long order = order("unknown", "10");
+        Actor actor = new Actor(userId, "采购员");
+        assertThatThrownBy(() -> approve.execute(order, actor, true))
+                .isInstanceOfSatisfying(ErpException.class,
+                        exception -> assertThat(exception.error()).isEqualTo(TradeErrorType.ORDER_TYPE_INVALID));
+        assertPendingWithoutPosting(order);
+
+        jdbc.update("UPDATE inv_orders SET biz_type = 'purchase', status = 3 WHERE id = ?", order);
+        assertThatThrownBy(() -> approve.execute(order, actor, true))
+                .isInstanceOfSatisfying(ErpException.class,
+                        exception -> assertThat(exception.error()).isEqualTo(TradeErrorType.ORDER_NOT_PENDING));
+        assertThat(count("inv_stock_orders")).isZero();
     }
 
     @Test

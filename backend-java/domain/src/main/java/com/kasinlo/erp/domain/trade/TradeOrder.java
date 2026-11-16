@@ -1,21 +1,24 @@
 package com.kasinlo.erp.domain.trade;
 
-import com.alibaba.cola.exception.BizException;
+import com.kasinlo.erp.common.enums.EnumUtils;
+import com.kasinlo.erp.common.error.ErpException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
 public record TradeOrder(long id, String orderNo, String bizType, long partyId, LocalDate orderDate,
                          int status, BigDecimal totalAmount, BigDecimal settledAmount, String salesman) {
-    public static final int PENDING = 1;
-    public static final int APPROVED = 2;
+    public TradeOrderType type() {
+        return EnumUtils.getByCode(TradeOrderType.class, bizType)
+                .orElseThrow(() -> new ErpException(TradeErrorType.ORDER_TYPE_INVALID));
+    }
 
     public void checkApprovable() {
-        if (status == APPROVED) {
-            throw new BizException("40900", "已审核单据不可再流转状态");
+        if (status == TradeOrderStatus.APPROVED.getCode()) {
+            throw new ErpException(TradeErrorType.ORDER_ALREADY_APPROVED);
         }
-        if (status != PENDING) {
-            throw new BizException("40900", "只有待处理的单据才能审核");
+        if (status != TradeOrderStatus.PENDING.getCode()) {
+            throw new ErpException(TradeErrorType.ORDER_NOT_PENDING);
         }
     }
 

@@ -1,6 +1,9 @@
 package com.kasinlo.erp.adapter;
 
-import com.kasinlo.erp.client.InventoryAccess;
+import com.kasinlo.erp.common.error.CommonErrorType;
+import com.kasinlo.erp.common.error.ErpException;
+import com.kasinlo.erp.domain.auth.InventoryAccess;
+import com.kasinlo.erp.domain.auth.InventoryAccessConstants;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.crypto.MACVerifier;
@@ -32,18 +35,18 @@ public class PlatformInventoryAuthorization {
         this.issuer = issuer;
         this.audience = audience;
         if (!secret.isEmpty() && (issuer.isBlank() || audience.isBlank())) {
-            throw new IllegalArgumentException("配置开放平台签名密钥时需要配置 issuer 和 audience");
+            throw new IllegalArgumentException(PlatformAuthorizationConstants.INVALID_SIGNING_CONFIGURATION_MESSAGE);
         }
         this.verifier = secret.isEmpty() ? null : new MACVerifier(secret.getBytes(StandardCharsets.UTF_8));
     }
 
     public void requireRead(String authorization) {
         if (verifier == null) {
-            throw new ApiFailure(40400, "资源不存在");
+            throw new ErpException(CommonErrorType.RESOURCE_NOT_FOUND);
         }
         if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)
                 || authorization.substring(7).isBlank()) {
-            throw new ApiFailure(40100, "登录状态已失效，请重新登录");
+            throw new ErpException(CommonErrorType.LOGIN_REQUIRED);
         }
         long userId;
         long epoch;
@@ -60,8 +63,8 @@ public class PlatformInventoryAuthorization {
                 throw invalidToken();
             }
             epoch = ((Number) value).longValue();
-            if (!"inventory.read".equals(claims.getStringClaim("scope"))) {
-                throw new ApiFailure(40300, "没有操作权限");
+            if (!PlatformAuthorizationConstants.INVENTORY_READ_SCOPE.equals(claims.getStringClaim("scope"))) {
+                throw new ErpException(CommonErrorType.FORBIDDEN);
             }
         } catch (ParseException | JOSEException | NumberFormatException e) {
             throw invalidToken();
@@ -69,10 +72,11 @@ public class PlatformInventoryAuthorization {
 
         switch (access.check(userId, epoch)) {
             case ALLOWED -> { }
-            case USER_MISSING -> throw new ApiFailure(40100, "用户不存在");
-            case ACCOUNT_DISABLED -> throw new ApiFailure(40102, "账号已被禁用，请联系管理员");
+            case USER_MISSING -> throw new ErpException(CommonErrorType.USER_NOT_FOUND);
+            case ACCOUNT_DISABLED -> throw new ErpException(CommonErrorType.ACCOUNT_DISABLED);
             case TOKEN_REVOKED -> throw invalidToken();
-            case FORBIDDEN -> throw new ApiFailure(40300, "缺少权限: inv:stock:list");
+            case FORBIDDEN -> throw new ErpException(
+                    CommonErrorType.PERMISSION_REQUIRED, InventoryAccessConstants.STOCK_LIST_PERMISSION);
         }
     }
 
@@ -92,7 +96,7 @@ public class PlatformInventoryAuthorization {
         }
     }
 
-    private static ApiFailure invalidToken() {
-        return new ApiFailure(40105, "身份凭证无效");
+    private static ErpException invalidToken() {
+        return new ErpException(CommonErrorType.INVALID_TOKEN);
     }
 }

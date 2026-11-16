@@ -1,6 +1,8 @@
 package com.kasinlo.erp.infrastructure.settlement;
 
 import com.kasinlo.erp.domain.settlement.SettlementGateway;
+import com.kasinlo.erp.domain.settlement.SettlementSourceType;
+import com.kasinlo.erp.domain.trade.TradeOrderStatus;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
@@ -17,7 +19,7 @@ public class MyBatisSettlementGateway implements SettlementGateway {
     @Override
     public boolean payOnApproval(long orderId, String bizType, long partyId, BigDecimal amount,
                                  long userId, OffsetDateTime at) {
-        mapper.record(orderId, bizType, partyId, amount, userId, at.toLocalDate(), at);
-        return mapper.settle(orderId, amount);
+        mapper.record(orderId, bizType, partyId, amount, userId, at.toLocalDate(), at, SettlementSourceType.ORDER.getCode());
+        return mapper.settle(orderId, amount, TradeOrderStatus.APPROVED.getCode());
     }
 }

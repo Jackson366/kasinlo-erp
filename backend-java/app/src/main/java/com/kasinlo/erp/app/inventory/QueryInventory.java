@@ -1,6 +1,7 @@
 package com.kasinlo.erp.app.inventory;
 
 import com.kasinlo.erp.client.InventoryQuery;
+import com.kasinlo.erp.common.result.PageResult;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,13 +17,14 @@ public class QueryInventory implements InventoryQuery {
 
     @Override
     @Transactional(readOnly = true)
-    public Result list(String keyword, long page, long pageSize) {
+    public PageResult<Row> list(String keyword, long page, long pageSize) {
         int limit = pageSize < 1 ? 10 : (int) Math.min(pageSize, 200);
         long current = Math.clamp(page, 1, 1_000_000L / limit + 1);
         String pattern = keyword == null || keyword.isEmpty() ? null
                 : "%" + keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
         long total = inventory.count(pattern);
         long offset = (current - 1) * limit;
-        return new Result(offset >= total ? List.of() : inventory.list(pattern, limit, offset), total, current, limit);
+        List<Row> rows = offset >= total ? List.of() : inventory.list(pattern, limit, offset);
+        return new PageResult<>(rows, total, current, limit);
     }
 }

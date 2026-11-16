@@ -13,7 +13,17 @@
     <dependencies>
         <dependency>
             <groupId>com.kasinlo.erp</groupId>
+            <artifactId>erp-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.kasinlo.erp</groupId>
             <artifactId>erp-client</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.kasinlo.erp</groupId>
+            <artifactId>erp-domain</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>

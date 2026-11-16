@@ -1,7 +1,9 @@
 package com.kasinlo.erp.infrastructure.inventory;
 
-import com.alibaba.cola.exception.BizException;
+import com.kasinlo.erp.common.error.ErpException;
+import com.kasinlo.erp.domain.inventory.InventoryErrorType;
 import com.kasinlo.erp.domain.inventory.StockGateway;
+import com.kasinlo.erp.domain.inventory.StockOrderStatus;
 import com.kasinlo.erp.domain.inventory.StockPosting;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
@@ -24,11 +26,11 @@ public class MyBatisStockGateway implements StockGateway {
         StockOrderData row = new StockOrderData();
         String prefix = "CK" + at.toLocalDate().format(DateTimeFormatter.BASIC_ISO_DATE);
         row.orderNo = prefix + String.format(Locale.ROOT, "%04d", mapper.countNumbers(prefix + "%") + 1);
-        row.direction = posting.direction().code();
+        row.direction = posting.direction().getCode();
         row.sourceType = posting.sourceType();
         row.sourceId = posting.sourceId();
         row.orderDate = posting.orderDate();
-        row.status = 1;
+        row.status = StockOrderStatus.POSTED.getCode();
         row.remark = "";
         row.salesman = posting.salesman();
         row.createdBy = posting.userId();
@@ -37,7 +39,7 @@ public class MyBatisStockGateway implements StockGateway {
         try {
             mapper.insert(row);
         } catch (DuplicateKeyException e) {
-            throw new BizException("40900", "编号已被占用，请重试", e);
+            throw new ErpException(InventoryErrorType.STOCK_ORDER_NUMBER_CONFLICT, e);
         }
         for (StockPosting.Item item : posting.items()) {
             mapper.insertLine(row.id, item, at);

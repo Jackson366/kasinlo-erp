@@ -1,6 +1,6 @@
 package com.kasinlo.erp.domain.inventory;
 
-import com.alibaba.cola.exception.BizException;
+import com.kasinlo.erp.common.error.ErpException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -9,24 +9,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-public record StockPosting(long sourceId, String sourceType, Direction direction, LocalDate orderDate,
+public record StockPosting(long sourceId, String sourceType, StockMovementType direction, LocalDate orderDate,
                            String salesman, long userId, List<Item> items) {
     public StockPosting {
         items = List.copyOf(items);
-    }
-
-    public enum Direction {
-        IN("in"), OUT("out");
-
-        private final String code;
-
-        Direction(String code) {
-            this.code = code;
-        }
-
-        public String code() {
-            return code;
-        }
     }
 
     public List<Change> changes() {
@@ -34,9 +20,9 @@ public record StockPosting(long sourceId, String sourceType, Direction direction
         Map<Long, Change> bySpec = new TreeMap<>();
         for (Item item : items) {
             if (item.specId() <= 0) {
-                throw new BizException("40000", "出入库明细缺少规格，无法过账");
+                throw new ErpException(InventoryErrorType.STOCK_SPEC_REQUIRED);
             }
-            BigDecimal delta = direction == Direction.OUT ? item.qtyBase().negate() : item.qtyBase();
+            BigDecimal delta = direction == StockMovementType.OUT ? item.qtyBase().negate() : item.qtyBase();
             bySpec.merge(item.specId(), new Change(item.specId(), item.productName() + " " + item.spec(), delta),
                     (a, b) -> new Change(a.specId(), a.label(), a.delta().add(b.delta())));
         }

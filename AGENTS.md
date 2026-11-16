@@ -20,7 +20,33 @@
 
 `backend-java/` 采用 Maven 多模块。业务规则放在 `domain`，用例及事务编排放在
 `app`，MyBatis-Plus Mapper 和表映射放在 `infrastructure`。HTTP 适配放在
-`adapter`，启动配置和 H2 集成测试放在 `start`。以下 Go 目录和框架约定适用于 `backend/`。
+`adapter`，启动配置和 H2 集成测试放在 `start`。
+
+| 类别 | 命名约定 | 职责 | 示例 |
+| --- | --- | --- | --- |
+| 工具类 | `XxxUtils` | 无状态的通用静态工具方法 | `DateUtils` |
+| 辅助类 | `XxxHelper` | 辅助复杂业务或技术操作 | `PageHelper` |
+| 枚举类 | `XxxStatus` / `XxxType` | 表示状态或类型 | `TradeOrderStatus` |
+| 枚举接口 | `CodeEnum` | 声明编码和描述 | `CodeEnum` |
+| 枚举工具 | `EnumUtils` | 查询编码枚举 | `EnumUtils` |
+| 常量类 | `XxxConstants` | 定义同一职责下复用的常量 | `InventoryAccessConstants` |
+| 断言类 | `XxxAssert` | 检查前置条件并报告失败 | `BusinessAssert` |
+| 结果类 | `Result` / `PageResult` | 表示通用结果或分页结果 | `PageResult` |
+| 转换类 | `XxxConverter` | 使用 MapStruct 转换对象或类型 | `OrderConverter` |
+| 校验类 | `XxxValidator` | 校验参数或业务规则 | `OrderValidator` |
+| 支持类 | `XxxSupport` | 为某类功能提供底层支持 | `SecuritySupport` |
+| 构建类 | `XxxBuilder` | 构建对象 | `OrderBuilder` |
+| 计算类 | `XxxCalculator` | 执行计算逻辑 | `PriceCalculator` |
+| 解析类 | `XxxResolver` | 解析、识别或确定结果 | `TenantResolver` |
+| 格式化类 | `XxxFormatter` | 格式化输出 | `DateFormatter` |
+
+全局通用枚举放在 `common`，例如 `EnablementStatus`。业务领域枚举放在对应的
+`domain` 业务包，例如 `domain.trade.TradeOrderStatus` 和
+`domain.inventory.StockMovementType`。有唯一稳定编码的枚举实现 `CodeEnum<T>`，
+并使用 `common` 中的 `EnumUtils` 查询。通用错误在 `common.error` 定义，
+业务错误在对应领域定义并实现 `ErpError`。
+
+以下 Go 目录和框架约定适用于 `backend/`。
 
 ## 1. 后端目录职责
 

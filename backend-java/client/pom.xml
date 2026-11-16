@@ -9,4 +9,12 @@
         <version>0.1.0-SNAPSHOT</version>
     </parent>
     <artifactId>erp-client</artifactId>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.kasinlo.erp</groupId>
+            <artifactId>erp-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
 </project>
