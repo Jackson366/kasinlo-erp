@@ -9,12 +9,18 @@
 
 ## 0. 四条硬规则
 
-1. **业务代码只放 `backend/internal/module/<模块>/`**，不要往 `router.go` 里塞业务逻辑。
+1. **Go 业务代码只放 `backend/internal/module/<模块>/`**，不要往 `router.go` 里塞业务逻辑。
 2. **前端路由不要写 `redirect`**，动态路由注入统一交给 `router/guard.ts`（详见 §5.1）。
 3. **不要把 `localStorage` 当作响应式数据源**，令牌读写一律走 `utils/auth.ts`（详见 §5.2）。
 4. **组件样式里不要写死颜色**，一律引用 `styles/variables.scss` 的语义令牌（详见 §3）。
 
 ---
+
+### Java COLA 迁移工程
+
+`backend-java/` 采用 Maven 多模块。业务规则放在 `domain`，用例及事务编排放在
+`app`，MyBatis-Plus Mapper 和表映射放在 `infrastructure`。HTTP 适配放在
+`adapter`，启动配置和 H2 集成测试放在 `start`。以下 Go 目录和框架约定适用于 `backend/`。
 
 ## 1. 后端目录职责
 

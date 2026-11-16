@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.kasinlo.erp.infrastructure.inventory.InventoryMapper">
+    <sql id="activeSpecs">
+        FROM inv_product_specs sp
+        JOIN inv_products p ON p.id = sp.product_id AND p.deleted_at IS NULL
+    </sql>
+
+    <sql id="filters">
+        WHERE sp.deleted_at IS NULL AND p.status = 1 AND sp.status = 1
+        <if test="pattern != null">
+            AND (p.code ILIKE #{pattern} ESCAPE '\'
+                OR p.name ILIKE #{pattern} ESCAPE '\'
+                OR sp.spec ILIKE #{pattern} ESCAPE '\')
+        </if>
+    </sql>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*)
+        <include refid="activeSpecs"/>
+        <include refid="filters"/>
+    </select>
+
+    <select id="list" resultType="com.kasinlo.erp.client.InventoryQuery$Row">
+        SELECT p.id AS product_id, p.code AS product_code, p.name AS product_name,
+               sp.id AS spec_id, sp.spec, COALESCE(u.unit, '') AS unit, COALESCE(sp.stock, 0) AS stock
+        <include refid="activeSpecs"/>
+        LEFT JOIN inv_product_units u ON u.spec_id = sp.id AND u.is_base AND u.deleted_at IS NULL
+        <include refid="filters"/>
+        ORDER BY p.id, sp.sort, sp.id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+</mapper>

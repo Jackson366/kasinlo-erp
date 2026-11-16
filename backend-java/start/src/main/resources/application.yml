@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: kasinlo-erp-java
+  datasource:
+    hikari:
+      read-only: true
+  flyway:
+    enabled: false
+
+server:
+  port: 8081
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    arg-name-based-constructor-auto-mapping: true

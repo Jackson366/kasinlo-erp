@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:kasinlo_erp_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    username: sa
+    hikari:
+      read-only: false
+  flyway:
+    enabled: true
+    locations: classpath:db/h2
+erp:
+  platform:
+    secret: kasinlo-h2-fixture-platform-secret
+    issuer: kasinlo-platform-test
+    audience: kasinlo-erp-test
