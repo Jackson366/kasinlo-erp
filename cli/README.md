@@ -44,6 +44,18 @@ kas sales get --id 789
 
 `auth logout` 会先在平台撤销，再清理本地凭据。浏览器也可以撤销同一份授权，共用凭据的进程随后会收到未授权响应。若客户端在保存凭据时异常退出，可能留下配置目录中的 `credential.lock` 空目录。确认没有 `kas` 进程在更新登录后，可删除该空目录再重试。
 
+## 查询客户和供应商
+
+```sh
+kas --profile parties auth login --scope "customer.read supplier.read"
+kas --profile parties customer list --keyword "华东" --status 1
+kas --profile parties supplier list --keyword "GYS" --page-size 20
+kas --profile parties customer get --id 123
+kas --profile parties supplier get --id 456
+```
+
+详情 ID 从各自列表获取。输出包括 ID、编号、名称、状态。只需查询其中一类时，可单独申请该权限。
+
 ## 查询出入库和往来款
 
 ```sh

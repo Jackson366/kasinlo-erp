@@ -123,13 +123,13 @@ try {
     await expect(page.getByLabel('设备验证码', { exact: true })).toBeFocused()
   })
   await check('multiple scopes are displayed and approved explicitly', async () => {
-    requestedScope = 'product.read purchase.read sales.read'
+    requestedScope = 'product.read purchase.read sales.read customer.read supplier.read'
     await enter()
     await expect(page.getByRole('heading', { name: '允许 kas CLI 查询 ERP 数据？' })).toBeFocused()
-    for (const title of ['查询商品档案', '查询采购单', '查询销售单']) {
+    for (const title of ['查询商品档案', '查询采购单', '查询销售单', '查询客户档案', '查询供应商档案']) {
       await expect(page.getByRole('heading', { name: title })).toBeVisible()
     }
-    await expect(page.locator('.authorize-permission')).toHaveCount(3)
+    await expect(page.locator('.authorize-permission')).toHaveCount(5)
     await page.getByRole('button', { name: '允许查询', exact: true }).click()
     await expect(page.getByRole('heading', { name: '已同意授权，请返回终端' })).toBeFocused()
     await page.getByRole('button', { name: '连接另一个工具' }).click()

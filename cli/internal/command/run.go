@@ -19,12 +19,16 @@ import (
 	"kasinlo-cli/internal/credential"
 )
 
-const usage = `kas [--server URL] [--profile NAME] auth login [--scope "inventory.read product.read purchase.read sales.read stock.read finance.read"] [--no-wait | --session ID]
+const usage = `kas [--server URL] [--profile NAME] auth login [--scope "inventory.read product.read customer.read supplier.read purchase.read sales.read stock.read finance.read"] [--no-wait | --session ID]
 kas [--server URL] [--profile NAME] auth status
 kas [--server URL] [--profile NAME] auth logout
 kas [--server URL] [--profile NAME] inventory list [--keyword TEXT] [--page N] [--page-size N]
 kas [--server URL] [--profile NAME] product list [--keyword TEXT] [--status 0|1] [--category-id ID] [--page N] [--page-size N]
 kas [--server URL] [--profile NAME] product get --id ID
+kas [--server URL] [--profile NAME] customer list [--keyword TEXT] [--status 0|1] [--page N] [--page-size N]
+kas [--server URL] [--profile NAME] customer get --id ID
+kas [--server URL] [--profile NAME] supplier list [--keyword TEXT] [--status 0|1] [--page N] [--page-size N]
+kas [--server URL] [--profile NAME] supplier get --id ID
 kas [--server URL] [--profile NAME] purchase list [--keyword TEXT] [--status 1..5] [--settle-status STATUS] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--page N] [--page-size N]
 kas [--server URL] [--profile NAME] purchase get --id ID
 kas [--server URL] [--profile NAME] sales list [--keyword TEXT] [--status 1..5] [--settle-status STATUS] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--page N] [--page-size N]
@@ -104,7 +108,7 @@ func execute(ctx context.Context, args []string, out, diag io.Writer) error {
 		return usageError("expected a command; run kas --help")
 	}
 	switch args[0] + " " + args[1] {
-	case "auth login", "auth status", "auth logout", "inventory list", "product list", "product get", "purchase list", "purchase get", "sales list", "sales get", "stock list", "stock get", "finance receivables", "finance payables", "finance settlements":
+	case "auth login", "auth status", "auth logout", "inventory list", "product list", "product get", "customer list", "customer get", "supplier list", "supplier get", "purchase list", "purchase get", "sales list", "sales get", "stock list", "stock get", "finance receivables", "finance payables", "finance settlements":
 	default:
 		return usageError("unknown command; run kas --help")
 	}
@@ -330,6 +334,10 @@ func read(ctx context.Context, api *client.Client, store credential.Store, args 
 		path = "inventory"
 	case "product":
 		path = "products"
+	case "customer":
+		path = "customers"
+	case "supplier":
+		path = "suppliers"
 	case "purchase":
 		path = "purchase-orders"
 	case "sales":
@@ -391,6 +399,8 @@ func listQuery(flags *flag.FlagSet, resource string, args []string) (url.Values,
 	case "product":
 		filters["status"] = flags.String("status", "", "product status")
 		filters["categoryId"] = flags.String("category-id", "", "product category ID")
+	case "customer", "supplier":
+		filters["status"] = flags.String("status", "", "party status (0 or 1)")
 	case "stock":
 		filters["direction"] = flags.String("direction", "", "in or out")
 		filters["sourceType"] = flags.String("source-type", "", "purchase or sales")

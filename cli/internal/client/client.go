@@ -123,7 +123,7 @@ func (c *Client) Status(ctx context.Context, token string) (Status, error) {
 func ValidScope(value string) bool {
 	for _, scope := range strings.Split(value, " ") {
 		switch scope {
-		case "inventory.read", "product.read", "purchase.read", "sales.read", "stock.read", "finance.read":
+		case "inventory.read", "product.read", "customer.read", "supplier.read", "purchase.read", "sales.read", "stock.read", "finance.read":
 		default:
 			return false
 		}

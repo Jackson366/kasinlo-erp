@@ -32,6 +32,8 @@ const accountName = computed(() => userStore.profile?.username || userStore.disp
 const scopeDetails: Record<string, { title: string; description: string }> = {
   'inventory.read': { title: '查询库存', description: '查看商品、规格、基本单位和库存量。' },
   'product.read': { title: '查询商品档案', description: '查看商品编码、名称、分类、规格和计量单位。' },
+  'customer.read': { title: '查询客户档案', description: '查看客户编号、名称和启用状态。' },
+  'supplier.read': { title: '查询供应商档案', description: '查看供应商编号、名称和启用状态。' },
   'purchase.read': { title: '查询采购单', description: '查看采购单状态、金额和商品明细。' },
   'stock.read': { title: '查询出入库单', description: '查看出入库状态、商品和数量。' },
   'finance.read': { title: '查询应收应付和收付款', description: '查看应收应付金额、逾期情况和单据收付款流水。' },
