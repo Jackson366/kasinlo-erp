@@ -75,6 +75,10 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			scope = oauth.Scope
 		case "/internal/open-platform/products/9":
 			scope = oauth.ProductRead
+		case "/internal/open-platform/customers", "/internal/open-platform/customers/12":
+			scope = oauth.CustomerRead
+		case "/internal/open-platform/suppliers", "/internal/open-platform/suppliers/13":
+			scope = oauth.SupplierRead
 		case "/internal/open-platform/purchase-orders":
 			scope = oauth.PurchaseRead
 			if r.URL.Query().Get("status") != "2" || r.URL.Query().Get("startDate") != "2026-11-01" || r.URL.Query().Has("bizType") {
@@ -106,6 +110,15 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
+		case "/internal/open-platform/customers", "/internal/open-platform/suppliers":
+			if r.URL.Query().Get("keyword") != "Trade" || r.URL.Query().Get("status") != "1" {
+				t.Errorf("party filters not forwarded: %v", r.URL.Query())
+			}
+			_, _ = io.WriteString(w, `{"code":0,"data":{"total":1,"list":[{"name":"Trade"}]}}`)
+			return
+		case "/internal/open-platform/customers/12", "/internal/open-platform/suppliers/13":
+			_, _ = io.WriteString(w, `{"code":0,"data":{"name":"Trade"}}`)
+			return
 		case "/internal/open-platform/stock-orders":
 			if r.URL.Query().Get("sourceType") != "purchase" || r.URL.Query().Get("sourceId") != "10" {
 				t.Errorf("source filters not forwarded: %v", r.URL.Query())
@@ -222,6 +235,12 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 		!strings.Contains(res.Body.String(), `"stock":15`) {
 		t.Fatal("inventory response did not project the permitted fields")
 	}
+	for _, path := range []string{"/openapi/v1/customers", "/openapi/v1/suppliers/13"} {
+		res := call(http.MethodGet, path, accessToken, "", "")
+		if res.Code != http.StatusForbidden || !strings.Contains(res.Body.String(), "insufficient_scope") {
+			t.Fatalf("inventory-only token reached %s: %d %s", path, res.Code, res.Body.String())
+		}
+	}
 	var grants []oauth.Grant
 	res = call(http.MethodPost, "/internal/erp/grants/list", bridgeSecret, "application/json", `{"userId":27,"epoch":4}`)
 	if res.Code != http.StatusOK || json.Unmarshal(res.Body.Bytes(), &grants) != nil || len(grants) != 1 {
@@ -278,7 +297,7 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		SessionID string `json:"session_id"`
 		UserCode  string `json:"user_code"`
 	}
-	const scope = "inventory.read product.read purchase.read stock.read finance.read"
+	const scope = "inventory.read product.read purchase.read stock.read finance.read customer.read supplier.read"
 	pending := run(0, "auth", "login", "--no-wait", "--scope", scope)
 	if json.Unmarshal(pending, &session) != nil || session.SessionID == "" || session.UserCode == "" ||
 		strings.Contains(string(pending), "device_code") {
@@ -317,6 +336,14 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 	}
 	if out := run(0, "purchase", "list", "--status", "2", "--start-date", "2026-11-01"); !strings.Contains(string(out), `"orderNo":"CG10"`) {
 		t.Fatal("separate CLI process could not query purchase orders")
+	}
+	for _, party := range []struct{ command, id string }{{"customer", "12"}, {"supplier", "13"}} {
+		if out := run(0, party.command, "list", "--keyword", "Trade", "--status", "1"); !strings.Contains(string(out), `"list":[{"name":"Trade"}]`) {
+			t.Fatalf("could not list %s records: %s", party.command, out)
+		}
+		if out := run(0, party.command, "get", "--id", party.id); !strings.Contains(string(out), `"name":"Trade"`) {
+			t.Fatalf("could not read %s detail: %s", party.command, out)
+		}
 	}
 	run(1, "purchase", "get", "--id", "10")
 	run(4, "sales", "list")

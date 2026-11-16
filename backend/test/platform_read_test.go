@@ -35,7 +35,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { testDB.Unscoped().Delete(&role) })
-	for _, perm := range []string{"inv:purchase:list", "inv:product:list", "inv:stock:list", "inv:finance:list"} {
+	for _, perm := range []string{"inv:purchase:list", "inv:product:list", "inv:customer:list", "inv:supplier:list", "inv:stock:list", "inv:finance:list"} {
 		link := model.RoleMenu{RoleID: role.ID, MenuID: menuID(t, perm)}
 		if err := testDB.Create(&link).Error; err != nil {
 			t.Fatal(err)
@@ -75,13 +75,23 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	}
 	t.Cleanup(func() { testDB.Unscoped().Delete(&product) })
 
-	read := func(scope, path string, want int) []byte {
+	customer := model.InvCustomer{Code: marker + "%", Name: "Customer " + marker, Contact: marker + "PrivateContact", Status: 0}
+	if err := testDB.Create(&customer).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testDB.Unscoped().Delete(&customer) })
+	supplier := model.InvSupplier{Code: marker, Name: "Supplier " + marker, Status: 1}
+	if err := testDB.Create(&supplier).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testDB.Unscoped().Delete(&supplier) })
+	readAs := func(user model.User, scope, path string, want int) []byte {
 		t.Helper()
 		now := time.Now()
 		claims := jwt.MapClaims{
-			"iss": cfg.Issuer, "aud": cfg.Audience, "sub": strconv.FormatInt(actor.ID, 10),
+			"iss": cfg.Issuer, "aud": cfg.Audience, "sub": strconv.FormatInt(user.ID, 10),
 			"iat": now.Unix(), "exp": now.Add(30 * time.Second).Unix(),
-			"epoch": actor.TokenEpoch, "scope": scope, "grant_id": "test-grant",
+			"epoch": user.TokenEpoch, "scope": scope, "grant_id": "test-grant",
 		}
 		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(key))
 		if err != nil {
@@ -95,6 +105,10 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 			t.Fatalf("%s with %s: got %d, want %d: %s", path, scope, res.Code, want, res.Body.String())
 		}
 		return res.Body.Bytes()
+	}
+	read := func(scope, path string, want int) []byte {
+		t.Helper()
+		return readAs(actor, scope, path, want)
 	}
 
 	result := read("purchase.read", "/purchase-orders?keyword="+marker+"&bizType=sales", http.StatusOK)
@@ -157,6 +171,34 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 		t.Fatalf("unexpected settlement response: %s", data)
 	}
 	read("finance.read", fmt.Sprintf("/order-settlements/%d", hidden.ID), http.StatusNotFound)
+
+	customerPath := fmt.Sprintf("/customers/%d", customer.ID)
+	for _, path := range []string{"/customers?keyword=" + marker + "%25&status=0", customerPath} {
+		data := string(read("customer.read", path, http.StatusOK))
+		if !strings.Contains(data, customer.Name) || strings.Contains(data, "PrivateContact") ||
+			strings.Contains(data, `"balance"`) || strings.Contains(data, `"orderCount"`) {
+			t.Fatalf("unexpected party response: %s", data)
+		}
+	}
+	if data := string(read("customer.read", "/customers?keyword="+marker+"&status=1", http.StatusOK)); !strings.Contains(data, `"list":[]`) || !strings.Contains(data, `"total":0`) {
+		t.Fatalf("disabled customer matched enabled filter: %s", data)
+	}
+	read("customer.read", "/customers?status=2", http.StatusBadRequest)
+	read("supplier.read", customerPath, http.StatusForbidden)
+	read("customer.read", "/suppliers", http.StatusForbidden)
+	readAs(other, "customer.read", customerPath, http.StatusForbidden)
+	readAs(other, "supplier.read", "/suppliers", http.StatusForbidden)
+	supplierPath := fmt.Sprintf("/suppliers/%d", supplier.ID)
+	if data := string(read("supplier.read", supplierPath, http.StatusOK)); !strings.Contains(data, supplier.Name) {
+		t.Fatalf("supplier detail loaded the wrong record: %s", data)
+	}
+	if err := testDB.Delete(&supplier).Error; err != nil {
+		t.Fatal(err)
+	}
+	read("supplier.read", supplierPath, http.StatusNotFound)
+	if data := string(read("supplier.read", "/suppliers?keyword="+marker, http.StatusOK)); !strings.Contains(data, `"total":0`) {
+		t.Fatalf("deleted supplier appeared in list: %s", data)
+	}
 
 	detail := string(read("product.read", fmt.Sprintf("/products/%d", product.ID), http.StatusOK))
 	for _, field := range []string{"refPurchasePrice", "refSalePrice", "purchasePrice", "salePrice", "totalStock", "stock"} {

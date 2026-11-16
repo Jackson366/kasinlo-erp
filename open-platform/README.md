@@ -31,10 +31,14 @@
 | --- | --- | --- | --- |
 | `/inventory` | `inventory.read` | `inv:stock:list` | 规格库存 |
 | `/products`、`/products/{id}` | `product.read` | `inv:product:list` | 商品标识、分类、状态；详情含规格与计量单位 |
+| `/customers`、`/customers/{id}` | `customer.read` | `inv:customer:list` | 客户 ID、编号、名称和状态 |
+| `/suppliers`、`/suppliers/{id}` | `supplier.read` | `inv:supplier:list` | 供应商 ID、编号、名称和状态 |
 | `/purchase-orders`、`/purchase-orders/{id}` | `purchase.read` | `inv:purchase:list` | 采购单号、往来单位、日期、状态、金额；详情含商品明细 |
 | `/sales-orders`、`/sales-orders/{id}` | `sales.read` | `inv:sales:list` | 销售单号、往来单位、日期、状态、金额；详情含商品明细 |
 
 列表返回 `list`、`total`、`page`、`pageSize`，支持 `page`、`pageSize` 和 `keyword`。商品列表另支持 `status`（0 停用、1 启用）和 `categoryId`。单据列表另支持 `status`（1 待处理、2 已审核、3 已取消、4 已红冲、5 红冲单）、`settleStatus`（`unpaid`、`partial`、`paid`）以及 `startDate`、`endDate`（`YYYY-MM-DD`，含边界）。
+
+客户和供应商列表的 `keyword` 匹配编号及名称，`status=0|1` 筛选停用或启用的档案。两类档案分别授权，详情使用对应列表返回的 ID，响应只包含基础档案字段。档案按 ERP 的共享主数据规则查询。
 
 响应错误为 `{"error":"..."}`。授权缺少所需范围返回 403 `insufficient_scope`，ERP 账号缺少对应功能权限返回 403 `insufficient_permission`，不存在或超出数据范围的单据详情返回 404 `not_found`。
 

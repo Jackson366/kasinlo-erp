@@ -1512,7 +1512,6 @@ definitions:
     properties:
       amounts:
         additionalProperties:
-          format: float64
           type: number
         type: object
       method:
@@ -1818,6 +1817,17 @@ definitions:
         type: integer
       totalAmount:
         type: number
+    type: object
+  inv.platformPartyRow:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      status:
+        type: integer
     type: object
   inv.platformProductDetail:
     properties:
@@ -2962,6 +2972,74 @@ paths:
       summary: 刷新访问令牌
       tags:
       - 认证
+  /internal/open-platform/customers:
+    get:
+      parameters:
+      - description: 往来单位编号或名称
+        in: query
+        name: keyword
+        type: string
+      - description: 启用状态（0 或 1）
+        in: query
+        name: status
+        type: integer
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.platformPartyRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询客户或供应商档案
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/customers/{id}:
+    get:
+      parameters:
+      - description: 往来单位 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformPartyRow'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询客户或供应商详情
+      tags:
+      - 开放平台内部接口
   /internal/open-platform/order-settlements/{id}:
     get:
       parameters:
@@ -3377,6 +3455,74 @@ paths:
       security:
       - BearerAuth: []
       summary: 查询出入库明细
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/suppliers:
+    get:
+      parameters:
+      - description: 往来单位编号或名称
+        in: query
+        name: keyword
+        type: string
+      - description: 启用状态（0 或 1）
+        in: query
+        name: status
+        type: integer
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.platformPartyRow'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询客户或供应商档案
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/suppliers/{id}:
+    get:
+      parameters:
+      - description: 往来单位 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformPartyRow'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询客户或供应商详情
       tags:
       - 开放平台内部接口
   /inv/attachments:

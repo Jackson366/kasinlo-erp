@@ -31,6 +31,14 @@ func PlatformInventoryModule(cfg config.OpenPlatformConfig) (module.Module, bool
 			products.GET("/products", h.platformProducts)
 			products.GET("/products/:id", h.platformProduct)
 
+			customers := register("customer.read", "inv:customer:list")
+			customers.GET("/customers", h.platformParties(model.InvBizSales))
+			customers.GET("/customers/:id", h.platformParty(model.InvBizSales))
+
+			suppliers := register("supplier.read", "inv:supplier:list")
+			suppliers.GET("/suppliers", h.platformParties(model.InvBizPurchase))
+			suppliers.GET("/suppliers/:id", h.platformParty(model.InvBizPurchase))
+
 			purchase := register("purchase.read", "inv:purchase:list")
 			purchase.GET("/purchase-orders", h.platformOrders(model.InvBizPurchase))
 			purchase.GET("/purchase-orders/:id", h.platformOrder(model.InvBizPurchase))

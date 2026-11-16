@@ -34,6 +34,10 @@ var (
 	Inventory      = Resource{Path: "inventory", Scope: oauth.Scope}
 	Products       = Resource{Path: "products", Scope: oauth.ProductRead, filters: []string{"status", "categoryId"}}
 	Product        = Resource{Path: "products", Scope: oauth.ProductRead, detail: true}
+	Customers      = Resource{Path: "customers", Scope: oauth.CustomerRead, filters: partyFilters}
+	Customer       = Resource{Path: "customers", Scope: oauth.CustomerRead, detail: true}
+	Suppliers      = Resource{Path: "suppliers", Scope: oauth.SupplierRead, filters: partyFilters}
+	Supplier       = Resource{Path: "suppliers", Scope: oauth.SupplierRead, detail: true}
 	PurchaseOrders = Resource{Path: "purchase-orders", Scope: oauth.PurchaseRead, filters: orderFilters}
 	PurchaseOrder  = Resource{Path: "purchase-orders", Scope: oauth.PurchaseRead, detail: true}
 	SalesOrders    = Resource{Path: "sales-orders", Scope: oauth.SalesRead, filters: orderFilters}
@@ -44,6 +48,8 @@ var (
 	Payables       = Resource{Path: "payables", Scope: oauth.FinanceRead, filters: financeFilters}
 	Settlements    = Resource{Path: "order-settlements", Scope: oauth.FinanceRead, detail: true}
 )
+
+var partyFilters = []string{"status"}
 
 var financeFilters = []string{"settle", "source"}
 

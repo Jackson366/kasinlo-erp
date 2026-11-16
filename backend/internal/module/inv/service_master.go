@@ -47,6 +47,13 @@ func (s *Service) partyStats(bizType string, actor *authz.Identity) (map[int64]p
 	return out, nil
 }
 
+func (s *Service) partyRecords(bizType string) *gorm.DB {
+	if bizType == model.InvBizPurchase {
+		return s.db.Model(&model.InvSupplier{})
+	}
+	return s.db.Model(&model.InvCustomer{})
+}
+
 // partyList 客户 / 供应商通用列表。bizType 决定余额口径与冗余名称来源。
 func (s *Service) partyList(bizType string, q page.Query, status *int16, actor *authz.Identity) ([]PartyRow, int64, error) {
 	var (
@@ -59,7 +66,7 @@ func (s *Service) partyList(bizType string, q page.Query, status *int16, actor *
 	}
 
 	if bizType == model.InvBizPurchase {
-		tx := s.db.Model(&model.InvSupplier{})
+		tx := s.partyRecords(bizType)
 		if q.Keyword != "" {
 			kw := likeKW(q.Keyword)
 			tx = tx.Where(likeExpr("code")+" OR "+likeExpr("name")+" OR "+likeExpr("contact"), kw, kw, kw)
@@ -85,7 +92,7 @@ func (s *Service) partyList(bizType string, q page.Query, status *int16, actor *
 		return rows, total, nil
 	}
 
-	tx := s.db.Model(&model.InvCustomer{})
+	tx := s.partyRecords(bizType)
 	if q.Keyword != "" {
 		kw := likeKW(q.Keyword)
 		tx = tx.Where(likeExpr("code")+" OR "+likeExpr("name")+" OR "+likeExpr("contact"), kw, kw, kw)
