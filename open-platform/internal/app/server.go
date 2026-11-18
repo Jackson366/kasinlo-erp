@@ -34,22 +34,7 @@ func (s Server) Handler() http.Handler {
 	mux.HandleFunc("POST /oauth/token", s.token)
 	mux.HandleFunc("POST /oauth/revoke", s.revoke)
 	mux.HandleFunc("GET /oauth/status", s.status)
-	mux.HandleFunc("GET /openapi/v1/inventory", s.read(erpclient.Inventory))
-	mux.HandleFunc("GET /openapi/v1/stock-orders", s.read(erpclient.StockOrders))
-	mux.HandleFunc("GET /openapi/v1/stock-orders/{id}", s.read(erpclient.StockOrder))
-	mux.HandleFunc("GET /openapi/v1/receivables", s.read(erpclient.Receivables))
-	mux.HandleFunc("GET /openapi/v1/payables", s.read(erpclient.Payables))
-	mux.HandleFunc("GET /openapi/v1/order-settlements/{id}", s.read(erpclient.Settlements))
-	mux.HandleFunc("GET /openapi/v1/products", s.read(erpclient.Products))
-	mux.HandleFunc("GET /openapi/v1/products/{id}", s.read(erpclient.Product))
-	mux.HandleFunc("GET /openapi/v1/customers", s.read(erpclient.Customers))
-	mux.HandleFunc("GET /openapi/v1/customers/{id}", s.read(erpclient.Customer))
-	mux.HandleFunc("GET /openapi/v1/suppliers", s.read(erpclient.Suppliers))
-	mux.HandleFunc("GET /openapi/v1/suppliers/{id}", s.read(erpclient.Supplier))
-	mux.HandleFunc("GET /openapi/v1/purchase-orders", s.read(erpclient.PurchaseOrders))
-	mux.HandleFunc("GET /openapi/v1/purchase-orders/{id}", s.read(erpclient.PurchaseOrder))
-	mux.HandleFunc("GET /openapi/v1/sales-orders", s.read(erpclient.SalesOrders))
-	mux.HandleFunc("GET /openapi/v1/sales-orders/{id}", s.read(erpclient.SalesOrder))
+	s.registerReads(mux)
 	mux.HandleFunc("POST /internal/erp/device/inspect", s.bridge(s.inspect))
 	mux.HandleFunc("POST /internal/erp/device/decision", s.bridge(s.decide))
 	mux.HandleFunc("POST /internal/erp/grants/list", s.bridge(s.list))
@@ -204,54 +189,6 @@ func (s Server) status(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"clientId": grant.ClientID, "scope": grant.Scope, "expiresAt": grant.ExpiresAt,
 	})
-}
-
-func (s Server) read(resource erpclient.Resource) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		grant, ok := s.activeGrant(w, r)
-		if !ok {
-			return
-		}
-		if !oauth.HasScope(grant.Scope, resource.Scope) {
-			reject(w, http.StatusForbidden, "insufficient_scope")
-			return
-		}
-
-		if resource.Path == "stock-orders" && r.PathValue("id") == "" {
-			switch r.URL.Query().Get("sourceType") {
-			case "purchase":
-				if !oauth.HasScope(grant.Scope, oauth.PurchaseRead) {
-					reject(w, http.StatusForbidden, "insufficient_scope")
-					return
-				}
-			case "sales":
-				if !oauth.HasScope(grant.Scope, oauth.SalesRead) {
-					reject(w, http.StatusForbidden, "insufficient_scope")
-					return
-				}
-			}
-		}
-
-		data, status, err := s.ERP.Read(r.Context(), grant, resource, r.PathValue("id"), r.URL.Query())
-		if err != nil {
-			slog.Warn("ERP read failed", "resource", resource.Path, "grant_id", grant.ID)
-			reject(w, http.StatusBadGateway, "erp_unavailable")
-			return
-		}
-		slog.Info("ERP read requested", "resource", resource.Path, "grant_id", grant.ID, "user_id", grant.UserID, "status", status)
-		switch status {
-		case http.StatusUnauthorized:
-			reject(w, status, "erp_identity_invalid")
-		case http.StatusForbidden:
-			reject(w, status, "insufficient_permission")
-		case http.StatusBadRequest:
-			reject(w, status, "invalid_request")
-		case http.StatusNotFound:
-			reject(w, status, "not_found")
-		default:
-			writeJSON(w, http.StatusOK, data)
-		}
-	}
 }
 
 type bridgeRequest struct {
