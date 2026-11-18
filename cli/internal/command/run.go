@@ -8,10 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -107,10 +105,14 @@ func execute(ctx context.Context, args []string, out, diag io.Writer) error {
 	if len(args) < 2 {
 		return usageError("expected a command; run kas --help")
 	}
-	switch args[0] + " " + args[1] {
-	case "auth login", "auth status", "auth logout", "inventory list", "product list", "product get", "customer list", "customer get", "supplier list", "supplier get", "purchase list", "purchase get", "sales list", "sales get", "stock list", "stock get", "finance receivables", "finance payables", "finance settlements":
+	name := args[0] + " " + args[1]
+	queryCommand, isRead := readCommands[name]
+	switch name {
+	case "auth login", "auth status", "auth logout":
 	default:
-		return usageError("unknown command; run kas --help")
+		if !isRead {
+			return usageError("unknown command; run kas --help")
+		}
 	}
 	if *profile == "" {
 		*profile = "default"
@@ -131,7 +133,7 @@ func execute(ctx context.Context, args []string, out, diag io.Writer) error {
 		root = filepath.Join(dir, "kas")
 	}
 	store := credential.New(root, api.Base(), *profile)
-	switch args[0] + " " + args[1] {
+	switch name {
 	case "auth login":
 		return login(ctx, api, store, args[2:], out, diag)
 	case "auth status":
@@ -145,7 +147,7 @@ func execute(ctx context.Context, args []string, out, diag io.Writer) error {
 		}
 		return logout(ctx, api, store, out)
 	default:
-		return read(ctx, api, store, args, out)
+		return queryCommand.run(ctx, api, store, name, args[2:], out)
 	}
 }
 
@@ -325,110 +327,4 @@ func logout(ctx context.Context, api *client.Client, store credential.Store, out
 		return err
 	}
 	return json.NewEncoder(out).Encode(map[string]bool{"logged_out": true})
-}
-
-func read(ctx context.Context, api *client.Client, store credential.Store, args []string, out io.Writer) error {
-	var path string
-	switch args[0] {
-	case "inventory":
-		path = "inventory"
-	case "product":
-		path = "products"
-	case "customer":
-		path = "customers"
-	case "supplier":
-		path = "suppliers"
-	case "purchase":
-		path = "purchase-orders"
-	case "sales":
-		path = "sales-orders"
-	case "stock":
-		path = "stock-orders"
-	case "finance":
-		path = args[1]
-		if args[1] == "settlements" {
-			path = "order-settlements"
-		}
-	}
-
-	flags := flag.NewFlagSet(args[0]+" "+args[1], flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	var query url.Values
-	if args[1] == "get" || args[1] == "settlements" {
-		idFlag := "id"
-		if args[1] == "settlements" {
-			idFlag = "order-id"
-		}
-		id := flags.Int64(idFlag, 0, "record ID")
-		if err := flags.Parse(args[2:]); err != nil {
-			return usageError(err.Error())
-		}
-		if flags.NArg() != 0 || *id <= 0 {
-			return usageError("use --" + idFlag + " with a positive record ID")
-		}
-		path += "/" + strconv.FormatInt(*id, 10)
-	} else {
-		var err error
-		query, err = listQuery(flags, args[0], args[2:])
-		if err != nil {
-			return err
-		}
-	}
-
-	current, err := store.Credential()
-	if errors.Is(err, os.ErrNotExist) || err == nil && !time.Now().Before(current.ExpiresAt) {
-		return &problem{"not_logged_in", "run kas auth login before querying " + path, 3}
-	}
-	if err != nil {
-		return err
-	}
-	data, err := api.Read(ctx, current.Token, path, query)
-	if err != nil {
-		return err
-	}
-	return json.NewEncoder(out).Encode(data)
-}
-
-func listQuery(flags *flag.FlagSet, resource string, args []string) (url.Values, error) {
-	keyword := flags.String("keyword", "", "search term")
-	page := flags.Int("page", 1, "page number")
-	size := flags.Int("page-size", 10, "page size")
-	filters := map[string]*string{}
-	var includeVoided *bool
-	switch resource {
-	case "product":
-		filters["status"] = flags.String("status", "", "product status")
-		filters["categoryId"] = flags.String("category-id", "", "product category ID")
-	case "customer", "supplier":
-		filters["status"] = flags.String("status", "", "party status (0 or 1)")
-	case "stock":
-		filters["direction"] = flags.String("direction", "", "in or out")
-		filters["sourceType"] = flags.String("source-type", "", "purchase or sales")
-		filters["sourceId"] = flags.String("source-id", "", "source order ID")
-		includeVoided = flags.Bool("include-voided", false, "include voided stock orders")
-	case "finance":
-		filters["settle"] = flags.String("settle-status", "", "unpaid, partial, paid or overdue")
-		filters["source"] = flags.String("source", "", "order or plan")
-	case "purchase", "sales":
-		filters["status"] = flags.String("status", "", "order status")
-		filters["settleStatus"] = flags.String("settle-status", "", "unpaid, partial or paid")
-		filters["startDate"] = flags.String("start-date", "", "start date, inclusive")
-		filters["endDate"] = flags.String("end-date", "", "end date, inclusive")
-	}
-	if err := flags.Parse(args); err != nil {
-		return nil, usageError(err.Error())
-	}
-	if flags.NArg() != 0 || *page < 1 || *size < 1 || *size > 200 || len(*keyword) > 500 {
-		return nil, usageError("use a positive page, page-size between 1 and 200, and keyword up to 500 bytes")
-	}
-	query := url.Values{"page": {strconv.Itoa(*page)}, "pageSize": {strconv.Itoa(*size)}, "keyword": {*keyword}}
-	for name, value := range filters {
-		if *value != "" {
-			query.Set(name, *value)
-		}
-	}
-	if includeVoided != nil && *includeVoided {
-		query.Set("includeVoided", "true")
-	}
-	return query, nil
 }

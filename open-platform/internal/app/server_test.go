@@ -73,7 +73,7 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 		switch r.URL.Path {
 		case "/internal/open-platform/inventory":
 			scope = oauth.Scope
-		case "/internal/open-platform/products/9":
+		case "/internal/open-platform/products", "/internal/open-platform/products/9":
 			scope = oauth.ProductRead
 		case "/internal/open-platform/customers", "/internal/open-platform/customers/12":
 			scope = oauth.CustomerRead
@@ -88,6 +88,8 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			scope = oauth.PurchaseRead
 		case "/internal/open-platform/stock-orders", "/internal/open-platform/stock-orders/11":
 			scope = oauth.StockRead
+		case "/internal/open-platform/sales-orders", "/internal/open-platform/sales-orders/14":
+			scope = oauth.SalesRead
 		case "/internal/open-platform/payables", "/internal/open-platform/receivables", "/internal/open-platform/order-settlements/10":
 			scope = oauth.FinanceRead
 		default:
@@ -110,6 +112,12 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
+		case "/internal/open-platform/products":
+			if r.URL.Query().Get("status") != "0" || r.URL.Query().Get("categoryId") != "3" {
+				t.Errorf("product filters not forwarded: %v", r.URL.Query())
+			}
+			_, _ = io.WriteString(w, `{"code":0,"data":{"list":[{"id":9,"name":"Product"}]}}`)
+			return
 		case "/internal/open-platform/customers", "/internal/open-platform/suppliers":
 			if r.URL.Query().Get("keyword") != "Trade" || r.URL.Query().Get("status") != "1" {
 				t.Errorf("party filters not forwarded: %v", r.URL.Query())
@@ -122,6 +130,9 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 		case "/internal/open-platform/stock-orders":
 			if r.URL.Query().Get("sourceType") != "purchase" || r.URL.Query().Get("sourceId") != "10" {
 				t.Errorf("source filters not forwarded: %v", r.URL.Query())
+			}
+			if r.URL.Query().Get("direction") != "out" || r.URL.Query().Get("includeVoided") != "true" {
+				t.Errorf("stock filters not forwarded: %v", r.URL.Query())
 			}
 			_, _ = io.WriteString(w, `{"code":0,"data":{"list":[{"id":11,"sourceId":10}]}}`)
 			return
@@ -136,6 +147,15 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			return
 		case "/internal/open-platform/order-settlements/10":
 			_, _ = io.WriteString(w, `{"code":0,"data":{"orderId":10,"outstanding":70,"rows":[]}}`)
+			return
+		case "/internal/open-platform/sales-orders":
+			if r.URL.Query().Get("settleStatus") != "paid" || r.URL.Query().Get("endDate") != "2026-11-14" {
+				t.Errorf("sales filters not forwarded: %v", r.URL.Query())
+			}
+			_, _ = io.WriteString(w, `{"code":0,"data":{"list":[{"id":14,"orderNo":"XS14"}]}}`)
+			return
+		case "/internal/open-platform/sales-orders/14":
+			_, _ = io.WriteString(w, `{"code":0,"data":{"id":14,"orderNo":"XS14"}}`)
 			return
 		}
 		if scope == oauth.PurchaseRead {
@@ -293,16 +313,22 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		return out
 	}
 
-	var session struct {
+	type loginSession struct {
 		SessionID string `json:"session_id"`
 		UserCode  string `json:"user_code"`
 	}
-	const scope = "inventory.read product.read purchase.read stock.read finance.read customer.read supplier.read"
-	pending := run(0, "auth", "login", "--no-wait", "--scope", scope)
-	if json.Unmarshal(pending, &session) != nil || session.SessionID == "" || session.UserCode == "" ||
-		strings.Contains(string(pending), "device_code") {
-		t.Fatal("expected a resumable login with a public verification code")
+	start := func(scope string) loginSession {
+		t.Helper()
+		var session loginSession
+		pending := run(0, "auth", "login", "--no-wait", "--scope", scope)
+		if json.Unmarshal(pending, &session) != nil || session.SessionID == "" || session.UserCode == "" ||
+			strings.Contains(string(pending), "device_code") {
+			t.Fatal("expected a resumable login with a public verification code")
+		}
+		return session
 	}
+	const scope = "inventory.read product.read purchase.read stock.read finance.read customer.read supplier.read"
+	session := start(scope)
 	bridge := func(path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+bridgeSecret)
@@ -334,6 +360,9 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 	if out := run(0, "product", "get", "--id", "9"); !strings.Contains(string(out), `"name":"Product"`) {
 		t.Fatal("separate CLI process could not read the product detail")
 	}
+	if out := run(0, "product", "list", "--status", "0", "--category-id", "3"); !strings.Contains(string(out), `"id":9`) {
+		t.Fatal("separate CLI process could not list products with filters")
+	}
 	if out := run(0, "purchase", "list", "--status", "2", "--start-date", "2026-11-01"); !strings.Contains(string(out), `"orderNo":"CG10"`) {
 		t.Fatal("separate CLI process could not query purchase orders")
 	}
@@ -347,8 +376,9 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 	}
 	run(1, "purchase", "get", "--id", "10")
 	run(4, "sales", "list")
+	run(4, "sales", "get", "--id", "14")
 
-	if out := run(0, "stock", "list", "--source-type", "purchase", "--source-id", "10"); !strings.Contains(string(out), `"sourceId":10`) {
+	if out := run(0, "stock", "list", "--source-type", "purchase", "--source-id", "10", "--direction", "out", "--include-voided"); !strings.Contains(string(out), `"sourceId":10`) {
 		t.Fatal("could not correlate a stock order")
 	}
 	run(4, "stock", "list", "--source-type", "sales", "--source-id", "10")
@@ -381,4 +411,18 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatal("logout did not revoke the server-side grant")
 	}
+
+	salesSession := start("sales.read")
+	if res := bridge(decisionPath, `{"userId":27,"epoch":4,"userCode":"`+salesSession.UserCode+`","approve":true,"scope":"sales.read"}`); res.Code != http.StatusOK {
+		t.Fatal("sales-only authorization decision was rejected")
+	}
+	run(0, "auth", "login", "--session", salesSession.SessionID)
+	if out := run(0, "sales", "list", "--settle-status", "paid", "--end-date", "2026-11-14"); !strings.Contains(string(out), `"orderNo":"XS14"`) {
+		t.Fatal("separate CLI process could not list sales orders with filters")
+	}
+	if out := run(0, "sales", "get", "--id", "14"); !strings.Contains(string(out), `"id":14`) {
+		t.Fatal("separate CLI process could not read the sales order detail")
+	}
+	run(4, "stock", "list", "--source-type", "sales", "--source-id", "14")
+	run(0, "auth", "logout")
 }

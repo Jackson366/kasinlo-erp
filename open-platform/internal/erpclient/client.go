@@ -24,40 +24,16 @@ type Client struct {
 }
 
 type Resource struct {
-	Path    string
-	Scope   string
-	detail  bool
-	filters []string
+	Path             string
+	Scope            string
+	Detail           bool
+	Filters          []string
+	ProjectInventory bool
 }
-
-var (
-	Inventory      = Resource{Path: "inventory", Scope: oauth.Scope}
-	Products       = Resource{Path: "products", Scope: oauth.ProductRead, filters: []string{"status", "categoryId"}}
-	Product        = Resource{Path: "products", Scope: oauth.ProductRead, detail: true}
-	Customers      = Resource{Path: "customers", Scope: oauth.CustomerRead, filters: partyFilters}
-	Customer       = Resource{Path: "customers", Scope: oauth.CustomerRead, detail: true}
-	Suppliers      = Resource{Path: "suppliers", Scope: oauth.SupplierRead, filters: partyFilters}
-	Supplier       = Resource{Path: "suppliers", Scope: oauth.SupplierRead, detail: true}
-	PurchaseOrders = Resource{Path: "purchase-orders", Scope: oauth.PurchaseRead, filters: orderFilters}
-	PurchaseOrder  = Resource{Path: "purchase-orders", Scope: oauth.PurchaseRead, detail: true}
-	SalesOrders    = Resource{Path: "sales-orders", Scope: oauth.SalesRead, filters: orderFilters}
-	SalesOrder     = Resource{Path: "sales-orders", Scope: oauth.SalesRead, detail: true}
-	StockOrders    = Resource{Path: "stock-orders", Scope: oauth.StockRead, filters: []string{"direction", "includeVoided", "sourceType", "sourceId"}}
-	StockOrder     = Resource{Path: "stock-orders", Scope: oauth.StockRead, detail: true}
-	Receivables    = Resource{Path: "receivables", Scope: oauth.FinanceRead, filters: financeFilters}
-	Payables       = Resource{Path: "payables", Scope: oauth.FinanceRead, filters: financeFilters}
-	Settlements    = Resource{Path: "order-settlements", Scope: oauth.FinanceRead, detail: true}
-)
-
-var partyFilters = []string{"status"}
-
-var financeFilters = []string{"settle", "source"}
-
-var orderFilters = []string{"status", "settleStatus", "startDate", "endDate"}
 
 func (c Client) Read(ctx context.Context, grant oauth.Grant, resource Resource, id string, query url.Values) (json.RawMessage, int, error) {
 	path := "/internal/open-platform/" + resource.Path
-	if resource.detail {
+	if resource.Detail {
 		number, err := strconv.ParseInt(id, 10, 64)
 		if err != nil || number <= 0 {
 			return nil, http.StatusBadRequest, nil
@@ -65,7 +41,7 @@ func (c Client) Read(ctx context.Context, grant oauth.Grant, resource Resource, 
 		path += "/" + strconv.FormatInt(number, 10)
 	} else {
 		params := url.Values{}
-		for _, name := range append([]string{"page", "pageSize", "keyword"}, resource.filters...) {
+		for _, name := range append([]string{"page", "pageSize", "keyword"}, resource.Filters...) {
 			if v := query.Get(name); v != "" {
 				params.Set(name, v)
 			}
@@ -110,10 +86,10 @@ func (c Client) Read(ctx context.Context, grant oauth.Grant, resource Resource, 
 	if body.Code == nil || *body.Code != 0 || len(body.Data) == 0 || body.Data[0] != '{' {
 		return nil, 0, errors.New("invalid ERP read response")
 	}
-	if resource.Scope == oauth.Scope {
+	if resource.ProjectInventory {
 		return inventoryResponse(body.Data)
 	}
-	if !resource.detail {
+	if !resource.Detail {
 		var page struct {
 			List []json.RawMessage `json:"list"`
 		}
