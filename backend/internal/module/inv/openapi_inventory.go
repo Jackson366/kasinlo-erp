@@ -28,6 +28,8 @@ func PlatformInventoryModule(cfg config.OpenPlatformConfig) (module.Module, bool
 			register("inventory.read", "inv:stock:list").GET("/inventory", h.platformInventory)
 
 			products := register("product.read", "inv:product:list")
+			products.GET("/product-categories", h.platformCategories)
+			products.GET("/product-categories/:id", h.platformCategory)
 			products.GET("/products", h.platformProducts)
 			products.GET("/products/:id", h.platformProduct)
 

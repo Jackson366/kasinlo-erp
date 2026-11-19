@@ -71,3 +71,17 @@ kas --profile fulfillment finance payables --settle-status overdue
 ```
 
 采购单关联查询使用 `--source-type purchase` 和 `purchase.read`。出入库列表默认显示已过账单据，可用 `--include-voided` 查看作废历史。汇总商品数量时按明细的商品、规格和单位分别汇总。流水的调整记录保留带符号金额以及 `adjustsId`。
+
+## 查询商品分类
+
+```sh
+kas --profile catalog auth login --scope "product.read"
+kas --profile catalog category list --parent-id 0 --status 1
+# 将 123 替换为分类列表返回的 id，逐级查询直接子分类。
+kas --profile catalog category list --parent-id 123
+kas --profile catalog category list --keyword "螺纹钢" --page-size 20
+kas --profile catalog category get --id 123
+kas --profile catalog product list --category-id 123
+```
+
+省略 `--parent-id` 查询所有层级；`--parent-id 0` 只查根分类。输出为分页平表，含 `id`、`parentId`、`name`、`sort`、`status`。筛选或分页结果可能不含父节点，使用 `category get` 补查。商品的 `--category-id` 精确匹配该分类，不包含子分类。分类与商品共用 `product.read`，已有该范围的凭据无需重新授权。

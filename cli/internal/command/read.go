@@ -43,6 +43,11 @@ var (
 
 	readCommands = map[string]readCommand{
 		"inventory list": {path: "inventory"},
+		"category list": {path: "product-categories", filters: []queryFilter{
+			{"status", "status", "category status (0 or 1)"},
+			{"parent-id", "parentId", "direct parent category ID (0 for roots)"},
+		}},
+		"category get": {path: "product-categories", idFlag: "id"},
 		"product list": {path: "products", filters: []queryFilter{
 			{"status", "status", "product status"},
 			{"category-id", "categoryId", "product category ID"},
