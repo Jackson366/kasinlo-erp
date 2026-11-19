@@ -25,6 +25,7 @@ var (
 
 	readResources = []readResource{
 		{path: "inventory", scope: oauth.Scope, list: true, projectInventory: true},
+		{path: "product-categories", scope: oauth.ProductRead, list: true, detail: true, filters: []string{"status", "parentId"}},
 		{path: "products", scope: oauth.ProductRead, list: true, detail: true, filters: []string{"status", "categoryId"}},
 		{path: "customers", scope: oauth.CustomerRead, list: true, detail: true, filters: partyFilters},
 		{path: "suppliers", scope: oauth.SupplierRead, list: true, detail: true, filters: partyFilters},

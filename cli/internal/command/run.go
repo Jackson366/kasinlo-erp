@@ -23,6 +23,8 @@ kas [--server URL] [--profile NAME] auth logout
 kas [--server URL] [--profile NAME] inventory list [--keyword TEXT] [--page N] [--page-size N]
 kas [--server URL] [--profile NAME] product list [--keyword TEXT] [--status 0|1] [--category-id ID] [--page N] [--page-size N]
 kas [--server URL] [--profile NAME] product get --id ID
+kas [--server URL] [--profile NAME] category list [--keyword TEXT] [--status 0|1] [--parent-id ID] [--page N] [--page-size N]
+kas [--server URL] [--profile NAME] category get --id ID
 kas [--server URL] [--profile NAME] customer list [--keyword TEXT] [--status 0|1] [--page N] [--page-size N]
 kas [--server URL] [--profile NAME] customer get --id ID
 kas [--server URL] [--profile NAME] supplier list [--keyword TEXT] [--status 0|1] [--page N] [--page-size N]

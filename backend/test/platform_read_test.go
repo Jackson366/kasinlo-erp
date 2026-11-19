@@ -200,6 +200,54 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 		t.Fatalf("deleted supplier appeared in list: %s", data)
 	}
 
+	newCategory := func(name string, parentID int64, status int16, sort int) model.InvCategory {
+		row := model.InvCategory{Name: name, ParentID: parentID, Status: status, Sort: sort, Remark: "private-category-note"}
+		if err := testDB.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { testDB.Unscoped().Delete(&row) })
+		return row
+	}
+	root := newCategory(marker+"%_Root", 0, 1, 0)
+	child := newCategory(marker+"%_Child", root.ID, 0, 0)
+	newCategory(marker+"%_Next", root.ID, 1, 1)
+	newCategory(marker+"XYDecoy", 0, 1, 0)
+	categoryPath := fmt.Sprintf("/product-categories/%d", child.ID)
+	read("inventory.read", "/product-categories", http.StatusForbidden)
+	read("inventory.read", categoryPath, http.StatusForbidden)
+	readAs(other, "product.read", "/product-categories", http.StatusForbidden)
+	readAs(other, "product.read", categoryPath, http.StatusForbidden)
+	for _, query := range []string{"status=2", "status=abc", "parentId=-1", "parentId=abc", "parentId=9223372036854775808"} {
+		read("product.read", "/product-categories?"+query, http.StatusBadRequest)
+	}
+	read("product.read", "/product-categories/abc", http.StatusBadRequest)
+	read("product.read", "/product-categories/0", http.StatusBadRequest)
+	checkCategories := func(query string, wantTotal int64, wantID int64) {
+		t.Helper()
+		result := read("product.read", "/product-categories?"+query, http.StatusOK)
+		if err := json.Unmarshal(result, &page); err != nil || page.Data.Total != wantTotal || len(page.Data.List) != 1 || page.Data.List[0].ID != wantID {
+			t.Fatalf("unexpected category page: %s", result)
+		}
+		if strings.Contains(string(result), "private-category-note") || strings.Contains(string(result), `"productCount"`) {
+			t.Fatalf("category response exposed internal fields: %s", result)
+		}
+	}
+	// Literal wildcard search must exclude the decoy; omitted parentId includes every level.
+	checkCategories("keyword="+marker+"%25_&pageSize=1&page=2", 3, child.ID)
+	checkCategories("keyword="+marker+"%25_&parentId=0", 1, root.ID)
+	checkCategories(fmt.Sprintf("parentId=%d&status=0", root.ID), 1, child.ID)
+	categoryDetail := string(read("product.read", categoryPath, http.StatusOK))
+	if !strings.Contains(categoryDetail, fmt.Sprintf(`"parentId":%d`, root.ID)) || !strings.Contains(categoryDetail, child.Name) || strings.Contains(categoryDetail, "private-category-note") {
+		t.Fatalf("unexpected category detail: %s", categoryDetail)
+	}
+	if err := testDB.Delete(&child).Error; err != nil {
+		t.Fatal(err)
+	}
+	read("product.read", categoryPath, http.StatusNotFound)
+	if data := string(read("product.read", fmt.Sprintf("/product-categories?parentId=%d&status=0", root.ID), http.StatusOK)); !strings.Contains(data, `"list":[]`) || !strings.Contains(data, `"total":0`) {
+		t.Fatalf("deleted category appeared in list: %s", data)
+	}
+
 	detail := string(read("product.read", fmt.Sprintf("/products/%d", product.ID), http.StatusOK))
 	for _, field := range []string{"refPurchasePrice", "refSalePrice", "purchasePrice", "salePrice", "totalStock", "stock"} {
 		if strings.Contains(detail, `"`+field+`"`) {

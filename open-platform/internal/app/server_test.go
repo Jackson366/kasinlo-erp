@@ -73,7 +73,7 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 		switch r.URL.Path {
 		case "/internal/open-platform/inventory":
 			scope = oauth.Scope
-		case "/internal/open-platform/products", "/internal/open-platform/products/9":
+		case "/internal/open-platform/products", "/internal/open-platform/products/9", "/internal/open-platform/product-categories", "/internal/open-platform/product-categories/3":
 			scope = oauth.ProductRead
 		case "/internal/open-platform/customers", "/internal/open-platform/customers/12":
 			scope = oauth.CustomerRead
@@ -112,6 +112,15 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
+		case "/internal/open-platform/product-categories":
+			if r.URL.Query().Get("parentId") != "0" || r.URL.Query().Get("status") != "1" || r.URL.Query().Get("keyword") != "Steel" {
+				t.Errorf("category filters not forwarded: %v", r.URL.Query())
+			}
+			_, _ = io.WriteString(w, `{"code":0,"data":{"list":[{"id":3,"parentId":0,"name":"Steel","status":1}]}}`)
+			return
+		case "/internal/open-platform/product-categories/3":
+			_, _ = io.WriteString(w, `{"code":0,"data":{"id":3,"parentId":0,"name":"Steel","status":1}}`)
+			return
 		case "/internal/open-platform/products":
 			if r.URL.Query().Get("status") != "0" || r.URL.Query().Get("categoryId") != "3" {
 				t.Errorf("product filters not forwarded: %v", r.URL.Query())
@@ -255,7 +264,7 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 		!strings.Contains(res.Body.String(), `"stock":15`) {
 		t.Fatal("inventory response did not project the permitted fields")
 	}
-	for _, path := range []string{"/openapi/v1/customers", "/openapi/v1/suppliers/13"} {
+	for _, path := range []string{"/openapi/v1/customers", "/openapi/v1/suppliers/13", "/openapi/v1/product-categories", "/openapi/v1/product-categories/3"} {
 		res := call(http.MethodGet, path, accessToken, "", "")
 		if res.Code != http.StatusForbidden || !strings.Contains(res.Body.String(), "insufficient_scope") {
 			t.Fatalf("inventory-only token reached %s: %d %s", path, res.Code, res.Body.String())
@@ -357,6 +366,13 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		t.Fatal("separate CLI process could not query inventory")
 	}
 
+	if out := run(0, "category", "list", "--keyword", "Steel", "--parent-id", "0", "--status", "1"); !strings.Contains(string(out), `"id":3`) {
+		t.Fatal("could not list product categories with root and status filters")
+	}
+	if out := run(0, "category", "get", "--id", "3"); !strings.Contains(string(out), `"name":"Steel"`) {
+		t.Fatal("could not read product category detail")
+	}
+	run(2, "category", "get", "--id", "0")
 	if out := run(0, "product", "get", "--id", "9"); !strings.Contains(string(out), `"name":"Product"`) {
 		t.Fatal("separate CLI process could not read the product detail")
 	}
@@ -404,6 +420,8 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 	}
 	run(0, "auth", "logout")
 	run(3, "inventory", "list")
+	run(3, "category", "list")
+	run(3, "category", "get", "--id", "3")
 	req := httptest.NewRequest(http.MethodGet, "/oauth/status", nil)
 	req.Header.Set("Authorization", "Bearer "+cached.Token)
 	rec := httptest.NewRecorder()
@@ -424,5 +442,7 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		t.Fatal("separate CLI process could not read the sales order detail")
 	}
 	run(4, "stock", "list", "--source-type", "sales", "--source-id", "14")
+	run(4, "category", "list")
+	run(4, "category", "get", "--id", "3")
 	run(0, "auth", "logout")
 }

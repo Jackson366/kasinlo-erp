@@ -30,6 +30,7 @@
 | GET 路径（前缀 `/openapi/v1`） | 授权范围 | ERP 功能权限 | 数据 |
 | --- | --- | --- | --- |
 | `/inventory` | `inventory.read` | `inv:stock:list` | 规格库存 |
+| `/product-categories`、`/product-categories/{id}` | `product.read` | `inv:product:list` | 分类 ID、父分类 ID、名称、排序与状态 |
 | `/products`、`/products/{id}` | `product.read` | `inv:product:list` | 商品标识、分类、状态；详情含规格与计量单位 |
 | `/customers`、`/customers/{id}` | `customer.read` | `inv:customer:list` | 客户 ID、编号、名称和状态 |
 | `/suppliers`、`/suppliers/{id}` | `supplier.read` | `inv:supplier:list` | 供应商 ID、编号、名称和状态 |
@@ -54,3 +55,9 @@
 出入库列表支持 `direction=in|out`、`includeVoided=true` 和单号关键词。用 `sourceType=purchase|sales` 与 `sourceId` 成对查询关联单据，该查询同时需要对应采购或销售授权及 ERP 查看权限；列表只在来源筛选生效时返回来源标识。详情返回状态、红冲标记及带计量单位的数量明细，支持查看作废历史。
 
 应收应付列表支持 `settle=unpaid|partial|paid|overdue`、`source=order|plan` 和关键词，返回同一数据范围下的分页结果与汇总。流水接口的 ID 对应采购或销售单 ID，返回同一查看范围内的带符号流水、已结算金额与未结金额。金额沿用 ERP 口径，已经红冲的原单不计入待结算余额。所有这些接口均为只读。
+
+### 商品分类
+
+分类列表支持 `keyword`（分类名称字面匹配）、`status=0|1`、`parentId` 和分页。省略 `parentId` 查询各层分类；`parentId=0` 只查根分类，正整数只查该父级的直接子分类。结果为平表，包含 `id`、`parentId`、`name`、`sort`、`status`，按父分类、排序值、ID 升序排列。分页或筛选结果可能不含父节点，可通过分类详情补查。
+
+分类与商品均为共享主数据，不按创建人收窄。内部备注和商品统计不对外返回。已有 `product.read` 凭据可直接查询，库存凭据仍只有库存权限。查询商品时把分类列表的 `id` 用作 `/products?categoryId=...`；商品筛选只匹配该分类，不自动包含后代。负数、非整数父分类及非法状态返回 400；不存在或已删除分类返回 404。
