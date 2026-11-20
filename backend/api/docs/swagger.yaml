@@ -1763,6 +1763,64 @@ definitions:
       status:
         type: integer
     type: object
+  inv.platformContractPlan:
+    properties:
+      amount:
+        type: number
+      dueDate:
+        type: string
+      id:
+        type: integer
+      kind:
+        type: integer
+      name:
+        type: string
+      outstanding:
+        type: number
+      seq:
+        type: integer
+      settledAmount:
+        type: number
+      status:
+        type: string
+    type: object
+  inv.platformContractRow:
+    properties:
+      amount:
+        type: number
+      bizType:
+        type: string
+      contractNo:
+        type: string
+      endDate:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      outstanding:
+        type: number
+      partyId:
+        type: integer
+      partyName:
+        type: string
+      planAmount:
+        type: number
+      plans:
+        items:
+          $ref: '#/definitions/inv.platformContractPlan'
+        type: array
+      settledAmount:
+        type: number
+      signDate:
+        type: string
+      stage:
+        type: string
+      startDate:
+        type: string
+      status:
+        type: integer
+    type: object
   inv.platformFinancePage:
     properties:
       list:
@@ -2986,6 +3044,110 @@ paths:
       summary: 刷新访问令牌
       tags:
       - 认证
+  /internal/open-platform/contracts:
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: 编号 / 名称 / 往来单位 / 业务员
+        in: query
+        name: keyword
+        type: string
+      - description: purchase / sales
+        in: query
+        name: bizType
+        type: string
+      - description: 1 执行中 / 2 已完成 / 3 已终止
+        in: query
+        name: status
+        type: integer
+      - description: unaudited / pending / accepted / warranty / warranty_due
+        in: query
+        name: stage
+        type: string
+      - description: 往来单位 ID，0 不过滤
+        in: query
+        name: partyId
+        type: integer
+      - description: 签订日期起 YYYY-MM-DD
+        in: query
+        name: startDate
+        type: string
+      - description: 签订日期止 YYYY-MM-DD
+        in: query
+        name: endDate
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PageData'
+                  - properties:
+                      list:
+                        items:
+                          $ref: '#/definitions/inv.platformContractRow'
+                        type: array
+                    type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询合同列表
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/contracts/{id}:
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: 合同 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformContractRow'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询合同详情
+      tags:
+      - 开放平台内部接口
   /internal/open-platform/customers:
     get:
       parameters:

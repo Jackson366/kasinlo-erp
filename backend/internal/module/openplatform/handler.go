@@ -73,6 +73,8 @@ func (h handler) decide(c *gin.Context) {
 				permission = "inv:sales:list"
 			case "stock.read":
 				permission = "inv:stock:list"
+			case "contract.read":
+				permission = "inv:contract:list"
 			case "finance.read":
 				permission = "inv:finance:list"
 			default:

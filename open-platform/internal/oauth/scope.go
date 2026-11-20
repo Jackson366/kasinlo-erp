@@ -14,6 +14,7 @@ const (
 	StockRead    = "stock.read"
 	FinanceRead  = "finance.read"
 	SalesRead    = "sales.read"
+	ContractRead = "contract.read"
 )
 
 // NormalizeScope canonicalizes a space-separated request so the exact approved
@@ -25,7 +26,7 @@ func NormalizeScope(value string) (string, bool) {
 	var scopes []string
 	for _, scope := range strings.Split(value, " ") {
 		switch scope {
-		case Scope, ProductRead, CustomerRead, SupplierRead, PurchaseRead, SalesRead, StockRead, FinanceRead:
+		case Scope, ProductRead, CustomerRead, SupplierRead, PurchaseRead, SalesRead, StockRead, FinanceRead, ContractRead:
 			if !slices.Contains(scopes, scope) {
 				scopes = append(scopes, scope)
 			}

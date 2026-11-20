@@ -42,6 +42,15 @@ var (
 	}
 
 	readCommands = map[string]readCommand{
+		"contract list": {path: "contracts", filters: []queryFilter{
+			{"biz-type", "bizType", "purchase or sales"},
+			{"status", "status", "1 active, 2 finished, 3 terminated"},
+			{"stage", "stage", "unaudited, pending, accepted, warranty or warranty_due"},
+			{"party-id", "partyId", "party ID"},
+			{"start-date", "startDate", "sign date start, inclusive"},
+			{"end-date", "endDate", "sign date end, inclusive"},
+		}},
+		"contract get":   {path: "contracts", idFlag: "id"},
 		"inventory list": {path: "inventory"},
 		"category list": {path: "product-categories", filters: []queryFilter{
 			{"status", "status", "category status (0 or 1)"},

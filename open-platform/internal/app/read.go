@@ -24,6 +24,7 @@ var (
 	financeFilters = []string{"settle", "source"}
 
 	readResources = []readResource{
+		{path: "contracts", scope: oauth.ContractRead, list: true, detail: true, filters: []string{"bizType", "status", "stage", "partyId", "startDate", "endDate"}},
 		{path: "inventory", scope: oauth.Scope, list: true, projectInventory: true},
 		{path: "product-categories", scope: oauth.ProductRead, list: true, detail: true, filters: []string{"status", "parentId"}},
 		{path: "products", scope: oauth.ProductRead, list: true, detail: true, filters: []string{"status", "categoryId"}},
