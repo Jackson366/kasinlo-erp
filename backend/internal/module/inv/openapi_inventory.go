@@ -53,6 +53,10 @@ func PlatformInventoryModule(cfg config.OpenPlatformConfig) (module.Module, bool
 			stock.GET("/stock-orders", h.platformStockOrders)
 			stock.GET("/stock-orders/:id", h.platformStockOrder)
 
+			contracts := register("contract.read", "inv:contract:list")
+			contracts.GET("/contracts", h.platformContracts)
+			contracts.GET("/contracts/:id", h.platformContract)
+
 			finance := register("finance.read", "inv:finance:list")
 			finance.GET("/receivables", h.platformFinanceList(true))
 			finance.GET("/payables", h.platformFinanceList(false))

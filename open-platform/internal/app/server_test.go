@@ -71,6 +71,8 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			jwt.WithValidMethods([]string{"HS256"}), jwt.WithIssuer("test-platform"), jwt.WithAudience("test-erp"))
 		var scope string
 		switch r.URL.Path {
+		case "/internal/open-platform/contracts", "/internal/open-platform/contracts/15":
+			scope = oauth.ContractRead
 		case "/internal/open-platform/inventory":
 			scope = oauth.Scope
 		case "/internal/open-platform/products", "/internal/open-platform/products/9", "/internal/open-platform/product-categories", "/internal/open-platform/product-categories/3":
@@ -112,6 +114,15 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
+		case "/internal/open-platform/contracts":
+			if r.URL.Query().Get("bizType") != "sales" || r.URL.Query().Get("stage") != "pending" || r.URL.Query().Get("partyId") != "12" || r.URL.Query().Get("status") != "1" || r.URL.Query().Get("startDate") != "2026-11-01" || r.URL.Query().Get("endDate") != "2026-11-30" {
+				t.Errorf("contract filters not forwarded: %v", r.URL.Query())
+			}
+			_, _ = io.WriteString(w, `{"code":0,"data":{"total":1,"list":[{"id":15,"contractNo":"HT15"}]}}`)
+			return
+		case "/internal/open-platform/contracts/15":
+			_, _ = io.WriteString(w, `{"code":0,"data":{"id":15,"plans":[{"id":16,"outstanding":70}]}}`)
+			return
 		case "/internal/open-platform/product-categories":
 			if r.URL.Query().Get("parentId") != "0" || r.URL.Query().Get("status") != "1" || r.URL.Query().Get("keyword") != "Steel" {
 				t.Errorf("category filters not forwarded: %v", r.URL.Query())
@@ -336,7 +347,7 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		}
 		return session
 	}
-	const scope = "inventory.read product.read purchase.read stock.read finance.read customer.read supplier.read"
+	const scope = "inventory.read product.read purchase.read stock.read finance.read customer.read supplier.read contract.read"
 	session := start(scope)
 	bridge := func(path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
@@ -366,6 +377,13 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		t.Fatal("separate CLI process could not query inventory")
 	}
 
+	if out := run(0, "contract", "list", "--biz-type", "sales", "--stage", "pending", "--party-id", "12", "--status", "1", "--start-date", "2026-11-01", "--end-date", "2026-11-30"); !strings.Contains(string(out), `"contractNo":"HT15"`) {
+		t.Fatal("could not list contracts with filters")
+	}
+	if out := run(0, "contract", "get", "--id", "15"); !strings.Contains(string(out), `"outstanding":70`) {
+		t.Fatal("could not read contract plans")
+	}
+	run(2, "contract", "get", "--id", "0")
 	if out := run(0, "category", "list", "--keyword", "Steel", "--parent-id", "0", "--status", "1"); !strings.Contains(string(out), `"id":3`) {
 		t.Fatal("could not list product categories with root and status filters")
 	}
@@ -419,6 +437,8 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		t.Fatal("expected a saved local credential")
 	}
 	run(0, "auth", "logout")
+	run(3, "contract", "list")
+	run(3, "contract", "get", "--id", "15")
 	run(3, "inventory", "list")
 	run(3, "category", "list")
 	run(3, "category", "get", "--id", "3")
@@ -442,6 +462,8 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		t.Fatal("separate CLI process could not read the sales order detail")
 	}
 	run(4, "stock", "list", "--source-type", "sales", "--source-id", "14")
+	run(4, "contract", "list")
+	run(4, "contract", "get", "--id", "15")
 	run(4, "category", "list")
 	run(4, "category", "get", "--id", "3")
 	run(0, "auth", "logout")

@@ -186,6 +186,182 @@ const docTemplate = `{
                 }
             }
         },
+        "/internal/open-platform/contracts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询合同列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "编号 / 名称 / 往来单位 / 业务员",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "purchase / sales",
+                        "name": "bizType",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "1 执行中 / 2 已完成 / 3 已终止",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "unaudited / pending / accepted / warranty / warranty_due",
+                        "name": "stage",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "往来单位 ID，0 不过滤",
+                        "name": "partyId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "签订日期起 YYYY-MM-DD",
+                        "name": "startDate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "签订日期止 YYYY-MM-DD",
+                        "name": "endDate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PageData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "list": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/inv.platformContractRow"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/open-platform/contracts/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询合同详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "合同 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.platformContractRow"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/internal/open-platform/customers": {
             "get": {
                 "security": [
@@ -10851,6 +11027,94 @@ const docTemplate = `{
                 },
                 "sort": {
                     "type": "integer"
+                },
+                "status": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inv.platformContractPlan": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "dueDate": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "outstanding": {
+                    "type": "number"
+                },
+                "seq": {
+                    "type": "integer"
+                },
+                "settledAmount": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "inv.platformContractRow": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "bizType": {
+                    "type": "string"
+                },
+                "contractNo": {
+                    "type": "string"
+                },
+                "endDate": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "outstanding": {
+                    "type": "number"
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "planAmount": {
+                    "type": "number"
+                },
+                "plans": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.platformContractPlan"
+                    }
+                },
+                "settledAmount": {
+                    "type": "number"
+                },
+                "signDate": {
+                    "type": "string"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "startDate": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "integer"

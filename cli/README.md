@@ -85,3 +85,19 @@ kas --profile catalog product list --category-id 123
 ```
 
 省略 `--parent-id` 查询所有层级；`--parent-id 0` 只查根分类。输出为分页平表，含 `id`、`parentId`、`name`、`sort`、`status`。筛选或分页结果可能不含父节点，使用 `category get` 补查。商品的 `--category-id` 精确匹配该分类，不包含子分类。分类与商品共用 `product.read`，已有该范围的凭据无需重新授权。
+
+## 合同查询
+
+合同列表与详情新增独立授权 `contract.read`，对应 ERP 权限 `inv:contract:list`。旧凭据不会自动增加权限，请使用独立 profile 重新授权。
+
+```sh
+kas --profile contracts auth login --scope "contract.read"
+kas --profile contracts contract list --biz-type sales --status 1 --stage pending --page-size 20
+kas --profile contracts contract list --start-date 2026-11-01 --end-date 2026-11-30 --party-id 123
+# 将 456 替换为列表返回的合同 ID。
+kas --profile contracts contract get --id 456
+```
+
+公开 GET 接口为 `/openapi/v1/contracts` 和 `/openapi/v1/contracts/{id}`。列表支持 `keyword`、`page`、`pageSize`、`bizType=purchase|sales`、`status=1|2|3`、`partyId`、`stage`、`startDate` 和 `endDate`。日期按签订日期筛选，包含两端；`partyId=0` 不过滤，往来单位 ID 应与业务类型配合使用。阶段支持 `unaudited`（待审核）、`pending`（待验收）、`accepted`（已验收）、`warranty`（质保中）、`warranty_due`（质保到期）。待审核合同用 `stage=unaudited` 查询，不传 `status`；`status` 沿用 ERP 的执行中、已完成、已终止三态筛选。
+
+列表返回分页对象，含合同编号、往来单位、状态、履约阶段、金额和计划收付汇总；详情另含收付款计划（ID、期次、名称、类型、金额、到期日、已结和未结金额、状态）。无计划时不返回 `plans`。所有列表、总数、详情与计划均受当前账号的数据范围约束，越界或已删除合同返回 404。内部备注、经办人、业务员、审核人及附件信息不对外返回；采购/销售合同以合同查看权限为准，与采购单/销售单授权分别管理。接口均为只读，授权撤销与账号停用沿用现有即时校验。

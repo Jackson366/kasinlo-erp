@@ -35,7 +35,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { testDB.Unscoped().Delete(&role) })
-	for _, perm := range []string{"inv:purchase:list", "inv:product:list", "inv:customer:list", "inv:supplier:list", "inv:stock:list", "inv:finance:list"} {
+	for _, perm := range []string{"inv:purchase:list", "inv:product:list", "inv:customer:list", "inv:supplier:list", "inv:stock:list", "inv:finance:list", "inv:contract:list"} {
 		link := model.RoleMenu{RoleID: role.ID, MenuID: menuID(t, perm)}
 		if err := testDB.Create(&link).Error; err != nil {
 			t.Fatal(err)
@@ -246,6 +246,59 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	read("product.read", categoryPath, http.StatusNotFound)
 	if data := string(read("product.read", fmt.Sprintf("/product-categories?parentId=%d&status=0", root.ID), http.StatusOK)); !strings.Contains(data, `"list":[]`) || !strings.Contains(data, `"total":0`) {
 		t.Fatalf("deleted category appeared in list: %s", data)
+	}
+
+	newContract := func(suffix string, owner int64) model.InvContract {
+		row := model.InvContract{ContractNo: marker + suffix, Name: marker + suffix, BizType: model.InvBizSales,
+			PartyID: customer.ID, PartyName: customer.Name, SignDate: time.Now(), Amount: 100,
+			Status: model.InvContractActive, CreatedBy: owner, Remark: "private-contract-note", Salesman: "private-salesman"}
+		if err := testDB.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { testDB.Unscoped().Delete(&row) })
+		return row
+	}
+	ownContract := newContract("C", actor.ID)
+	hiddenContract := newContract("H", other.ID)
+	plan := model.InvContractPlan{ContractID: ownContract.ID, Seq: 1, Name: "Deposit", Amount: 100, SettledAmount: 30, Remark: "private-plan-note"}
+	if err := testDB.Create(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testDB.Unscoped().Delete(&plan) })
+	contractPath := fmt.Sprintf("/contracts/%d", ownContract.ID)
+	read("inventory.read", "/contracts", http.StatusForbidden)
+	read("finance.read", contractPath, http.StatusForbidden)
+	readAs(other, "contract.read", contractPath, http.StatusForbidden)
+	read("contract.read", fmt.Sprintf("/contracts/%d", hiddenContract.ID), http.StatusNotFound)
+	for _, query := range []string{"bizType=invalid", "stage=invalid", "status=0", "status=4", "partyId=-1", "partyId=abc", "startDate=invalid", "startDate=2026-11-20&endDate=2026-11-01"} {
+		read("contract.read", "/contracts?"+query, http.StatusBadRequest)
+	}
+	read("contract.read", "/contracts/0", http.StatusBadRequest)
+	read("contract.read", "/contracts/abc", http.StatusBadRequest)
+	result = read("contract.read", "/contracts?keyword="+marker+"&bizType=sales&status=1&stage=pending&partyId="+strconv.FormatInt(customer.ID, 10), http.StatusOK)
+	if err := json.Unmarshal(result, &page); err != nil || page.Data.Total != 1 || len(page.Data.List) != 1 || page.Data.List[0].ID != ownContract.ID {
+		t.Fatalf("contract list or count crossed scope: %s", result)
+	}
+	if strings.Contains(string(result), `"plans"`) {
+		t.Fatalf("list returned plan details: %s", result)
+	}
+	for _, path := range []string{"/contracts?keyword=" + marker, contractPath} {
+		data := string(read("contract.read", path, http.StatusOK))
+		for _, field := range []string{"remark", "operator", "auditor", "salesman", "attachmentCount", "private-"} {
+			if strings.Contains(data, field) {
+				t.Fatalf("contract exposed %s: %s", field, data)
+			}
+		}
+	}
+	if data := string(read("contract.read", contractPath, http.StatusOK)); !strings.Contains(data, `"outstanding":70`) || !strings.Contains(data, `"name":"Deposit"`) {
+		t.Fatalf("contract plan amounts missing: %s", data)
+	}
+	if err := testDB.Delete(&ownContract).Error; err != nil {
+		t.Fatal(err)
+	}
+	read("contract.read", contractPath, http.StatusNotFound)
+	if data := string(read("contract.read", "/contracts?keyword="+marker, http.StatusOK)); !strings.Contains(data, `"total":0`) || !strings.Contains(data, `"list":[]`) {
+		t.Fatalf("deleted or hidden contract appeared in list: %s", data)
 	}
 
 	detail := string(read("product.read", fmt.Sprintf("/products/%d", product.ID), http.StatusOK))
