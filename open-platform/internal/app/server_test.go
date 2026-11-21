@@ -73,6 +73,8 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 		switch r.URL.Path {
 		case "/internal/open-platform/contracts", "/internal/open-platform/contracts/15":
 			scope = oauth.ContractRead
+		case "/internal/open-platform/contract-activities/15", "/internal/open-platform/contract-plan-settlements/16":
+			scope = oauth.ContractHistoryRead
 		case "/internal/open-platform/inventory":
 			scope = oauth.Scope
 		case "/internal/open-platform/products", "/internal/open-platform/products/9", "/internal/open-platform/product-categories", "/internal/open-platform/product-categories/3":
@@ -122,6 +124,12 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			return
 		case "/internal/open-platform/contracts/15":
 			_, _ = io.WriteString(w, `{"code":0,"data":{"id":15,"plans":[{"id":16,"outstanding":70}]}}`)
+			return
+		case "/internal/open-platform/contract-activities/15":
+			_, _ = io.WriteString(w, `{"code":0,"data":{"contractId":15,"rows":[{"action":"audit"}]}}`)
+			return
+		case "/internal/open-platform/contract-plan-settlements/16":
+			_, _ = io.WriteString(w, `{"code":0,"data":{"planId":16,"rows":[{"amount":30}]}}`)
 			return
 		case "/internal/open-platform/product-categories":
 			if r.URL.Query().Get("parentId") != "0" || r.URL.Query().Get("status") != "1" || r.URL.Query().Get("keyword") != "Steel" {
@@ -347,7 +355,7 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		}
 		return session
 	}
-	const scope = "inventory.read product.read purchase.read stock.read finance.read customer.read supplier.read contract.read"
+	const scope = "inventory.read product.read purchase.read stock.read finance.read customer.read supplier.read contract.read contract.history.read"
 	session := start(scope)
 	bridge := func(path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
@@ -384,6 +392,13 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		t.Fatal("could not read contract plans")
 	}
 	run(2, "contract", "get", "--id", "0")
+	if out := run(0, "contract", "activity", "--id", "15"); !strings.Contains(string(out), `"action":"audit"`) {
+		t.Fatalf("could not read contract activity: %s", out)
+	}
+	if out := run(0, "contract", "settlements", "--plan-id", "16"); !strings.Contains(string(out), `"amount":30`) {
+		t.Fatalf("could not read contract plan settlement history: %s", out)
+	}
+	run(2, "contract", "settlements", "--plan-id", "0")
 	if out := run(0, "category", "list", "--keyword", "Steel", "--parent-id", "0", "--status", "1"); !strings.Contains(string(out), `"id":3`) {
 		t.Fatal("could not list product categories with root and status filters")
 	}
@@ -442,12 +457,14 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 	run(3, "inventory", "list")
 	run(3, "category", "list")
 	run(3, "category", "get", "--id", "3")
-	req := httptest.NewRequest(http.MethodGet, "/oauth/status", nil)
-	req.Header.Set("Authorization", "Bearer "+cached.Token)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatal("logout did not revoke the server-side grant")
+	for _, path := range []string{"/oauth/status", "/openapi/v1/contract-activities/15", "/openapi/v1/contract-plan-settlements/16"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer "+cached.Token)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("revoked grant could call %s: %d", path, rec.Code)
+		}
 	}
 
 	salesSession := start("sales.read")
@@ -464,6 +481,8 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 	run(4, "stock", "list", "--source-type", "sales", "--source-id", "14")
 	run(4, "contract", "list")
 	run(4, "contract", "get", "--id", "15")
+	run(4, "contract", "activity", "--id", "15")
+	run(4, "contract", "settlements", "--plan-id", "16")
 	run(4, "category", "list")
 	run(4, "category", "get", "--id", "3")
 	run(0, "auth", "logout")

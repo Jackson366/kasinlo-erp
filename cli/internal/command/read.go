@@ -50,8 +50,10 @@ var (
 			{"start-date", "startDate", "sign date start, inclusive"},
 			{"end-date", "endDate", "sign date end, inclusive"},
 		}},
-		"contract get":   {path: "contracts", idFlag: "id"},
-		"inventory list": {path: "inventory"},
+		"contract get":         {path: "contracts", idFlag: "id"},
+		"contract activity":    {path: "contract-activities", idFlag: "id"},
+		"contract settlements": {path: "contract-plan-settlements", idFlag: "plan-id"},
+		"inventory list":       {path: "inventory"},
 		"category list": {path: "product-categories", filters: []queryFilter{
 			{"status", "status", "category status (0 or 1)"},
 			{"parent-id", "parentId", "direct parent category ID (0 for roots)"},

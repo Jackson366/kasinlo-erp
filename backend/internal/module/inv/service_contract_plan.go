@@ -460,6 +460,9 @@ func (s *Service) PlanSettleHistory(planID int64, actor *authz.Identity) ([]Sett
 	}
 	var c model.InvContract
 	if err := s.db.First(&c, p.ContractID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errcode.New(errcode.ErrNotFound, "合同不存在")
+		}
 		return nil, errcode.Wrap(errcode.ErrDatabase, err)
 	}
 	if err := s.ensureCreatorVisible(c.CreatedBy, actor); err != nil {
