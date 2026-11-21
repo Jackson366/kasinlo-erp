@@ -77,3 +77,12 @@ kas --profile contracts contract get --id 456
 公开 GET 接口为 `/openapi/v1/contracts` 和 `/openapi/v1/contracts/{id}`。列表支持 `keyword`、`page`、`pageSize`、`bizType=purchase|sales`、`status=1|2|3`、`partyId`、`stage`、`startDate` 和 `endDate`。日期按签订日期筛选，包含两端；`partyId=0` 不过滤，往来单位 ID 应与业务类型配合使用。阶段支持 `unaudited`（待审核）、`pending`（待验收）、`accepted`（已验收）、`warranty`（质保中）、`warranty_due`（质保到期）。待审核合同用 `stage=unaudited` 查询，不传 `status`；`status` 沿用 ERP 的执行中、已完成、已终止三态筛选。
 
 列表返回分页对象，含合同编号、往来单位、状态、履约阶段、金额和计划收付汇总；详情另含收付款计划（ID、期次、名称、类型、金额、到期日、已结和未结金额、状态）。无计划时不返回 `plans`。所有列表、总数、详情与计划均受当前账号的数据范围约束，越界或已删除合同返回 404。内部备注、经办人、业务员、审核人及附件信息不对外返回；采购/销售合同以合同查看权限为准，与采购单/销售单授权分别管理。接口均为只读，授权撤销与账号停用沿用现有即时校验。
+
+### 合同操作记录与收付款流水
+
+| GET 路径（前缀 `/openapi/v1`） | 授权范围 | ERP 功能权限 | 返回数据 |
+| --- | --- | --- | --- |
+| `/contract-activities/{id}` | `contract.history.read` | `inv:contract:list` | `contractId` 与最近 50 条已落库的操作记录，含动作、请求方式、HTTP 状态和操作时间 |
+| `/contract-plan-settlements/{id}` | `contract.history.read` | `inv:contract:list` | `planId` 与该期次的收付款流水，含金额、结算方式和日期 |
+
+两个接口均按时间倒序返回 `rows`，没有记录时返回空数组。合同、期次不存在或超出账号数据范围时返回 404。操作记录随 ERP 日志异步落库，返回字段排除操作者账号、IP 与请求内容，收付款流水排除内部备注。申请 `contract.read contract.history.read` 可同时查询合同详情与流水，已有合同凭据需要重新授权才能调用这两个接口。

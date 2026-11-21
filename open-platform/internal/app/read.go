@@ -25,6 +25,8 @@ var (
 
 	readResources = []readResource{
 		{path: "contracts", scope: oauth.ContractRead, list: true, detail: true, filters: []string{"bizType", "status", "stage", "partyId", "startDate", "endDate"}},
+		{path: "contract-activities", scope: oauth.ContractHistoryRead, detail: true},
+		{path: "contract-plan-settlements", scope: oauth.ContractHistoryRead, detail: true},
 		{path: "inventory", scope: oauth.Scope, list: true, projectInventory: true},
 		{path: "product-categories", scope: oauth.ProductRead, list: true, detail: true, filters: []string{"status", "parentId"}},
 		{path: "products", scope: oauth.ProductRead, list: true, detail: true, filters: []string{"status", "categoryId"}},

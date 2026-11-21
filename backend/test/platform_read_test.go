@@ -293,10 +293,54 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	if data := string(read("contract.read", contractPath, http.StatusOK)); !strings.Contains(data, `"outstanding":70`) || !strings.Contains(data, `"name":"Deposit"`) {
 		t.Fatalf("contract plan amounts missing: %s", data)
 	}
+	hiddenPlan := model.InvContractPlan{ContractID: hiddenContract.ID, Seq: 1, Name: "Hidden deposit"}
+	if err := testDB.Create(&hiddenPlan).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testDB.Unscoped().Delete(&hiddenPlan) })
+	planSettlement := model.InvSettlement{
+		PlanID: plan.ID, Source: model.InvSettleSourcePlan, Amount: 30, Method: "transfer",
+		SettledAt: time.Now(), Remark: "private-settlement-note",
+	}
+	if err := testDB.Create(&planSettlement).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testDB.Unscoped().Delete(&planSettlement) })
+	log := model.OperationLog{
+		Path: "/api/v1/inv" + contractPath + "/audit", Action: "audit contract",
+		Method: http.MethodPost, Status: http.StatusOK, Username: "private-username", IP: "192.0.2.1",
+	}
+	if err := testDB.Create(&log).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testDB.Delete(&log) })
+
+	const historyScope = "contract.history.read"
+	activityPath := fmt.Sprintf("/contract-activities/%d", ownContract.ID)
+	settlementsPath := fmt.Sprintf("/contract-plan-settlements/%d", plan.ID)
+	for _, path := range []string{activityPath, settlementsPath} {
+		read("contract.read", path, http.StatusForbidden)
+		readAs(other, historyScope, path, http.StatusForbidden)
+	}
+	read(historyScope, "/contract-activities/0", http.StatusBadRequest)
+	read(historyScope, "/contract-plan-settlements/abc", http.StatusBadRequest)
+	read(historyScope, fmt.Sprintf("/contract-activities/%d", hiddenContract.ID), http.StatusNotFound)
+	read(historyScope, fmt.Sprintf("/contract-plan-settlements/%d", hiddenPlan.ID), http.StatusNotFound)
+	if data := string(read(historyScope, activityPath, http.StatusOK)); !strings.Contains(data, `"action":"audit contract"`) ||
+		strings.Contains(data, `"username"`) || strings.Contains(data, `"ip"`) {
+		t.Fatalf("unexpected contract activity: %s", data)
+	}
+	if data := string(read(historyScope, settlementsPath, http.StatusOK)); !strings.Contains(data, `"amount":30`) ||
+		strings.Contains(data, `"remark"`) {
+		t.Fatalf("unexpected contract plan settlements: %s", data)
+	}
+
 	if err := testDB.Delete(&ownContract).Error; err != nil {
 		t.Fatal(err)
 	}
 	read("contract.read", contractPath, http.StatusNotFound)
+	read(historyScope, activityPath, http.StatusNotFound)
+	read(historyScope, settlementsPath, http.StatusNotFound)
 	if data := string(read("contract.read", "/contracts?keyword="+marker, http.StatusOK)); !strings.Contains(data, `"total":0`) || !strings.Contains(data, `"list":[]`) {
 		t.Fatalf("deleted or hidden contract appeared in list: %s", data)
 	}

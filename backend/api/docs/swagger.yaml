@@ -1763,6 +1763,28 @@ definitions:
       status:
         type: integer
     type: object
+  inv.platformContractActivityData:
+    properties:
+      contractId:
+        type: integer
+      rows:
+        items:
+          $ref: '#/definitions/inv.platformContractActivityRow'
+        type: array
+    type: object
+  inv.platformContractActivityRow:
+    properties:
+      action:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: integer
+      method:
+        type: string
+      status:
+        type: integer
+    type: object
   inv.platformContractPlan:
     properties:
       amount:
@@ -1782,6 +1804,26 @@ definitions:
       settledAmount:
         type: number
       status:
+        type: string
+    type: object
+  inv.platformContractPlanSettlementData:
+    properties:
+      planId:
+        type: integer
+      rows:
+        items:
+          $ref: '#/definitions/inv.platformContractPlanSettlementRow'
+        type: array
+    type: object
+  inv.platformContractPlanSettlementRow:
+    properties:
+      amount:
+        type: number
+      id:
+        type: integer
+      method:
+        type: string
+      settledAt:
         type: string
     type: object
   inv.platformContractRow:
@@ -3044,6 +3086,72 @@ paths:
       summary: 刷新访问令牌
       tags:
       - 认证
+  /internal/open-platform/contract-activities/{id}:
+    get:
+      parameters:
+      - description: 合同 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformContractActivityData'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询合同操作记录
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/contract-plan-settlements/{id}:
+    get:
+      parameters:
+      - description: 期次 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformContractPlanSettlementData'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询合同期次收付款流水
+      tags:
+      - 开放平台内部接口
   /internal/open-platform/contracts:
     get:
       consumes:
