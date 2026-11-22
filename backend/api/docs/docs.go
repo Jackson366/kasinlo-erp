@@ -300,6 +300,92 @@ const docTemplate = `{
                 }
             }
         },
+        "/internal/open-platform/contract-report": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询合同执行报表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "编号 / 名称 / 往来单位 / 业务员",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "purchase / sales",
+                        "name": "bizType",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "1 执行中 / 2 已完成 / 3 已终止",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "unaudited / pending / accepted / warranty / warranty_due",
+                        "name": "stage",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "往来单位 ID，0 不过滤",
+                        "name": "partyId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "签订日期起 YYYY-MM-DD",
+                        "name": "startDate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "签订日期止 YYYY-MM-DD",
+                        "name": "endDate",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.ReportContractResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/internal/open-platform/contracts": {
             "get": {
                 "security": [

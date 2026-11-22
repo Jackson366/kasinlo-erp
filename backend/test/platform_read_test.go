@@ -35,7 +35,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { testDB.Unscoped().Delete(&role) })
-	for _, perm := range []string{"inv:purchase:list", "inv:product:list", "inv:customer:list", "inv:supplier:list", "inv:stock:list", "inv:finance:list", "inv:contract:list"} {
+	for _, perm := range []string{"inv:purchase:list", "inv:product:list", "inv:customer:list", "inv:supplier:list", "inv:stock:list", "inv:finance:list", "inv:contract:list", "inv:report:view"} {
 		link := model.RoleMenu{RoleID: role.ID, MenuID: menuID(t, perm)}
 		if err := testDB.Create(&link).Error; err != nil {
 			t.Fatal(err)
@@ -293,6 +293,22 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	if data := string(read("contract.read", contractPath, http.StatusOK)); !strings.Contains(data, `"outstanding":70`) || !strings.Contains(data, `"name":"Deposit"`) {
 		t.Fatalf("contract plan amounts missing: %s", data)
 	}
+	const reportScope = "contract.report.read"
+	const reportPath = "/contract-report"
+	read("contract.read", reportPath, http.StatusForbidden)
+	readAs(other, reportScope, reportPath, http.StatusForbidden)
+	read(reportScope, reportPath+"?startDate=2026-12-01&endDate=2026-11-01", http.StatusBadRequest)
+	reportQuery := reportPath + "?keyword=" + marker + "&bizType=sales&status=1&stage=pending"
+	if data := string(read(reportScope, reportQuery, http.StatusOK)); !strings.Contains(data, `"count":1`) ||
+		!strings.Contains(data, `"amount":100`) || !strings.Contains(data, `"outstanding":70`) ||
+		strings.Contains(data, hiddenContract.ContractNo) || strings.Contains(data, "private-") {
+		t.Fatalf("unexpected contract report or report crossed data scope: %s", data)
+	}
+	if data := string(read(reportScope, reportPath+"?keyword=no-"+marker, http.StatusOK)); !strings.Contains(data, `"rows":[]`) ||
+		!strings.Contains(data, `"count":0`) {
+		t.Fatalf("unexpected empty contract report: %s", data)
+	}
+
 	hiddenPlan := model.InvContractPlan{ContractID: hiddenContract.ID, Seq: 1, Name: "Hidden deposit"}
 	if err := testDB.Create(&hiddenPlan).Error; err != nil {
 		t.Fatal(err)

@@ -24,6 +24,7 @@ type queryFilter struct {
 type readCommand struct {
 	path        string
 	idFlag      string
+	unpaginated bool
 	filters     []queryFilter
 	boolFilters []queryFilter
 }
@@ -41,15 +42,18 @@ var (
 		{"source", "source", "order or plan"},
 	}
 
+	contractFilters = []queryFilter{
+		{"biz-type", "bizType", "purchase or sales"},
+		{"status", "status", "1 active, 2 finished, 3 terminated"},
+		{"stage", "stage", "unaudited, pending, accepted, warranty or warranty_due"},
+		{"party-id", "partyId", "party ID"},
+		{"start-date", "startDate", "sign date start, inclusive"},
+		{"end-date", "endDate", "sign date end, inclusive"},
+	}
+
 	readCommands = map[string]readCommand{
-		"contract list": {path: "contracts", filters: []queryFilter{
-			{"biz-type", "bizType", "purchase or sales"},
-			{"status", "status", "1 active, 2 finished, 3 terminated"},
-			{"stage", "stage", "unaudited, pending, accepted, warranty or warranty_due"},
-			{"party-id", "partyId", "party ID"},
-			{"start-date", "startDate", "sign date start, inclusive"},
-			{"end-date", "endDate", "sign date end, inclusive"},
-		}},
+		"contract list":        {path: "contracts", filters: contractFilters},
+		"contract report":      {path: "contract-report", filters: contractFilters, unpaginated: true},
 		"contract get":         {path: "contracts", idFlag: "id"},
 		"contract activity":    {path: "contract-activities", idFlag: "id"},
 		"contract settlements": {path: "contract-plan-settlements", idFlag: "plan-id"},
@@ -126,8 +130,11 @@ func (cmd readCommand) run(ctx context.Context, api *client.Client, store creden
 
 func (cmd readCommand) listQuery(flags *flag.FlagSet, args []string) (url.Values, error) {
 	keyword := flags.String("keyword", "", "search term")
-	page := flags.Int("page", 1, "page number")
-	size := flags.Int("page-size", 10, "page size")
+	page, size := 1, 10
+	if !cmd.unpaginated {
+		flags.IntVar(&page, "page", page, "page number")
+		flags.IntVar(&size, "page-size", size, "page size")
+	}
 	filters := make(map[string]*string, len(cmd.filters))
 	for _, filter := range cmd.filters {
 		filters[filter.key] = flags.String(filter.flag, "", filter.usage)
@@ -140,10 +147,17 @@ func (cmd readCommand) listQuery(flags *flag.FlagSet, args []string) (url.Values
 	if err := flags.Parse(args); err != nil {
 		return nil, usageError(err.Error())
 	}
-	if flags.NArg() != 0 || *page < 1 || *size < 1 || *size > 200 || len(*keyword) > 500 {
+	if flags.NArg() != 0 || len(*keyword) > 500 {
+		return nil, usageError("use named flags and a keyword up to 500 bytes")
+	}
+	if page < 1 || size < 1 || size > 200 {
 		return nil, usageError("use a positive page, page-size between 1 and 200, and keyword up to 500 bytes")
 	}
-	query := url.Values{"page": {strconv.Itoa(*page)}, "pageSize": {strconv.Itoa(*size)}, "keyword": {*keyword}}
+	query := url.Values{"keyword": {*keyword}}
+	if !cmd.unpaginated {
+		query.Set("page", strconv.Itoa(page))
+		query.Set("pageSize", strconv.Itoa(size))
+	}
 	for key, value := range filters {
 		if *value != "" {
 			query.Set(key, *value)

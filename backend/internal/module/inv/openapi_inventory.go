@@ -57,6 +57,8 @@ func PlatformInventoryModule(cfg config.OpenPlatformConfig) (module.Module, bool
 			contracts.GET("/contracts", h.platformContracts)
 			contracts.GET("/contracts/:id", h.platformContract)
 
+			register("contract.report.read", "inv:report:view").GET("/contract-report", h.platformContractReport)
+
 			contractHistory := register("contract.history.read", "inv:contract:list")
 			contractHistory.GET("/contract-activities/:id", h.platformContractActivity)
 			contractHistory.GET("/contract-plan-settlements/:id", h.platformContractPlanSettlements)

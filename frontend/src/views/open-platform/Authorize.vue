@@ -37,6 +37,7 @@ const scopeDetails: Record<string, { title: string; description: string }> = {
   'purchase.read': { title: '查询采购单', description: '查看采购单状态、金额和商品明细。' },
   'stock.read': { title: '查询出入库单', description: '查看出入库状态、商品和数量。' },
   'contract.read': { title: '查询合同与收付款计划', description: '查看数据范围内的合同状态、金额、履约阶段及收付款计划。' },
+  'contract.report.read': { title: '查询合同执行报表', description: '查看数据范围内的合同金额、收付款执行情况、质保金余额与履约阶段。' },
   'contract.history.read': { title: '查询合同操作与收付款流水', description: '查看数据范围内的合同操作时间、动作、结果，以及各期收付款金额、方式和日期。' },
   'finance.read': { title: '查询应收应付和收付款', description: '查看应收应付金额、逾期情况和单据收付款流水。' },
   'sales.read': { title: '查询销售单', description: '查看销售单状态、金额和商品明细。' },

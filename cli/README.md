@@ -115,3 +115,12 @@ kas --profile contract-history contract settlements --plan-id 789
 ```
 
 两个命令以 JSON 输出 `rows`。操作记录最多返回最近 50 条，两项查询均遵循 ERP 账号的合同数据范围。
+
+### 合同执行报表
+
+```bash
+kas --profile contract-report auth login --scope contract.report.read
+kas --profile contract-report contract report --biz-type sales --start-date 2026-11-01 --end-date 2026-11-30
+```
+
+可按业务方向、状态、履约阶段、往来单位 ID、签订日期和关键词筛选。ERP 账号需有 `inv:report:view`，结果遵循账号数据范围。一次最多返回 1000 份合同。若 `truncated` 为 `true`，合计仅覆盖当前返回的合同，可缩小筛选区间再查。

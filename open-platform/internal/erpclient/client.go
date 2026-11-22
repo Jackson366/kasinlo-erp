@@ -27,6 +27,7 @@ type Resource struct {
 	Path             string
 	Scope            string
 	Detail           bool
+	Unpaginated      bool
 	Filters          []string
 	ProjectInventory bool
 }
@@ -41,7 +42,11 @@ func (c Client) Read(ctx context.Context, grant oauth.Grant, resource Resource, 
 		path += "/" + strconv.FormatInt(number, 10)
 	} else {
 		params := url.Values{}
-		for _, name := range append([]string{"page", "pageSize", "keyword"}, resource.Filters...) {
+		names := []string{"keyword"}
+		if !resource.Unpaginated {
+			names = append(names, "page", "pageSize")
+		}
+		for _, name := range append(names, resource.Filters...) {
 			if v := query.Get(name); v != "" {
 				params.Set(name, v)
 			}
@@ -89,7 +94,7 @@ func (c Client) Read(ctx context.Context, grant oauth.Grant, resource Resource, 
 	if resource.ProjectInventory {
 		return inventoryResponse(body.Data)
 	}
-	if !resource.Detail {
+	if !resource.Detail && !resource.Unpaginated {
 		var page struct {
 			List []json.RawMessage `json:"list"`
 		}

@@ -3152,6 +3152,58 @@ paths:
       summary: 查询合同期次收付款流水
       tags:
       - 开放平台内部接口
+  /internal/open-platform/contract-report:
+    get:
+      parameters:
+      - description: 编号 / 名称 / 往来单位 / 业务员
+        in: query
+        name: keyword
+        type: string
+      - description: purchase / sales
+        in: query
+        name: bizType
+        type: string
+      - description: 1 执行中 / 2 已完成 / 3 已终止
+        in: query
+        name: status
+        type: integer
+      - description: unaudited / pending / accepted / warranty / warranty_due
+        in: query
+        name: stage
+        type: string
+      - description: 往来单位 ID，0 不过滤
+        in: query
+        name: partyId
+        type: integer
+      - description: 签订日期起 YYYY-MM-DD
+        in: query
+        name: startDate
+        type: string
+      - description: 签订日期止 YYYY-MM-DD
+        in: query
+        name: endDate
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.ReportContractResult'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询合同执行报表
+      tags:
+      - 开放平台内部接口
   /internal/open-platform/contracts:
     get:
       consumes:

@@ -123,3 +123,24 @@ func (h *Handler) platformContract(c *gin.Context) {
 	}
 	response.OK(c, projectPlatformContract(*row))
 }
+
+// platformContractReport 查询当前账号数据范围内的合同执行报表。
+//
+// @Summary 查询合同执行报表
+// @Tags 开放平台内部接口
+// @Produce json
+// @Security BearerAuth
+// @Param keyword query string false "编号 / 名称 / 往来单位 / 业务员"
+// @Param bizType query string false "purchase / sales"
+// @Param status query int false "1 执行中 / 2 已完成 / 3 已终止"
+// @Param stage query string false "unaudited / pending / accepted / warranty / warranty_due"
+// @Param partyId query int false "往来单位 ID，0 不过滤"
+// @Param startDate query string false "签订日期起 YYYY-MM-DD"
+// @Param endDate query string false "签订日期止 YYYY-MM-DD"
+// @Success 200 {object} response.Body{data=inv.ReportContractResult}
+// @Failure 400 {object} response.Body
+// @Router /internal/open-platform/contract-report [get]
+func (h *Handler) platformContractReport(c *gin.Context) {
+	noStore(c)
+	h.ReportContract(c)
+}

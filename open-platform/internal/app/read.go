@@ -12,6 +12,7 @@ type readResource struct {
 	path             string
 	scope            string
 	list             bool
+	unpaginated      bool
 	detail           bool
 	filters          []string
 	sourceScopes     map[string]string
@@ -23,8 +24,11 @@ var (
 	orderFilters   = []string{"status", "settleStatus", "startDate", "endDate"}
 	financeFilters = []string{"settle", "source"}
 
+	contractFilters = []string{"bizType", "status", "stage", "partyId", "startDate", "endDate"}
+
 	readResources = []readResource{
-		{path: "contracts", scope: oauth.ContractRead, list: true, detail: true, filters: []string{"bizType", "status", "stage", "partyId", "startDate", "endDate"}},
+		{path: "contracts", scope: oauth.ContractRead, list: true, detail: true, filters: contractFilters},
+		{path: "contract-report", scope: oauth.ContractReportRead, list: true, unpaginated: true, filters: contractFilters},
 		{path: "contract-activities", scope: oauth.ContractHistoryRead, detail: true},
 		{path: "contract-plan-settlements", scope: oauth.ContractHistoryRead, detail: true},
 		{path: "inventory", scope: oauth.Scope, list: true, projectInventory: true},
@@ -50,7 +54,7 @@ func (s Server) registerReads(mux *http.ServeMux) {
 		pattern := "GET /openapi/v1/" + entry.path
 		if entry.list {
 			resource := erpclient.Resource{
-				Path: entry.path, Scope: entry.scope, Filters: entry.filters, ProjectInventory: entry.projectInventory,
+				Path: entry.path, Scope: entry.scope, Filters: entry.filters, ProjectInventory: entry.projectInventory, Unpaginated: entry.unpaginated,
 			}
 			mux.HandleFunc(pattern, s.read(resource, entry.sourceScopes))
 		}
