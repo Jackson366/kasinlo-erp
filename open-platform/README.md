@@ -83,9 +83,12 @@ kas --profile contracts contract get --id 456
 | GET 路径（前缀 `/openapi/v1`） | 授权范围 | ERP 功能权限 | 返回数据 |
 | --- | --- | --- | --- |
 | `/contract-report` | `contract.report.read` | `inv:report:view` | 合同执行报表及当前结果的合计，包含合同金额、计划金额、已收付、未收付、质保金与履约阶段 |
+| `/contract-ledger` | `contract.ledger.read` | `inv:report:view` | 合同期次实际收付流水，返回 `rows`，按收付日期及流水 ID 倒序 |
 | `/contract-activities/{id}` | `contract.history.read` | `inv:contract:list` | `contractId` 与最近 50 条已落库的操作记录，含动作、请求方式、HTTP 状态和操作时间 |
 | `/contract-plan-settlements/{id}` | `contract.history.read` | `inv:contract:list` | `planId` 与该期次的收付款流水，含金额、结算方式和日期 |
 
 `GET /openapi/v1/contract-report` 支持 `keyword`、`bizType`、`status`、`stage`、`partyId`、`startDate`、`endDate`。日期区间按合同签订日筛选。结果按签订日和合同 ID 倒序，最多返回 1000 行，通过 `truncated` 标识超限。合计仅覆盖返回的 `rows`。调用前需申请 `contract.report.read`。
 
 合同操作记录和期次收付款流水均按时间倒序返回 `rows`，没有记录时返回空数组。合同、期次不存在或超出账号数据范围时返回 404。操作记录随 ERP 日志异步落库，返回字段排除操作者账号、IP 与请求内容，收付款流水排除内部备注。申请 `contract.read contract.history.read` 可同时查询合同详情与流水，已有合同凭据需要重新授权才能调用这两个接口。
+
+合同收付款台账支持 `keyword`、`bizType`、`status`、`from`、`to`、`limit`。日期按实际收付日期筛选，边界包含当天。行数上限为 1 到 1000，默认 1000。账号的合同数据范围适用于返回流水，出参省略内部备注。已有凭据需要重新授权以获得 `contract.ledger.read`。

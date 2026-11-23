@@ -52,8 +52,15 @@ var (
 	}
 
 	readCommands = map[string]readCommand{
-		"contract list":        {path: "contracts", filters: contractFilters},
-		"contract report":      {path: "contract-report", filters: contractFilters, unpaginated: true},
+		"contract list":   {path: "contracts", filters: contractFilters},
+		"contract report": {path: "contract-report", filters: contractFilters, unpaginated: true},
+		"contract ledger": {path: "contract-ledger", unpaginated: true, filters: []queryFilter{
+			{"biz-type", "bizType", "purchase or sales"},
+			{"status", "status", "1 active, 2 finished, 3 terminated"},
+			{"from", "from", "settlement date start, inclusive"},
+			{"to", "to", "settlement date end, inclusive"},
+			{"limit", "limit", "maximum rows, 1 to 1000"},
+		}},
 		"contract get":         {path: "contracts", idFlag: "id"},
 		"contract activity":    {path: "contract-activities", idFlag: "id"},
 		"contract settlements": {path: "contract-plan-settlements", idFlag: "plan-id"},

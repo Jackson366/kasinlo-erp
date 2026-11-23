@@ -29,6 +29,7 @@ var (
 	readResources = []readResource{
 		{path: "contracts", scope: oauth.ContractRead, list: true, detail: true, filters: contractFilters},
 		{path: "contract-report", scope: oauth.ContractReportRead, list: true, unpaginated: true, filters: contractFilters},
+		{path: "contract-ledger", scope: oauth.ContractLedgerRead, list: true, unpaginated: true, filters: []string{"bizType", "status", "from", "to", "limit"}},
 		{path: "contract-activities", scope: oauth.ContractHistoryRead, detail: true},
 		{path: "contract-plan-settlements", scope: oauth.ContractHistoryRead, detail: true},
 		{path: "inventory", scope: oauth.Scope, list: true, projectInventory: true},

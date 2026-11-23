@@ -124,3 +124,13 @@ kas --profile contract-report contract report --biz-type sales --start-date 2026
 ```
 
 可按业务方向、状态、履约阶段、往来单位 ID、签订日期和关键词筛选。ERP 账号需有 `inv:report:view`，结果遵循账号数据范围。一次最多返回 1000 份合同。若 `truncated` 为 `true`，合计仅覆盖当前返回的合同，可缩小筛选区间再查。
+
+
+### 合同收付款台账
+
+```sh
+kas --profile contract-ledger auth login --scope contract.ledger.read
+kas --profile contract-ledger contract ledger --biz-type sales --from 2026-11-01 --to 2026-11-30 --limit 100
+```
+
+`--from` 与 `--to` 按实际收付日期筛选，包含边界当天。可用 `--keyword` 搜索合同编号、名称或往来单位，也可通过 `--status` 筛选合同状态。结果以 `rows` 返回，默认最多 1000 行。

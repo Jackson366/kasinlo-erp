@@ -1785,6 +1785,36 @@ definitions:
       status:
         type: integer
     type: object
+  inv.platformContractLedgerResult:
+    properties:
+      rows:
+        items:
+          $ref: '#/definitions/inv.platformContractLedgerRow'
+        type: array
+    type: object
+  inv.platformContractLedgerRow:
+    properties:
+      amount:
+        type: number
+      bizType:
+        type: string
+      contractNo:
+        type: string
+      method:
+        type: string
+      name:
+        type: string
+      partyName:
+        type: string
+      planName:
+        type: string
+      planSeq:
+        type: integer
+      settleId:
+        type: integer
+      settledAt:
+        type: string
+    type: object
   inv.platformContractPlan:
     properties:
       amount:
@@ -3117,6 +3147,54 @@ paths:
       security:
       - BearerAuth: []
       summary: 查询合同操作记录
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/contract-ledger:
+    get:
+      parameters:
+      - description: 合同编号 / 名称 / 往来单位
+        in: query
+        name: keyword
+        type: string
+      - description: purchase / sales
+        in: query
+        name: bizType
+        type: string
+      - description: 1 执行中 / 2 已完成 / 3 已终止
+        in: query
+        name: status
+        type: integer
+      - description: 收付日期起 YYYY-MM-DD
+        in: query
+        name: from
+        type: string
+      - description: 收付日期止 YYYY-MM-DD
+        in: query
+        name: to
+        type: string
+      - description: 返回行数上限，1 到 1000，默认 1000
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformContractLedgerResult'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询合同收付款台账
       tags:
       - 开放平台内部接口
   /internal/open-platform/contract-plan-settlements/{id}:
