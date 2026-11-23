@@ -1,12 +1,15 @@
 package inv
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"nova-erp/internal/middleware"
 	"nova-erp/internal/pkg/bind"
+	"nova-erp/internal/pkg/errcode"
 	"nova-erp/internal/pkg/page"
 	"nova-erp/internal/pkg/response"
 )
@@ -143,4 +146,82 @@ func (h *Handler) platformContract(c *gin.Context) {
 func (h *Handler) platformContractReport(c *gin.Context) {
 	noStore(c)
 	h.ReportContract(c)
+}
+
+type platformContractLedgerRow struct {
+	SettleID   int64     `json:"settleId"`
+	SettledAt  time.Time `json:"settledAt"`
+	ContractNo string    `json:"contractNo"`
+	Name       string    `json:"name"`
+	BizType    string    `json:"bizType"`
+	PartyName  string    `json:"partyName"`
+	PlanSeq    int       `json:"planSeq"`
+	PlanName   string    `json:"planName"`
+	Amount     float64   `json:"amount"`
+	Method     string    `json:"method"`
+}
+
+type platformContractLedgerResult struct {
+	Rows []platformContractLedgerRow `json:"rows"`
+}
+
+// platformContractLedger 查询当前账号数据范围内的合同期次实际收付款。
+//
+// @Summary 查询合同收付款台账
+// @Tags 开放平台内部接口
+// @Produce json
+// @Security BearerAuth
+// @Param keyword query string false "合同编号 / 名称 / 往来单位"
+// @Param bizType query string false "purchase / sales"
+// @Param status query int false "1 执行中 / 2 已完成 / 3 已终止"
+// @Param from query string false "收付日期起 YYYY-MM-DD"
+// @Param to query string false "收付日期止 YYYY-MM-DD"
+// @Param limit query int false "返回行数上限，1 到 1000，默认 1000"
+// @Success 200 {object} response.Body{data=inv.platformContractLedgerResult}
+// @Failure 400 {object} response.Body
+// @Router /internal/open-platform/contract-ledger [get]
+func (h *Handler) platformContractLedger(c *gin.Context) {
+	noStore(c)
+	filter, err := contractFilterFrom(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	filter.Start, err = parseDatePtr(strings.TrimSpace(c.Query("from")))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	filter.End, err = parseDatePtr(strings.TrimSpace(c.Query("to")))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	if filter.Start != nil && filter.End != nil && filter.Start.After(*filter.End) {
+		response.FailWith(c, errcode.ErrBadRequest, "收付开始日期不能晚于结束日期")
+		return
+	}
+	limit := reportContractLimit
+	if raw, present := c.GetQuery("limit"); present {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > reportContractLimit {
+			response.FailWith(c, errcode.ErrBadRequest, "查询参数 limit 须为 1 到 1000 的整数")
+			return
+		}
+	}
+
+	rows, err := h.svc.ReportContractLedger(filter, page.FromContext(c), middleware.CurrentIdentity(c), limit)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	result := platformContractLedgerResult{Rows: make([]platformContractLedgerRow, 0, len(rows))}
+	for _, row := range rows {
+		result.Rows = append(result.Rows, platformContractLedgerRow{
+			SettleID: row.SettleID, SettledAt: row.SettledAt,
+			ContractNo: row.ContractNo, Name: row.Name, BizType: row.BizType, PartyName: row.PartyName,
+			PlanSeq: row.PlanSeq, PlanName: row.PlanName, Amount: row.Amount, Method: row.Method,
+		})
+	}
+	response.OK(c, result)
 }

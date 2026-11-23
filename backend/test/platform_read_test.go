@@ -316,12 +316,47 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	t.Cleanup(func() { testDB.Unscoped().Delete(&hiddenPlan) })
 	planSettlement := model.InvSettlement{
 		PlanID: plan.ID, Source: model.InvSettleSourcePlan, Amount: 30, Method: "transfer",
-		SettledAt: time.Now(), Remark: "private-settlement-note",
+		SettledAt: time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC), Remark: "private-settlement-note",
 	}
 	if err := testDB.Create(&planSettlement).Error; err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { testDB.Unscoped().Delete(&planSettlement) })
+	hiddenSettlement := model.InvSettlement{
+		PlanID: hiddenPlan.ID, Source: model.InvSettleSourcePlan, Amount: 999,
+		SettledAt: planSettlement.SettledAt,
+	}
+	if err := testDB.Create(&hiddenSettlement).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testDB.Unscoped().Delete(&hiddenSettlement) })
+
+	const ledgerScope = "contract.ledger.read"
+	const ledgerPath = "/contract-ledger"
+	read(reportScope, ledgerPath, http.StatusForbidden)
+	readAs(other, ledgerScope, ledgerPath, http.StatusForbidden)
+	for _, query := range []string{"?limit=0", "?limit=1001", "?limit=abc", "?from=2026-11-16&to=2026-11-15"} {
+		read(ledgerScope, ledgerPath+query, http.StatusBadRequest)
+	}
+	ledgerQuery := ledgerPath + "?keyword=" + marker + "&bizType=sales&status=1&from=2026-11-15&to=2026-11-15"
+	var ledger struct {
+		Data struct {
+			Rows []struct {
+				SettleID int64
+				Amount   float64
+			}
+		}
+	}
+	data := read(ledgerScope, ledgerQuery, http.StatusOK)
+	if err := json.Unmarshal(data, &ledger); err != nil || len(ledger.Data.Rows) != 1 ||
+		ledger.Data.Rows[0].SettleID != planSettlement.ID || ledger.Data.Rows[0].Amount != 30 ||
+		strings.Contains(string(data), `"remark"`) {
+		t.Fatalf("unexpected contract ledger or ledger crossed data scope: %s", data)
+	}
+	if data := string(read(ledgerScope, ledgerPath+"?keyword="+marker+"&from=2026-11-16", http.StatusOK)); !strings.Contains(data, `"rows":[]`) {
+		t.Fatalf("unexpected ledger outside settlement date: %s", data)
+	}
+
 	log := model.OperationLog{
 		Path: "/api/v1/inv" + contractPath + "/audit", Action: "audit contract",
 		Method: http.MethodPost, Status: http.StatusOK, Username: "private-username", IP: "192.0.2.1",

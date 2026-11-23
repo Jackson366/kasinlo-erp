@@ -17,7 +17,7 @@ import (
 	"kasinlo-cli/internal/credential"
 )
 
-const usage = `kas [--server URL] [--profile NAME] auth login [--scope "inventory.read product.read customer.read supplier.read purchase.read sales.read stock.read finance.read contract.read contract.history.read contract.report.read"] [--no-wait | --session ID]
+const usage = `kas [--server URL] [--profile NAME] auth login [--scope "inventory.read product.read customer.read supplier.read purchase.read sales.read stock.read finance.read contract.read contract.history.read contract.report.read contract.ledger.read"] [--no-wait | --session ID]
 kas [--server URL] [--profile NAME] auth status
 kas [--server URL] [--profile NAME] auth logout
 kas [--server URL] [--profile NAME] inventory list [--keyword TEXT] [--page N] [--page-size N]
@@ -39,6 +39,7 @@ kas [--server URL] [--profile NAME] finance receivables|payables [--settle-statu
 kas [--server URL] [--profile NAME] finance settlements --order-id ID
 kas [--server URL] [--profile NAME] contract list [--biz-type purchase|sales] [--status 1|2|3] [--stage STAGE] [--party-id ID] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--keyword TEXT] [--page N] [--page-size N]
 kas [--server URL] [--profile NAME] contract report [--biz-type purchase|sales] [--status 1|2|3] [--stage STAGE] [--party-id ID] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD] [--keyword TEXT]
+kas [--server URL] [--profile NAME] contract ledger [--biz-type purchase|sales] [--status 1|2|3] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--limit N] [--keyword TEXT]
 kas [--server URL] [--profile NAME] contract get --id ID
 kas [--server URL] [--profile NAME] contract activity --id ID
 kas [--server URL] [--profile NAME] contract settlements --plan-id ID

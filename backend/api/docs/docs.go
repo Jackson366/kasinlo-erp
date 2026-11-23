@@ -243,6 +243,86 @@ const docTemplate = `{
                 }
             }
         },
+        "/internal/open-platform/contract-ledger": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询合同收付款台账",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "合同编号 / 名称 / 往来单位",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "purchase / sales",
+                        "name": "bizType",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "1 执行中 / 2 已完成 / 3 已终止",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "收付日期起 YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "收付日期止 YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回行数上限，1 到 1000，默认 1000",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.platformContractLedgerResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/internal/open-platform/contract-plan-settlements/{id}": {
             "get": {
                 "security": [
@@ -11264,6 +11344,52 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "integer"
+                }
+            }
+        },
+        "inv.platformContractLedgerResult": {
+            "type": "object",
+            "properties": {
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.platformContractLedgerRow"
+                    }
+                }
+            }
+        },
+        "inv.platformContractLedgerRow": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "bizType": {
+                    "type": "string"
+                },
+                "contractNo": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "planName": {
+                    "type": "string"
+                },
+                "planSeq": {
+                    "type": "integer"
+                },
+                "settleId": {
+                    "type": "integer"
+                },
+                "settledAt": {
+                    "type": "string"
                 }
             }
         },
