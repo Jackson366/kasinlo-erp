@@ -3454,6 +3454,29 @@ paths:
       summary: 查询客户或供应商详情
       tags:
       - 开放平台内部接口
+  /internal/open-platform/inventory-report:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.ReportInventory'
+              type: object
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询库存分析报表
+      tags:
+      - 开放平台内部接口
   /internal/open-platform/order-settlements/{id}:
     get:
       parameters:

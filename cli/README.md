@@ -134,3 +134,12 @@ kas --profile contract-ledger contract ledger --biz-type sales --from 2026-11-01
 ```
 
 `--from` 与 `--to` 按实际收付日期筛选，包含边界当天。可用 `--keyword` 搜索合同编号、名称或往来单位，也可通过 `--status` 筛选合同状态。结果以 `rows` 返回，默认最多 1000 行。
+
+### 库存分析报表
+
+```bash
+kas --profile inventory-report auth login --scope inventory.report.read
+kas --profile inventory-report inventory report
+```
+
+需要 ERP 权限 `inv:report:view`。输出包括库存成本总额、启用规格数、品类金额分布、预警规格总数及最多 20 条预警明细。已有凭据需要重新授权以获得 `inventory.report.read`。

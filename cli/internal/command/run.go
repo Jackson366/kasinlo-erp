@@ -17,9 +17,10 @@ import (
 	"kasinlo-cli/internal/credential"
 )
 
-const usage = `kas [--server URL] [--profile NAME] auth login [--scope "inventory.read product.read customer.read supplier.read purchase.read sales.read stock.read finance.read contract.read contract.history.read contract.report.read contract.ledger.read"] [--no-wait | --session ID]
+const usage = `kas [--server URL] [--profile NAME] auth login [--scope "inventory.read inventory.report.read product.read customer.read supplier.read purchase.read sales.read stock.read finance.read contract.read contract.history.read contract.report.read contract.ledger.read"] [--no-wait | --session ID]
 kas [--server URL] [--profile NAME] auth status
 kas [--server URL] [--profile NAME] auth logout
+kas [--server URL] [--profile NAME] inventory report
 kas [--server URL] [--profile NAME] inventory list [--keyword TEXT] [--page N] [--page-size N]
 kas [--server URL] [--profile NAME] product list [--keyword TEXT] [--status 0|1] [--category-id ID] [--page N] [--page-size N]
 kas [--server URL] [--profile NAME] product get --id ID

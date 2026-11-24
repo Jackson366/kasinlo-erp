@@ -79,6 +79,11 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			if q.Get("bizType") != "sales" || q.Get("startDate") != "2026-11-01" || q.Get("keyword") != "HT15" || q.Has("page") || q.Has("pageSize") {
 				t.Errorf("unexpected contract report query: %v", q)
 			}
+		case "/internal/open-platform/inventory-report":
+			scope = oauth.InventoryReportRead
+			if len(r.URL.Query()) != 0 {
+				t.Errorf("unexpected inventory report query: %v", r.URL.Query())
+			}
 		case "/internal/open-platform/contract-ledger":
 			scope = oauth.ContractLedgerRead
 			q := r.URL.Query()
@@ -141,6 +146,9 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			return
 		case "/internal/open-platform/contract-report":
 			_, _ = io.WriteString(w, `{"code":0,"data":{"rows":[{"contractId":15,"outstanding":70}],"outstanding":70,"count":1,"truncated":false}}`)
+			return
+		case "/internal/open-platform/inventory-report":
+			_, _ = io.WriteString(w, `{"code":0,"data":{"totalValue":125,"specCount":1,"warnCount":1,"categoryValue":[],"warnList":[{"stock":2,"warnStock":3}]}}`)
 			return
 		case "/internal/open-platform/contract-ledger":
 			_, _ = io.WriteString(w, `{"code":0,"data":{"rows":[{"settleId":17,"amount":30}]}}`)
@@ -237,6 +245,9 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 	if res := call(http.MethodGet, "/oauth/status", legacyToken, "", ""); res.Code != http.StatusOK ||
 		!strings.Contains(res.Body.String(), `"scope":"inventory.read"`) {
 		t.Fatal("migration did not preserve the legacy grant's inventory scope")
+	}
+	if res := call(http.MethodGet, "/openapi/v1/inventory-report", legacyToken, "", ""); res.Code != http.StatusForbidden {
+		t.Fatal("inventory-only grant could read the inventory report")
 	}
 	if res := call(http.MethodGet, "/openapi/v1/contract-ledger", legacyToken, "", ""); res.Code != http.StatusForbidden {
 		t.Fatal("legacy grant could read contract ledger")
@@ -381,7 +392,7 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		}
 		return session
 	}
-	const scope = "inventory.read product.read purchase.read stock.read finance.read customer.read supplier.read contract.read contract.history.read contract.report.read contract.ledger.read"
+	const scope = "inventory.read inventory.report.read product.read purchase.read stock.read finance.read customer.read supplier.read contract.read contract.history.read contract.report.read contract.ledger.read"
 	session := start(scope)
 	bridge := func(path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
@@ -410,6 +421,12 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 	if out := run(0, "inventory", "list", "--page-size", "10"); !strings.Contains(string(out), `"stock":15`) {
 		t.Fatal("separate CLI process could not query inventory")
 	}
+
+	if out := run(0, "inventory", "report"); !strings.Contains(string(out), `"totalValue":125`) || !strings.Contains(string(out), `"warnStock":3`) {
+		t.Fatalf("could not read inventory report: %s", out)
+	}
+	run(2, "inventory", "report", "--page", "2")
+	run(2, "inventory", "report", "--keyword", "Steel")
 
 	if out := run(0, "contract", "list", "--biz-type", "sales", "--stage", "pending", "--party-id", "12", "--status", "1", "--start-date", "2026-11-01", "--end-date", "2026-11-30"); !strings.Contains(string(out), `"contractNo":"HT15"`) {
 		t.Fatal("could not list contracts with filters")
