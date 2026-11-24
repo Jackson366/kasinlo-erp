@@ -111,6 +111,23 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 		return readAs(actor, scope, path, want)
 	}
 
+	const inventoryReportScope = "inventory.report.read"
+	const inventoryReportPath = "/inventory-report"
+	read("inventory.read", inventoryReportPath, http.StatusForbidden)
+	readAs(other, inventoryReportScope, inventoryReportPath, http.StatusForbidden)
+	reportData := read(inventoryReportScope, inventoryReportPath, http.StatusOK)
+	var inventoryReport struct {
+		Data struct {
+			TotalValue    *float64          `json:"totalValue"`
+			CategoryValue []json.RawMessage `json:"categoryValue"`
+			WarnList      []json.RawMessage `json:"warnList"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(reportData, &inventoryReport); err != nil ||
+		inventoryReport.Data.TotalValue == nil || inventoryReport.Data.CategoryValue == nil || inventoryReport.Data.WarnList == nil {
+		t.Fatalf("unexpected inventory report response: %s", reportData)
+	}
+
 	result := read("purchase.read", "/purchase-orders?keyword="+marker+"&bizType=sales", http.StatusOK)
 	var page struct {
 		Data struct {

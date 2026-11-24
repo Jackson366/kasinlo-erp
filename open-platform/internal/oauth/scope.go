@@ -12,6 +12,7 @@ const (
 	SupplierRead        = "supplier.read"
 	PurchaseRead        = "purchase.read"
 	StockRead           = "stock.read"
+	InventoryReportRead = "inventory.report.read"
 	FinanceRead         = "finance.read"
 	SalesRead           = "sales.read"
 	ContractRead        = "contract.read"
@@ -29,7 +30,7 @@ func NormalizeScope(value string) (string, bool) {
 	var scopes []string
 	for _, scope := range strings.Split(value, " ") {
 		switch scope {
-		case Scope, ProductRead, CustomerRead, SupplierRead, PurchaseRead, SalesRead, StockRead, FinanceRead, ContractRead, ContractHistoryRead, ContractReportRead, ContractLedgerRead:
+		case Scope, InventoryReportRead, ProductRead, CustomerRead, SupplierRead, PurchaseRead, SalesRead, StockRead, FinanceRead, ContractRead, ContractHistoryRead, ContractReportRead, ContractLedgerRead:
 			if !slices.Contains(scopes, scope) {
 				scopes = append(scopes, scope)
 			}

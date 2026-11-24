@@ -26,6 +26,7 @@ func PlatformInventoryModule(cfg config.OpenPlatformConfig) (module.Module, bool
 					middleware.RequirePerm(permission))
 			}
 			register("inventory.read", "inv:stock:list").GET("/inventory", h.platformInventory)
+			register("inventory.report.read", "inv:report:view").GET("/inventory-report", h.platformInventoryReport)
 
 			products := register("product.read", "inv:product:list")
 			products.GET("/product-categories", h.platformCategories)
@@ -104,4 +105,18 @@ func (h *Handler) platformInventory(c *gin.Context) {
 		})
 	}
 	response.OKPage(c, rows, total, q.Page, q.PageSize)
+}
+
+// platformInventoryReport 查询共享库存的成本与预警。
+//
+// @Summary 查询库存分析报表
+// @Tags 开放平台内部接口
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} response.Body{data=inv.ReportInventory}
+// @Failure 403 {object} response.Body
+// @Router /internal/open-platform/inventory-report [get]
+func (h *Handler) platformInventoryReport(c *gin.Context) {
+	noStore(c)
+	h.ReportInventory(c)
 }

@@ -25,6 +25,7 @@ type readCommand struct {
 	path        string
 	idFlag      string
 	unpaginated bool
+	noKeyword   bool
 	filters     []queryFilter
 	boolFilters []queryFilter
 }
@@ -64,6 +65,7 @@ var (
 		"contract get":         {path: "contracts", idFlag: "id"},
 		"contract activity":    {path: "contract-activities", idFlag: "id"},
 		"contract settlements": {path: "contract-plan-settlements", idFlag: "plan-id"},
+		"inventory report":     {path: "inventory-report", unpaginated: true, noKeyword: true},
 		"inventory list":       {path: "inventory"},
 		"category list": {path: "product-categories", filters: []queryFilter{
 			{"status", "status", "category status (0 or 1)"},
@@ -136,7 +138,10 @@ func (cmd readCommand) run(ctx context.Context, api *client.Client, store creden
 }
 
 func (cmd readCommand) listQuery(flags *flag.FlagSet, args []string) (url.Values, error) {
-	keyword := flags.String("keyword", "", "search term")
+	var keyword string
+	if !cmd.noKeyword {
+		flags.StringVar(&keyword, "keyword", "", "search term")
+	}
 	page, size := 1, 10
 	if !cmd.unpaginated {
 		flags.IntVar(&page, "page", page, "page number")
@@ -154,13 +159,16 @@ func (cmd readCommand) listQuery(flags *flag.FlagSet, args []string) (url.Values
 	if err := flags.Parse(args); err != nil {
 		return nil, usageError(err.Error())
 	}
-	if flags.NArg() != 0 || len(*keyword) > 500 {
+	if flags.NArg() != 0 || len(keyword) > 500 {
 		return nil, usageError("use named flags and a keyword up to 500 bytes")
 	}
 	if page < 1 || size < 1 || size > 200 {
 		return nil, usageError("use a positive page, page-size between 1 and 200, and keyword up to 500 bytes")
 	}
-	query := url.Values{"keyword": {*keyword}}
+	query := url.Values{}
+	if !cmd.noKeyword {
+		query.Set("keyword", keyword)
+	}
 	if !cmd.unpaginated {
 		query.Set("page", strconv.Itoa(page))
 		query.Set("pageSize", strconv.Itoa(size))
