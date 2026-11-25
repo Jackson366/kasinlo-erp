@@ -128,6 +128,21 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 		t.Fatalf("unexpected inventory report response: %s", reportData)
 	}
 
+	const rankingScope = "inventory.ranking.read"
+	const rankingPath = "/stock-ranking"
+	read(inventoryReportScope, rankingPath, http.StatusForbidden)
+	readAs(other, rankingScope, rankingPath, http.StatusForbidden)
+	read(rankingScope, rankingPath+"?limit=1001", http.StatusBadRequest)
+	rankingData := read(rankingScope, rankingPath+"?limit=1", http.StatusOK)
+	var ranking struct {
+		Data struct {
+			Rows []inv.ReportStockRankRow `json:"rows"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rankingData, &ranking); err != nil || len(ranking.Data.Rows) != 1 || ranking.Data.Rows[0].Rank != 1 {
+		t.Fatalf("unexpected stock ranking response: %s", rankingData)
+	}
+
 	result := read("purchase.read", "/purchase-orders?keyword="+marker+"&bizType=sales", http.StatusOK)
 	var page struct {
 		Data struct {

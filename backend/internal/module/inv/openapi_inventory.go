@@ -1,12 +1,15 @@
 package inv
 
 import (
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 
 	"nova-erp/internal/config"
 	"nova-erp/internal/middleware"
 	"nova-erp/internal/model"
 	"nova-erp/internal/module"
+	"nova-erp/internal/pkg/errcode"
 	"nova-erp/internal/pkg/page"
 	"nova-erp/internal/pkg/response"
 )
@@ -27,6 +30,8 @@ func PlatformInventoryModule(cfg config.OpenPlatformConfig) (module.Module, bool
 			}
 			register("inventory.read", "inv:stock:list").GET("/inventory", h.platformInventory)
 			register("inventory.report.read", "inv:report:view").GET("/inventory-report", h.platformInventoryReport)
+
+			register("inventory.ranking.read", "inv:report:view").GET("/stock-ranking", h.platformStockRanking)
 
 			products := register("product.read", "inv:product:list")
 			products.GET("/product-categories", h.platformCategories)
@@ -119,4 +124,38 @@ func (h *Handler) platformInventory(c *gin.Context) {
 func (h *Handler) platformInventoryReport(c *gin.Context) {
 	noStore(c)
 	h.ReportInventory(c)
+}
+
+type platformStockRankingResult struct {
+	Rows []ReportStockRankRow `json:"rows"`
+}
+
+// platformStockRanking 查询共享库存金额排行。
+//
+// @Summary 查询库存金额排行
+// @Tags 开放平台内部接口
+// @Produce json
+// @Security BearerAuth
+// @Param limit query int false "最大行数（1–1000，默认 1000）"
+// @Success 200 {object} response.Body{data=inv.platformStockRankingResult}
+// @Failure 400 {object} response.Body
+// @Failure 403 {object} response.Body
+// @Router /internal/open-platform/stock-ranking [get]
+func (h *Handler) platformStockRanking(c *gin.Context) {
+	noStore(c)
+	limit := reportRankMaxRows
+	if raw := c.Query("limit"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > reportRankMaxRows {
+			response.FailWith(c, errcode.ErrBadRequest, "limit 必须为 1 到 1000 的整数")
+			return
+		}
+		limit = value
+	}
+	rows, err := h.svc.ReportStockRanking(limit)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, platformStockRankingResult{Rows: rows})
 }
