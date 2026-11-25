@@ -65,8 +65,11 @@ var (
 		"contract get":         {path: "contracts", idFlag: "id"},
 		"contract activity":    {path: "contract-activities", idFlag: "id"},
 		"contract settlements": {path: "contract-plan-settlements", idFlag: "plan-id"},
-		"inventory report":     {path: "inventory-report", unpaginated: true, noKeyword: true},
-		"inventory list":       {path: "inventory"},
+		"inventory ranking": {path: "stock-ranking", unpaginated: true, noKeyword: true, filters: []queryFilter{
+			{"limit", "limit", "maximum rows, 1 to 1000"},
+		}},
+		"inventory report": {path: "inventory-report", unpaginated: true, noKeyword: true},
+		"inventory list":   {path: "inventory"},
 		"category list": {path: "product-categories", filters: []queryFilter{
 			{"status", "status", "category status (0 or 1)"},
 			{"parent-id", "parentId", "direct parent category ID (0 for roots)"},

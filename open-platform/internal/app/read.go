@@ -32,6 +32,7 @@ var (
 		{path: "contract-ledger", scope: oauth.ContractLedgerRead, list: true, unpaginated: true, filters: []string{"bizType", "status", "from", "to", "limit"}},
 		{path: "contract-activities", scope: oauth.ContractHistoryRead, detail: true},
 		{path: "contract-plan-settlements", scope: oauth.ContractHistoryRead, detail: true},
+		{path: "stock-ranking", scope: oauth.InventoryRankingRead, list: true, unpaginated: true, filters: []string{"limit"}},
 		{path: "inventory-report", scope: oauth.InventoryReportRead, list: true, unpaginated: true},
 		{path: "inventory", scope: oauth.Scope, list: true, projectInventory: true},
 		{path: "product-categories", scope: oauth.ProductRead, list: true, detail: true, filters: []string{"status", "parentId"}},

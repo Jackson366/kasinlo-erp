@@ -143,3 +143,12 @@ kas --profile inventory-report inventory report
 ```
 
 需要 ERP 权限 `inv:report:view`。输出包括库存成本总额、启用规格数、品类金额分布、预警规格总数及最多 20 条预警明细。已有凭据需要重新授权以获得 `inventory.report.read`。
+
+### 库存金额排行
+
+```bash
+kas --profile stock-ranking auth login --scope inventory.ranking.read
+kas --profile stock-ranking inventory ranking --limit 20
+```
+
+需要 ERP 权限 `inv:report:view`。返回商品规格、库存数量、金额和金额占比，按库存金额降序排列。`--limit` 可取 1–1000，默认 1000。

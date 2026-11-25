@@ -2088,6 +2088,13 @@ definitions:
       status:
         type: integer
     type: object
+  inv.platformStockRankingResult:
+    properties:
+      rows:
+        items:
+          $ref: '#/definitions/inv.ReportStockRankRow'
+        type: array
+    type: object
   inv.platformStockRow:
     properties:
       direction:
@@ -3980,6 +3987,38 @@ paths:
       security:
       - BearerAuth: []
       summary: 查询出入库明细
+      tags:
+      - 开放平台内部接口
+  /internal/open-platform/stock-ranking:
+    get:
+      parameters:
+      - description: 最大行数（1–1000，默认 1000）
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.platformStockRankingResult'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询库存金额排行
       tags:
       - 开放平台内部接口
   /internal/open-platform/suppliers:
