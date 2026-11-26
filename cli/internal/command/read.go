@@ -65,6 +65,12 @@ var (
 		"contract get":         {path: "contracts", idFlag: "id"},
 		"contract activity":    {path: "contract-activities", idFlag: "id"},
 		"contract settlements": {path: "contract-plan-settlements", idFlag: "plan-id"},
+		"report summary": {path: "business-summary", unpaginated: true, noKeyword: true, filters: []queryFilter{
+			{"range", "range", "today, week, month, quarter or year"},
+			{"from", "from", "start date, inclusive (overrides range)"},
+			{"to", "to", "end date, inclusive"},
+			{"category-id", "categoryId", "category ID, including descendants"},
+		}},
 		"inventory ranking": {path: "stock-ranking", unpaginated: true, noKeyword: true, filters: []queryFilter{
 			{"limit", "limit", "maximum rows, 1 to 1000"},
 		}},
