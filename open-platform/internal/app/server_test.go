@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -56,7 +58,9 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 	if _, err := db.Exec("ALTER TABLE access_grants DROP COLUMN scope; ALTER TABLE device_authorizations DROP COLUMN scope"); err != nil {
 		t.Fatal(err)
 	}
-	const legacyToken = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	legacyBytes := make([]byte, 32)
+	rand.Read(legacyBytes)
+	legacyToken := hex.EncodeToString(legacyBytes)
 	if _, err := db.Exec(`INSERT INTO access_grants(id, token_hash, client_id, user_id, token_epoch, expires_at)
 		VALUES ('legacy', sha256($1::bytea), 'kas', 99, 4, now() + interval '1 hour')`, legacyToken); err != nil {
 		t.Fatal(err)
@@ -65,7 +69,8 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	key := []byte("independent-platform-test-key-32-characters")
+	key := make([]byte, 32)
+	rand.Read(key)
 	erp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, err := jwt.Parse(bearer(r), func(*jwt.Token) (any, error) { return key, nil },
 			jwt.WithValidMethods([]string{"HS256"}), jwt.WithIssuer("test-platform"), jwt.WithAudience("test-erp"))
@@ -78,6 +83,12 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			q := r.URL.Query()
 			if q.Get("bizType") != "sales" || q.Get("startDate") != "2026-11-01" || q.Get("keyword") != "HT15" || q.Has("page") || q.Has("pageSize") {
 				t.Errorf("unexpected contract report query: %v", q)
+			}
+		case "/internal/open-platform/business-summary":
+			scope = oauth.BusinessReportRead
+			q := r.URL.Query()
+			if len(q) != 4 || q.Get("range") != "month" || q.Get("from") != "2026-11-01" || q.Get("to") != "2026-11-30" || q.Get("categoryId") != "12" {
+				t.Errorf("unexpected business summary query: %v", q)
 			}
 		case "/internal/open-platform/stock-ranking":
 			scope = oauth.InventoryRankingRead
@@ -151,6 +162,9 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			return
 		case "/internal/open-platform/contract-report":
 			_, _ = io.WriteString(w, `{"code":0,"data":{"rows":[{"contractId":15,"outstanding":70}],"outstanding":70,"count":1,"truncated":false}}`)
+			return
+		case "/internal/open-platform/business-summary":
+			_, _ = io.WriteString(w, `{"code":0,"data":{"salesAmount":200,"purchases":100,"grossProfit":80}}`)
 			return
 		case "/internal/open-platform/stock-ranking":
 			_, _ = io.WriteString(w, `{"code":0,"data":{"rows":[{"rank":1,"productCode":"P1","stock":5,"value":125,"ratio":50}]}}`)
@@ -229,7 +243,7 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 		_, _ = io.WriteString(w, `{"code":0,"data":{"page":1,"pageSize":10,"total":1,"list":[{"productId":1,"stock":15,"purchasePrice":42}]}}`)
 	}))
 	defer erp.Close()
-	const bridgeSecret = "independent-bridge-test-key-32-characters"
+	bridgeSecret := rand.Text() + rand.Text()
 	handler := (Server{
 		Store:        oauth.Store{DB: db},
 		ERP:          erpclient.Client{HTTP: erp.Client(), URL: erp.URL, Issuer: "test-platform", Audience: "test-erp", Secret: key},
@@ -253,6 +267,9 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 	if res := call(http.MethodGet, "/oauth/status", legacyToken, "", ""); res.Code != http.StatusOK ||
 		!strings.Contains(res.Body.String(), `"scope":"inventory.read"`) {
 		t.Fatal("migration did not preserve the legacy grant's inventory scope")
+	}
+	if res := call(http.MethodGet, "/openapi/v1/business-summary", legacyToken, "", ""); res.Code != http.StatusForbidden {
+		t.Fatal("inventory-only grant could read the business summary")
 	}
 	if res := call(http.MethodGet, "/openapi/v1/stock-ranking", legacyToken, "", ""); res.Code != http.StatusForbidden {
 		t.Fatal("inventory-only grant could read the stock ranking")
@@ -403,7 +420,7 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		}
 		return session
 	}
-	const scope = "inventory.read inventory.report.read inventory.ranking.read product.read purchase.read stock.read finance.read customer.read supplier.read contract.read contract.history.read contract.report.read contract.ledger.read"
+	const scope = "inventory.read inventory.report.read inventory.ranking.read business.report.read product.read purchase.read stock.read finance.read customer.read supplier.read contract.read contract.history.read contract.report.read contract.ledger.read"
 	session := start(scope)
 	bridge := func(path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
@@ -438,6 +455,10 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 	}
 	run(2, "inventory", "report", "--page", "2")
 	run(2, "inventory", "report", "--keyword", "Steel")
+	if out := run(0, "report", "summary", "--range", "month", "--from", "2026-11-01", "--to", "2026-11-30", "--category-id", "12"); !strings.Contains(string(out), `"grossProfit":80`) {
+		t.Fatalf("could not read business summary: %s", out)
+	}
+	run(2, "report", "summary", "--page", "2")
 	if out := run(0, "inventory", "ranking", "--limit", "2"); !strings.Contains(string(out), `"value":125`) {
 		t.Fatalf("could not read stock ranking: %s", out)
 	}

@@ -3123,6 +3123,50 @@ paths:
       summary: 刷新访问令牌
       tags:
       - 认证
+  /internal/open-platform/business-summary:
+    get:
+      parameters:
+      - description: today | week | month | quarter | year，默认 month
+        in: query
+        name: range
+        type: string
+      - description: 起始日 yyyy-MM-dd，优先于 range
+        in: query
+        name: from
+        type: string
+      - description: 结束日 yyyy-MM-dd（含当天）
+        in: query
+        name: to
+        type: string
+      - description: 品类 ID（含子分类），0 = 全部
+        in: query
+        name: categoryId
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/inv.ReportSummary'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查询经营报表汇总
+      tags:
+      - 开放平台内部接口
   /internal/open-platform/contract-activities/{id}:
     get:
       parameters:

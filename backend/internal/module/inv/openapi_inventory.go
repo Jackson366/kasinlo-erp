@@ -31,6 +31,7 @@ func PlatformInventoryModule(cfg config.OpenPlatformConfig) (module.Module, bool
 			register("inventory.read", "inv:stock:list").GET("/inventory", h.platformInventory)
 			register("inventory.report.read", "inv:report:view").GET("/inventory-report", h.platformInventoryReport)
 
+			register("business.report.read", "inv:report:view").GET("/business-summary", h.platformBusinessSummary)
 			register("inventory.ranking.read", "inv:report:view").GET("/stock-ranking", h.platformStockRanking)
 
 			products := register("product.read", "inv:product:list")
@@ -124,6 +125,25 @@ func (h *Handler) platformInventory(c *gin.Context) {
 func (h *Handler) platformInventoryReport(c *gin.Context) {
 	noStore(c)
 	h.ReportInventory(c)
+}
+
+// platformBusinessSummary 查询当前 ERP 身份数据范围内的经营汇总。
+//
+// @Summary 查询经营报表汇总
+// @Tags 开放平台内部接口
+// @Produce json
+// @Security BearerAuth
+// @Param range query string false "today | week | month | quarter | year，默认 month"
+// @Param from query string false "起始日 yyyy-MM-dd，优先于 range"
+// @Param to query string false "结束日 yyyy-MM-dd（含当天）"
+// @Param categoryId query int false "品类 ID（含子分类），0 = 全部"
+// @Success 200 {object} response.Body{data=inv.ReportSummary}
+// @Failure 400 {object} response.Body
+// @Failure 403 {object} response.Body
+// @Router /internal/open-platform/business-summary [get]
+func (h *Handler) platformBusinessSummary(c *gin.Context) {
+	noStore(c)
+	h.ReportSummary(c)
 }
 
 type platformStockRankingResult struct {

@@ -83,6 +83,7 @@ kas --profile contracts contract get --id 456
 | GET 路径（前缀 `/openapi/v1`） | 授权范围 | ERP 功能权限 | 返回数据 |
 | --- | --- | --- | --- |
 | `/contract-report` | `contract.report.read` | `inv:report:view` | 合同执行报表及当前结果的合计，包含合同金额、计划金额、已收付、未收付、质保金与履约阶段 |
+| `/business-summary` | `business.report.read` | `inv:report:view` | 返回当前 ERP 账号数据范围内的销售、采购、成本和毛利汇总。支持 `range`（默认 `month`）、`from`、`to`、`categoryId`（含子分类），日期格式为 `YYYY-MM-DD` |
 | `/stock-ranking` | `inventory.ranking.read` | `inv:report:view` | 按规格返回共享库存金额降序排行，支持 `limit`（1–1000，默认 1000），金额占比以全部库存金额为分母 |
 | `/inventory-report` | `inventory.report.read` | `inv:report:view` | 共享库存的成本总额、品类金额分布和低库存预警，预警最多返回前 20 条 |
 | `/contract-ledger` | `contract.ledger.read` | `inv:report:view` | 合同期次实际收付流水，返回 `rows`，按收付日期及流水 ID 倒序 |

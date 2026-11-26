@@ -152,3 +152,14 @@ kas --profile stock-ranking inventory ranking --limit 20
 ```
 
 需要 ERP 权限 `inv:report:view`。返回商品规格、库存数量、金额和金额占比，按库存金额降序排列。`--limit` 可取 1–1000，默认 1000。
+
+
+### 经营报表汇总
+
+```bash
+kas --profile business-report auth login --scope business.report.read
+kas --profile business-report report summary --range month
+kas --profile business-report report summary --from 2026-11-01 --to 2026-11-30 --category-id 12
+```
+
+返回销售额、采购额、销售成本、毛利、毛利率和单据数。ERP 账号须有 `inv:report:view`，汇总遵循该账号的数据范围。缺省时间范围为本月，`--from` 优先于 `--range`，`--to` 含当天。

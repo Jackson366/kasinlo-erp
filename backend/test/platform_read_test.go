@@ -1,6 +1,7 @@
 package test
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,7 +21,7 @@ import (
 
 func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	setup(t)
-	const key = "platform-test-key-with-at-least-32-bytes"
+	key := rand.Text() + rand.Text()
 	cfg := config.OpenPlatformConfig{Secret: key, Issuer: "test-platform", Audience: "test-erp"}
 	mod, enabled := inv.PlatformInventoryModule(cfg)
 	if !enabled {
@@ -75,7 +76,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	}
 	t.Cleanup(func() { testDB.Unscoped().Delete(&product) })
 
-	customer := model.InvCustomer{Code: marker + "%", Name: "Customer " + marker, Contact: marker + "PrivateContact", Status: 0}
+	customer := model.InvCustomer{Code: marker + "%", Name: "Customer " + marker, Contact: marker + "FixtureContact", Status: 0}
 	if err := testDB.Create(&customer).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -176,6 +177,19 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 			read("stock.read", fmt.Sprintf("/stock-orders/%d", stock.ID), http.StatusOK)
 		}
 	}
+	const summaryScope = "business.report.read"
+	const summaryPath = "/business-summary"
+	read(inventoryReportScope, summaryPath, http.StatusForbidden)
+	readAs(other, summaryScope, summaryPath, http.StatusForbidden)
+	read(summaryScope, summaryPath+"?from=invalid", http.StatusBadRequest)
+	summaryData := read(summaryScope, summaryPath+"?range=year", http.StatusOK)
+	var summary struct {
+		Data inv.ReportSummary `json:"data"`
+	}
+	if err := json.Unmarshal(summaryData, &summary); err != nil || summary.Data.Purchases != 100 || summary.Data.PurchaseOrders != 1 {
+		t.Fatalf("business summary included orders outside the user's data scope: %s", summaryData)
+	}
+
 	stockPath := "/stock-orders?sourceType=purchase&sourceId="
 	for _, tc := range []struct {
 		id    int64
@@ -193,7 +207,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 		!strings.Contains(string(data), `"outstanding":70`) || strings.Contains(string(data), hidden.OrderNo) {
 		t.Fatalf("payables list or total crossed its scope: %s", data)
 	}
-	settlement := model.InvSettlement{OrderID: purchase.ID, Source: "order", Amount: 30, SettledAt: time.Now(), Reference: "private-reference"}
+	settlement := model.InvSettlement{OrderID: purchase.ID, Source: "order", Amount: 30, SettledAt: time.Now(), Reference: "fixture-reference"}
 	if err := testDB.Create(&settlement).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +221,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	customerPath := fmt.Sprintf("/customers/%d", customer.ID)
 	for _, path := range []string{"/customers?keyword=" + marker + "%25&status=0", customerPath} {
 		data := string(read("customer.read", path, http.StatusOK))
-		if !strings.Contains(data, customer.Name) || strings.Contains(data, "PrivateContact") ||
+		if !strings.Contains(data, customer.Name) || strings.Contains(data, "FixtureContact") ||
 			strings.Contains(data, `"balance"`) || strings.Contains(data, `"orderCount"`) {
 			t.Fatalf("unexpected party response: %s", data)
 		}
@@ -233,7 +247,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	}
 
 	newCategory := func(name string, parentID int64, status int16, sort int) model.InvCategory {
-		row := model.InvCategory{Name: name, ParentID: parentID, Status: status, Sort: sort, Remark: "private-category-note"}
+		row := model.InvCategory{Name: name, ParentID: parentID, Status: status, Sort: sort, Remark: "fixture-category-note"}
 		if err := testDB.Create(&row).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -260,7 +274,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 		if err := json.Unmarshal(result, &page); err != nil || page.Data.Total != wantTotal || len(page.Data.List) != 1 || page.Data.List[0].ID != wantID {
 			t.Fatalf("unexpected category page: %s", result)
 		}
-		if strings.Contains(string(result), "private-category-note") || strings.Contains(string(result), `"productCount"`) {
+		if strings.Contains(string(result), "fixture-category-note") || strings.Contains(string(result), `"productCount"`) {
 			t.Fatalf("category response exposed internal fields: %s", result)
 		}
 	}
@@ -269,7 +283,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	checkCategories("keyword="+marker+"%25_&parentId=0", 1, root.ID)
 	checkCategories(fmt.Sprintf("parentId=%d&status=0", root.ID), 1, child.ID)
 	categoryDetail := string(read("product.read", categoryPath, http.StatusOK))
-	if !strings.Contains(categoryDetail, fmt.Sprintf(`"parentId":%d`, root.ID)) || !strings.Contains(categoryDetail, child.Name) || strings.Contains(categoryDetail, "private-category-note") {
+	if !strings.Contains(categoryDetail, fmt.Sprintf(`"parentId":%d`, root.ID)) || !strings.Contains(categoryDetail, child.Name) || strings.Contains(categoryDetail, "fixture-category-note") {
 		t.Fatalf("unexpected category detail: %s", categoryDetail)
 	}
 	if err := testDB.Delete(&child).Error; err != nil {
@@ -283,7 +297,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	newContract := func(suffix string, owner int64) model.InvContract {
 		row := model.InvContract{ContractNo: marker + suffix, Name: marker + suffix, BizType: model.InvBizSales,
 			PartyID: customer.ID, PartyName: customer.Name, SignDate: time.Now(), Amount: 100,
-			Status: model.InvContractActive, CreatedBy: owner, Remark: "private-contract-note", Salesman: "private-salesman"}
+			Status: model.InvContractActive, CreatedBy: owner, Remark: "fixture-contract-note", Salesman: "fixture-salesman"}
 		if err := testDB.Create(&row).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -292,7 +306,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	}
 	ownContract := newContract("C", actor.ID)
 	hiddenContract := newContract("H", other.ID)
-	plan := model.InvContractPlan{ContractID: ownContract.ID, Seq: 1, Name: "Deposit", Amount: 100, SettledAmount: 30, Remark: "private-plan-note"}
+	plan := model.InvContractPlan{ContractID: ownContract.ID, Seq: 1, Name: "Deposit", Amount: 100, SettledAmount: 30, Remark: "fixture-plan-note"}
 	if err := testDB.Create(&plan).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +330,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	}
 	for _, path := range []string{"/contracts?keyword=" + marker, contractPath} {
 		data := string(read("contract.read", path, http.StatusOK))
-		for _, field := range []string{"remark", "operator", "auditor", "salesman", "attachmentCount", "private-"} {
+		for _, field := range []string{"remark", "operator", "auditor", "salesman", "attachmentCount", "fixture-"} {
 			if strings.Contains(data, field) {
 				t.Fatalf("contract exposed %s: %s", field, data)
 			}
@@ -333,7 +347,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	reportQuery := reportPath + "?keyword=" + marker + "&bizType=sales&status=1&stage=pending"
 	if data := string(read(reportScope, reportQuery, http.StatusOK)); !strings.Contains(data, `"count":1`) ||
 		!strings.Contains(data, `"amount":100`) || !strings.Contains(data, `"outstanding":70`) ||
-		strings.Contains(data, hiddenContract.ContractNo) || strings.Contains(data, "private-") {
+		strings.Contains(data, hiddenContract.ContractNo) || strings.Contains(data, "fixture-") {
 		t.Fatalf("unexpected contract report or report crossed data scope: %s", data)
 	}
 	if data := string(read(reportScope, reportPath+"?keyword=no-"+marker, http.StatusOK)); !strings.Contains(data, `"rows":[]`) ||
@@ -348,7 +362,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	t.Cleanup(func() { testDB.Unscoped().Delete(&hiddenPlan) })
 	planSettlement := model.InvSettlement{
 		PlanID: plan.ID, Source: model.InvSettleSourcePlan, Amount: 30, Method: "transfer",
-		SettledAt: time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC), Remark: "private-settlement-note",
+		SettledAt: time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC), Remark: "fixture-settlement-note",
 	}
 	if err := testDB.Create(&planSettlement).Error; err != nil {
 		t.Fatal(err)
@@ -391,7 +405,7 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 
 	log := model.OperationLog{
 		Path: "/api/v1/inv" + contractPath + "/audit", Action: "audit contract",
-		Method: http.MethodPost, Status: http.StatusOK, Username: "private-username", IP: "192.0.2.1",
+		Method: http.MethodPost, Status: http.StatusOK, Username: "fixture-username", IP: "192.0.2.1",
 	}
 	if err := testDB.Create(&log).Error; err != nil {
 		t.Fatal(err)
