@@ -33,6 +33,7 @@ var (
 		{path: "contract-activities", scope: oauth.ContractHistoryRead, detail: true},
 		{path: "contract-plan-settlements", scope: oauth.ContractHistoryRead, detail: true},
 		{path: "business-summary", scope: oauth.BusinessReportRead, list: true, unpaginated: true, filters: []string{"range", "from", "to", "categoryId"}},
+		{path: "business-trend", scope: oauth.BusinessTrendRead, list: true, unpaginated: true, filters: []string{"days", "from", "to", "categoryId"}},
 		{path: "stock-ranking", scope: oauth.InventoryRankingRead, list: true, unpaginated: true, filters: []string{"limit"}},
 		{path: "inventory-report", scope: oauth.InventoryReportRead, list: true, unpaginated: true},
 		{path: "inventory", scope: oauth.Scope, list: true, projectInventory: true},

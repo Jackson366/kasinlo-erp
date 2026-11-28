@@ -183,10 +183,15 @@ func (s *Service) ReportSummary(f ReportFilter, actor *authz.Identity) (*ReportS
 	return &out, nil
 }
 
+const (
+	reportTrendDefaultDays = 30
+	reportTrendMaxDays     = 90
+)
+
 // ReportTrend 近 days 天的销售 / 采购趋势（按单据日期分桶）。
 func (s *Service) ReportTrend(days int, f ReportFilter, actor *authz.Identity) ([]ReportTrendPoint, error) {
-	if days <= 0 || days > 90 {
-		days = 30
+	if days <= 0 || days > reportTrendMaxDays {
+		days = reportTrendDefaultDays
 	}
 	zone := database.Location()
 	now := time.Now().In(zone)
@@ -210,12 +215,10 @@ func (s *Service) ReportTrend(days int, f ReportFilter, actor *authz.Identity) (
 			}
 			until = e
 		}
-		days = int(until.Sub(startDate).Hours()/24) + 1
-		if days < 1 {
-			days = 1
-		}
-		if days > 90 {
-			days = 90
+		// 按本地日历推进，避免夏令时切换导致少算一天。
+		days = 1
+		for days < reportTrendMaxDays && !startDate.AddDate(0, 0, days).After(until) {
+			days++
 		}
 	}
 	var endPtr *time.Time

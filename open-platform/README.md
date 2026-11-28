@@ -84,11 +84,14 @@ kas --profile contracts contract get --id 456
 | --- | --- | --- | --- |
 | `/contract-report` | `contract.report.read` | `inv:report:view` | 合同执行报表及当前结果的合计，包含合同金额、计划金额、已收付、未收付、质保金与履约阶段 |
 | `/business-summary` | `business.report.read` | `inv:report:view` | 返回当前 ERP 账号数据范围内的销售、采购、成本和毛利汇总。支持 `range`（默认 `month`）、`from`、`to`、`categoryId`（含子分类），日期格式为 `YYYY-MM-DD` |
+| `/business-trend` | `business.trend.read` | `inv:report:view` | 在 ERP 账号数据范围内按日返回销售额和采购额，支持 `days`（默认 30）、成对的 `from` 和 `to`，以及 `categoryId`（含子分类） |
 | `/stock-ranking` | `inventory.ranking.read` | `inv:report:view` | 按规格返回共享库存金额降序排行，支持 `limit`（1–1000，默认 1000），金额占比以全部库存金额为分母 |
 | `/inventory-report` | `inventory.report.read` | `inv:report:view` | 共享库存的成本总额、品类金额分布和低库存预警，预警最多返回前 20 条 |
 | `/contract-ledger` | `contract.ledger.read` | `inv:report:view` | 合同期次实际收付流水，返回 `rows`，按收付日期及流水 ID 倒序 |
 | `/contract-activities/{id}` | `contract.history.read` | `inv:contract:list` | `contractId` 与最近 50 条已落库的操作记录，含动作、请求方式、HTTP 状态和操作时间 |
 | `/contract-plan-settlements/{id}` | `contract.history.read` | `inv:contract:list` | `planId` 与该期次的收付款流水，含金额、结算方式和日期 |
+
+`GET /openapi/v1/business-trend` 返回 `{"rows":[{"date":"2026-11-01","salesAmount":0,"purchaseAmount":100}]}`。日期使用 ERP 时区并按升序返回，区间含首尾两天，最多 90 天，空白日期金额为 0。`days` 表示截至今天的天数，与自定义的 `from`、`to` 互斥。自定义日期格式为 `YYYY-MM-DD`。`categoryId` 筛选至少包含一项匹配商品的订单，金额采用整单口径。调用前需申请 `business.trend.read`。
 
 `GET /openapi/v1/contract-report` 支持 `keyword`、`bizType`、`status`、`stage`、`partyId`、`startDate`、`endDate`。日期区间按合同签订日筛选。结果按签订日和合同 ID 倒序，最多返回 1000 行，通过 `truncated` 标识超限。合计仅覆盖返回的 `rows`。调用前需申请 `contract.report.read`。
 

@@ -260,6 +260,80 @@ const docTemplate = `{
                 }
             }
         },
+        "/internal/open-platform/business-trend": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "开放平台内部接口"
+                ],
+                "summary": "查询日销售与采购趋势",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "最近天数（含今天，1–90，默认 30）",
+                        "name": "days",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "自定义起始日 yyyy-MM-dd，须与 to 同传",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "自定义结束日 yyyy-MM-dd（含当天，最多 90 天）",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "匹配订单的品类 ID（含子分类），0 = 全部",
+                        "name": "categoryId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/inv.platformBusinessTrendResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/internal/open-platform/contract-activities/{id}": {
             "get": {
                 "security": [
@@ -11462,6 +11536,17 @@ const docTemplate = `{
                 "unitBase": {
                     "description": "基本单位名，用于把基本数量写清楚",
                     "type": "string"
+                }
+            }
+        },
+        "inv.platformBusinessTrendResult": {
+            "type": "object",
+            "properties": {
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inv.ReportTrendPoint"
+                    }
                 }
             }
         },

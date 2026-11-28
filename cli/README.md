@@ -86,6 +86,16 @@ kas --profile catalog product list --category-id 123
 
 省略 `--parent-id` 查询所有层级；`--parent-id 0` 只查根分类。输出为分页平表，含 `id`、`parentId`、`name`、`sort`、`status`。筛选或分页结果可能不含父节点，使用 `category get` 补查。商品的 `--category-id` 精确匹配该分类，不包含子分类。分类与商品共用 `product.read`，已有该范围的凭据无需重新授权。
 
+### 销售与采购趋势
+
+```bash
+kas --profile business-trend auth login --scope business.trend.read
+kas --profile business-trend report trend --days 14
+kas --profile business-trend report trend --from 2026-11-01 --to 2026-11-30 --category-id 12
+```
+
+需要 ERP 权限 `inv:report:view`，结果受账号数据范围约束。`--days` 默认 30 天，包含今天。自定义日期须同时提供起止日期，含首尾两天，最多 90 天。`--category-id` 按含指定品类或其子品类商品的订单筛选，并统计这些订单的整单金额。JSON 的 `rows` 按日期升序，含每日销售额与采购额，没有交易的日期返回 0。
+
 ## 合同查询
 
 合同列表与详情新增独立授权 `contract.read`，对应 ERP 权限 `inv:contract:list`。旧凭据不会自动增加权限，请使用独立 profile 重新授权。
