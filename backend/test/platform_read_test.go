@@ -190,6 +190,52 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 		t.Fatalf("business summary included orders outside the user's data scope: %s", summaryData)
 	}
 
+	const trendScope = "business.trend.read"
+	const trendPath = "/business-trend"
+	read(summaryScope, trendPath, http.StatusForbidden)
+	readAs(other, trendScope, trendPath, http.StatusForbidden)
+	for _, query := range []string{
+		"?days=0", "?days=91", "?days=bad", "?from=2026-11-01", "?to=2026-11-01",
+		"?from=bad&to=2026-11-01", "?from=2026-11-02&to=2026-11-01",
+		"?from=2026-01-01&to=2026-04-01", "?from=2026-11-01&to=2026-11-02&days=2",
+		"?categoryId=-1",
+	} {
+		read(trendScope, trendPath+query, http.StatusBadRequest)
+	}
+
+	trendDate := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	if err := testDB.Model(&model.InvOrder{}).Where("id IN ?", []int64{purchase.ID, hidden.ID}).
+		Update("order_date", trendDate).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := testDB.Model(&sale).Updates(map[string]any{"order_date": trendDate, "status": model.InvStatusDone, "total_amount": 75}).Error; err != nil {
+		t.Fatal(err)
+	}
+	trendData := read(trendScope, trendPath+"?from=2026-11-12&to=2026-11-13", http.StatusOK)
+	var trend struct {
+		Data struct {
+			Rows []inv.ReportTrendPoint `json:"rows"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(trendData, &trend); err != nil || len(trend.Data.Rows) != 2 ||
+		trend.Data.Rows[0] != (inv.ReportTrendPoint{Date: "2026-11-12", SalesAmount: 75, PurchaseAmount: 100}) ||
+		trend.Data.Rows[1] != (inv.ReportTrendPoint{Date: "2026-11-13"}) {
+		t.Fatalf("unexpected trend totals or date range: %s", trendData)
+	}
+	for _, query := range []struct {
+		value string
+		rows  int
+	}{
+		{"", 30},
+		{"?days=1", 1},
+		{"?from=2026-01-01&to=2026-03-31", 90},
+	} {
+		data := read(trendScope, trendPath+query.value, http.StatusOK)
+		if err := json.Unmarshal(data, &trend); err != nil || len(trend.Data.Rows) != query.rows {
+			t.Fatalf("unexpected trend period %q: %s", query.value, data)
+		}
+	}
+
 	stockPath := "/stock-orders?sourceType=purchase&sourceId="
 	for _, tc := range []struct {
 		id    int64
@@ -285,6 +331,19 @@ func TestPlatformReadRespectsBusinessLineAndDataScope(t *testing.T) {
 	categoryDetail := string(read("product.read", categoryPath, http.StatusOK))
 	if !strings.Contains(categoryDetail, fmt.Sprintf(`"parentId":%d`, root.ID)) || !strings.Contains(categoryDetail, child.Name) || strings.Contains(categoryDetail, "fixture-category-note") {
 		t.Fatalf("unexpected category detail: %s", categoryDetail)
+	}
+	if err := testDB.Model(&product).Update("category_id", child.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	item := model.InvOrderItem{OrderID: purchase.ID, ProductID: product.ID, Amount: 20}
+	if err := testDB.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testDB.Unscoped().Delete(&item) })
+	categoryTrend := read(trendScope, trendPath+fmt.Sprintf("?from=2026-11-12&to=2026-11-12&categoryId=%d", root.ID), http.StatusOK)
+	if err := json.Unmarshal(categoryTrend, &trend); err != nil || len(trend.Data.Rows) != 1 ||
+		trend.Data.Rows[0] != (inv.ReportTrendPoint{Date: "2026-11-12", PurchaseAmount: 100}) {
+		t.Fatalf("trend did not select descendant categories using order totals: %s", categoryTrend)
 	}
 	if err := testDB.Delete(&child).Error; err != nil {
 		t.Fatal(err)

@@ -90,6 +90,12 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			if len(q) != 4 || q.Get("range") != "month" || q.Get("from") != "2026-11-01" || q.Get("to") != "2026-11-30" || q.Get("categoryId") != "12" {
 				t.Errorf("unexpected business summary query: %v", q)
 			}
+		case "/internal/open-platform/business-trend":
+			scope = oauth.BusinessTrendRead
+			q := r.URL.Query()
+			if len(q) != 3 || q.Get("from") != "2026-11-01" || q.Get("to") != "2026-11-02" || q.Get("categoryId") != "12" {
+				t.Errorf("unexpected business trend query: %v", q)
+			}
 		case "/internal/open-platform/stock-ranking":
 			scope = oauth.InventoryRankingRead
 			if q := r.URL.Query(); len(q) != 1 || q.Get("limit") != "2" {
@@ -165,6 +171,9 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 			return
 		case "/internal/open-platform/business-summary":
 			_, _ = io.WriteString(w, `{"code":0,"data":{"salesAmount":200,"purchases":100,"grossProfit":80}}`)
+			return
+		case "/internal/open-platform/business-trend":
+			_, _ = io.WriteString(w, `{"code":0,"data":{"rows":[{"date":"2026-11-01","salesAmount":200,"purchaseAmount":100},{"date":"2026-11-02","salesAmount":0,"purchaseAmount":0}]}}`)
 			return
 		case "/internal/open-platform/stock-ranking":
 			_, _ = io.WriteString(w, `{"code":0,"data":{"rows":[{"rank":1,"productCode":"P1","stock":5,"value":125,"ratio":50}]}}`)
@@ -270,6 +279,10 @@ func TestDeviceAuthorizationInventoryAndRevocation(t *testing.T) {
 	}
 	if res := call(http.MethodGet, "/openapi/v1/business-summary", legacyToken, "", ""); res.Code != http.StatusForbidden {
 		t.Fatal("inventory-only grant could read the business summary")
+	}
+	if res := call(http.MethodGet, "/openapi/v1/business-trend", legacyToken, "", ""); res.Code != http.StatusForbidden ||
+		!strings.Contains(res.Body.String(), "insufficient_scope") {
+		t.Fatalf("inventory-only grant could read the business trend: %d %s", res.Code, res.Body.String())
 	}
 	if res := call(http.MethodGet, "/openapi/v1/stock-ranking", legacyToken, "", ""); res.Code != http.StatusForbidden {
 		t.Fatal("inventory-only grant could read the stock ranking")
@@ -420,7 +433,7 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		}
 		return session
 	}
-	const scope = "inventory.read inventory.report.read inventory.ranking.read business.report.read product.read purchase.read stock.read finance.read customer.read supplier.read contract.read contract.history.read contract.report.read contract.ledger.read"
+	const scope = "inventory.read inventory.report.read inventory.ranking.read business.report.read business.trend.read product.read purchase.read stock.read finance.read customer.read supplier.read contract.read contract.history.read contract.report.read contract.ledger.read"
 	session := start(scope)
 	bridge := func(path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
@@ -459,6 +472,11 @@ func testCLI(t *testing.T, binary string, handler http.Handler, bridgeSecret str
 		t.Fatalf("could not read business summary: %s", out)
 	}
 	run(2, "report", "summary", "--page", "2")
+	if out := run(0, "report", "trend", "--from", "2026-11-01", "--to", "2026-11-02", "--category-id", "12"); !strings.Contains(string(out), `"salesAmount":200`) ||
+		!strings.Contains(string(out), `"date":"2026-11-02"`) {
+		t.Fatalf("could not read business trend: %s", out)
+	}
+	run(2, "report", "trend", "--page", "2")
 	if out := run(0, "inventory", "ranking", "--limit", "2"); !strings.Contains(string(out), `"value":125`) {
 		t.Fatalf("could not read stock ranking: %s", out)
 	}

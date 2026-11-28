@@ -36,6 +36,7 @@ const scopeDetails: Record<string, { title: string; description: string }> = {
   'supplier.read': { title: '查询供应商档案', description: '查看供应商编号、名称和启用状态。' },
   'purchase.read': { title: '查询采购单', description: '查看采购单状态、金额和商品明细。' },
   'business.report.read': { title: '查询经营报表汇总', description: '按账号的数据范围查看销售额、采购额、销售成本、毛利及单据数。' },
+  'business.trend.read': { title: '查询销售与采购趋势', description: '按账号的数据范围查看每日销售额和采购额。' },
   'inventory.ranking.read': { title: '查询库存金额排行', description: '查看共享库存各规格的库存数量、金额和金额占比。' },
   'inventory.report.read': { title: '查询库存分析报表', description: '查看共享库存的成本总额、品类金额分布及低库存预警。' },
   'stock.read': { title: '查询出入库单', description: '查看出入库状态、商品和数量。' },

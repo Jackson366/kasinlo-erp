@@ -71,6 +71,12 @@ var (
 			{"to", "to", "end date, inclusive"},
 			{"category-id", "categoryId", "category ID, including descendants"},
 		}},
+		"report trend": {path: "business-trend", unpaginated: true, noKeyword: true, filters: []queryFilter{
+			{"days", "days", "recent days including today, 1 to 90 (default 30)"},
+			{"from", "from", "start date, inclusive (requires --to)"},
+			{"to", "to", "end date, inclusive (requires --from)"},
+			{"category-id", "categoryId", "category ID, including descendants"},
+		}},
 		"inventory ranking": {path: "stock-ranking", unpaginated: true, noKeyword: true, filters: []queryFilter{
 			{"limit", "limit", "maximum rows, 1 to 1000"},
 		}},
